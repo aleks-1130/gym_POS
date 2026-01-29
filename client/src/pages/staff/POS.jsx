@@ -259,7 +259,7 @@ export default function POS() {
 
                     {/* Discount Input */}
                     <div className="flex justify-between items-center mb-6">
-                        <span className="text-text-secondary text-sm font-medium">Discount ($)</span>
+                        <span className="text-text-secondary text-sm font-medium">Discount</span>
                         <input
                             type="number"
                             min="0"

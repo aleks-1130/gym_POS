@@ -198,7 +198,7 @@ export default function MemberDetail() {
                                     value={renewData.duration} onChange={e => setRenewData({ ...renewData, duration: e.target.value })} />
                             </div>
                             <div>
-                                <label className="block text-xs text-text-secondary mb-1">Amount Paid ($)</label>
+                                <label className="block text-xs text-text-secondary mb-1">Amount Paid</label>
                                 <input required type="number" step="0.01" className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-white focus:ring-primary focus:border-primary"
                                     value={renewData.amount} onChange={e => setRenewData({ ...renewData, amount: e.target.value })} />
                             </div>

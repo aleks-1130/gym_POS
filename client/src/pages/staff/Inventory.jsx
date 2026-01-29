@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useCurrency } from '../../context/CurrencyContext';
 import axios from 'axios';
 
 export default function Inventory() {
     const { user } = useAuth();
+    const { formatPrice } = useCurrency();
     const [products, setProducts] = useState([]);
     const [loading, setLoading] = useState(false);
     const [showForm, setShowForm] = useState(false);
@@ -124,7 +126,7 @@ export default function Inventory() {
                             </select>
                         </div>
                         <div>
-                            <label className="block text-xs text-text-secondary mb-1">Price ($)</label>
+                            <label className="block text-xs text-text-secondary mb-1">Price</label>
                             <input required type="number" step="0.01" className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none transition-colors"
                                 value={formData.price} onChange={e => setFormData({ ...formData, price: e.target.value })} placeholder="0.00" />
                         </div>
@@ -198,7 +200,7 @@ export default function Inventory() {
                                             </span>
                                         </td>
                                         <td className="p-6 text-white font-mono font-bold">
-                                            ${product.price.toFixed(2)}
+                                            {formatPrice(product.price)}
                                         </td>
                                         <td className="p-6">
                                             <div className="flex items-center gap-3">

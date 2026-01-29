@@ -38,7 +38,7 @@ export default function Sidebar() {
                 {user.role === ROLES.MEMBER && (
                     <NavItem to="/access" icon="history" label="Attendance" />
                 )}
-                {[ROLES.ADMIN, ROLES.STAFF].includes(user?.role) && (
+                {[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF].includes(user?.role) && (
                     <>
                         <NavItem to="/members" icon="groups" label="Members" />
                         <NavItem to="/access" icon="assignment_ind" label="Access Ctrl" />
@@ -47,7 +47,7 @@ export default function Sidebar() {
 
                 <div className="w-8 h-[1px] bg-white/10 my-1"></div>
 
-                {[ROLES.ADMIN, ROLES.STAFF].includes(user?.role) && (
+                {[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF].includes(user?.role) && (
                     <NavItem to="/inventory" icon="inventory_2" label="Stock" />
                 )}
 
@@ -59,7 +59,7 @@ export default function Sidebar() {
                 <NavItem to="/schedule" icon="calendar_today" label="Sched" />
                 <NavItem to="/shop" icon="shopping_bag" label="Shop" />
 
-                {[ROLES.OWNER, ROLES.ADMIN].includes(user?.role) && (
+                {[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF].includes(user?.role) && (
                     <NavItem to="/analytics" icon="insights" label="Analyt" />
                 )}
 
