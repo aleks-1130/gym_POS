@@ -1,175 +1,53 @@
 import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import QRCode from 'react-qr-code';
 
 export default function Profile() {
     const { user, logout } = useAuth();
     const [orders, setOrders] = useState([]);
-    const [showQR, setShowQR] = useState(false);
 
     useEffect(() => {
         // Fetch bookings/orders if needed
+        // For now just basic info
     }, []);
 
     return (
-        <div className="space-y-4 pb-20 px-4 max-w-2xl mx-auto">
-            {/* Header with Sign Out */}
-            <div className="flex justify-between items-start gap-3 pt-4">
-                <div>
-                    <h1 className="text-xl font-bold text-white">My Profile</h1>
-                    <p className="text-text-muted text-xs mt-0.5">Manage your account</p>
-                </div>
-                <button
-                    onClick={logout}
-                    className="px-3 py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 active:scale-95 transition-all text-xs font-bold flex-shrink-0 border border-red-500/20"
-                >
-                    Sign Out
-                </button>
-            </div>
+        <div className="space-y-6 pb-20">
+            <header className="flex justify-between items-center">
+                <h1 className="text-3xl font-bold text-white">My Profile</h1>
+                <button onClick={logout} className="text-red-400 font-bold text-sm">Sign Out</button>
+            </header>
 
-            {/* Digital Member Card - Prominent */}
-            <div className="bg-gradient-to-br from-primary via-primary to-orange-600 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
-                {/* Decorative elements */}
-                <div className="absolute -bottom-8 -right-8 w-32 h-32 bg-white/20 rounded-full blur-2xl"></div>
-                <div className="absolute -top-4 -left-4 w-20 h-20 bg-white/10 rounded-full blur-xl"></div>
-                <div className="absolute top-1/2 right-1/4 w-16 h-16 bg-white/5 rounded-full blur-lg"></div>
-
-                <div className="relative z-10">
-                    <div className="flex items-start justify-between mb-6">
-                        <div className="flex-1">
-                            <div className="text-xs font-bold opacity-80 mb-1 tracking-wide">MEMBER CARD</div>
-                            <h2 className="text-xl font-black uppercase tracking-wide line-clamp-2 mb-1">{user?.name || "Member"}</h2>
-                            <div className="font-mono opacity-90 text-xs">ID: {user?.id?.toString().padStart(6, '0')}</div>
-                        </div>
-                        <div className="bg-white/10 backdrop-blur-sm p-2 rounded-lg">
-                            <span className="material-icons-round text-2xl">verified</span>
-                        </div>
+            {/* Digital Card */}
+            <div className="bg-gradient-to-br from-primary to-orange-600 rounded-3xl p-8 text-background shadow-lg relative overflow-hidden">
+                <div className="relative z-10 flex justify-between items-start">
+                    <div>
+                        <div className="text-sm font-bold opacity-80 mb-1">MEMBER CARD</div>
+                        <h2 className="text-3xl font-black uppercase tracking-wide">{user?.name || "Member"}</h2>
+                        <div className="mt-8 font-mono opacity-90">ID: {user?.id?.toString().padStart(6, '0')}</div>
                     </div>
-
-                    {/* QR Code Section */}
-                    <div className="flex items-center justify-between gap-4">
-                        <div className="flex-1">
-                            <p className="text-xs opacity-80 mb-1">Scan at front desk</p>
-                            <button
-                                onClick={() => setShowQR(!showQR)}
-                                className="text-xs font-bold underline opacity-90 hover:opacity-100"
-                            >
-                                {showQR ? 'Hide QR Code' : 'Show QR Code'}
-                            </button>
-                        </div>
-                        {showQR && (
-                            <div className="bg-white p-3 rounded-xl shadow-lg">
-                                <QRCode value={`MEMBER:${user?.id}`} size={100} />
-                            </div>
-                        )}
+                    <div className="bg-white p-2 rounded-xl">
+                        <QRCode value={`MEMBER:${user?.id}`} size={80} />
                     </div>
                 </div>
+                {/* Decorative circles */}
+                <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-white/20 rounded-full blur-2xl"></div>
             </div>
 
-            {/* Account Details Grid */}
-            <div>
-                <h3 className="text-sm font-bold text-white mb-3 px-1">Account Details</h3>
-                <div className="grid grid-cols-2 gap-3">
-                    {/* Email */}
-                    <div className="col-span-2 bg-surface rounded-xl p-4 border border-white/5">
-                        <div className="flex items-start gap-3">
-                            <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                                <span className="material-icons-round text-primary text-lg">email</span>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="text-text-muted text-xs font-medium mb-0.5">Email Address</p>
-                                <p className="text-white font-medium truncate text-sm">{user?.email || 'N/A'}</p>
-                            </div>
-                        </div>
+            {/* Quick Stats or Settings */}
+            <div className="bg-surface rounded-2xl p-6 border border-white/5">
+                <h3 className="text-lg font-bold text-white mb-4">Account Details</h3>
+                <div className="space-y-4">
+                    <div className="flex justify-between p-4 bg-white/5 rounded-xl">
+                        <span className="text-text-muted">Email</span>
+                        <span className="text-white">{user?.email || 'N/A'}</span>
                     </div>
-
-                    {/* Role */}
-                    <div className="bg-surface rounded-xl p-4 border border-white/5">
-                        <div className="flex flex-col h-full">
-                            <span className="material-icons-round text-primary text-xl mb-2">badge</span>
-                            <p className="text-text-muted text-xs font-medium mb-1">Account Type</p>
-                            <p className="text-white font-bold text-sm uppercase">{user?.role || 'N/A'}</p>
-                        </div>
-                    </div>
-
-                    {/* Status */}
-                    <div className="bg-surface rounded-xl p-4 border border-white/5">
-                        <div className="flex flex-col h-full">
-                            <span className="material-icons-round text-emerald-400 text-xl mb-2">check_circle</span>
-                            <p className="text-text-muted text-xs font-medium mb-1">Status</p>
-                            <p className="text-emerald-400 font-bold text-sm">Active</p>
-                        </div>
-                    </div>
-
-                    {/* Join Date */}
-                    <div className="col-span-2 bg-surface rounded-xl p-4 border border-white/5">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                                <span className="material-icons-round text-primary text-lg">event</span>
-                            </div>
-                            <div>
-                                <p className="text-text-muted text-xs font-medium mb-0.5">Member Since</p>
-                                <p className="text-white font-medium text-sm">{user?.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'N/A'}</p>
-                            </div>
-                        </div>
+                    <div className="flex justify-between p-4 bg-white/5 rounded-xl">
+                        <span className="text-text-muted">Role</span>
+                        <span className="text-primary font-bold">{user?.role}</span>
                     </div>
                 </div>
-            </div>
-
-            {/* Quick Actions */}
-            <div>
-                <h3 className="text-sm font-bold text-white mb-3 px-1">Quick Actions</h3>
-                <div className="grid grid-cols-2 gap-2">
-                    <button className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center">
-                        <span className="material-icons-round text-primary text-xl block mb-1">edit</span>
-                        <span className="text-xs font-medium text-white block">Edit Profile</span>
-                    </button>
-                    <button className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center">
-                        <span className="material-icons-round text-primary text-xl block mb-1">lock</span>
-                        <span className="text-xs font-medium text-white block">Password</span>
-                    </button>
-                    <button className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center">
-                        <span className="material-icons-round text-primary text-xl block mb-1">payment</span>
-                        <span className="text-xs font-medium text-white block">Payment</span>
-                    </button>
-                    <button className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center">
-                        <span className="material-icons-round text-primary text-xl block mb-1">notifications</span>
-                        <span className="text-xs font-medium text-white block">Notifications</span>
-                    </button>
-                </div>
-            </div>
-
-            {/* Support & Legal */}
-            <div>
-                <h3 className="text-sm font-bold text-white mb-3 px-1">Support & Legal</h3>
-                <div className="bg-surface rounded-xl border border-white/5 divide-y divide-white/5">
-                    <a href="#" className="flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 transition-colors first:rounded-t-xl">
-                        <div className="w-9 h-9 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <span className="material-icons-round text-primary text-lg">help</span>
-                        </div>
-                        <span className="text-sm text-white font-medium flex-1">Contact Support</span>
-                        <span className="material-icons-round text-text-muted text-lg">chevron_right</span>
-                    </a>
-                    <a href="#" className="flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 transition-colors">
-                        <div className="w-9 h-9 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <span className="material-icons-round text-primary text-lg">description</span>
-                        </div>
-                        <span className="text-sm text-white font-medium flex-1">Terms & Conditions</span>
-                        <span className="material-icons-round text-text-muted text-lg">chevron_right</span>
-                    </a>
-                    <a href="#" className="flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 transition-colors last:rounded-b-xl">
-                        <div className="w-9 h-9 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <span className="material-icons-round text-primary text-lg">privacy_tip</span>
-                        </div>
-                        <span className="text-sm text-white font-medium flex-1">Privacy Policy</span>
-                        <span className="material-icons-round text-text-muted text-lg">chevron_right</span>
-                    </a>
-                </div>
-            </div>
-
-            {/* App Version */}
-            <div className="text-center py-4">
-                <p className="text-text-muted text-xs">FitOS v1.0.0</p>
             </div>
         </div>
     );

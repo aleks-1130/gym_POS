@@ -33,8 +33,6 @@ import Classes from './pages/staff/Classes';
 import Schedule from './pages/member/Schedule';
 import MemberShop from './pages/member/MemberShop';
 import Profile from './pages/member/Profile';
-import Attendance from './pages/member/Attendance';
-import PurchaseHistory from './pages/member/PurchaseHistory';
 
 // Common/Public?
 import Notifications from './pages/Notifications'; // Plan didn't specify move, keeping for now or moving to shared? Plan said "Common".
@@ -50,23 +48,10 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
     return <Navigate to="/" replace />;
   }
 
-  // Members use bottom nav only (no sidebar)
-  if (user.role === ROLES.MEMBER) {
-    return (
-      <div className="flex flex-col bg-background min-h-screen overflow-x-hidden">
-        <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6 pb-24 overflow-y-auto transition-all duration-300">
-          {children}
-        </main>
-        <BottomNav />
-      </div>
-    );
-  }
-
-  // Staff/Admin/Owner use sidebar
   return (
-    <div className="flex flex-col lg:flex-row bg-background min-h-screen overflow-x-hidden">
+    <div className="flex bg-background min-h-screen">
       <Sidebar />
-      <main className="flex-1 w-full lg:pl-20 px-4 sm:px-6 lg:px-8 py-6 lg:py-8 pb-24 lg:pb-8 overflow-y-auto transition-all duration-300">
+      <main className="flex-1 ml-20 p-8 overflow-y-auto h-screen transition-all duration-300">
         {children}
       </main>
     </div>
@@ -75,7 +60,7 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 
 function AppRoutes() {
   return (
-    <div className="flex-1 w-full bg-background overflow-auto relative">
+    <div className="flex-1 w-full bg-background overflow-auto p-8 relative">
       <Routes>
         <Route path="/login" element={<Login />} />
 
@@ -107,10 +92,10 @@ function AppRoutes() {
         <Route path="/schedule" element={<ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.MEMBER, ROLES.ADMIN, ROLES.STAFF]}><Schedule /></ProtectedRoute>} />
         <Route path="/shop" element={<ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.MEMBER, ROLES.ADMIN, ROLES.STAFF]}><MemberShop /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.MEMBER, ROLES.ADMIN, ROLES.STAFF]}><Profile /></ProtectedRoute>} />
-        <Route path="/attendance" element={<ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}><Attendance /></ProtectedRoute>} />
-        <Route path="/purchase-history" element={<ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}><PurchaseHistory /></ProtectedRoute>} />
 
       </Routes>
+      {/* Mobile Navigation */}
+      <BottomNav />
     </div>
   );
 }
