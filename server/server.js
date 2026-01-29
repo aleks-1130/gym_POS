@@ -1,0 +1,717 @@
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const { PrismaClient } = require('@prisma/client');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+
+const app = express();
+const prisma = new PrismaClient();
+const PORT = process.env.PORT || 5000;
+const SECRET = process.env.JWT_SECRET;
+
+app.use(cors());
+app.use(express.json());
+
+// Middleware to verify Token
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.sendStatus(401);
+
+    jwt.verify(token, SECRET, (err, user) => {
+        if (err) return res.sendStatus(403);
+        req.user = user;
+        next();
+    });
+};
+
+// Middleware for Role Checking
+const authorize = (roles = []) => {
+    // roles param can be a single string (e.g. 'ADMIN') or an array of strings (['ADMIN', 'STAFF'])
+    if (typeof roles === 'string') {
+        roles = [roles];
+    }
+
+    return (req, res, next) => {
+        if (!req.user) return res.sendStatus(401);
+        if (roles.length && !roles.includes(req.user.role)) {
+            return res.status(403).json({ error: "Access denied" });
+        }
+        next();
+    };
+};
+
+// --- AUTH ROUTES ---
+app.post('/api/auth/register', async (req, res) => {
+    // Only for Staff/Admin registration for now
+    const { email, password, name } = req.body;
+    try {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const user = await prisma.user.create({
+            data: { email, password: hashedPassword, name }
+        });
+        res.json({ message: "User created" });
+    } catch (e) {
+        res.status(400).json({ error: "Email usage already exists or error" });
+    }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+    const { email, password } = req.body;
+    try {
+        // 1. Try finding in USER table (Admin/Staff)
+        const user = await prisma.user.findUnique({ where: { email } });
+        if (user) {
+            if (await bcrypt.compare(password, user.password)) {
+                const token = jwt.sign({ id: user.id, role: user.role, type: 'USER' }, SECRET);
+                return res.json({ token, user: { id: user.id, name: user.name, role: user.role } });
+            }
+        }
+
+        // 2. Try finding in MEMBER table
+        const member = await prisma.member.findUnique({ where: { email } });
+        if (member && member.password) { // Only if password is set
+            if (await bcrypt.compare(password, member.password)) {
+                const token = jwt.sign({ id: member.id, role: 'MEMBER', type: 'MEMBER' }, SECRET);
+                return res.json({ token, user: { id: member.id, name: member.firstName, role: 'MEMBER' } });
+            }
+        }
+
+        res.status(403).json({ error: "Invalid credentials" });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Helper for Member Password Setup (Temporary/First-time)
+app.post('/api/auth/member-setup', async (req, res) => {
+    const { email, password } = req.body;
+    try {
+        const member = await prisma.member.findUnique({ where: { email } });
+        if (!member) return res.status(404).json({ error: "Member not found" });
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+        await prisma.member.update({
+            where: { email },
+            data: { password: hashedPassword }
+        });
+        res.json({ message: "Password set successfully" });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+
+// --- DASHBOARD ROUTES ---
+app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
+    try {
+        // If Member, return only their own stats (or simplified generic stats)
+        if (req.user.role === 'MEMBER') {
+            // Member specific dashboard logic here
+            const member = await prisma.member.findUnique({
+                where: { id: req.user.id },
+                include: { plan: true }
+            });
+            return res.json({
+                activeMembers: 0, // Not relevant for member
+                revenueToday: 0, // Not relevant
+                expiringSoon: member.expiryDate, // Show their expiry
+                memberData: member
+            });
+        }
+
+        // ADMIN/STAFF stats
+        const totalMembers = await prisma.member.count({ where: { status: 'ACTIVE' } });
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const todayRevenue = await prisma.payment.aggregate({
+            _sum: { amount: true },
+            where: { date: { gte: today } }
+        });
+
+        const expiring = await prisma.member.count({
+            where: {
+                expiryDate: {
+                    lte: new Date(new Date().setDate(new Date().getDate() + 7)), // Next 7 days
+                    gte: new Date()
+                }
+            }
+        });
+
+        res.json({
+            activeMembers: totalMembers,
+            revenueToday: todayRevenue._sum.amount || 0,
+            expiringSoon: expiring
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- MEMBER ROUTES ---
+// Only Staff/Admin can list all members
+app.get('/api/members', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    const members = await prisma.member.findMany({ include: { plan: true } });
+    res.json(members);
+});
+
+// Members can see their own profile; Staff/Admin can see any
+app.get('/api/members/:id', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+
+    // Authorization check
+    if (req.user.role === 'MEMBER' && req.user.id !== Number(id)) {
+        return res.sendStatus(403);
+    }
+
+    try {
+        const member = await prisma.member.findUnique({
+            where: { id: Number(id) },
+            include: { plan: true, payments: { orderBy: { date: 'desc' } }, accessLogs: { orderBy: { checkIn: 'desc' }, take: 20 } }
+        });
+        if (!member) return res.status(404).json({ error: "Member not found" });
+        res.json(member);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Only Staff/Admin can create members
+app.post('/api/members', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    const { firstName, lastName, email, phone, planId } = req.body;
+    try {
+        // Calculate expiry based on plan
+        const plan = await prisma.plan.findUnique({ where: { id: Number(planId) } });
+        const startDate = new Date();
+        const expiryDate = new Date();
+        expiryDate.setDate(startDate.getDate() + (plan ? plan.duration : 30));
+
+        const member = await prisma.member.create({
+            data: {
+                firstName, lastName, email, phone, planId: Number(planId),
+                startDate, expiryDate
+            }
+        });
+        res.json(member);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Only Staff/Admin can renew members (unless we add self-service later)
+app.post('/api/members/:id/renew', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    const { id } = req.params;
+    const { duration, amount, method } = req.body; // duration in days
+    try {
+        const member = await prisma.member.findUnique({ where: { id: Number(id) } });
+        if (!member) return res.status(404).json({ error: "Member not found" });
+
+        // Calculate new expiry
+        const currentExpiry = new Date(member.expiryDate) > new Date() ? new Date(member.expiryDate) : new Date();
+        const newExpiry = new Date(currentExpiry);
+        newExpiry.setDate(newExpiry.getDate() + Number(duration));
+
+        // Update member and login payment
+        const updatedMember = await prisma.member.update({
+            where: { id: Number(id) },
+            data: {
+                expiryDate: newExpiry,
+                status: 'ACTIVE'
+            }
+        });
+
+        await prisma.payment.create({
+            data: {
+                amount: parseFloat(amount),
+                type: 'MEMBERSHIP_RENEWAL',
+                method,
+                memberId: Number(id)
+            }
+        });
+
+        res.json(updatedMember);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Staff/Admin only
+app.post('/api/members/:id/status', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+    try {
+        const member = await prisma.member.update({
+            where: { id: Number(id) },
+            data: { status }
+        });
+        res.json(member);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- ACCESS ROUTES ---
+// Checkin is usually done by staff or automated kiosk (Staff role for now)
+app.post('/api/access/checkin', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    const { memberId, status } = req.body;
+    try {
+        const log = await prisma.accessLog.create({
+            data: {
+                memberId: parseInt(memberId),
+                status: status || 'ALLOWED'
+            },
+            include: { member: true }
+        });
+
+        // Update member last checkin
+        if (status !== 'DENIED') {
+            await prisma.member.update({
+                where: { id: parseInt(memberId) },
+                data: { lastCheckIn: new Date() }
+            });
+        }
+
+        res.json(log);
+    } catch (e) {
+        res.status(500).json({ error: "Check-in failed" });
+    }
+});
+
+app.get('/api/access/logs', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBER']), async (req, res) => {
+    try {
+        const where = {};
+        if (req.user.role === 'MEMBER') {
+            where.memberId = req.user.id;
+        }
+
+        const logs = await prisma.accessLog.findMany({
+            where,
+            include: { member: true },
+            orderBy: { checkIn: 'desc' },
+            take: 50
+        });
+        res.json(logs);
+    } catch (e) {
+        res.status(500).json({ error: "Fetch failed" });
+    }
+});
+
+// --- POS ROUTES ---
+// Payment creation - Members might pay online later, but for POS it's staff
+app.post('/api/payments', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBER']), async (req, res) => {
+    const { amount, type, method, memberId, items } = req.body;
+
+    // If Member, reinforce memberId to own ID
+    if (req.user.role === 'MEMBER') {
+        if (memberId && Number(memberId) !== req.user.id) return res.sendStatus(403);
+        // Member can likely only make certain types of payments? For now allow.
+    }
+
+    try {
+        // 1. Create Payment Record
+        const payment = await prisma.payment.create({
+            data: {
+                amount: parseFloat(amount),
+                type,
+                method,
+                memberId: memberId ? Number(memberId) : null
+            }
+        });
+
+        // 2. If POS Sale with Items, Deduct Stock
+        if (items && items.length > 0) {
+            for (const item of items) {
+                // Only deduct if it's a tracked product (has an ID and is not a quick-add service)
+                if (item.id) {
+                    await prisma.product.update({
+                        where: { id: Number(item.id) },
+                        data: { stock: { decrement: item.quantity } }
+                    });
+                }
+            }
+        }
+
+        res.json(payment);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/payments', authenticateToken, async (req, res) => {
+    // Member: see own payments
+    if (req.user.role === 'MEMBER') {
+        const videos = await prisma.payment.findMany({
+            where: { memberId: req.user.id },
+            take: 50,
+            orderBy: { date: 'desc' }
+        });
+        return res.json(videos);
+    }
+
+    // Staff/Admin: see all
+    const payments = await prisma.payment.findMany({
+        take: 50,
+        orderBy: { date: 'desc' },
+        include: { member: true }
+    });
+    res.json(payments);
+});
+
+// --- INVENTORY ROUTES ---
+// Members can View products (e.g. shop)
+app.get('/api/products', authenticateToken, async (req, res) => {
+    const products = await prisma.product.findMany({ orderBy: { name: 'asc' } });
+    res.json(products);
+});
+
+// Staff/Admin can Manage products
+app.post('/api/products', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    const { name, category, price, stock, minStock, imageUrl } = req.body;
+    try {
+        const product = await prisma.product.create({
+            data: {
+                name, category,
+                price: parseFloat(price) || 0,
+                stock: Number(stock) || 0,
+                minStock: Number(minStock) || 0,
+                imageUrl
+            }
+        });
+        res.json(product);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.put('/api/products/:id', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    const { id } = req.params;
+    const { name, category, price, stock, minStock, imageUrl } = req.body;
+    try {
+        const product = await prisma.product.update({
+            where: { id: Number(id) },
+            data: {
+                name, category,
+                price: parseFloat(price) || 0,
+                stock: Number(stock) || 0,
+                minStock: Number(minStock) || 0,
+                imageUrl
+            }
+        });
+        res.json(product);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/products/:id', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    const { id } = req.params;
+    try {
+        await prisma.product.delete({ where: { id: Number(id) } });
+        res.json({ message: "Product deleted" });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+
+// --- TRAINER ROUTES ---
+app.get('/api/trainers', authenticateToken, async (req, res) => {
+    const trainers = await prisma.trainer.findMany({ include: { classes: true } });
+    res.json(trainers);
+});
+
+app.post('/api/trainers', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    const { name, specialty, bio } = req.body;
+    const trainer = await prisma.trainer.create({
+        data: { name, specialty, bio }
+    });
+    res.json(trainer);
+});
+
+// --- CLASS ROUTES ---
+app.get('/api/classes', authenticateToken, async (req, res) => {
+    const classes = await prisma.class.findMany({
+        include: { trainer: true },
+        orderBy: { dayOfWeek: 'asc' } // Simple sort, in real app might need better day sorting
+    });
+    res.json(classes);
+});
+
+app.post('/api/classes', authenticateToken, authorize(['ADMIN', 'STAFF', 'TRAINER']), async (req, res) => {
+    const { name, trainerId, dayOfWeek, time, duration, capacity } = req.body;
+    const gymClass = await prisma.class.create({
+        data: {
+            name, dayOfWeek, time,
+            duration: Number(duration),
+            capacity: Number(capacity),
+            trainerId: Number(trainerId)
+        }
+    });
+    res.json(gymClass);
+});
+
+// --- LOYALTY ROUTES ---
+app.get('/api/loyalty/rewards', authenticateToken, async (req, res) => {
+    const rewards = await prisma.loyaltyReward.findMany();
+    res.json(rewards);
+});
+// (Simple endpoint to add points manually for now)
+app.post('/api/members/:id/points', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    const { id } = req.params;
+    const { points, type } = req.body; // type=ADD or REDEEM
+    // Simple logic update
+    const member = await prisma.member.findUnique({ where: { id: Number(id) } });
+    if (!member) return res.status(404).json({ error: "Member not found" });
+
+    let newPoints = member.points;
+    if (type === 'ADD') newPoints += Number(points);
+    if (type === 'REDEEM') {
+        if (member.points < Number(points)) return res.status(400).json({ error: "Insufficient points" });
+        newPoints -= Number(points);
+    }
+
+    const updated = await prisma.member.update({
+        where: { id: Number(id) },
+        data: { points: newPoints }
+    });
+    res.json(updated);
+});
+
+// --- NOTIFICATION ROUTES ---
+app.get('/api/notifications', authenticateToken, async (req, res) => {
+    const notifs = await prisma.notification.findMany({
+        orderBy: { date: 'desc' },
+        take: 20
+    });
+    res.json(notifs);
+});
+
+
+// --- ANALYTICS ROUTES ---
+app.get('/api/analytics', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    try {
+        // 1. Weekly Revenue (Last 7 days)
+        const today = new Date();
+        const lastWeek = new Date(today);
+        lastWeek.setDate(today.getDate() - 7);
+
+        const payments = await prisma.payment.findMany({
+            where: { date: { gte: lastWeek } }
+        });
+
+        const revenueByDay = {}; // { 'Mon': 120, 'Tue': 300 }
+        payments.forEach(p => {
+            const day = new Date(p.date).toLocaleDateString('en-US', { weekday: 'short' });
+            revenueByDay[day] = (revenueByDay[day] || 0) + p.amount;
+        });
+
+        // 2. Member Distribution
+        const members = await prisma.member.findMany({ include: { plan: true } });
+        const planDist = {};
+        members.forEach(m => {
+            const planName = m.plan?.name || 'Unknown';
+            planDist[planName] = (planDist[planName] || 0) + 1;
+        });
+
+        // 3. Peak Hours (from Access Logs)
+        const logs = await prisma.accessLog.findMany();
+        const hoursDist = new Array(24).fill(0);
+        logs.forEach(l => {
+            const hour = new Date(l.checkIn).getHours(); // Fixed typo checkInTime -> checkIn
+            hoursDist[hour]++;
+        });
+
+        // Simplify hours for chart (every 3 hours)
+        const simpleHours = [
+            hoursDist[6] + hoursDist[7] + hoursDist[8], // 6AM-9AM
+            hoursDist[9] + hoursDist[10] + hoursDist[11], // 9AM-12PM
+            hoursDist[12] + hoursDist[13] + hoursDist[14], // 12PM-3PM
+            hoursDist[15] + hoursDist[16] + hoursDist[17], // 3PM-6PM
+            hoursDist[18] + hoursDist[19] + hoursDist[20], // 6PM-9PM
+            hoursDist[21] + hoursDist[22] + hoursDist[23]  // 9PM-12AM
+        ];
+
+        res.json({
+            revenue: revenueByDay,
+            plans: planDist,
+            peakHours: simpleHours
+        });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Seed Initial Data Route (Dev only)
+app.post('/api/seed', async (req, res) => {
+    try {
+        // 1. Clean (Delete in order of dependencies)
+        await prisma.accessLog.deleteMany({});
+        await prisma.payment.deleteMany({});
+        await prisma.member.deleteMany({}); // Members depend on Plans
+        await prisma.class.deleteMany({});
+        await prisma.plan.deleteMany({});
+        await prisma.product.deleteMany({});
+        await prisma.trainer.deleteMany({});
+        await prisma.notification.deleteMany({});
+        await prisma.loyaltyReward.deleteMany({});
+
+        // 2. Plans
+        await prisma.plan.createMany({
+            data: [
+                { name: 'Platinum Yearly', price: 999.00, duration: 365 },
+                { name: 'Gold Monthly', price: 80.00, duration: 30 },
+                { name: 'Silver Monthly', price: 50.00, duration: 30 },
+                { name: 'Day Pass', price: 15.00, duration: 1 }
+            ]
+        });
+
+        // 3. Products
+        await prisma.product.createMany({
+            data: [
+                { name: 'Whey Protein Isolate - Chocolate', category: 'SUPPLEMENT', price: 59.99, stock: 45, minStock: 10, imageUrl: 'https://images.unsplash.com/photo-1579722821273-0f6c7d44362f?auto=format&fit=crop&q=80&w=300' },
+                { name: 'Pre-Workout - Blue Raz', category: 'SUPPLEMENT', price: 39.99, stock: 20, minStock: 5, imageUrl: 'https://images.unsplash.com/photo-1593095948071-474c5cc2989d?auto=format&fit=crop&q=80&w=300' },
+                { name: 'Gym Shark Water Bottle', category: 'MERCH', price: 25.00, stock: 15, minStock: 5, imageUrl: 'https://plus.unsplash.com/premium_photo-1661601662709-6d601d3680d2?q=80&w=300&auto=format&fit=crop' },
+                { name: 'Energy Drink - Zero Sugar', category: 'DRINK', price: 3.50, stock: 8, minStock: 10, imageUrl: 'https://images.unsplash.com/photo-1622543925258-d63b58024c3f?q=80&w=300&auto=format&fit=crop' },
+                { name: 'Protein Bar - Peanut Butter', category: 'SUPPLEMENT', price: 3.00, stock: 100, minStock: 20, imageUrl: 'https://images.unsplash.com/photo-1620916566398-39f1143ab7be?q=80&w=300&auto=format&fit=crop' },
+                { name: 'Lifting Straps', category: 'EQUIPMENT', price: 15.00, stock: 30, minStock: 5, imageUrl: 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?q=80&w=300&auto=format&fit=crop' }
+            ]
+        });
+
+        // 4. Trainers
+        const trainer1 = await prisma.trainer.create({
+            data: { name: 'Alex Johnson', specialty: 'Bodybuilding', bio: 'IFBB Pro with 10 years experience.', imageUrl: 'https://images.unsplash.com/photo-1567013127542-490d75785b9c?auto=format&fit=crop&q=80&w=200' }
+        });
+        const trainer2 = await prisma.trainer.create({
+            data: { name: 'Sarah Connor', specialty: 'CrossFit & HIIT', bio: 'High energy functional training expert.', imageUrl: 'https://images.unsplash.com/photo-1611672585731-fa10603fb9e0?auto=format&fit=crop&q=80&w=200' }
+        });
+        const trainer3 = await prisma.trainer.create({
+            data: { name: 'Mike Tyson (Coach)', specialty: 'Boxing', bio: 'Legendary boxing fundamentals.', imageUrl: 'https://images.unsplash.com/photo-1549476464-37392f717541?auto=format&fit=crop&q=80&w=200' }
+        });
+
+        // 5. Classes
+        await prisma.class.createMany({
+            data: [
+                { name: 'Morning HIIT', trainerId: trainer2.id, dayOfWeek: 'Monday', time: '07:00 AM', duration: 45, capacity: 20 },
+                { name: 'Power Hour', trainerId: trainer1.id, dayOfWeek: 'Monday', time: '06:00 PM', duration: 60, capacity: 15 },
+                { name: 'Boxing Basics', trainerId: trainer3.id, dayOfWeek: 'Tuesday', time: '05:00 PM', duration: 60, capacity: 10 },
+                { name: 'Yoga Flow', trainerId: trainer2.id, dayOfWeek: 'Wednesday', time: '08:00 AM', duration: 60, capacity: 25 },
+                { name: 'Leg Day Blast', trainerId: trainer1.id, dayOfWeek: 'Thursday', time: '06:00 PM', duration: 90, capacity: 15 },
+                { name: 'Weekend Warriors', trainerId: trainer2.id, dayOfWeek: 'Saturday', time: '10:00 AM', duration: 60, capacity: 30 }
+            ]
+        });
+
+        // 6. Notifications
+        await prisma.notification.createMany({
+            data: [
+                { title: 'System Maintenance', message: 'The system will be offline for maintenance on Sunday at 2 AM.', type: 'ALERT', date: new Date() },
+                { title: 'New Supplement Shipment', message: 'Restocked Gold Standard Whey and Pre-workout.', type: 'INFO', date: new Date(Date.now() - 86400000) },
+                { title: 'Holiday Hours', message: 'We will close early on July 4th at 4 PM.', type: 'INFO', date: new Date(Date.now() - 172800000) },
+                { title: 'Promo: Refer a Friend', message: 'Get 1 month free when you refer a friend!', type: 'PROMO', date: new Date(Date.now() - 259200000) }
+            ]
+        });
+
+        // 7. Members (Dummy Members)
+        const plan = await prisma.plan.findFirst();
+        await prisma.member.createMany({
+            data: [
+                { firstName: 'Bruce', lastName: 'Wayne', email: 'bruce@wayne.com', status: 'ACTIVE', planId: plan.id, points: 500, startDate: new Date(), expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+                { firstName: 'Clark', lastName: 'Kent', email: 'clark@dailyplanet.com', status: 'ACTIVE', planId: plan.id, points: 120, startDate: new Date(), expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+                { firstName: 'Diana', lastName: 'Prince', email: 'diana@amazon.com', status: 'ACTIVE', planId: plan.id, points: 350, startDate: new Date(), expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+                { firstName: 'Barry', lastName: 'Allen', email: 'barry@flash.com', status: 'EXPIRED', planId: plan.id, points: 0, startDate: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000), expiryDate: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000) }
+            ]
+        });
+
+        // 8. Historical Payments (For Analytics)
+        const members = await prisma.member.findMany();
+        const paymentMethods = ['CARD', 'CASH', 'E-WALLET'];
+        const paymentTypes = ['MEMBERSHIP', 'POS_SALE', 'SERVICE'];
+
+        const pastPayments = [];
+        for (let i = 0; i < 50; i++) {
+            const randomMember = members[Math.floor(Math.random() * members.length)];
+            const date = new Date();
+            date.setDate(date.getDate() - Math.floor(Math.random() * 30)); // Last 30 days
+
+            pastPayments.push({
+                amount: Math.floor(Math.random() * 100) + 10,
+                type: paymentTypes[Math.floor(Math.random() * paymentTypes.length)],
+                method: paymentMethods[Math.floor(Math.random() * paymentMethods.length)],
+                memberId: randomMember.id,
+                date: date,
+                status: 'COMPLETED'
+            });
+        }
+        await prisma.payment.createMany({ data: pastPayments });
+
+        // 9. Access Logs (For Attendance)
+        const accessLogs = [];
+        for (let i = 0; i < 30; i++) {
+            const randomMember = members[Math.floor(Math.random() * members.length)];
+            const date = new Date();
+            date.setDate(date.getDate() - Math.floor(Math.random() * 7)); // Last 7 days
+            date.setHours(Math.floor(Math.random() * 14) + 6); // 6 AM to 8 PM
+
+            accessLogs.push({
+                memberId: randomMember.id,
+                checkIn: date,
+                status: 'ALLOWED'
+            });
+        }
+        await prisma.accessLog.createMany({ data: accessLogs });
+
+        // 10. Loyalty Rewards
+        await prisma.loyaltyReward.createMany({
+            data: [
+                { name: 'Free Smoothie', cost: 100, description: 'One free protein smoothie' },
+                { name: 'Towel Service', cost: 50, description: 'Free towel rental for one month' },
+                { name: 'Free Day Pass', cost: 200, description: 'Bring a friend for free' },
+                { name: 'Personal Training Session', cost: 500, description: 'One hour with a certified trainer' },
+                { name: 'Gym T-Shirt', cost: 300, description: 'Official gym merchandise' }
+            ]
+        });
+
+        res.json({ message: "Comprehensive dummy data seeded!" });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.listen(PORT, async () => {
+    console.log(`Server running on port ${PORT}`);
+
+    // Auto-seed if empty
+    try {
+        const userCount = await prisma.user.count();
+        if (userCount === 0) {
+            console.log("Seeding database...");
+
+            // Seed Plans
+            await prisma.plan.createMany({
+                data: [
+                    { name: 'Gold', price: 50, duration: 30 },
+                    { name: 'Silver', price: 30, duration: 30 },
+                    { name: 'Bronze', price: 20, duration: 30 },
+                    { name: 'Day Pass', price: 15, duration: 1 }
+                ]
+            });
+
+            // Seed Admin User
+            const hashedPassword = await bcrypt.hash('password123', 10);
+            await prisma.user.create({
+                data: {
+                    email: 'admin@gym.com',
+                    password: hashedPassword,
+                    name: 'Admin User',
+                    role: 'ADMIN'
+                }
+            });
+            console.log("Database seeded! Admin: admin@gym.com / password123");
+        }
+    } catch (e) {
+        console.error("Seeding failed:", e);
+    }
+});
