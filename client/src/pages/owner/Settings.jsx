@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useCurrency } from '../../context/CurrencyContext';
 
 export default function Settings() {
+    const { formatPrice } = useCurrency();
     const [activeTab, setActiveTab] = useState('plans');
     const [gymProfile, setGymProfile] = useState({
         name: 'FitOS Gym',
@@ -93,7 +95,7 @@ export default function Settings() {
                                 <div key={plan.id} className="flex items-center justify-between p-4 bg-surfaceHighlight rounded-2xl border border-white/5 hover:shadow-sm transition-shadow">
                                     <div>
                                         <h4 className="text-white font-bold">{plan.name}</h4>
-                                        <p className="text-sm text-text-muted font-medium">{plan.duration} days • <span className="text-primary font-bold">${plan.price}</span></p>
+                                        <p className="text-sm text-text-muted font-medium">{plan.duration} days • <span className="text-primary font-bold">{formatPrice(plan.price)}</span></p>
                                     </div>
                                     <button onClick={() => handleDelete(plan.id)} className="text-text-muted hover:text-red-400 p-2 transition-colors">
                                         <span className="material-icons-round">delete</span>
@@ -116,7 +118,7 @@ export default function Settings() {
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-xs text-text-secondary font-bold mb-1">Price ($)</label>
+                                    <label className="block text-xs text-text-secondary font-bold mb-1">Price</label>
                                     <input required type="number" step="0.01" className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all placeholder-text-muted text-sm"
                                         placeholder="99.99"
                                         value={formData.price} onChange={e => setFormData({ ...formData, price: e.target.value })} />
