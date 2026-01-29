@@ -55,7 +55,10 @@ export default function Sidebar() {
 
                 <div className="w-8 h-[1px] bg-white/10 my-1"></div>
 
-                {user?.role === 'ADMIN' && (
+                <NavItem to="/schedule" icon="calendar_today" label="Sched" />
+                <NavItem to="/shop" icon="shopping_bag" label="Shop" />
+
+                {['OWNER', 'ADMIN'].includes(user?.role) && (
                     <NavItem to="/analytics" icon="insights" label="Analyt" />
                 )}
 
@@ -64,7 +67,14 @@ export default function Sidebar() {
 
                 <div className="w-8 h-[1px] bg-white/10 my-1"></div>
 
-                {user?.role === 'ADMIN' && (
+                {user?.role === 'OWNER' && (
+                    <>
+                        <NavItem to="/users" icon="admin_panel_settings" label="Users" />
+                        <NavItem to="/audit" icon="security" label="Audit" />
+                    </>
+                )}
+
+                {['OWNER'].includes(user?.role) && (
                     <NavItem to="/settings" icon="settings" label="Config" />
                 )}
             </nav>

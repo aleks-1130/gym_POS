@@ -27,19 +27,40 @@ const authenticateToken = (req, res, next) => {
 };
 
 // Middleware for Role Checking
+// Middleware for Role Checking (Strict)
 const authorize = (roles = []) => {
-    // roles param can be a single string (e.g. 'ADMIN') or an array of strings (['ADMIN', 'STAFF'])
     if (typeof roles === 'string') {
         roles = [roles];
     }
+    // "OWNER" implies all access, so if roles=['ADMIN'], Owner should also pass?
+    // Actually, let's keep it strict. If a route is ['ADMIN'], Owner should be explicitly added if allowed.
+    // However, usually Owner > Admin > Staff. 
+    // Hierarchy: OWNER > ADMIN > STAFF
 
     return (req, res, next) => {
         if (!req.user) return res.sendStatus(401);
-        if (roles.length && !roles.includes(req.user.role)) {
-            return res.status(403).json({ error: "Access denied" });
-        }
-        next();
+
+        const userRole = req.user.role; // OWNER, ADMIN, STAFF
+
+        if (roles.includes("OWNER") && userRole === "OWNER") return next();
+        if (roles.includes("ADMIN") && (userRole === "ADMIN" || userRole === "OWNER")) return next();
+        if (roles.includes("STAFF") && (userRole === "STAFF" || userRole === "ADMIN" || userRole === "OWNER")) return next();
+
+        // Exact match fallback (if logic above misses)
+        if (roles.includes(userRole)) return next();
+
+        return res.status(403).json({ error: "Access denied" });
     };
+};
+
+const logAudit = async (action, performedBy, target, details) => {
+    try {
+        await prisma.auditLog.create({
+            data: { action, performedBy, target, details }
+        });
+    } catch (e) {
+        console.error("Audit Log Error:", e);
+    }
 };
 
 // --- AUTH ROUTES ---
@@ -64,7 +85,9 @@ app.post('/api/auth/login', async (req, res) => {
         const user = await prisma.user.findUnique({ where: { email } });
         if (user) {
             if (await bcrypt.compare(password, user.password)) {
+                // Ensure role is sent
                 const token = jwt.sign({ id: user.id, role: user.role, type: 'USER' }, SECRET);
+                // Log login? maybe too noisy.
                 return res.json({ token, user: { id: user.id, name: user.name, role: user.role } });
             }
         }
@@ -150,13 +173,246 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
     }
 });
 
-// --- MEMBER ROUTES ---
-// Only Staff/Admin can list all members
-app.get('/api/members', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
-    const members = await prisma.member.findMany({ include: { plan: true } });
-    res.json(members);
+// --- OWNER ROUTES ---
+
+// Get Audit Logs (Owner Only)
+app.get('/api/owner/audit-logs', authenticateToken, authorize('OWNER'), async (req, res) => {
+    try {
+        const logs = await prisma.auditLog.findMany({
+            orderBy: { timestamp: 'desc' },
+            take: 100
+        });
+        res.json(logs);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch logs" });
+    }
 });
 
+// Manage Staff/Admins (List all users) - Owner/Admin view
+// Owner sees all. Admin sees Staff only?
+app.get('/api/users', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
+    try {
+        const users = await prisma.user.findMany({
+            select: { id: true, name: true, email: true, role: true, createdAt: true }
+        });
+        // Admins should maybe not see Owners? 
+        // For simplicity, returning all, frontend filters actions.
+        res.json(users);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch users" });
+    }
+});
+
+// Promote/Demote/Transfer (Owner Only)
+app.post('/api/owner/role-change', authenticateToken, authorize('OWNER'), async (req, res) => {
+    const { targetUserId, newRole } = req.body; // newRole: 'ADMIN' or 'STAFF'
+
+    try {
+        const target = await prisma.user.findUnique({ where: { id: Number(targetUserId) } });
+        if (!target) return res.status(404).json({ error: "User not found" });
+
+        if (newRole === 'OWNER') return res.status(400).json({ error: "Use transfer-ownership endpoint for Owner transfer" });
+        if (target.role === 'OWNER') return res.status(403).json({ error: "Cannot change role of (self) Owner via this endpoint" });
+
+        await prisma.user.update({
+            where: { id: Number(targetUserId) },
+            data: { role: newRole }
+        });
+
+        await logAudit("ROLE_CHANGE", req.user.email, target.email, `Changed role to ${newRole}`);
+        res.json({ message: `User role updated to ${newRole}` });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+
+// Transfer Ownership
+app.post('/api/owner/transfer-ownership', authenticateToken, authorize('OWNER'), async (req, res) => {
+    const { newOwnerId } = req.body;
+
+    try {
+        // Transaction: Demote current Owner -> ADMIN, Promote new User -> OWNER
+        const currentOwnerId = req.user.id; // From token
+
+        if (currentOwnerId === Number(newOwnerId)) return res.status(400).json({ error: "Already owner" });
+
+        await prisma.$transaction([
+            prisma.user.update({
+                where: { id: currentOwnerId },
+                data: { role: 'ADMIN' }
+            }),
+            prisma.user.update({
+                where: { id: Number(newOwnerId) },
+                data: { role: 'OWNER' }
+            })
+        ]);
+
+        await logAudit("OWNERSHIP_TRANSFER", req.user.email, `User ID ${newOwnerId}`, "Transferred system ownership");
+        res.json({ message: "Ownership transferred successfully. Please log in again." });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: "Transfer failed" });
+    }
+});
+
+// --- MEMBER ROUTES ---
+// Only Staff/Admin can list all members
+app.get('/api/members', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
+    try {
+        const members = await prisma.member.findMany({
+            include: { plan: true }
+        });
+        res.json(members);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Member Self-Service APIs
+
+// Get Available Classes (Member View)
+app.get('/api/members/classes', authenticateToken, async (req, res) => {
+    try {
+        const classes = await prisma.class.findMany({
+            include: {
+                trainer: true,
+                bookings: {
+                    where: { memberId: req.user.id }
+                }
+            }
+        });
+        // Transform to indicate if booked
+        const result = classes.map(c => ({
+            ...c,
+            isBooked: c.bookings.length > 0
+        }));
+        res.json(result);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Book a Class
+app.post('/api/members/book', authenticateToken, async (req, res) => {
+    const { classId } = req.body;
+    const memberId = req.user.id; // User ID from token (assuming Member login uses Member ID as ID)
+
+    // Safety check: Ensure user is a member
+    if (req.user.type !== 'MEMBER') return res.status(403).json({ error: "Only members can book classes" });
+
+    try {
+        const cls = await prisma.class.findUnique({ where: { id: classId } });
+        if (!cls) return res.status(404).json({ error: "Class not found" });
+
+        if (cls.enrolled >= cls.capacity) return res.status(400).json({ error: "Class is full" });
+
+        // Check if already booked
+        const existing = await prisma.booking.findFirst({
+            where: { memberId, classId, status: 'CONFIRMED' }
+        });
+        if (existing) return res.status(400).json({ error: "Already booked" });
+
+        // Transaction: Create Booking + Increment Enrollment
+        await prisma.$transaction([
+            prisma.booking.create({
+                data: { memberId, classId, status: 'CONFIRMED' }
+            }),
+            prisma.class.update({
+                where: { id: classId },
+                data: { enrolled: { increment: 1 } }
+            })
+        ]);
+
+        res.json({ message: "Booking confirmed" });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Cancel Booking
+app.post('/api/members/cancel-booking', authenticateToken, async (req, res) => {
+    const { classId } = req.body;
+    const memberId = req.user.id;
+
+    try {
+        const booking = await prisma.booking.findFirst({
+            where: { memberId, classId, status: 'CONFIRMED' }
+        });
+        if (!booking) return res.status(404).json({ error: "Booking not found" });
+
+        await prisma.$transaction([
+            prisma.booking.delete({ where: { id: booking.id } }),
+            prisma.class.update({
+                where: { id: classId },
+                data: { enrolled: { decrement: 1 } }
+            })
+        ]);
+        res.json({ message: "Booking cancelled" });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Shop Checkout (Simple)
+app.post('/api/members/checkout', authenticateToken, async (req, res) => {
+    const { items, total } = req.body; // items: [{productId, quantity, price}]
+    const memberId = req.user.id;
+
+    try {
+        // Create Order
+        const order = await prisma.order.create({
+            data: {
+                memberId,
+                total,
+                status: 'COMPLETED',
+                items: {
+                    create: items.map(i => ({
+                        productId: i.productId,
+                        quantity: i.quantity,
+                        price: i.price
+                    }))
+                }
+            }
+        });
+
+        // Deduct Stock
+        for (const item of items) {
+            await prisma.product.update({
+                where: { id: item.productId },
+                data: { stock: { decrement: item.quantity } }
+            });
+        }
+
+        // Award Loyalty Points (1 point per $10 spent)
+        const points = Math.floor(total / 10);
+        if (points > 0) {
+            await prisma.member.update({
+                where: { id: memberId },
+                data: { points: { increment: points } }
+            });
+        }
+
+        res.json({ message: "Order placed successfully!", orderId: order.id });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: "Checkout failed" });
+    }
+});
+
+// Get Member Orders
+app.get('/api/members/orders', authenticateToken, async (req, res) => {
+    try {
+        const orders = await prisma.order.findMany({
+            where: { memberId: req.user.id },
+            include: { items: { include: { product: true } } },
+            orderBy: { createdAt: 'desc' }
+        });
+        res.json(orders);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
 // Members can see their own profile; Staff/Admin can see any
 app.get('/api/members/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
@@ -406,13 +662,16 @@ app.put('/api/products/:id', authenticateToken, authorize(['ADMIN', 'STAFF']), a
     }
 });
 
-app.delete('/api/products/:id', authenticateToken, authorize(['ADMIN']), async (req, res) => {
+// DELETE Product - OWNER or ADMIN only
+app.delete('/api/products/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
     const { id } = req.params;
     try {
+        const product = await prisma.product.findUnique({ where: { id: Number(id) } });
         await prisma.product.delete({ where: { id: Number(id) } });
+        await logAudit("DELETE_PRODUCT", req.user.email, product?.name, `ID: ${id}`);
         res.json({ message: "Product deleted" });
     } catch (e) {
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: "Failed to delete product" });
     }
 });
 
@@ -491,8 +750,8 @@ app.get('/api/notifications', authenticateToken, async (req, res) => {
 
 
 // --- ANALYTICS ROUTES ---
-// ADMIN ONLY
-app.get('/api/analytics', authenticateToken, authorize(['ADMIN']), async (req, res) => {
+// ADMIN or OWNER (Strict operational data)
+app.get('/api/analytics', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
     try {
         // 1. Weekly Revenue (Last 7 days)
         const today = new Date();

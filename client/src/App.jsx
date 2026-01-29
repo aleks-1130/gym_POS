@@ -14,6 +14,12 @@ import Classes from './pages/Classes';
 import Analytics from './pages/Analytics';
 import Loyalty from './pages/Loyalty';
 import Notifications from './pages/Notifications';
+import UserManagement from './pages/UserManagement';
+import AuditLogs from './pages/AuditLogs';
+import Schedule from './pages/Schedule';
+import MemberShop from './pages/MemberShop';
+import Profile from './pages/Profile';
+import BottomNav from './components/BottomNav';
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
   const { user, loading } = useAuth();
@@ -41,28 +47,41 @@ const Placeholder = ({ title }) => <h1 className="text-3xl font-bold text-white"
 
 function AppRoutes() {
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
+    <div className="flex-1 w-full bg-background overflow-auto p-8 relative">
+      <Routes>
+        <Route path="/login" element={<Login />} />
 
-      {/* Public / Common Routes */}
-      <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-      <Route path="/classes" element={<ProtectedRoute><Classes /></ProtectedRoute>} />
-      <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
-      <Route path="/trainers" element={<ProtectedRoute><Trainers /></ProtectedRoute>} />
+        {/* Public / Common Routes */}
+        <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/classes" element={<ProtectedRoute><Classes /></ProtectedRoute>} />
+        <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+        <Route path="/trainers" element={<ProtectedRoute><Trainers /></ProtectedRoute>} />
 
-      {/* Member Accessible Routes */}
-      <Route path="/payments" element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'MEMBER']}><Payments /></ProtectedRoute>} />
-      <Route path="/loyalty" element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'MEMBER']}><Loyalty /></ProtectedRoute>} />
+        {/* Member Accessible Routes */}
+        <Route path="/payments" element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'MEMBER']}><Payments /></ProtectedRoute>} />
+        <Route path="/loyalty" element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'MEMBER']}><Loyalty /></ProtectedRoute>} />
 
-      {/* Admin/Staff Only Routes */}
-      <Route path="/members" element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}><Members /></ProtectedRoute>} />
-      <Route path="/members/:id" element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}><MemberDetail /></ProtectedRoute>} />
-      <Route path="/access" element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'MEMBER']}><Access /></ProtectedRoute>} />
-      <Route path="/inventory" element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}><Inventory /></ProtectedRoute>} />
-      <Route path="/analytics" element={<ProtectedRoute allowedRoles={['ADMIN']}><Analytics /></ProtectedRoute>} />
-      <Route path="/settings" element={<ProtectedRoute allowedRoles={['ADMIN']}><Settings /></ProtectedRoute>} />
+        {/* Admin/Staff Only Routes */}
+        <Route path="/members" element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}><Members /></ProtectedRoute>} />
+        <Route path="/members/:id" element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}><MemberDetail /></ProtectedRoute>} />
+        <Route path="/access" element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'MEMBER']}><Access /></ProtectedRoute>} />
+        <Route path="/inventory" element={<ProtectedRoute allowedRoles={['OWNER', 'ADMIN', 'STAFF']}><Inventory /></ProtectedRoute>} />
+        <Route path="/analytics" element={<ProtectedRoute allowedRoles={['OWNER', 'ADMIN']}><Analytics /></ProtectedRoute>} />
+        <Route path="/settings" element={<ProtectedRoute allowedRoles={['OWNER']}><Settings /></ProtectedRoute>} />
 
-    </Routes>
+        {/* RBAC Management */}
+        <Route path="/users" element={<ProtectedRoute allowedRoles={['OWNER', 'ADMIN']}><UserManagement /></ProtectedRoute>} />
+        <Route path="/audit" element={<ProtectedRoute allowedRoles={['OWNER']}><AuditLogs /></ProtectedRoute>} />
+
+        {/* Member Portal */}
+        <Route path="/schedule" element={<ProtectedRoute allowedRoles={['MEMBER', 'ADMIN', 'STAFF']}><Schedule /></ProtectedRoute>} />
+        <Route path="/shop" element={<ProtectedRoute allowedRoles={['MEMBER', 'ADMIN', 'STAFF']}><MemberShop /></ProtectedRoute>} />
+        <Route path="/profile" element={<ProtectedRoute allowedRoles={['MEMBER', 'ADMIN', 'STAFF']}><Profile /></ProtectedRoute>} />
+
+      </Routes>
+      {/* Mobile Navigation */}
+      <BottomNav />
+    </div>
   );
 }
 
