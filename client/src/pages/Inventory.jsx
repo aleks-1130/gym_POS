@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
 import axios from 'axios';
 
 export default function Inventory() {
+    const { user } = useAuth();
     const [products, setProducts] = useState([]);
     const [loading, setLoading] = useState(false);
     const [showForm, setShowForm] = useState(false);
@@ -213,9 +215,11 @@ export default function Inventory() {
                                                 <button onClick={() => handleEdit(product)} className="text-text-muted hover:text-primary transition-colors p-2 rounded-lg hover:bg-primary/10">
                                                     <span className="material-icons-round">edit</span>
                                                 </button>
-                                                <button onClick={() => handleDelete(product.id)} className="text-text-muted hover:text-red-500 transition-colors p-2 rounded-lg hover:bg-red-500/10">
-                                                    <span className="material-icons-round">delete</span>
-                                                </button>
+                                                {user?.role === 'ADMIN' && (
+                                                    <button onClick={() => handleDelete(product.id)} className="text-text-muted hover:text-red-500 transition-colors p-2 rounded-lg hover:bg-red-500/10">
+                                                        <span className="material-icons-round">delete</span>
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>

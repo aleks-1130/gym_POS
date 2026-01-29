@@ -59,8 +59,8 @@ function AppRoutes() {
       <Route path="/members/:id" element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}><MemberDetail /></ProtectedRoute>} />
       <Route path="/access" element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'MEMBER']}><Access /></ProtectedRoute>} />
       <Route path="/inventory" element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}><Inventory /></ProtectedRoute>} />
-      <Route path="/analytics" element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}><Analytics /></ProtectedRoute>} />
-      <Route path="/settings" element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}><Settings /></ProtectedRoute>} />
+      <Route path="/analytics" element={<ProtectedRoute allowedRoles={['ADMIN']}><Analytics /></ProtectedRoute>} />
+      <Route path="/settings" element={<ProtectedRoute allowedRoles={['ADMIN']}><Settings /></ProtectedRoute>} />
 
     </Routes>
   );

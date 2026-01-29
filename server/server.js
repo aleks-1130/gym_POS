@@ -366,7 +366,8 @@ app.get('/api/products', authenticateToken, async (req, res) => {
     res.json(products);
 });
 
-// Staff/Admin can Manage products
+// Staff/Admin can Manage products (Create/Update), but maybe restrict strict management to Admin?
+// For now, let's keep Create/Update for Staff (restocking), but DELETE is Admin only.
 app.post('/api/products', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
     const { name, category, price, stock, minStock, imageUrl } = req.body;
     try {
@@ -405,7 +406,7 @@ app.put('/api/products/:id', authenticateToken, authorize(['ADMIN', 'STAFF']), a
     }
 });
 
-app.delete('/api/products/:id', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+app.delete('/api/products/:id', authenticateToken, authorize(['ADMIN']), async (req, res) => {
     const { id } = req.params;
     try {
         await prisma.product.delete({ where: { id: Number(id) } });
@@ -490,7 +491,8 @@ app.get('/api/notifications', authenticateToken, async (req, res) => {
 
 
 // --- ANALYTICS ROUTES ---
-app.get('/api/analytics', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+// ADMIN ONLY
+app.get('/api/analytics', authenticateToken, authorize(['ADMIN']), async (req, res) => {
     try {
         // 1. Weekly Revenue (Last 7 days)
         const today = new Date();
