@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../../context/AuthContext';
 
 export default function Schedule() {
     const { user } = useAuth();
@@ -90,8 +90,8 @@ export default function Schedule() {
                                 onClick={() => handleBook(cls.id)}
                                 disabled={cls.enrolled >= cls.capacity}
                                 className={`w-full py-3 rounded-xl font-bold transition-transform active:scale-95 ${cls.enrolled >= cls.capacity
-                                        ? 'bg-white/5 text-text-muted cursor-not-allowed'
-                                        : 'bg-primary text-background hover:brightness-110'
+                                    ? 'bg-white/5 text-text-muted cursor-not-allowed'
+                                    : 'bg-primary text-background hover:brightness-110'
                                     }`}
                             >
                                 {cls.enrolled >= cls.capacity ? 'Full Capacity' : 'Book Class'}

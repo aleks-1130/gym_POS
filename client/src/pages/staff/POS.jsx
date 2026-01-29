@@ -1,10 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { useAuth } from '../context/AuthContext';
 
-export default function Payments() {
-    const { user } = useAuth();
+export default function POS() {
     const [products, setProducts] = useState([]);
     const [members, setMembers] = useState([]); // For POS member selection
     const [selectedMemberId, setSelectedMemberId] = useState('');
@@ -12,21 +9,13 @@ export default function Payments() {
     const [selectedCategory, setSelectedCategory] = useState('All');
     const [loading, setLoading] = useState(false);
     const [discount, setDiscount] = useState(0); // in dollars
-    const [history, setHistory] = useState([]); // Payment history for members/staff
-
-    // Mode for Staff: POS or HISTORY
     const [viewMode, setViewMode] = useState('POS');
+    const [history, setHistory] = useState([]);
 
     useEffect(() => {
-        if (user.role === 'MEMBER') {
-            setViewMode('HISTORY');
-            fetchHistory();
-        } else {
-            fetchProducts();
-            fetchMembers();
-            // Optionally fetch history for Staff view too
-        }
-    }, [user.role]);
+        fetchProducts();
+        fetchMembers();
+    }, []);
 
     const fetchProducts = async () => {
         try {
@@ -101,19 +90,14 @@ export default function Payments() {
         ? products
         : products.filter(p => p.category === selectedCategory);
 
-    // --- MEMBER VIEW (HISTORY ONLY) ---
-    if (user.role === 'MEMBER' || viewMode === 'HISTORY') {
+    if (viewMode === 'HISTORY') {
         return (
             <div className="space-y-6">
                 <div className="flex justify-between items-center">
-                    <h1 className="text-2xl font-bold text-white">
-                        {user.role === 'MEMBER' ? 'My Purchase History' : 'Transaction History'}
-                    </h1>
-                    {user.role !== 'MEMBER' && (
-                        <button onClick={() => setViewMode('POS')} className="text-primary hover:text-orange-400 font-bold flex items-center gap-1">
-                            <span className="material-icons-round">arrow_back</span> Back to POS
-                        </button>
-                    )}
+                    <h1 className="text-2xl font-bold text-white">Transaction History</h1>
+                    <button onClick={() => setViewMode('POS')} className="text-primary hover:text-orange-400 font-bold flex items-center gap-1">
+                        <span className="material-icons-round">arrow_back</span> Back to POS
+                    </button>
                 </div>
 
                 <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
@@ -124,7 +108,7 @@ export default function Payments() {
                                 <th className="px-6 py-4">Type</th>
                                 <th className="px-6 py-4">Amount</th>
                                 <th className="px-6 py-4">Method</th>
-                                {user.role !== 'MEMBER' && <th className="px-6 py-4">Member</th>}
+                                <th className="px-6 py-4">Member</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
@@ -137,9 +121,7 @@ export default function Payments() {
                                     <td className="px-6 py-4"><span className="bg-white/10 text-text-secondary px-2 py-1 rounded text-xs font-bold">{pay.type}</span></td>
                                     <td className="px-6 py-4 text-white font-bold">${pay.amount.toFixed(2)}</td>
                                     <td className="px-6 py-4 text-text-secondary">{pay.method}</td>
-                                    {user.role !== 'MEMBER' && (
-                                        <td className="px-6 py-4 text-white">{pay.member ? `${pay.member.firstName} ${pay.member.lastName}` : 'Walk-in'}</td>
-                                    )}
+                                    <td className="px-6 py-4 text-white">{pay.member ? `${pay.member.firstName} ${pay.member.lastName}` : 'Walk-in'}</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -149,7 +131,6 @@ export default function Payments() {
         );
     }
 
-    // --- POS VIEW (STAFF/ADMIN) ---
     return (
         <div className="flex h-[calc(100vh-4rem)] gap-6 overflow-hidden">
             {/* Left: Product Grid */}

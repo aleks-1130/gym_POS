@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../../context/AuthContext';
 
 export default function UserManagement() {
     const { user: currentUser } = useAuth();
@@ -78,8 +78,8 @@ export default function UserManagement() {
                                 <td className="p-6 text-text-secondary">{u.email}</td>
                                 <td className="p-6">
                                     <span className={`px-3 py-1 rounded-full text-xs font-bold ${u.role === 'OWNER' ? 'bg-purple-500/20 text-purple-400' :
-                                            u.role === 'ADMIN' ? 'bg-primary/20 text-primary' :
-                                                'bg-white/10 text-white'
+                                        u.role === 'ADMIN' ? 'bg-primary/20 text-primary' :
+                                            'bg-white/10 text-white'
                                         }`}>
                                         {u.role}
                                     </span>

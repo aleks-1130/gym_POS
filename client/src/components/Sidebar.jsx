@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { ROLES } from '../constants/roles';
 
 export default function Sidebar() {
     const { user, logout } = useAuth();
@@ -33,11 +34,11 @@ export default function Sidebar() {
             <nav className="flex-1 flex flex-col items-center w-full px-2 gap-1 overflow-y-auto no-scrollbar pb-4">
                 <NavItem to="/" icon="dashboard" label="Home" />
 
-                <NavItem to="/payments" icon="receipt_long" label={user.role === 'MEMBER' ? "History" : "Payments"} />
-                {user.role === 'MEMBER' && (
+                <NavItem to="/payments" icon="receipt_long" label={user.role === ROLES.MEMBER ? "History" : "Payments"} />
+                {user.role === ROLES.MEMBER && (
                     <NavItem to="/access" icon="history" label="Attendance" />
                 )}
-                {['ADMIN', 'STAFF'].includes(user?.role) && (
+                {[ROLES.ADMIN, ROLES.STAFF].includes(user?.role) && (
                     <>
                         <NavItem to="/members" icon="groups" label="Members" />
                         <NavItem to="/access" icon="assignment_ind" label="Access Ctrl" />
@@ -46,7 +47,7 @@ export default function Sidebar() {
 
                 <div className="w-8 h-[1px] bg-white/10 my-1"></div>
 
-                {['ADMIN', 'STAFF'].includes(user?.role) && (
+                {[ROLES.ADMIN, ROLES.STAFF].includes(user?.role) && (
                     <NavItem to="/inventory" icon="inventory_2" label="Stock" />
                 )}
 
@@ -58,7 +59,7 @@ export default function Sidebar() {
                 <NavItem to="/schedule" icon="calendar_today" label="Sched" />
                 <NavItem to="/shop" icon="shopping_bag" label="Shop" />
 
-                {['OWNER', 'ADMIN'].includes(user?.role) && (
+                {[ROLES.OWNER, ROLES.ADMIN].includes(user?.role) && (
                     <NavItem to="/analytics" icon="insights" label="Analyt" />
                 )}
 
@@ -67,14 +68,14 @@ export default function Sidebar() {
 
                 <div className="w-8 h-[1px] bg-white/10 my-1"></div>
 
-                {user?.role === 'OWNER' && (
+                {user?.role === ROLES.OWNER && (
                     <>
                         <NavItem to="/users" icon="admin_panel_settings" label="Users" />
                         <NavItem to="/audit" icon="security" label="Audit" />
                     </>
                 )}
 
-                {['OWNER'].includes(user?.role) && (
+                {[ROLES.OWNER].includes(user?.role) && (
                     <NavItem to="/settings" icon="settings" label="Config" />
                 )}
             </nav>
