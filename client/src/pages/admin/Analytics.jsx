@@ -1,5 +1,6 @@
 import React from 'react';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
+import { useCurrency } from '../../context/CurrencyContext';
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -26,6 +27,7 @@ ChartJS.register(
 );
 
 export default function Analytics() {
+    const { formatPrice } = useCurrency();
     // --- Mock Data ---
 
     // 1. Revenue Trends (Line Chart)
@@ -125,7 +127,7 @@ export default function Analytics() {
                 <p className="text-xs text-text-muted">{category}</p>
             </div>
             <div className="text-right">
-                <p className="font-bold text-white">${price}</p>
+                <p className="font-bold text-white">{formatPrice(price)}</p>
                 <p className="text-xs text-emerald-400">+{growth}% vs last month</p>
             </div>
         </div>
