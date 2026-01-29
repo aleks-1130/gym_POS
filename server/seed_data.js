@@ -11,6 +11,27 @@ async function main() {
     // await prisma.payment.deleteMany();
     // await prisma.member.deleteMany();
     // await prisma.product.deleteMany();
+    // 0. SEED USERS (Staff/Admin/Owner)
+    const userPassword = await bcrypt.hash('password123', 10);
+    const users = [
+        { email: 'owner@gym.com', name: 'Owner User', role: 'OWNER' },
+        { email: 'admin@gym.com', name: 'Admin User', role: 'ADMIN' },
+        { email: 'staff@gym.com', name: 'Staff User', role: 'STAFF' }
+    ];
+
+    for (const u of users) {
+        await prisma.user.upsert({
+            where: { email: u.email },
+            update: {},
+            create: {
+                email: u.email,
+                name: u.name,
+                password: userPassword,
+                role: u.role
+            }
+        });
+    }
+    console.log("✅ Users (Owner/Admin/Staff) seeded");
 
     // 2. SEED PLANS
     const plans = [
