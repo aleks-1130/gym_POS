@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useCurrency } from '../../context/CurrencyContext';
 
 export default function MemberShop() {
+    const { formatPrice } = useCurrency();
     const [products, setProducts] = useState([]);
     const [cart, setCart] = useState({}); // { productId: quantity }
     const [loading, setLoading] = useState(true);
@@ -38,7 +40,7 @@ export default function MemberShop() {
 
     const handleCheckout = async () => {
         if (cartTotal === 0) return;
-        if (!window.confirm(`Confirm purchase for $${cartTotal.toFixed(2)}?`)) return;
+        if (!window.confirm(`Confirm purchase for ${formatPrice(cartTotal)}?`)) return;
 
         const items = Object.entries(cart).map(([pid, qty]) => {
             const product = products.find(p => p.id === Number(pid));
@@ -70,7 +72,7 @@ export default function MemberShop() {
                 </div>
                 {cartTotal > 0 && (
                     <div className="text-right">
-                        <div className="text-primary font-bold text-xl">${cartTotal.toFixed(2)}</div>
+                        <div className="text-primary font-bold text-xl">{formatPrice(cartTotal)}</div>
                         <button onClick={handleCheckout} className="bg-primary text-background px-4 py-2 rounded-lg font-bold text-sm mt-1 hover:brightness-110">
                             Checkout
                         </button>
@@ -98,7 +100,7 @@ export default function MemberShop() {
                         <h3 className="font-bold text-white mb-1 line-clamp-1">{p.name}</h3>
                         <p className="text-text-muted text-xs mb-3">{p.category}</p>
                         <div className="mt-auto flex items-center justify-between">
-                            <span className="text-primary font-bold">${p.price}</span>
+                            <span className="text-primary font-bold">{formatPrice(p.price)}</span>
                             <div className="flex gap-2">
                                 {cart[p.id] > 0 && (
                                     <button onClick={() => removeFromCart(p.id)} className="w-8 h-8 rounded-lg bg-white/10 text-white flex items-center justify-center hover:bg-white/20">-</button>

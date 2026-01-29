@@ -1,25 +1,41 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { CurrencyProvider } from './context/CurrencyContext';
+import { ROLES } from './constants/roles';
 import Sidebar from './components/Sidebar';
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import Members from './pages/Members';
-import MemberDetail from './pages/MemberDetail';
-import Payments from './pages/Payments';
-import Access from './pages/Access';
-import Settings from './pages/Settings';
-import Inventory from './pages/Inventory';
-import Trainers from './pages/Trainers';
-import Classes from './pages/Classes';
-import Analytics from './pages/Analytics';
-import Loyalty from './pages/Loyalty';
-import Notifications from './pages/Notifications';
-import UserManagement from './pages/UserManagement';
-import AuditLogs from './pages/AuditLogs';
-import Schedule from './pages/Schedule';
-import MemberShop from './pages/MemberShop';
-import Profile from './pages/Profile';
 import BottomNav from './components/BottomNav';
+
+// Auth
+import Login from './pages/auth/Login';
+
+// Shared Wrappers (Handle Role Logic Internally or serve as common points)
+import Dashboard from './pages/shared/Dashboard';
+import Payments from './pages/shared/Payments';
+import Access from './pages/shared/Access';
+import Loyalty from './pages/shared/Loyalty';
+
+// Owner Pages
+import Settings from './pages/owner/Settings';
+import UserManagement from './pages/owner/UserManagement';
+import AuditLogs from './pages/owner/AuditLogs';
+
+// Admin Pages
+import Analytics from './pages/admin/Analytics';
+
+// Staff Pages
+import Inventory from './pages/staff/Inventory';
+import Members from './pages/staff/Members';
+import MemberDetail from './pages/staff/MemberDetail';
+import Trainers from './pages/staff/Trainers';
+import Classes from './pages/staff/Classes';
+
+// Member Pages
+import Schedule from './pages/member/Schedule';
+import MemberShop from './pages/member/MemberShop';
+import Profile from './pages/member/Profile';
+
+// Common/Public?
+import Notifications from './pages/Notifications'; // Plan didn't specify move, keeping for now or moving to shared? Plan said "Common".
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
   const { user, loading } = useAuth();
@@ -42,9 +58,6 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
   );
 };
 
-// Placeholder components until real ones are made
-const Placeholder = ({ title }) => <h1 className="text-3xl font-bold text-white">{title}</h1>;
-
 function AppRoutes() {
   return (
     <div className="flex-1 w-full bg-background overflow-auto p-8 relative">
@@ -53,30 +66,32 @@ function AppRoutes() {
 
         {/* Public / Common Routes */}
         <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-        <Route path="/classes" element={<ProtectedRoute><Classes /></ProtectedRoute>} />
+
+        {/* Shared / Hybrid Routes */}
+        <Route path="/payments" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER]}><Payments /></ProtectedRoute>} />
+        <Route path="/loyalty" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER]}><Loyalty /></ProtectedRoute>} />
+        <Route path="/access" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER]}><Access /></ProtectedRoute>} />
         <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
-        <Route path="/trainers" element={<ProtectedRoute><Trainers /></ProtectedRoute>} />
 
-        {/* Member Accessible Routes */}
-        <Route path="/payments" element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'MEMBER']}><Payments /></ProtectedRoute>} />
-        <Route path="/loyalty" element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'MEMBER']}><Loyalty /></ProtectedRoute>} />
+        {/* Staff / Admin Routes */}
+        <Route path="/members" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.STAFF]}><Members /></ProtectedRoute>} />
+        <Route path="/members/:id" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.STAFF]}><MemberDetail /></ProtectedRoute>} />
+        <Route path="/inventory" element={<ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}><Inventory /></ProtectedRoute>} />
+        <Route path="/trainers" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER]}><Trainers /></ProtectedRoute>} />
+        <Route path="/classes" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER]}><Classes /></ProtectedRoute>} />
 
-        {/* Admin/Staff Only Routes */}
-        <Route path="/members" element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}><Members /></ProtectedRoute>} />
-        <Route path="/members/:id" element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}><MemberDetail /></ProtectedRoute>} />
-        <Route path="/access" element={<ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'MEMBER']}><Access /></ProtectedRoute>} />
-        <Route path="/inventory" element={<ProtectedRoute allowedRoles={['OWNER', 'ADMIN', 'STAFF']}><Inventory /></ProtectedRoute>} />
-        <Route path="/analytics" element={<ProtectedRoute allowedRoles={['OWNER', 'ADMIN']}><Analytics /></ProtectedRoute>} />
-        <Route path="/settings" element={<ProtectedRoute allowedRoles={['OWNER']}><Settings /></ProtectedRoute>} />
+        {/* Admin / Owner Routes */}
+        <Route path="/analytics" element={<ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}><Analytics /></ProtectedRoute>} />
 
-        {/* RBAC Management */}
-        <Route path="/users" element={<ProtectedRoute allowedRoles={['OWNER', 'ADMIN']}><UserManagement /></ProtectedRoute>} />
-        <Route path="/audit" element={<ProtectedRoute allowedRoles={['OWNER']}><AuditLogs /></ProtectedRoute>} />
+        {/* Owner Only Routes */}
+        <Route path="/settings" element={<ProtectedRoute allowedRoles={[ROLES.OWNER]}><Settings /></ProtectedRoute>} />
+        <Route path="/users" element={<ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}><UserManagement /></ProtectedRoute>} />
+        <Route path="/audit" element={<ProtectedRoute allowedRoles={[ROLES.OWNER]}><AuditLogs /></ProtectedRoute>} />
 
-        {/* Member Portal */}
-        <Route path="/schedule" element={<ProtectedRoute allowedRoles={['MEMBER', 'ADMIN', 'STAFF']}><Schedule /></ProtectedRoute>} />
-        <Route path="/shop" element={<ProtectedRoute allowedRoles={['MEMBER', 'ADMIN', 'STAFF']}><MemberShop /></ProtectedRoute>} />
-        <Route path="/profile" element={<ProtectedRoute allowedRoles={['MEMBER', 'ADMIN', 'STAFF']}><Profile /></ProtectedRoute>} />
+        {/* Member Only Routes */}
+        <Route path="/schedule" element={<ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.ADMIN, ROLES.STAFF]}><Schedule /></ProtectedRoute>} />
+        <Route path="/shop" element={<ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.ADMIN, ROLES.STAFF]}><MemberShop /></ProtectedRoute>} />
+        <Route path="/profile" element={<ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.ADMIN, ROLES.STAFF]}><Profile /></ProtectedRoute>} />
 
       </Routes>
       {/* Mobile Navigation */}
@@ -88,9 +103,11 @@ function AppRoutes() {
 function App() {
   return (
     <AuthProvider>
-      <Router>
-        <AppRoutes />
-      </Router>
+      <CurrencyProvider>
+        <Router>
+          <AppRoutes />
+        </Router>
+      </CurrencyProvider>
     </AuthProvider>
   );
 }
