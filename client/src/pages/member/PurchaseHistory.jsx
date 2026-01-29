@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
+import { useCurrency } from '../../context/CurrencyContext';
 
 export default function PurchaseHistory() {
     const { user } = useAuth();
+    const { formatPrice } = useCurrency();
     const [history, setHistory] = useState([]);
 
     useEffect(() => {
@@ -45,7 +47,7 @@ export default function PurchaseHistory() {
                             <tr key={pay.id} className="hover:bg-white/5 transition-colors">
                                 <td className="px-6 py-4 text-white font-medium">{new Date(pay.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(pay.date).toLocaleTimeString()}</span></td>
                                 <td className="px-6 py-4"><span className="bg-white/10 text-text-secondary px-2 py-1 rounded text-xs font-bold">{pay.type}</span></td>
-                                <td className="px-6 py-4 text-white font-bold">${pay.amount.toFixed(2)}</td>
+                                <td className="px-6 py-4 text-white font-bold">{formatPrice(pay.amount)}</td>
                                 <td className="px-6 py-4 text-text-secondary">{pay.method}</td>
                             </tr>
                         ))}

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useCurrency } from '../../context/CurrencyContext';
 import { Line } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -24,6 +25,7 @@ ChartJS.register(
 );
 
 const AdminDashboard = ({ stats }) => {
+    const { formatPrice } = useCurrency();
     // Fallback data if stats are missing or loading error
     const data = stats || { activeMembers: 0, revenueToday: 0, expiringSoon: 0 };
 
@@ -56,7 +58,7 @@ const AdminDashboard = ({ stats }) => {
     return (
         <>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <StatCard title="Total Revenue (Today)" value={`$${data.revenueToday}`} icon="payments" trend={12.5} />
+                <StatCard title="Total Revenue (Today)" value={formatPrice(data.revenueToday)} icon="payments" trend={12.5} />
                 <StatCard title="Active Members" value={data.activeMembers} icon="group" trend={-2.4} />
                 <StatCard title="Expiring Soon (7 Days)" value={data.expiringSoon} icon="warning" isAlert />
             </div>

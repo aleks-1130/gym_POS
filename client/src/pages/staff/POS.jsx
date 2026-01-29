@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useAuth } from '../../context/AuthContext';
+import { useCurrency } from '../../context/CurrencyContext';
 
 export default function POS() {
+    const { formatPrice } = useCurrency();
     const [products, setProducts] = useState([]);
     const [members, setMembers] = useState([]); // For POS member selection
     const [selectedMemberId, setSelectedMemberId] = useState('');
@@ -119,7 +122,7 @@ export default function POS() {
                                 <tr key={pay.id} className="hover:bg-white/5 transition-colors">
                                     <td className="px-6 py-4 text-white font-medium">{new Date(pay.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(pay.date).toLocaleTimeString()}</span></td>
                                     <td className="px-6 py-4"><span className="bg-white/10 text-text-secondary px-2 py-1 rounded text-xs font-bold">{pay.type}</span></td>
-                                    <td className="px-6 py-4 text-white font-bold">${pay.amount.toFixed(2)}</td>
+                                    <td className="px-6 py-4 text-white font-bold">{formatPrice(pay.amount)}</td>
                                     <td className="px-6 py-4 text-text-secondary">{pay.method}</td>
                                     <td className="px-6 py-4 text-white">{pay.member ? `${pay.member.firstName} ${pay.member.lastName}` : 'Walk-in'}</td>
                                 </tr>
@@ -183,7 +186,7 @@ export default function POS() {
                             </div>
                             <div className="px-1 mt-2">
                                 <h3 className="text-white font-bold truncate text-sm">{product.name}</h3>
-                                <p className="text-primary font-bold mt-1">${product.price.toFixed(2)}</p>
+                                <p className="text-primary font-bold mt-1">{formatPrice(product.price)}</p>
                             </div>
                         </div>
                     ))}
@@ -231,10 +234,10 @@ export default function POS() {
                             <div key={item.id} className="flex justify-between items-center p-3 hover:bg-white/5 rounded-2xl group transition-colors border border-transparent hover:border-white/5">
                                 <div>
                                     <p className="text-white font-bold text-sm">{item.name}</p>
-                                    <p className="text-text-muted text-xs mt-0.5">${item.price.toFixed(2)} x {item.quantity}</p>
+                                    <p className="text-text-muted text-xs mt-0.5">{formatPrice(item.price)} x {item.quantity}</p>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                    <span className="text-white font-bold text-sm">${(item.price * item.quantity).toFixed(2)}</span>
+                                    <span className="text-white font-bold text-sm">{formatPrice(item.price * item.quantity)}</span>
                                     <button
                                         onClick={(e) => { e.stopPropagation(); removeFromCart(item.id); }}
                                         className="w-6 h-6 flex items-center justify-center bg-white/10 text-text-muted hover:bg-red-500/20 hover:text-red-500 rounded-full transition-colors opacity-0 group-hover:opacity-100"
@@ -251,7 +254,7 @@ export default function POS() {
                 <div className="p-6 border-t border-white/5 bg-surfaceHighlight/50 backdrop-blur-sm">
                     <div className="flex justify-between items-end mb-2 text-text-secondary text-sm font-medium">
                         <span>Subtotal</span>
-                        <span>${subtotal.toFixed(2)}</span>
+                        <span>{formatPrice(subtotal)}</span>
                     </div>
 
                     {/* Discount Input */}
@@ -268,7 +271,7 @@ export default function POS() {
 
                     <div className="flex justify-between items-end mb-6">
                         <span className="text-white font-bold text-lg">Total</span>
-                        <span className="text-3xl font-bold text-white">${cartTotal.toFixed(2)}</span>
+                        <span className="text-3xl font-bold text-white">{formatPrice(cartTotal)}</span>
                     </div>
 
                     <button
@@ -277,7 +280,7 @@ export default function POS() {
                         className="w-full bg-primary hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl shadow-xl shadow-primary/20 active:scale-95 transition-all flex flex-col items-center justify-center"
                     >
                         <span className="text-xs uppercase tracking-wider opacity-90 font-bold mb-1">Charge {selectedMemberId ? 'Member' : 'Guest'}</span>
-                        <span className="text-xl">${cartTotal.toFixed(2)}</span>
+                        <span className="text-xl">{formatPrice(cartTotal)}</span>
                     </button>
                 </div>
             </div>

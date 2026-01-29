@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { CurrencyProvider } from './context/CurrencyContext';
 import { ROLES } from './constants/roles';
 import Sidebar from './components/Sidebar';
 import BottomNav from './components/BottomNav';
@@ -102,9 +103,11 @@ function AppRoutes() {
 function App() {
   return (
     <AuthProvider>
-      <Router>
-        <AppRoutes />
-      </Router>
+      <CurrencyProvider>
+        <Router>
+          <AppRoutes />
+        </Router>
+      </CurrencyProvider>
     </AuthProvider>
   );
 }

@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { useCurrency } from '../../context/CurrencyContext';
 
 export default function MemberDetail() {
     const { id } = useParams();
     const navigate = useNavigate();
+    const { formatPrice } = useCurrency();
     const [member, setMember] = useState(null);
     const [loading, setLoading] = useState(true);
     const [showRenewModal, setShowRenewModal] = useState(false);
@@ -151,7 +153,7 @@ export default function MemberDetail() {
                         {member.payments?.map(pay => (
                             <div key={pay.id} className="p-3 bg-white/5 rounded-xl border border-white/5">
                                 <div className="flex justify-between font-medium text-white">
-                                    <span>${pay.amount}</span>
+                                    <span>{formatPrice(pay.amount)}</span>
                                     <span className="text-xs bg-surface border border-white/10 px-2 py-0.5 rounded text-text-muted">{pay.method}</span>
                                 </div>
                                 <p className="text-xs text-text-secondary mt-1">{pay.type}</p>
