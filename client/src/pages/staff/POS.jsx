@@ -1,11 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useCurrency } from '../../context/CurrencyContext';
+import { useReactToPrint } from 'react-to-print';
+import Receipt from '../../components/Receipt';
 
 export default function POS() {
+    const { user } = useAuth();
     const { formatPrice } = useCurrency();
     const [products, setProducts] = useState([]);
+    const [plans, setPlans] = useState([]);
     const [members, setMembers] = useState([]); // For POS member selection
     const [selectedMemberId, setSelectedMemberId] = useState('');
     const [cart, setCart] = useState([]);
@@ -15,8 +19,18 @@ export default function POS() {
     const [viewMode, setViewMode] = useState('POS');
     const [history, setHistory] = useState([]);
 
+    // Receipt Printing
+    const [showReceiptPreview, setShowReceiptPreview] = useState(false);
+    const [lastTransaction, setLastTransaction] = useState(null);
+    const receiptRef = useRef();
+
+    const handlePrint = useReactToPrint({
+        content: () => receiptRef.current,
+    });
+
     useEffect(() => {
         fetchProducts();
+        fetchPlans();
         fetchMembers();
     }, []);
 
@@ -26,6 +40,15 @@ export default function POS() {
             setProducts(res.data);
         } catch (error) {
             console.error("Failed to fetch products");
+        }
+    };
+
+    const fetchPlans = async () => {
+        try {
+            const res = await axios.get('http://localhost:5000/api/plans');
+            setPlans(res.data);
+        } catch (error) {
+            console.error("Failed to fetch plans");
         }
     };
 
@@ -51,13 +74,15 @@ export default function POS() {
     const subtotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
     const cartTotal = Math.max(0, subtotal - discount);
 
-    const addToCart = (product) => {
+    const addToCart = (item, type = 'PRODUCT') => {
         setCart(prev => {
-            const existing = prev.find(item => item.id === product.id);
+            // Plans are unique items usually, but if we want to allow multiple?
+            // For simplicity, if it's a plan, we just add it. Or treat same as products.
+            const existing = prev.find(p => p.id === item.id && p.type === type);
             if (existing) {
-                return prev.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
+                return prev.map(p => p.id === item.id && p.type === type ? { ...p, quantity: p.quantity + 1 } : p);
             }
-            return [...prev, { ...product, quantity: 1 }];
+            return [...prev, { ...item, type: type === 'PLAN' ? 'PLAN' : undefined, quantity: 1 }];
         });
     };
 
@@ -67,9 +92,17 @@ export default function POS() {
 
     const handleCheckout = async () => {
         if (cart.length === 0) return;
+
+        // Validation for Membership
+        const hasPlan = cart.some(item => item.type === 'PLAN');
+        if (hasPlan && !selectedMemberId) {
+            alert("A Member must be selected when purchasing a Membership Plan.");
+            return;
+        }
+
         setLoading(true);
         try {
-            await axios.post('http://localhost:5000/api/payments', {
+            const res = await axios.post('http://localhost:5000/api/payments', {
                 amount: cartTotal,
                 type: 'POS_SALE',
                 method: 'CARD', // Default for now
@@ -77,13 +110,29 @@ export default function POS() {
                 discount: discount,
                 memberId: selectedMemberId || null
             });
+
+            // Prepare Reciept Data
+            const transactionData = res.data;
+            const memberData = members.find(m => m.id === Number(selectedMemberId));
+
+            setLastTransaction({
+                transaction: transactionData,
+                items: cart,
+                member: memberData,
+                discount: discount,
+                cashierName: user?.name
+            });
+
+            // Show Preview
+            setShowReceiptPreview(true);
+
+            // Clear Cart (will happen after modal close or separate)
             setCart([]);
             setDiscount(0);
             setSelectedMemberId('');
             fetchProducts(); // Refresh stock levels
-            alert("Payment Successful!");
         } catch (e) {
-            alert("Transaction Failed");
+            alert("Transaction Failed: " + (e.response?.data?.error || e.message));
         } finally {
             setLoading(false);
         }
@@ -92,6 +141,9 @@ export default function POS() {
     const filteredProducts = selectedCategory === 'All'
         ? products
         : products.filter(p => p.category === selectedCategory);
+
+    // Combine Products and Plans for display if category is Memberships
+    const displayItems = selectedCategory === 'MEMBERSHIP' ? plans : filteredProducts;
 
     if (viewMode === 'HISTORY') {
         return (
@@ -112,11 +164,12 @@ export default function POS() {
                                 <th className="px-6 py-4">Amount</th>
                                 <th className="px-6 py-4">Method</th>
                                 <th className="px-6 py-4">Member</th>
+                                <th className="px-6 py-4">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
                             {history.length === 0 && (
-                                <tr><td colSpan="5" className="p-6 text-center text-text-muted">No transactions found.</td></tr>
+                                <tr><td colSpan="6" className="p-6 text-center text-text-muted">No transactions found.</td></tr>
                             )}
                             {history.map(pay => (
                                 <tr key={pay.id} className="hover:bg-white/5 transition-colors">
@@ -125,6 +178,12 @@ export default function POS() {
                                     <td className="px-6 py-4 text-white font-bold">{formatPrice(pay.amount)}</td>
                                     <td className="px-6 py-4 text-text-secondary">{pay.method}</td>
                                     <td className="px-6 py-4 text-white">{pay.member ? `${pay.member.firstName} ${pay.member.lastName}` : 'Walk-in'}</td>
+                                    <td className="px-6 py-4">
+                                        {/* Simple reprint not fully wired as we don't store items perfectly yet, but placeholder */}
+                                        <button className="text-text-muted hover:text-white" title="Reprint functionality requires item storage update">
+                                            <span className="material-icons-round text-sm">print</span>
+                                        </button>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -135,7 +194,46 @@ export default function POS() {
     }
 
     return (
-        <div className="flex h-[calc(100vh-4rem)] gap-6 overflow-hidden">
+        <div className="flex h-[calc(100vh-4rem)] gap-6 overflow-hidden relative">
+
+            {/* Receipt Preview Modal */}
+            {showReceiptPreview && lastTransaction && (
+                <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white text-black rounded-lg shadow-2xl max-w-md w-full flex flex-col max-h-[90vh]">
+                        <div className="p-4 border-b flex justify-between items-center bg-gray-100 rounded-t-lg">
+                            <h3 className="font-bold text-lg">Receipt Preview</h3>
+                            <button onClick={() => setShowReceiptPreview(false)} className="text-gray-500 hover:text-gray-700">
+                                <span className="material-icons-round">close</span>
+                            </button>
+                        </div>
+                        <div className="overflow-y-auto p-4 flex-1 bg-gray-500/10">
+                            <Receipt
+                                ref={receiptRef}
+                                transaction={lastTransaction.transaction}
+                                items={lastTransaction.items}
+                                member={lastTransaction.member}
+                                discount={lastTransaction.discount}
+                                cashierName={lastTransaction.cashierName}
+                            />
+                        </div>
+                        <div className="p-4 border-t bg-gray-50 flex gap-4">
+                            <button
+                                onClick={() => setShowReceiptPreview(false)}
+                                className="flex-1 py-3 rounded-lg font-bold border border-gray-300 hover:bg-gray-100 transition-colors"
+                            >
+                                Close
+                            </button>
+                            <button
+                                onClick={handlePrint}
+                                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-bold shadow-lg flex items-center justify-center gap-2 transition-colors"
+                            >
+                                <span className="material-icons-round">print</span> Print Receipt
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Left: Product Grid */}
             <div className="flex-1 flex flex-col min-w-0">
                 <header className="mb-6 flex justify-between items-center">
@@ -149,7 +247,7 @@ export default function POS() {
                         </button>
                         {/* Category Filter */}
                         <div className="flex gap-2 bg-surface p-1 rounded-xl border border-white/10">
-                            {['All', 'SUPPLEMENT', 'DRINK', 'MERCH'].map(cat => (
+                            {['All', 'SUPPLEMENT', 'DRINK', 'MERCH', 'MEMBERSHIP'].map(cat => (
                                 <button
                                     key={cat}
                                     onClick={() => setSelectedCategory(cat)}
@@ -166,27 +264,37 @@ export default function POS() {
                 </header>
 
                 <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 overflow-y-auto pb-20 pr-2 scrollbar-hide">
-                    {filteredProducts.map(product => (
+                    {displayItems.length === 0 && (
+                        <div className="col-span-full text-center text-text-muted py-10">No items found in this category.</div>
+                    )}
+                    {displayItems.map(item => (
                         <div
-                            key={product.id}
-                            onClick={() => addToCart(product)}
-                            className="group bg-surface hover:bg-primary/5 rounded-3xl p-3 cursor-pointer transition-all duration-300 border border-white/5 hover:border-primary/20 shadow-sm hover:shadow-primary/10 active:scale-95"
+                            key={item.id}
+                            onClick={() => addToCart(item, selectedCategory === 'MEMBERSHIP' ? 'PLAN' : 'PRODUCT')}
+                            className={`group bg-surface hover:bg-primary/5 rounded-3xl p-3 cursor-pointer transition-all duration-300 border border-white/5 hover:border-primary/20 shadow-sm hover:shadow-primary/10 active:scale-95 ${selectedCategory === 'MEMBERSHIP' ? 'ring-1 ring-yellow-500/30' : ''}`}
                         >
                             <div className="aspect-[4/3] rounded-2xl overflow-hidden mb-3 relative bg-white/5">
-                                {product.imageUrl ? (
-                                    <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                                {item.imageUrl ? (
+                                    <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
                                 ) : (
                                     <div className="w-full h-full flex items-center justify-center text-text-muted group-hover:text-primary/50 transition-colors">
-                                        <span className="material-icons-round text-4xl">inventory_2</span>
+                                        <span className="material-icons-round text-4xl">{selectedCategory === 'MEMBERSHIP' ? 'card_membership' : 'inventory_2'}</span>
                                     </div>
                                 )}
-                                <div className="absolute top-2 right-2 bg-surface/90 backdrop-blur-sm text-white text-xs font-bold px-2 py-1 rounded-lg border border-white/10 shadow-sm">
-                                    {product.stock}
-                                </div>
+                                {item.stock !== undefined && (
+                                    <div className="absolute top-2 right-2 bg-surface/90 backdrop-blur-sm text-white text-xs font-bold px-2 py-1 rounded-lg border border-white/10 shadow-sm">
+                                        {item.stock}
+                                    </div>
+                                )}
+                                {selectedCategory === 'MEMBERSHIP' && (
+                                    <div className="absolute top-2 right-2 bg-yellow-500/90 backdrop-blur-sm text-black text-xs font-bold px-2 py-1 rounded-lg shadow-sm">
+                                        {item.duration} Days
+                                    </div>
+                                )}
                             </div>
                             <div className="px-1 mt-2">
-                                <h3 className="text-white font-bold truncate text-sm">{product.name}</h3>
-                                <p className="text-primary font-bold mt-1">{formatPrice(product.price)}</p>
+                                <h3 className="text-white font-bold truncate text-sm">{item.name}</h3>
+                                <p className="text-primary font-bold mt-1">{formatPrice(item.price)}</p>
                             </div>
                         </div>
                     ))}
@@ -230,10 +338,13 @@ export default function POS() {
                             <p className="font-medium text-text-muted">Cart is empty</p>
                         </div>
                     ) : (
-                        cart.map(item => (
-                            <div key={item.id} className="flex justify-between items-center p-3 hover:bg-white/5 rounded-2xl group transition-colors border border-transparent hover:border-white/5">
+                        cart.map((item, idx) => (
+                            <div key={`${item.id}-${idx}`} className="flex justify-between items-center p-3 hover:bg-white/5 rounded-2xl group transition-colors border border-transparent hover:border-white/5">
                                 <div>
-                                    <p className="text-white font-bold text-sm">{item.name}</p>
+                                    <p className="text-white font-bold text-sm">
+                                        {item.name}
+                                        {item.type === 'PLAN' && <span className="ml-2 text-[10px] bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded border border-yellow-500/30">PLAN</span>}
+                                    </p>
                                     <p className="text-text-muted text-xs mt-0.5">{formatPrice(item.price)} x {item.quantity}</p>
                                 </div>
                                 <div className="flex items-center gap-3">
