@@ -554,10 +554,20 @@ app.get('/api/access/logs', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEM
     }
 });
 
+// --- MEMBERSHIP PLANS ---
+app.get('/api/plans', async (req, res) => {
+    try {
+        const plans = await prisma.plan.findMany();
+        res.json(plans);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch plans" });
+    }
+});
+
 // --- POS ROUTES ---
 // Payment creation - Members might pay online later, but for POS it's staff
 app.post('/api/payments', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBER']), async (req, res) => {
-    const { amount, type, method, memberId, items } = req.body;
+    const { amount, type, method, memberId, items, discount } = req.body;
 
     // If Member, reinforce memberId to own ID
     if (req.user.role === 'MEMBER') {
@@ -572,25 +582,59 @@ app.post('/api/payments', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBE
                 amount: parseFloat(amount),
                 type,
                 method,
-                memberId: memberId ? Number(memberId) : null
+                memberId: memberId ? Number(memberId) : null,
+                // store items in JSON or related if needed, but schema seems to rely on Orders or just plain Payment logs?
+                // The provided schema scan didn't show 'items' relation on Payment, but 'Order' has items.
+                // However, the original code didn't save items to a relation in this route, so we'll stick to logic side-effects.
             }
         });
 
-        // 2. If POS Sale with Items, Deduct Stock
+        // 2. Process Items (Stock Deduction & Membership Updates)
         if (items && items.length > 0) {
             for (const item of items) {
-                // Only deduct if it's a tracked product (has an ID and is not a quick-add service)
-                if (item.id) {
-                    await prisma.product.update({
-                        where: { id: Number(item.id) },
-                        data: { stock: { decrement: item.quantity } }
+                // A. Membership Plan Update
+                if (item.type === 'PLAN') {
+                    if (!memberId) throw new Error("Member ID required for plan purchase");
+                    
+                    const member = await prisma.member.findUnique({ where: { id: Number(memberId) } });
+                    if (!member) throw new Error("Member not found");
+
+                    // Calculate new expiry
+                    const currentExpiry = new Date(member.expiryDate) > new Date() ? new Date(member.expiryDate) : new Date();
+                    const newExpiry = new Date(currentExpiry);
+                    // Add duration (days)
+                    newExpiry.setDate(newExpiry.getDate() + (item.duration || 30));
+
+                    await prisma.member.update({
+                        where: { id: Number(memberId) },
+                        data: {
+                            expiryDate: newExpiry,
+                            status: 'ACTIVE',
+                            planId: item.id // Update their plan to the new one
+                        }
                     });
+                }
+                
+                // B. Stock Deduction (Products)
+                // Only deduct if it's a tracked product (has an ID and is not a quick-add service or Plan)
+                else if (item.id && !item.type) { // Assuming plain products don't have special 'type' or it's 'PRODUCT'
+                     // Check if it's actually a product in DB
+                    try {
+                        await prisma.product.update({
+                            where: { id: Number(item.id) },
+                            data: { stock: { decrement: item.quantity } }
+                        });
+                    } catch (err) {
+                        // Ignore if product not found (might be a custom item)
+                        console.warn(`Could not update stock for item ${item.id}`);
+                    }
                 }
             }
         }
 
         res.json(payment);
     } catch (e) {
+        console.error(e);
         res.status(500).json({ error: e.message });
     }
 });
