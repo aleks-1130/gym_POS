@@ -27,7 +27,7 @@ export default function Schedule() {
     const handleBook = async (classId) => {
         try {
             await axios.post('http://localhost:5000/api/members/book', { classId });
-            alert("Class booked successfully!");
+            alert("Joined Class successfully!");
             fetchClasses();
         } catch (error) {
             alert(error.response?.data?.error || "Booking failed");
@@ -94,8 +94,8 @@ export default function Schedule() {
         <div className="pb-20 px-4 max-w-5xl mx-auto">
             {/* Header */}
             <div className="pt-4 pb-3">
-                <h1 className="text-xl font-bold text-white">Class Schedule</h1>
-                <p className="text-text-muted text-xs mt-0.5">Book your next session</p>
+                <h1 className="text-xl font-bold text-white">Gym Class Schedule</h1>
+                <p className="text-text-muted text-xs mt-0.5">Join Class sessions</p>
             </div>
 
             {/* Filter Tabs - Sticky */}
@@ -251,7 +251,7 @@ export default function Schedule() {
                                                 className="w-full py-2.5 rounded-lg bg-red-500/10 text-red-400 font-bold hover:bg-red-500/20 active:scale-95 transition-all text-sm border border-red-500/20 flex items-center justify-center gap-1"
                                             >
                                                 <span className="material-icons-round text-base">cancel</span>
-                                                Cancel Booking
+                                                Leave Class
                                             </button>
                                         ) : (
                                             <button
@@ -266,7 +266,7 @@ export default function Schedule() {
                                                 <span className="material-icons-round text-base">
                                                     {isFull ? 'block' : 'add_circle'}
                                                 </span>
-                                                {isFull ? 'Class Full' : 'Book Now'}
+                                                {isFull ? 'Class Full' : 'Join Class'}
                                             </button>
                                         )}
                                     </div>

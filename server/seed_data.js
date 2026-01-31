@@ -119,15 +119,189 @@ async function main() {
 
     // 7. SEED TRAINERS
     const trainers = [
-        { name: 'Arnold S.', specialty: 'Bodybuilding', bio: 'Legendary lifter.' },
-        { name: 'Ronda R.', specialty: 'MMA / Boxing', bio: 'Champion fighter.' },
-        { name: 'Yoda', specialty: 'Mental Focus', bio: 'Do or do not.' }
+        { 
+            name: 'Arnold S.', 
+            specialization: 'Bodybuilding Coach',
+            specialty: 'Bodybuilding', 
+            bio: 'Former Mr. Olympia with 20+ years of coaching experience. Specializes in strength training and muscle building.',
+            experience: 20,
+            rating: 4.9,
+            sessionPrice: 75.00,
+            availableSlots: 3,
+            specialties: 'Strength Training,Muscle Building,Bodybuilding,Nutrition',
+            imageUrl: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400&h=400&fit=crop'
+        },
+        { 
+            name: 'Ronda R.', 
+            specialization: 'Combat Sports Trainer',
+            specialty: 'MMA / Boxing', 
+            bio: 'Champion fighter with expertise in MMA, boxing, and self-defense. Great for conditioning.',
+            experience: 15,
+            rating: 4.8,
+            sessionPrice: 80.00,
+            availableSlots: 2,
+            specialties: 'MMA,Boxing,Self-Defense,Cardio,Agility',
+            imageUrl: 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400&h=400&fit=crop'
+        },
+        { 
+            name: 'James Wilson', 
+            specialization: 'Fitness Coach',
+            specialty: 'General Fitness', 
+            bio: 'Certified personal trainer specializing in weight loss and general fitness. Known for personalized programs.',
+            experience: 8,
+            rating: 4.7,
+            sessionPrice: 60.00,
+            availableSlots: 5,
+            specialties: 'Weight Loss,HIIT,General Fitness,Flexibility',
+            imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop'
+        },
+        { 
+            name: 'Sarah Chen', 
+            specialization: 'Yoga & Flexibility',
+            specialty: 'Yoga & Flexibility', 
+            bio: 'Certified yoga instructor and flexibility specialist. Perfect for recovery and mindfulness.',
+            experience: 10,
+            rating: 4.9,
+            sessionPrice: 55.00,
+            availableSlots: 4,
+            specialties: 'Yoga,Pilates,Flexibility,Mobility,Mindfulness',
+            imageUrl: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=400&h=400&fit=crop'
+        },
+        { 
+            name: 'Marcus Johnson', 
+            specialization: 'CrossFit Coach',
+            specialty: 'CrossFit', 
+            bio: 'Level 2 CrossFit coach with competition experience. Specializes in functional fitness and Olympic lifting.',
+            experience: 12,
+            rating: 4.8,
+            sessionPrice: 70.00,
+            availableSlots: 2,
+            specialties: 'CrossFit,Olympic Lifting,Functional Fitness,Power Training',
+            imageUrl: 'https://images.unsplash.com/photo-1500595046891-32b56a8e7eb9?w=400&h=400&fit=crop'
+        },
+        { 
+            name: 'Emily Davis', 
+            specialization: 'Nutrition & Wellness',
+            specialty: 'Nutrition Coaching', 
+            bio: 'Certified nutrition specialist combining diet coaching with fitness training for holistic results.',
+            experience: 7,
+            rating: 4.6,
+            sessionPrice: 50.00,
+            availableSlots: 6,
+            specialties: 'Nutrition,Wellness,Weight Management,Lifestyle Coaching',
+            imageUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&h=400&fit=crop'
+        }
     ];
 
+    const dbTrainers = [];
     for (const t of trainers) {
-        await prisma.trainer.create({ data: t });
+        const trainer = await prisma.trainer.create({ data: t });
+        dbTrainers.push(trainer);
     }
     console.log("✅ Trainers seeded");
+
+    // 8. SEED TRAINING SESSIONS
+    for (const member of dbMembers) {
+        // Create 2-4 training sessions for each member
+        const sessionCount = Math.floor(Math.random() * 3) + 2;
+        for (let i = 0; i < sessionCount; i++) {
+            const randomTrainer = dbTrainers[Math.floor(Math.random() * dbTrainers.length)];
+            const daysAgo = Math.floor(Math.random() * 30);
+            const sessionDate = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
+            
+            await prisma.trainingSession.create({
+                data: {
+                    memberId: member.id,
+                    trainerId: randomTrainer.id,
+                    date: sessionDate,
+                    duration: [30, 60, 90, 120][Math.floor(Math.random() * 4)],
+                    price: randomTrainer.sessionPrice,
+                    status: daysAgo > 3 ? 'COMPLETED' : 'SCHEDULED',
+                    notes: ['Great progress!', 'Focus on form', 'Push harder next time', 'Perfect execution!'][Math.floor(Math.random() * 4)]
+                }
+            });
+        }
+    }
+    console.log("✅ Training Sessions seeded");
+
+    // 9. SEED LOYALTY REWARDS
+    const rewards = [
+        {
+            name: 'Premium Gym Towel',
+            cost: 250,
+            category: 'MERCHANDISE',
+            description: 'Luxurious microfiber gym towel',
+            imageUrl: 'https://images.unsplash.com/photo-1595777707802-c2d353eadc00?w=400&h=400&fit=crop'
+        },
+        {
+            name: 'Shaker Bottle Pack',
+            cost: 300,
+            category: 'MERCHANDISE',
+            description: 'Pack of 3 premium shaker bottles',
+            imageUrl: 'https://images.unsplash.com/photo-1608270861620-7c80fc2d865c?w=400&h=400&fit=crop'
+        },
+        {
+            name: 'Protein Powder (2kg)',
+            cost: 500,
+            category: 'SUPPLEMENT',
+            description: 'High-quality whey protein powder',
+            imageUrl: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&h=400&fit=crop'
+        },
+        {
+            name: 'BCAA Supplement',
+            cost: 350,
+            category: 'SUPPLEMENT',
+            description: 'Essential amino acids for recovery',
+            imageUrl: 'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?w=400&h=400&fit=crop'
+        },
+        {
+            name: 'Gym T-Shirt',
+            cost: 400,
+            category: 'APPAREL',
+            description: 'Official gym branded t-shirt',
+            imageUrl: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=400&h=400&fit=crop'
+        },
+        {
+            name: 'Athletic Shorts',
+            cost: 450,
+            category: 'APPAREL',
+            description: 'Breathable athletic shorts',
+            imageUrl: 'https://images.unsplash.com/photo-1506629082632-401ba14f4ef9?w=400&h=400&fit=crop'
+        },
+        {
+            name: 'Resistance Bands Set',
+            cost: 380,
+            category: 'MERCHANDISE',
+            description: '5-piece resistance band set',
+            imageUrl: 'https://images.unsplash.com/photo-1590308882746-84bedd5eb6a8?w=400&h=400&fit=crop'
+        },
+        {
+            name: '1 Month Free Membership',
+            cost: 800,
+            category: 'EXPERIENCE',
+            description: 'One month of unlimited gym access',
+            imageUrl: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400&h=400&fit=crop'
+        },
+        {
+            name: 'Free Training Session',
+            cost: 600,
+            category: 'EXPERIENCE',
+            description: '1-on-1 training session with a professional',
+            imageUrl: 'https://images.unsplash.com/photo-1583454110118-cc83b9b80313?w=400&h=400&fit=crop'
+        },
+        {
+            name: 'Water Bottle (750ml)',
+            cost: 200,
+            category: 'MERCHANDISE',
+            description: 'Stainless steel insulated water bottle',
+            imageUrl: 'https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=400&h=400&fit=crop'
+        }
+    ];
+
+    for (const reward of rewards) {
+        await prisma.loyaltyReward.create({ data: reward });
+    }
+    console.log("✅ Loyalty Rewards seeded");
 
     console.log("🚀 Database successfully populated!");
 }

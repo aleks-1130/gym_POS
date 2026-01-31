@@ -35,6 +35,8 @@ import MemberShop from './pages/member/MemberShop';
 import Profile from './pages/member/Profile';
 import Attendance from './pages/member/Attendance';
 import PurchaseHistory from './pages/member/PurchaseHistory';
+import TrainerBooking from './pages/member/TrainerBooking';
+import Announcements from './pages/member/Announcements';
 
 // Common/Public?
 import Notifications from './pages/Notifications'; // Plan didn't specify move, keeping for now or moving to shared? Plan said "Common".
@@ -109,6 +111,8 @@ function AppRoutes() {
         <Route path="/profile" element={<ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.MEMBER, ROLES.ADMIN, ROLES.STAFF]}><Profile /></ProtectedRoute>} />
         <Route path="/attendance" element={<ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}><Attendance /></ProtectedRoute>} />
         <Route path="/purchase-history" element={<ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}><PurchaseHistory /></ProtectedRoute>} />
+        <Route path="/trainer-booking" element={<ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}><TrainerBooking /></ProtectedRoute>} />
+        <Route path="/announcements" element={<ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}><Announcements /></ProtectedRoute>} />
 
       </Routes>
     </div>

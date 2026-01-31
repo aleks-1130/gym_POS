@@ -5,12 +5,14 @@ import { useCurrency } from '../../context/CurrencyContext';
 export default function MemberShop() {
     const { formatPrice } = useCurrency();
     const [products, setProducts] = useState([]);
-    const [cart, setCart] = useState({});
     const [loading, setLoading] = useState(true);
-    const [showCart, setShowCart] = useState(false);
+    const [cart, setCart] = useState([]);
+    const [addingToCart, setAddingToCart] = useState({});
+    const [showCartModal, setShowCartModal] = useState(false);
 
     useEffect(() => {
         fetchProducts();
+        loadCart();
     }, []);
 
     const fetchProducts = async () => {
@@ -24,44 +26,78 @@ export default function MemberShop() {
         }
     };
 
-    const addToCart = (id) => {
-        setCart(prev => ({ ...prev, [id]: (prev[id] || 0) + 1 }));
-    };
-
-    const removeFromCart = (id) => {
-        setCart(prev => {
-            const newCart = { ...prev };
-            if (newCart[id] > 1) newCart[id]--;
-            else delete newCart[id];
-            return newCart;
-        });
-    };
-
-    const cartTotal = products.reduce((sum, p) => sum + (p.price * (cart[p.id] || 0)), 0);
-    const cartCount = Object.values(cart).reduce((sum, qty) => sum + qty, 0);
-
-    const handleCheckout = async () => {
-        if (cartTotal === 0) return;
-        if (!window.confirm(`Confirm purchase for ${formatPrice(cartTotal)}?`)) return;
-
-        const items = Object.entries(cart).map(([pid, qty]) => {
-            const product = products.find(p => p.id === Number(pid));
-            return {
-                productId: Number(pid),
-                quantity: qty,
-                price: product.price
-            };
-        });
-
-        try {
-            await axios.post('http://localhost:5000/api/members/checkout', { items, total: cartTotal });
-            alert("Order Successful!");
-            setCart({});
-            setShowCart(false);
-            fetchProducts();
-        } catch (error) {
-            alert("Checkout failed");
+    const loadCart = () => {
+        const savedCart = localStorage.getItem('gymCart');
+        if (savedCart) {
+            setCart(JSON.parse(savedCart));
         }
+    };
+
+    const saveCart = (updatedCart) => {
+        localStorage.setItem('gymCart', JSON.stringify(updatedCart));
+        setCart(updatedCart);
+    };
+
+    const addToCart = (product) => {
+        setAddingToCart(prev => ({ ...prev, [product.id]: true }));
+        
+        setTimeout(() => {
+            const existingItem = cart.find(item => item.id === product.id);
+            let updatedCart;
+
+            if (existingItem) {
+                // Increment quantity if already in cart
+                updatedCart = cart.map(item =>
+                    item.id === product.id
+                        ? { ...item, quantity: item.quantity + 1 }
+                        : item
+                );
+            } else {
+                // Add new item to cart
+                updatedCart = [...cart, { ...product, quantity: 1 }];
+            }
+
+            saveCart(updatedCart);
+            setAddingToCart(prev => ({ ...prev, [product.id]: false }));
+        }, 300);
+    };
+
+    const updateCartQuantity = (productId, newQuantity) => {
+        if (newQuantity <= 0) {
+            removeFromCart(productId);
+            return;
+        }
+
+        const updatedCart = cart.map(item =>
+            item.id === productId
+                ? { ...item, quantity: newQuantity }
+                : item
+        );
+        saveCart(updatedCart);
+    };
+
+    const removeFromCart = (productId) => {
+        const updatedCart = cart.filter(item => item.id !== productId);
+        saveCart(updatedCart);
+    };
+
+    const getCartItemQuantity = (productId) => {
+        const item = cart.find(item => item.id === productId);
+        return item ? item.quantity : 0;
+    };
+
+    const getCartTotal = () => {
+        return cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    };
+
+    const getTotalItems = () => {
+        return cart.reduce((sum, item) => sum + item.quantity, 0);
+    };
+
+    const handleCheckout = () => {
+        // Implement your checkout logic here
+        alert(`Proceeding to checkout with ${getTotalItems()} items. Total: ${formatPrice(getCartTotal())}`);
+        // You can navigate to checkout page or open payment modal
     };
 
     if (loading) {
@@ -77,48 +113,30 @@ export default function MemberShop() {
 
     return (
         <div className="pb-20 px-4 max-w-6xl mx-auto">
-            {/* Header with Cart */}
+            {/* Header */}
             <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 -mx-4 px-4 py-4 mb-4">
-                <div className="flex justify-between items-center gap-3 mb-3">
+                <div className="flex items-center justify-between">
                     <div className="flex-1">
-                        <h1 className="text-xl font-bold text-white">Shop</h1>
-                        <p className="text-text-muted text-xs mt-0.5">Gear, supplements & more</p>
+                        <h1 className="text-xl font-bold text-white">Products</h1>
+                        <p className="text-text-muted text-xs mt-0.5">Gym inventory & available items</p>
                     </div>
                     
                     {/* Cart Button */}
                     <button
-                        onClick={() => setShowCart(!showCart)}
-                        className="relative p-2.5 rounded-xl bg-surface border border-white/5 hover:bg-white/5 active:scale-95 transition-all flex-shrink-0"
+                        onClick={() => setShowCartModal(true)}
+                        className="relative flex items-center gap-2 bg-primary/10 hover:bg-primary/20 border border-primary/30 hover:border-primary/50 rounded-lg px-3 py-2 transition-all active:scale-95"
                     >
-                        <span className="material-icons-round text-white text-xl">shopping_cart</span>
-                        {cartCount > 0 && (
-                            <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-5 px-1.5 bg-primary text-background text-xs font-bold rounded-full flex items-center justify-center">
-                                {cartCount}
-                            </span>
+                        <span className="material-icons-round text-primary text-lg">shopping_cart</span>
+                        <span className="text-primary font-bold text-sm">
+                            {getTotalItems()} items
+                        </span>
+                        {cart.length > 0 && (
+                            <div className="absolute -top-1 -right-1 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
+                                {cart.length}
+                            </div>
                         )}
                     </button>
                 </div>
-
-                {/* Cart Summary Bar */}
-                {cartCount > 0 && (
-                    <div className="bg-gradient-to-r from-primary/20 to-primary/10 border border-primary/30 rounded-xl p-3 flex justify-between items-center">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-primary/20 rounded-lg flex items-center justify-center">
-                                <span className="material-icons-round text-primary text-lg">shopping_bag</span>
-                            </div>
-                            <div>
-                                <p className="text-xs text-white/70">{cartCount} {cartCount === 1 ? 'item' : 'items'}</p>
-                                <p className="text-base font-bold text-white">{formatPrice(cartTotal)}</p>
-                            </div>
-                        </div>
-                        <button
-                            onClick={handleCheckout}
-                            className="px-4 py-2 bg-primary text-background rounded-lg font-bold text-sm hover:brightness-110 active:scale-95 transition-all shadow-lg"
-                        >
-                            Checkout
-                        </button>
-                    </div>
-                )}
             </div>
 
             {/* Products Grid */}
@@ -131,155 +149,226 @@ export default function MemberShop() {
                         <p className="text-text-muted text-sm">No products available</p>
                     </div>
                 ) : (
-                    products.map(p => (
-                        <div key={p.id} className="bg-surface rounded-xl border border-white/5 overflow-hidden flex flex-col hover:border-primary/30 transition-all group">
-                            {/* Product Image */}
-                            <div className="aspect-square bg-white/5 overflow-hidden relative">
-                                {p.imageUrl ? (
-                                    <img 
-                                        src={p.imageUrl} 
-                                        alt={p.name} 
-                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" 
-                                    />
-                                ) : (
-                                    <div className="w-full h-full flex items-center justify-center">
-                                        <span className="material-icons-round text-5xl text-white/10">shopping_bag</span>
-                                    </div>
-                                )}
-                                
-                                {/* Quantity Badge */}
-                                {cart[p.id] > 0 && (
-                                    <div className="absolute top-2 right-2 min-w-[28px] h-7 px-2 bg-primary text-background rounded-full flex items-center justify-center text-xs font-bold shadow-lg">
-                                        {cart[p.id]}
-                                    </div>
-                                )}
-
-                                {/* Category Tag */}
-                                {p.category && (
-                                    <div className="absolute bottom-2 left-2 px-2 py-1 bg-black/60 backdrop-blur-sm rounded-md">
-                                        <span className="text-white/90 text-xs font-medium">{p.category}</span>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Product Info */}
-                            <div className="p-3 flex flex-col flex-1">
-                                <h3 className="font-bold text-white text-sm line-clamp-2 mb-2 min-h-[2.5rem]">{p.name}</h3>
-                                
-                                <div className="mt-auto space-y-2">
-                                    <div className="text-primary font-bold text-base">{formatPrice(p.price)}</div>
-                                    
-                                    {/* Cart Controls */}
-                                    {cart[p.id] > 0 ? (
-                                        <div className="flex gap-2 items-center">
-                                            <button
-                                                onClick={() => removeFromCart(p.id)}
-                                                className="w-9 h-9 rounded-lg bg-white/10 text-white flex items-center justify-center hover:bg-white/20 active:scale-95 transition-all"
-                                            >
-                                                <span className="material-icons-round text-lg">remove</span>
-                                            </button>
-                                            <div className="flex-1 text-center">
-                                                <span className="text-white font-bold text-sm">{cart[p.id]}</span>
-                                            </div>
-                                            <button
-                                                onClick={() => addToCart(p.id)}
-                                                className="w-9 h-9 rounded-lg bg-primary text-background flex items-center justify-center hover:brightness-110 active:scale-95 transition-all"
-                                            >
-                                                <span className="material-icons-round text-lg">add</span>
-                                            </button>
-                                        </div>
+                    products.map(p => {
+                        const isSoldOut = !p.stock || p.stock === 0;
+                        const cartQuantity = getCartItemQuantity(p.id);
+                        const isAdding = addingToCart[p.id];
+                        
+                        return (
+                            <div 
+                                key={p.id} 
+                                className={`rounded-xl border border-white/5 overflow-hidden flex flex-col transition-all group  ${
+                                    isSoldOut 
+                                        ? 'bg-black/40 opacity-60 border-white/5' 
+                                        : 'bg-surface hover:border-primary/30'
+                                }`}
+                            >
+                                {/* Product Image */}
+                                <div className="aspect-square bg-white/5 overflow-hidden relative">
+                                    {p.imageUrl ? (
+                                        <img 
+                                            src={p.imageUrl} 
+                                            alt={p.name} 
+                                            className={`w-full h-full object-cover ${
+                                                !isSoldOut && 'group-hover:scale-105 transition-transform duration-300'
+                                            }`}
+                                        />
                                     ) : (
-                                        <button
-                                            onClick={() => addToCart(p.id)}
-                                            className="w-full py-2.5 rounded-lg font-bold text-sm transition-all active:scale-95 bg-primary text-background hover:brightness-110 flex items-center justify-center gap-1"
-                                        >
-                                            <span className="material-icons-round text-base">add_shopping_cart</span>
-                                            Add to Cart
-                                        </button>
+                                        <div className="w-full h-full flex items-center justify-center">
+                                            <span className="material-icons-round text-5xl text-white/10">shopping_bag</span>
+                                        </div>
+                                    )}
+                                    
+                                    {/* Sold Out Overlay */}
+                                    {isSoldOut && (
+                                        <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
+                                            <div className="text-center">
+                                                <span className="material-icons-round text-4xl text-white/80 block mb-1">block</span>
+                                                <p className="text-white font-bold text-sm">Sold Out</p>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Category Tag */}
+                                    {p.category && (
+                                        <div className="absolute bottom-2 left-2 px-2 py-1 bg-black/60 backdrop-blur-sm rounded-md">
+                                            <span className="text-white/90 text-xs font-medium">{p.category}</span>
+                                        </div>
+                                    )}
+
+                                    {/* Cart Quantity Badge */}
+                                    {cartQuantity > 0 && (
+                                        <div className="absolute top-2 right-2 bg-primary text-white rounded-full w-7 h-7 flex items-center justify-center font-bold text-sm shadow-lg">
+                                            {cartQuantity}
+                                        </div>
                                     )}
                                 </div>
+
+                                {/* Product Info */}
+                                <div className="p-3 flex flex-col flex-1">
+                                    <h3 className="font-bold text-white text-sm line-clamp-2 mb-2 min-h-[2.5rem]">{p.name}</h3>
+                                    
+                                    {/* Description */}
+                                    <p className="text-text-muted text-xs line-clamp-2 mb-3 flex-1">
+                                        {p.description || 'No description available'}
+                                    </p>
+                                    
+                                    <div className="space-y-2">
+                                        {/* Price */}
+                                        <div className="text-primary font-bold text-base">{formatPrice(p.price)}</div>
+                                        
+                                        {/* Stock Status */}
+                                        <div className={`text-xs font-medium ${
+                                            isSoldOut 
+                                                ? 'text-red-400/70' 
+                                                : p.stock <= 5 
+                                                ? 'text-yellow-400' 
+                                                : 'text-green-400'
+                                        }`}>
+                                            {isSoldOut 
+                                                ? 'Out of Stock' 
+                                                : p.stock <= 5 
+                                                ? `Only ${p.stock} left` 
+                                                : `${p.stock} in stock`
+                                            }
+                                        </div>
+
+                                        {/* Add to Cart Button */}
+                                        {!isSoldOut && (
+                                            <button
+                                                onClick={() => addToCart(p)}
+                                                disabled={isAdding}
+                                                className="w-full bg-primary hover:bg-primary-hover active:scale-95 text-white rounded-lg py-2.5 px-3 text-sm font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-50 mt-3"
+                                            >
+                                                {isAdding ? (
+                                                    <>
+                                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                                        <span>Adding...</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <span className="material-icons-round text-lg">add_shopping_cart</span>
+                                                        <span>Add to Cart</span>
+                                                    </>
+                                                )}
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                    ))
+                        );
+                    })
                 )}
             </div>
 
-            {/* Mobile Cart Detail Modal */}
-            {showCart && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end" onClick={() => setShowCart(false)}>
+            {/* Cart Modal */}
+            {showCartModal && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
                     <div 
-                        className="w-full bg-surface rounded-t-3xl border-t border-white/10 max-h-[85vh] flex flex-col" 
-                        onClick={e => e.stopPropagation()}
+                        className="bg-surface border border-white/10 rounded-t-2xl sm:rounded-2xl w-full max-w-2xl max-h-[85vh] sm:max-h-[80vh] flex flex-col shadow-2xl animate-slide-up"
+                        onClick={(e) => e.stopPropagation()}
                     >
                         {/* Modal Header */}
-                        <div className="flex items-center justify-between p-5 border-b border-white/10">
-                            <h2 className="text-lg font-bold text-white">Shopping Cart</h2>
-                            <button 
-                                onClick={() => setShowCart(false)}
-                                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors"
+                        <div className="flex items-center justify-between p-4 border-b border-white/10">
+                            <div className="flex items-center gap-3">
+                                <span className="material-icons-round text-primary text-2xl">shopping_cart</span>
+                                <div>
+                                    <h2 className="text-lg font-bold text-white">Shopping Cart</h2>
+                                    <p className="text-text-muted text-xs">{getTotalItems()} items in cart</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowCartModal(false)}
+                                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-all"
                             >
-                                <span className="material-icons-round text-white text-xl">close</span>
+                                <span className="material-icons-round text-white/70">close</span>
                             </button>
                         </div>
 
                         {/* Cart Items */}
-                        <div className="flex-1 overflow-y-auto p-5 space-y-3">
-                            {cartCount === 0 ? (
-                                <div className="text-center py-8">
-                                    <span className="material-icons-round text-4xl text-text-muted block mb-2">shopping_cart</span>
-                                    <p className="text-text-muted text-sm">Your cart is empty</p>
+                        <div className="flex-1 overflow-y-auto p-4">
+                            {cart.length === 0 ? (
+                                <div className="text-center py-16">
+                                    <div className="w-20 h-20 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                                        <span className="material-icons-round text-4xl text-text-muted">shopping_cart</span>
+                                    </div>
+                                    <p className="text-text-muted text-sm mb-2">Your cart is empty</p>
+                                    <p className="text-text-muted text-xs">Add some products to get started</p>
                                 </div>
                             ) : (
-                                Object.entries(cart).map(([pid, qty]) => {
-                                    const product = products.find(p => p.id === Number(pid));
-                                    if (!product) return null;
-                                    return (
-                                        <div key={pid} className="flex gap-3 bg-white/5 p-3 rounded-xl border border-white/5">
-                                            <div className="w-16 h-16 bg-white/5 rounded-lg overflow-hidden flex-shrink-0">
-                                                {product.imageUrl ? (
-                                                    <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
+                                <div className="space-y-3">
+                                    {cart.map(item => (
+                                        <div key={item.id} className="bg-black/20 border border-white/5 rounded-xl p-3 flex gap-3">
+                                            {/* Product Image */}
+                                            <div className="w-20 h-20 bg-white/5 rounded-lg overflow-hidden flex-shrink-0">
+                                                {item.imageUrl ? (
+                                                    <img 
+                                                        src={item.imageUrl} 
+                                                        alt={item.name} 
+                                                        className="w-full h-full object-cover"
+                                                    />
                                                 ) : (
                                                     <div className="w-full h-full flex items-center justify-center">
-                                                        <span className="material-icons-round text-white/20">shopping_bag</span>
+                                                        <span className="material-icons-round text-2xl text-white/10">shopping_bag</span>
                                                     </div>
                                                 )}
                                             </div>
+
+                                            {/* Product Info */}
                                             <div className="flex-1 min-w-0">
-                                                <h4 className="font-bold text-white text-sm line-clamp-1">{product.name}</h4>
-                                                <p className="text-text-muted text-xs mb-1">{product.category}</p>
-                                                <div className="flex items-center justify-between">
-                                                    <span className="text-primary font-bold text-sm">{formatPrice(product.price)}</span>
-                                                    <span className="text-xs text-text-muted">x{qty}</span>
+                                                <h3 className="font-semibold text-white text-sm mb-1 line-clamp-1">{item.name}</h3>
+                                                <p className="text-primary font-bold text-sm mb-2">{formatPrice(item.price)}</p>
+                                                
+                                                {/* Quantity Controls */}
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        onClick={() => updateCartQuantity(item.id, item.quantity - 1)}
+                                                        className="w-7 h-7 bg-white/10 hover:bg-white/15 rounded-lg flex items-center justify-center transition-all"
+                                                    >
+                                                        <span className="material-icons-round text-white text-sm">remove</span>
+                                                    </button>
+                                                    <span className="text-white font-semibold text-sm min-w-[2rem] text-center">{item.quantity}</span>
+                                                    <button
+                                                        onClick={() => updateCartQuantity(item.id, item.quantity + 1)}
+                                                        className="w-7 h-7 bg-white/10 hover:bg-white/15 rounded-lg flex items-center justify-center transition-all"
+                                                    >
+                                                        <span className="material-icons-round text-white text-sm">add</span>
+                                                    </button>
                                                 </div>
                                             </div>
-                                            <div className="text-right">
-                                                <p className="text-white font-bold text-sm">{formatPrice(product.price * qty)}</p>
+
+                                            {/* Remove Button & Subtotal */}
+                                            <div className="flex flex-col items-end justify-between">
+                                                <button
+                                                    onClick={() => removeFromCart(item.id)}
+                                                    className="w-7 h-7 bg-red-500/10 hover:bg-red-500/20 rounded-lg flex items-center justify-center transition-all"
+                                                >
+                                                    <span className="material-icons-round text-red-400 text-sm">delete</span>
+                                                </button>
+                                                <p className="text-white font-bold text-sm">{formatPrice(item.price * item.quantity)}</p>
                                             </div>
                                         </div>
-                                    );
-                                })
+                                    ))}
+                                </div>
                             )}
                         </div>
 
                         {/* Cart Footer */}
-                        {cartCount > 0 && (
-                            <div className="border-t border-white/10 p-5 space-y-3 bg-background">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-text-muted text-sm">Subtotal ({cartCount} items)</span>
-                                    <span className="text-white font-bold text-lg">{formatPrice(cartTotal)}</span>
+                        {cart.length > 0 && (
+                            <div className="p-4 border-t border-white/10 space-y-3">
+                                {/* Total */}
+                                <div className="flex items-center justify-between">
+                                    <span className="text-text-muted text-sm">Total ({getTotalItems()} items)</span>
+                                    <span className="text-white font-bold text-xl">{formatPrice(getCartTotal())}</span>
                                 </div>
+
+                                {/* Checkout Button */}
                                 <button
                                     onClick={handleCheckout}
-                                    className="w-full py-3.5 bg-primary text-background rounded-xl font-bold text-base hover:brightness-110 active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2"
+                                    className="w-full bg-primary hover:bg-primary-hover active:scale-95 text-white rounded-xl py-3.5 px-4 font-bold text-base transition-all flex items-center justify-center gap-2"
                                 >
-                                    <span className="material-icons-round text-xl">check_circle</span>
-                                    Checkout - {formatPrice(cartTotal)}
-                                </button>
-                                <button
-                                    onClick={() => setShowCart(false)}
-                                    className="w-full py-3 bg-white/5 text-white rounded-xl font-medium text-sm hover:bg-white/10 transition-colors"
-                                >
-                                    Continue Shopping
+                                    <span className="material-icons-round">shopping_bag</span>
+                                    <span>Proceed to Checkout</span>
                                 </button>
                             </div>
                         )}

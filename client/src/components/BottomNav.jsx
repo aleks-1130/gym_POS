@@ -1,96 +1,297 @@
 import React, { useState, useEffect } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
-import { Home, Calendar, ShoppingBag, Gift, User, Users, Dumbbell, CheckCircle, History } from 'lucide-react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { Home, Calendar, ShoppingBag, User, Users, Dumbbell, CheckCircle, Menu, X, Gift, History, Megaphone } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
 
 export default function BottomNav() {
     const { user } = useAuth();
     const location = useLocation();
+    const navigate = useNavigate();
     const [activeIndex, setActiveIndex] = useState(0);
+    const [showMenu, setShowMenu] = useState(false);
 
-    const memberNavItems = [
-        { to: "/attendance", icon: CheckCircle, label: "Attendance" },
-        { to: "/profile", icon: User, label: "Profile" },
-        { to: "/schedule", icon: Calendar, label: "Schedule" },
+    // Primary navigation items (bottom bar)
+    const memberPrimaryNav = [
         { to: "/", icon: Home, label: "Home" },
+        { to: "/attendance", icon: CheckCircle, label: "Attendance" },
+        { to: "/schedule", icon: Calendar, label: "Schedule" },
         { to: "/shop", icon: ShoppingBag, label: "Shop" },
-        { to: "/loyalty", icon: Gift, label: "Rewards" },
-        { to: "/purchase-history", icon: History, label: "History" },
+        { to: "/profile", icon: User, label: "Profile" },
     ];
 
-    const staffNavItems = [
+    // Secondary navigation items (hamburger menu)
+    const memberSecondaryNav = [
+        { to: "/announcements", icon: Megaphone, label: "Announcements" },
+        { to: "/trainer-booking", icon: Dumbbell, label: "Trainer Booking" },
+        { to: "/loyalty", icon: Gift, label: "Rewards & Loyalty" },
+        { to: "/purchase-history", icon: History, label: "Purchase History" },
+    ];
+
+    const staffPrimaryNav = [
+        { to: "/", icon: Home, label: "Home" },
         { to: "/members", icon: Users, label: "Members" },
         { to: "/classes", icon: Dumbbell, label: "Classes" },
-        { to: "/", icon: Home, label: "Home" },
         { to: "/schedule", icon: Calendar, label: "Schedule" },
         { to: "/profile", icon: User, label: "Profile" },
     ];
 
-    const navItems = user?.role === ROLES.MEMBER ? memberNavItems : staffNavItems;
+    const primaryNavItems = user?.role === ROLES.MEMBER ? memberPrimaryNav : staffPrimaryNav;
+    const secondaryNavItems = user?.role === ROLES.MEMBER ? memberSecondaryNav : [];
     const isMember = user?.role === ROLES.MEMBER;
 
     // Update active index based on current location
     useEffect(() => {
-        const currentIndex = navItems.findIndex(item => item.to === location.pathname);
+        const currentIndex = primaryNavItems.findIndex(item => item.to === location.pathname);
         if (currentIndex !== -1) {
             setActiveIndex(currentIndex);
+        } else {
+            // If current path is in secondary nav (more menu), set activeIndex to -1 to hide highlights
+            const isInSecondaryNav = secondaryNavItems.some(item => item.to === location.pathname);
+            if (isInSecondaryNav) {
+                setActiveIndex(-1);
+            }
         }
-    }, [location.pathname, navItems]);
+    }, [location.pathname, primaryNavItems, secondaryNavItems]);
+
+    // Close menu when route changes
+    useEffect(() => {
+        setShowMenu(false);
+    }, [location.pathname]);
+
+    // Calculate item width percentage - include "More" button for members
+    const totalItems = isMember ? primaryNavItems.length + 1 : primaryNavItems.length;
+    const itemWidthPercent = 100 / totalItems;
+
+    const handleSecondaryNavClick = (path) => {
+        navigate(path);
+        setShowMenu(false);
+    };
 
     return (
-        <nav className={`fixed bottom-0 left-0 right-0 bg-background z-40 ${!isMember && 'lg:hidden'}`}>
-            <div className="relative max-w-full">
-                {/* Background bar */}
-                <div className="relative h-20 bg-surface">
-                    {/* Floating circle with active icon */}
+        <>
+            {/* Hamburger Menu Overlay */}
+            {showMenu && isMember && (
+                <div 
+                    className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 animate-fade-in"
+                    onClick={() => setShowMenu(false)}
+                >
                     <div 
-                        className="absolute -top-6 w-14 h-14 rounded-full bg-gradient-to-br from-primary to-orange-600 shadow-lg shadow-primary/50 transition-all duration-500 ease-out flex items-center justify-center z-20"
-                        style={{
-                            left: `calc(${activeIndex * (100 / navItems.length)}% + 8px)`,
-                        }}
+                        className="absolute bottom-16 left-0 right-0 bg-surface border-t border-white/10 animate-slide-up"
+                        onClick={(e) => e.stopPropagation()}
                     >
-                        {React.createElement(navItems[activeIndex].icon, {
-                            size: 24,
-                            className: "text-white",
-                            strokeWidth: 2.5
-                        })}
-                    </div>
-
-                    {/* Navigation Items */}
-                    <div className="absolute inset-0 flex items-center justify-around px-2">
-                        {navItems.map((item, index) => (
-                            <NavLink
-                                key={item.to}
-                                to={item.to}
-                                className={`flex flex-col items-center justify-center w-14 h-20 transition-all duration-300 relative group bg-transparent`}
-                                title={item.label}
+                        {/* Menu Header */}
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+                            <div className="flex items-center gap-2">
+                                <Menu className="text-primary" size={20} />
+                                <h3 className="text-white font-semibold text-sm">More Options</h3>
+                            </div>
+                            <button
+                                onClick={() => setShowMenu(false)}
+                                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-all"
                             >
-                                {({ isActive }) => {
-                                    const IconComponent = item.icon;
-                                    return (
-                                        <>
-                                            {/* Icon - hidden when active (shown in floating circle) */}
-                                            <IconComponent
-                                                size={24}
-                                                className={`transition-all duration-300 ${
-                                                    isActive 
-                                                        ? 'opacity-0 scale-0' 
-                                                        : 'opacity-100 scale-100 text-text-muted group-hover:text-white'
-                                                }`}
-                                                strokeWidth={2}
-                                            />
-                                        </>
-                                    );
-                                }}
-                            </NavLink>
-                        ))}
+                                <X className="text-white/70" size={18} />
+                            </button>
+                        </div>
+
+                        {/* Menu Items */}
+                        <div className="p-2">
+                            {secondaryNavItems.map((item) => {
+                                const IconComponent = item.icon;
+                                const isActive = location.pathname === item.to;
+                                
+                                return (
+                                    <button
+                                        key={item.to}
+                                        onClick={() => handleSecondaryNavClick(item.to)}
+                                        className={`
+                                            w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all
+                                            ${isActive 
+                                                ? 'bg-primary/10 border border-primary/30' 
+                                                : 'hover:bg-white/5'
+                                            }
+                                        `}
+                                    >
+                                        <IconComponent 
+                                            size={20} 
+                                            className={isActive ? 'text-primary' : 'text-text-muted'}
+                                            strokeWidth={2}
+                                        />
+                                        <span className={`text-sm font-medium ${isActive ? 'text-primary' : 'text-white'}`}>
+                                            {item.label}
+                                        </span>
+                                        {isActive && (
+                                            <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
                     </div>
                 </div>
+            )}
 
-                {/* Border separator */}
-                <div className="absolute -top-px left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
-            </div>
-        </nav>
+            {/* Bottom Navigation Bar */}
+            <nav className={`fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur-md z-40 border-t border-white/5 ${!isMember && 'lg:hidden'}`}>
+                <div className="relative max-w-full mx-auto">
+                    <div className="relative h-16 bg-surface/50">
+                        {/* This container prevents overflow */}
+                        <div className="absolute inset-0 overflow-hidden">
+                            {/* Animated highlight indicator - only show if activeIndex is valid */}
+                            {activeIndex >= 0 && (
+                                <div 
+                                    className="absolute bottom-0 h-0.5 bg-gradient-to-r from-primary to-orange-500 transition-all duration-300 ease-out rounded-full"
+                                    style={{
+                                        left: `${activeIndex * itemWidthPercent}%`,
+                                        width: `${itemWidthPercent}%`,
+                                    }}
+                                />
+                            )}
+
+                            {/* Active background glow - only show if activeIndex is valid */}
+                            {activeIndex >= 0 && (
+                                <div 
+                                    className="absolute inset-y-0 bg-gradient-to-t from-primary/10 to-transparent transition-all duration-300 ease-out pointer-events-none"
+                                    style={{
+                                        left: `${activeIndex * itemWidthPercent}%`,
+                                        width: `${itemWidthPercent}%`,
+                                    }}
+                                />
+                            )}
+                        </div>
+
+                        {/* Navigation Items */}
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            {primaryNavItems.map((item, index) => {
+                                const isActive = activeIndex === index;
+                                
+                                return (
+                                    <NavLink
+                                        key={item.to}
+                                        to={item.to}
+                                        className="flex-1 h-full transition-all duration-200 relative group"
+                                    >
+                                        {({ isActive: navIsActive }) => {
+                                            const IconComponent = item.icon;
+                                            return (
+                                                <div className="w-full h-full flex flex-col items-center justify-center gap-1 relative z-10">
+                                                    {/* Icon Container with contained effects */}
+                                                    <div className={`
+                                                        relative flex items-center justify-center w-9 h-9
+                                                        transition-all duration-200 overflow-hidden rounded-full
+                                                        ${isActive ? 'scale-110' : 'scale-100 group-hover:scale-105'}
+                                                    `}>
+                                                        {/* Icon glow effect when active - tightly contained with minimal blur */}
+                                                        {isActive && (
+                                                            <div className="absolute inset-0 bg-primary/20 blur-[2px] rounded-full scale-75" />
+                                                        )}
+                                                        
+                                                        {/* Icon */}
+                                                        <IconComponent
+                                                            size={22}
+                                                            className={`
+                                                                transition-all duration-200 relative z-10
+                                                                ${isActive 
+                                                                    ? 'text-primary' 
+                                                                    : 'text-text-muted group-hover:text-white'
+                                                                }
+                                                            `}
+                                                            strokeWidth={isActive ? 2.5 : 2}
+                                                        />
+                                                    </div>
+
+                                                    {/* Label */}
+                                                    <span className={`
+                                                        text-[10px] font-medium tracking-tight transition-all duration-200
+                                                        ${isActive 
+                                                            ? 'text-primary opacity-100' 
+                                                            : 'text-text-muted opacity-70 group-hover:opacity-100 group-hover:text-white'
+                                                        }
+                                                    `}>
+                                                        {item.label}
+                                                    </span>
+                                                </div>
+                                            );
+                                        }}
+                                    </NavLink>
+                                );
+                            })}
+                            
+                            {/* Hamburger Menu Button (Members only) */}
+                            {isMember && (
+                                <button
+                                    onClick={() => setShowMenu(!showMenu)}
+                                    className="flex-1 h-full transition-all duration-200 relative group"
+                                >
+                                    <div className="w-full h-full flex flex-col items-center justify-center gap-1 relative z-10">
+                                        {/* Icon Container with contained effects */}
+                                        <div className={`
+                                            relative flex items-center justify-center w-9 h-9
+                                            transition-all duration-200 overflow-hidden rounded-full
+                                            ${showMenu ? 'scale-110' : 'scale-100 group-hover:scale-105'}
+                                        `}>
+                                            {/* Glow effect when menu is open - tightly contained with minimal blur */}
+                                            {showMenu && (
+                                                <div className="absolute inset-0 bg-primary/20 blur-[2px] rounded-full scale-75" />
+                                            )}
+                                            
+                                            <Menu
+                                                size={22}
+                                                className={`
+                                                    transition-all duration-200 relative z-10
+                                                    ${showMenu 
+                                                        ? 'text-primary' 
+                                                        : 'text-text-muted group-hover:text-white'
+                                                    }
+                                                `}
+                                                strokeWidth={showMenu ? 2.5 : 2}
+                                            />
+                                        </div>
+
+                                        <span className={`
+                                            text-[10px] font-medium tracking-tight transition-all duration-200
+                                            ${showMenu 
+                                                ? 'text-primary opacity-100' 
+                                                : 'text-text-muted opacity-70 group-hover:opacity-100 group-hover:text-white'
+                                            }
+                                        `}>
+                                            More
+                                        </span>
+                                    </div>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </nav>
+
+            <style jsx>{`
+                @keyframes fade-in {
+                    from {
+                        opacity: 0;
+                    }
+                    to {
+                        opacity: 1;
+                    }
+                }
+
+                @keyframes slide-up {
+                    from {
+                        transform: translateY(100%);
+                    }
+                    to {
+                        transform: translateY(0);
+                    }
+                }
+
+                .animate-fade-in {
+                    animation: fade-in 0.2s ease-out;
+                }
+
+                .animate-slide-up {
+                    animation: slide-up 0.3s ease-out;
+                }
+            `}</style>
+        </>
     );
 }
