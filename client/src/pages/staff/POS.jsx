@@ -85,6 +85,14 @@ export default function POS() {
             // Plans are unique items usually, but if we want to allow multiple?
             // For simplicity, if it's a plan, we just add it. Or treat same as products.
             const existing = prev.find(p => p.id === item.id && p.type === type);
+
+            // Stock Check
+            const currentQty = existing ? existing.quantity : 0;
+            if (type === 'PRODUCT' && (currentQty + 1) > item.stock) {
+                alert(`Not enough stock! Only ${item.stock} left.`);
+                return prev;
+            }
+
             if (existing) {
                 return prev.map(p => p.id === item.id && p.type === type ? { ...p, quantity: p.quantity + 1 } : p);
             }
@@ -98,6 +106,18 @@ export default function POS() {
 
     const updateQuantity = (id, type, newQty) => {
         if (newQty < 1) return;
+
+        // Find original item to check stock
+        const cartItem = cart.find(i => i.id === id && i.type === type);
+        // We need the original product stock. Ideally we look up in 'products' array
+        // but cartItem might have the original stock attached if we spread ...item
+        const originalProduct = products.find(p => p.id === id);
+
+        if (type === 'PRODUCT' && originalProduct && newQty > originalProduct.stock) {
+            alert(`Cannot exceed available stock (${originalProduct.stock})`);
+            return;
+        }
+
         setCart(prev => prev.map(item =>
             (item.id === id && item.type === type) ? { ...item, quantity: newQty } : item
         ));
