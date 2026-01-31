@@ -42,22 +42,42 @@ async function main() {
     ];
 
     for (const p of plans) {
-        await prisma.plan.create({ data: p });
+        // await prisma.plan.create({ data: p });
+        const existing = await prisma.plan.findFirst({ where: { name: p.name } });
+        if (!existing) {
+            await prisma.plan.create({ data: p });
+            // console.log(`Created ${p.name}`);
+        } else {
+            // console.log(`Skipped ${p.name} (Exists)`);
+        }
     }
     console.log("✅ Plans seeded");
 
     // 3. SEED PRODUCTS
     const products = [
-        { name: 'Whey Protein (Chocolate)', category: 'SUPPLEMENT', price: 49.99, stock: 20, minStock: 5, imageUrl: 'https://m.media-amazon.com/images/I/61JSj3o16jL._AC_SX679_.jpg' },
-        { name: 'Pre-Workout (Fruit Punch)', category: 'SUPPLEMENT', price: 34.99, stock: 15, minStock: 5 },
-        { name: 'Energy Drink', category: 'DRINK', price: 3.50, stock: 100, minStock: 20 },
-        { name: 'Protein Bar', category: 'SUPPLEMENT', price: 2.50, stock: 50, minStock: 10 },
-        { name: 'Gym T-Shirt', category: 'MERCH', price: 19.99, stock: 30, minStock: 5 },
-        { name: 'Lifting Straps', category: 'EQUIPMENT', price: 14.99, stock: 10, minStock: 2 }
+        { name: 'Whey Protein (Chocolate)', category: 'SUPPLEMENT', price: 49.99, stock: 20, minStock: 5, imageUrl: '/products/whey_protein_chocolate.png' },
+        { name: 'Pre-Workout (Fruit Punch)', category: 'SUPPLEMENT', price: 34.99, stock: 15, minStock: 5, imageUrl: '/products/pre_workout_fruit.png' },
+        { name: 'Energy Drink', category: 'DRINK', price: 3.50, stock: 100, minStock: 20, imageUrl: '/products/energy_drink.png' },
+        { name: 'Protein Bar', category: 'SUPPLEMENT', price: 2.50, stock: 50, minStock: 10, imageUrl: '/products/protein_bar.png' },
+        { name: 'Gym T-Shirt', category: 'MERCH', price: 19.99, stock: 30, minStock: 5, imageUrl: '/products/gym_tshirt.png' },
+        { name: 'Lifting Straps', category: 'EQUIPMENT', price: 14.99, stock: 10, minStock: 2, imageUrl: '/products/lifting_straps.png' },
+        { name: 'Energy Drink - Zero Sugar', category: 'DRINK', price: 3.50, stock: 50, minStock: 10, imageUrl: '/products/energy_drink_zero.png' },
+        { name: 'Gym Shark Water Bottle', category: 'EQUIPMENT', price: 25.00, stock: 15, minStock: 5, imageUrl: '/products/gym_shark_bottle.png' },
+        { name: 'Pre-Workout - Blue Raz', category: 'SUPPLEMENT', price: 34.99, stock: 20, minStock: 5, imageUrl: '/products/pre_workout_blue.png' }
     ];
 
     for (const p of products) {
-        await prisma.product.create({ data: p });
+        // Check existence or upsert (Product doesn't have unique name by schema, but we want it unique logically)
+        // Since schema doesn't force unique name, upsert needs a unique field. name isn't unique in schema.
+        // So we use findFirst -> then create if not found.
+        const existing = await prisma.product.findFirst({ where: { name: p.name } });
+        if (!existing) {
+            await prisma.product.create({ data: p });
+            // console.log(`Created ${p.name}`);
+        } else {
+            // Optional: Update stock or price? For now, skip to preserve data.
+            // console.log(`Skipped ${p.name} (Exists)`);
+        }
     }
     console.log("✅ Products seeded");
 
@@ -119,10 +139,10 @@ async function main() {
 
     // 7. SEED TRAINERS
     const trainers = [
-        { 
-            name: 'Arnold S.', 
+        {
+            name: 'Arnold S.',
             specialization: 'Bodybuilding Coach',
-            specialty: 'Bodybuilding', 
+            specialty: 'Bodybuilding',
             bio: 'Former Mr. Olympia with 20+ years of coaching experience. Specializes in strength training and muscle building.',
             experience: 20,
             rating: 4.9,
@@ -131,10 +151,10 @@ async function main() {
             specialties: 'Strength Training,Muscle Building,Bodybuilding,Nutrition',
             imageUrl: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400&h=400&fit=crop'
         },
-        { 
-            name: 'Ronda R.', 
+        {
+            name: 'Ronda R.',
             specialization: 'Combat Sports Trainer',
-            specialty: 'MMA / Boxing', 
+            specialty: 'MMA / Boxing',
             bio: 'Champion fighter with expertise in MMA, boxing, and self-defense. Great for conditioning.',
             experience: 15,
             rating: 4.8,
@@ -143,10 +163,10 @@ async function main() {
             specialties: 'MMA,Boxing,Self-Defense,Cardio,Agility',
             imageUrl: 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400&h=400&fit=crop'
         },
-        { 
-            name: 'James Wilson', 
+        {
+            name: 'James Wilson',
             specialization: 'Fitness Coach',
-            specialty: 'General Fitness', 
+            specialty: 'General Fitness',
             bio: 'Certified personal trainer specializing in weight loss and general fitness. Known for personalized programs.',
             experience: 8,
             rating: 4.7,
@@ -155,10 +175,10 @@ async function main() {
             specialties: 'Weight Loss,HIIT,General Fitness,Flexibility',
             imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop'
         },
-        { 
-            name: 'Sarah Chen', 
+        {
+            name: 'Sarah Chen',
             specialization: 'Yoga & Flexibility',
-            specialty: 'Yoga & Flexibility', 
+            specialty: 'Yoga & Flexibility',
             bio: 'Certified yoga instructor and flexibility specialist. Perfect for recovery and mindfulness.',
             experience: 10,
             rating: 4.9,
@@ -167,10 +187,10 @@ async function main() {
             specialties: 'Yoga,Pilates,Flexibility,Mobility,Mindfulness',
             imageUrl: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=400&h=400&fit=crop'
         },
-        { 
-            name: 'Marcus Johnson', 
+        {
+            name: 'Marcus Johnson',
             specialization: 'CrossFit Coach',
-            specialty: 'CrossFit', 
+            specialty: 'CrossFit',
             bio: 'Level 2 CrossFit coach with competition experience. Specializes in functional fitness and Olympic lifting.',
             experience: 12,
             rating: 4.8,
@@ -179,10 +199,10 @@ async function main() {
             specialties: 'CrossFit,Olympic Lifting,Functional Fitness,Power Training',
             imageUrl: 'https://images.unsplash.com/photo-1500595046891-32b56a8e7eb9?w=400&h=400&fit=crop'
         },
-        { 
-            name: 'Emily Davis', 
+        {
+            name: 'Emily Davis',
             specialization: 'Nutrition & Wellness',
-            specialty: 'Nutrition Coaching', 
+            specialty: 'Nutrition Coaching',
             bio: 'Certified nutrition specialist combining diet coaching with fitness training for holistic results.',
             experience: 7,
             rating: 4.6,
@@ -208,7 +228,7 @@ async function main() {
             const randomTrainer = dbTrainers[Math.floor(Math.random() * dbTrainers.length)];
             const daysAgo = Math.floor(Math.random() * 30);
             const sessionDate = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
-            
+
             await prisma.trainingSession.create({
                 data: {
                     memberId: member.id,
