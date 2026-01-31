@@ -17,7 +17,7 @@ export default function Sidebar() {
                 <>
                     {isActive && <div className="absolute left-0 w-1 h-8 bg-primary rounded-r-full"></div>}
                     <span className="material-icons-round flex-shrink-0 text-2xl">{icon}</span>
-                    <span className={`font-medium transition-all duration-300 ${isCollapsed ? 'hidden lg:inline' : 'inline'}`}>{label}</span>
+                    <span className={`font-medium transition-all duration-300 ${isCollapsed ? 'hidden' : 'inline'}`}>{label}</span>
                 </>
             )}
         </NavLink>
@@ -41,7 +41,7 @@ export default function Sidebar() {
             {/* Sidebar */}
             <aside className={`
                 fixed left-0 top-0 h-screen bg-surface border-r border-white/5 flex flex-col py-6 z-40 transition-all duration-300 shadow-lg
-                lg:relative lg:z-30
+                lg:static lg:h-full lg:z-auto lg:translate-x-0
                 ${isMobileOpen ? 'w-64 translate-x-0' : 'w-20 -translate-x-full lg:translate-x-0'}
                 ${isCollapsed ? 'lg:w-20' : 'lg:w-64'}
             `}>
@@ -66,37 +66,47 @@ export default function Sidebar() {
                 <nav className="flex-1 flex flex-col w-full px-2 gap-1 overflow-y-auto no-scrollbar pb-4">
                     <NavItem to="/" icon="dashboard" label="Home" />
 
-                    <NavItem to="/payments" icon="receipt_long" label={user.role === ROLES.MEMBER ? "History" : "Payments"} />
-                    {user.role === ROLES.MEMBER && (
-                        <NavItem to="/access" icon="history" label="Attendance" />
+                    {[ROLES.ADMIN, ROLES.STAFF].includes(user?.role) && (
+                        <NavItem to="/payments" icon="receipt_long" label="Payments" />
                     )}
+
                     {[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF].includes(user?.role) && (
-                        <>
-                            <NavItem to="/members" icon="groups" label="Members" />
-                            <NavItem to="/access" icon="assignment_ind" label="Access Ctrl" />
-                        </>
+                        <NavItem to="/members" icon="groups" label="Members" />
+                    )}
+
+                    {[ROLES.ADMIN, ROLES.STAFF].includes(user?.role) && (
+                        <NavItem to="/access" icon="assignment_ind" label="Access Ctrl" />
                     )}
 
                     <div className={`w-8 h-[1px] bg-white/10 my-1 ${isCollapsed ? 'mx-auto' : ''}`}></div>
 
-                    {[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF].includes(user?.role) && (
+                    {[ROLES.ADMIN, ROLES.STAFF].includes(user?.role) && (
                         <NavItem to="/inventory" icon="inventory_2" label="Stock" />
                     )}
 
-                    <NavItem to="/trainers" icon="fitness_center" label="Trainer" />
-                    <NavItem to="/classes" icon="schedule" label="Class" />
+                    {[ROLES.ADMIN, ROLES.STAFF].includes(user?.role) && (
+                        <>
+                            <NavItem to="/trainers" icon="fitness_center" label="Trainer" />
+                            <NavItem to="/classes" icon="schedule" label="Class" />
+                            <div className={`w-8 h-[1px] bg-white/10 my-1 ${isCollapsed ? 'mx-auto' : ''}`}></div>
+                            <NavItem to="/schedule" icon="calendar_today" label="Schedule" />
+                        </>
+                    )}
+                    {/* Shop is likely for members only unless POS is integrated here */}
+                    {user.role === ROLES.MEMBER && (
+                        <NavItem to="/shop" icon="shopping_bag" label="Shop" />
+                    )}
 
-                    <div className={`w-8 h-[1px] bg-white/10 my-1 ${isCollapsed ? 'mx-auto' : ''}`}></div>
-
-                    <NavItem to="/schedule" icon="calendar_today" label="Schedule" />
-                    <NavItem to="/shop" icon="shopping_bag" label="Shop" />
-
-                    {[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF].includes(user?.role) && (
+                    {[ROLES.OWNER, ROLES.ADMIN].includes(user?.role) && (
                         <NavItem to="/analytics" icon="insights" label="Analytics" />
                     )}
 
-                    <NavItem to="/loyalty" icon="loyalty" label="Loyalty" />
-                    <NavItem to="/notifications" icon="notifications" label="Notifications" />
+                    {[ROLES.ADMIN, ROLES.STAFF].includes(user?.role) && (
+                        <>
+                            <NavItem to="/loyalty" icon="loyalty" label="Loyalty" />
+                            <NavItem to="/notifications" icon="notifications" label="Notifications" />
+                        </>
+                    )}
 
                     <div className={`w-8 h-[1px] bg-white/10 my-1 ${isCollapsed ? 'mx-auto' : ''}`}></div>
 
@@ -119,7 +129,7 @@ export default function Sidebar() {
                         className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl text-text-secondary hover:bg-red-500/10 hover:text-red-500 transition-colors`}
                     >
                         <span className="material-icons-round flex-shrink-0">logout</span>
-                        <span className={`font-medium transition-all duration-300 ${isCollapsed ? 'hidden lg:inline' : 'inline'}`}>Sign Out</span>
+                        <span className={`font-medium transition-all duration-300 ${isCollapsed ? 'hidden' : 'inline'}`}>Sign Out</span>
                     </button>
                 </div>
             </aside>

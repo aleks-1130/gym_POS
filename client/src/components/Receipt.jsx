@@ -2,7 +2,7 @@ import React from 'react';
 import { useCurrency } from '../context/CurrencyContext';
 
 // This component can be used in a modal or hidden iframe for printing
-export const Receipt = React.forwardRef(({ transaction, items, member, cashierName, discount = 0 }, ref) => {
+export const Receipt = React.forwardRef(({ transaction, items, member, cashierName, discount = 0, paymentDetails }, ref) => {
     const { formatPrice } = useCurrency();
     const date = new Date();
 
@@ -95,6 +95,18 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
                     <span>TOTAL:</span>
                     <span>{formatPrice(total)}</span>
                 </div>
+                {paymentDetails && paymentDetails.method === 'CASH' && (
+                    <>
+                        <div className="flex justify-between mt-2 text-xs">
+                            <span>Cash Tendered:</span>
+                            <span>{formatPrice(paymentDetails.tendered)}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                            <span>Change Due:</span>
+                            <span>{formatPrice(paymentDetails.change)}</span>
+                        </div>
+                    </>
+                )}
             </div>
 
             {/* Tax Breakdown */}

@@ -2,23 +2,23 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 async function main() {
-    console.log("Checking for duplicate products...");
-    const products = await prisma.product.findMany();
+    console.log("Checking for duplicate PLANS...");
+    const plans = await prisma.plan.findMany();
     const nameCounts = {};
 
-    products.forEach(p => {
+    plans.forEach(p => {
         nameCounts[p.name] = (nameCounts[p.name] || 0) + 1;
     });
 
     const duplicates = Object.entries(nameCounts).filter(([name, count]) => count > 1);
 
     if (duplicates.length > 0) {
-        console.log("Found duplicates:");
+        console.log("Found duplicate PLANS:");
         duplicates.forEach(([name, count]) => {
             console.log(`- ${name}: ${count} copies`);
         });
     } else {
-        console.log("No duplicates found.");
+        console.log("No duplicate PLANS found.");
     }
 }
 

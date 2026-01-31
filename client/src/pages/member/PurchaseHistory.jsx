@@ -6,37 +6,53 @@ import { useCurrency } from '../../context/CurrencyContext';
 export default function PurchaseHistory() {
     const { user } = useAuth();
     const { formatPrice } = useCurrency();
-    const [history, setHistory] = useState([]);
+    const [payments, setPayments] = useState([]);
+    const [trainingSessions, setTrainingSessions] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [selectedReceipt, setSelectedReceipt] = useState(null);
-    const [showModal, setShowModal] = useState(false);
+    const [activeTab, setActiveTab] = useState('all'); // all, membership, training
 
     useEffect(() => {
-        fetchHistory();
+        fetchPaymentHistory();
     }, []);
 
-    const fetchHistory = async () => {
+    const fetchPaymentHistory = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/payments');
-            setHistory(res.data);
+            const [paymentsRes, sessionsRes] = await Promise.all([
+                axios.get('http://localhost:5000/api/payments'),
+                axios.get('http://localhost:5000/api/members/training-sessions')
+            ]);
+            setPayments(paymentsRes.data);
+            setTrainingSessions(sessionsRes.data);
         } catch (error) {
-            console.error("Failed to fetch history");
+            console.error("Failed to fetch payment history", error);
         } finally {
             setLoading(false);
         }
     };
 
-    if (loading) return <div className="text-white p-6 text-center">Loading history...</div>;
+    if (loading) return <div className="text-white p-6 text-center">Loading payment history...</div>;
 
-    const totalSpent = history.reduce((sum, pay) => sum + pay.amount, 0);
+    // Combine all transactions for filtering
+    const allTransactions = [
+        ...payments.map(p => ({ ...p, type: 'membership', category: 'Membership Payment' })),
+        ...trainingSessions.map(s => ({ ...s, type: 'training', category: 'Training Session' }))
+    ].sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
+
+    const filteredTransactions = activeTab === 'all' 
+        ? allTransactions 
+        : activeTab === 'membership'
+        ? payments
+        : trainingSessions;
+
+    const totalSpent = allTransactions.reduce((sum, item) => sum + (item.amount || item.price || 0), 0);
 
     return (
         <div className="space-y-4 sm:space-y-6">
             {/* Header */}
             <div className="space-y-3">
                 <div>
-                    <h1 className="text-2xl sm:text-3xl font-bold text-white">Purchase History</h1>
-                    <p className="text-text-muted text-xs sm:text-sm mt-1">Your transaction records</p>
+                    <h1 className="text-2xl sm:text-3xl font-bold text-white">Payment History</h1>
+                    <p className="text-text-muted text-xs sm:text-sm mt-1">Membership & training session invoices</p>
                 </div>
 
                 {/* Summary Stats */}
@@ -47,16 +63,38 @@ export default function PurchaseHistory() {
                     </div>
                     <div className="bg-surface rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-white/5">
                         <p className="text-text-muted text-xs sm:text-sm mb-1">Transactions</p>
-                        <p className="text-lg sm:text-2xl font-bold text-emerald-400">{history.length}</p>
+                        <p className="text-lg sm:text-2xl font-bold text-emerald-400">{filteredTransactions.length}</p>
                     </div>
                 </div>
             </div>
 
+            {/* Tab Navigation */}
+            <div className="flex gap-2 bg-surface rounded-xl p-1 border border-white/5">
+                {[
+                    { id: 'all', label: 'All', icon: 'receipt_long' },
+                    { id: 'membership', label: 'Membership', icon: 'card_membership' },
+                    { id: 'training', label: 'Training', icon: 'person' }
+                ].map(tab => (
+                    <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id)}
+                        className={`flex-1 py-2.5 px-3 rounded-lg font-medium text-xs sm:text-sm transition-all flex items-center justify-center gap-1 ${
+                            activeTab === tab.id
+                                ? 'bg-primary text-background'
+                                : 'text-text-muted hover:text-white'
+                        }`}
+                    >
+                        <span className="material-icons-round text-base hidden sm:inline">{tab.icon}</span>
+                        {tab.label}
+                    </button>
+                ))}
+            </div>
+
             {/* Transactions List */}
-            {history.length === 0 ? (
+            {filteredTransactions.length === 0 ? (
                 <div className="text-center py-12">
                     <span className="material-icons-round text-4xl text-text-muted opacity-50 block mb-2">receipt_long</span>
-                    <p className="text-text-muted">No transactions yet</p>
+                    <p className="text-text-muted">No transactions found</p>
                 </div>
             ) : (
                 <div className="space-y-2 sm:space-y-3">
@@ -67,24 +105,48 @@ export default function PurchaseHistory() {
                                 <tr>
                                     <th className="px-4 sm:px-6 py-3">Date</th>
                                     <th className="px-4 sm:px-6 py-3">Type</th>
+                                    <th className="px-4 sm:px-6 py-3">Description</th>
                                     <th className="px-4 sm:px-6 py-3">Amount</th>
-                                    <th className="px-4 sm:px-6 py-3">Method</th>
+                                    <th className="px-4 sm:px-6 py-3">Status</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-white/5">
-                                {history.map(pay => (
-                                    <tr key={pay.id} className="hover:bg-white/5 transition-colors">
+                                {filteredTransactions.map((item, idx) => (
+                                    <tr key={`${item.type}-${item.id}-${idx}`} className="hover:bg-white/5 transition-colors">
                                         <td className="px-4 sm:px-6 py-4 text-white font-medium">
-                                            <div className="text-sm">{new Date(pay.date).toLocaleDateString()}</div>
-                                            <div className="text-text-muted text-xs">{new Date(pay.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                                            <div className="text-sm">{new Date(item.date || item.createdAt).toLocaleDateString()}</div>
+                                            <div className="text-text-muted text-xs">{new Date(item.date || item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                                         </td>
                                         <td className="px-4 sm:px-6 py-4">
-                                            <span className="bg-white/10 text-text-secondary px-2.5 py-1 rounded text-xs font-bold">
-                                                {pay.type}
+                                            <div className="flex items-center gap-2">
+                                                <span className={`material-icons-round text-base ${
+                                                    item.type === 'membership' ? 'text-blue-400' : 'text-purple-400'
+                                                }`}>
+                                                    {item.type === 'membership' ? 'card_membership' : 'person'}
+                                                </span>
+                                                <span className="bg-white/10 text-text-secondary px-2.5 py-1 rounded text-xs font-bold capitalize">
+                                                    {item.type}
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td className="px-4 sm:px-6 py-4 text-text-secondary">
+                                            {item.type === 'membership' 
+                                                ? item.method 
+                                                : `Session with ${item.trainerName || 'Trainer'}`
+                                            }
+                                        </td>
+                                        <td className="px-4 sm:px-6 py-4 text-white font-bold">{formatPrice(item.amount || item.price)}</td>
+                                        <td className="px-4 sm:px-6 py-4">
+                                            <span className={`px-2.5 py-1 rounded text-xs font-bold ${
+                                                item.type === 'training' && item.status === 'completed' 
+                                                    ? 'bg-green-500/20 text-green-300'
+                                                    : item.type === 'training' && item.status === 'scheduled'
+                                                    ? 'bg-blue-500/20 text-blue-300'
+                                                    : 'bg-yellow-500/20 text-yellow-300'
+                                            }`}>
+                                                {item.type === 'training' ? item.status : 'Completed'}
                                             </span>
                                         </td>
-                                        <td className="px-4 sm:px-6 py-4 text-white font-bold">{formatPrice(pay.amount)}</td>
-                                        <td className="px-4 sm:px-6 py-4 text-text-secondary">{pay.method}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -93,28 +155,54 @@ export default function PurchaseHistory() {
 
                     {/* Mobile Cards */}
                     <div className="sm:hidden space-y-3">
-                        {history.map(pay => (
-                            <div key={pay.id} className="bg-surface rounded-xl p-4 border border-white/5">
+                        {filteredTransactions.map((item, idx) => (
+                            <div key={`${item.type}-${item.id}-${idx}`} className="bg-surface rounded-xl p-4 border border-white/5">
                                 <div className="flex justify-between items-start gap-2 mb-3">
                                     <div>
-                                        <p className="font-bold text-white text-sm">{new Date(pay.date).toLocaleDateString()}</p>
-                                        <p className="text-text-muted text-xs">{new Date(pay.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                        <p className="font-bold text-white text-sm">{new Date(item.date || item.createdAt).toLocaleDateString()}</p>
+                                        <p className="text-text-muted text-xs">{new Date(item.date || item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                                     </div>
-                                    <span className="bg-white/10 text-text-secondary px-2 py-1 rounded text-xs font-bold flex-shrink-0">
-                                        {pay.type}
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        <span className={`material-icons-round text-base ${
+                                            item.type === 'membership' ? 'text-blue-400' : 'text-purple-400'
+                                        }`}>
+                                            {item.type === 'membership' ? 'card_membership' : 'person'}
+                                        </span>
+                                        <span className="bg-white/10 text-text-secondary px-2 py-1 rounded text-xs font-bold capitalize flex-shrink-0">
+                                            {item.type}
+                                        </span>
+                                    </div>
                                 </div>
                                 
-                                <div className="flex justify-between items-center">
+                                <div className="flex justify-between items-start gap-3 mb-3">
                                     <div>
-                                        <p className="text-text-muted text-xs mb-1">Payment Method</p>
-                                        <p className="text-white text-sm font-medium">{pay.method}</p>
+                                        <p className="text-text-muted text-xs mb-1">Description</p>
+                                        <p className="text-white text-sm font-medium">
+                                            {item.type === 'membership' 
+                                                ? item.method 
+                                                : `Session with ${item.trainerName || 'Trainer'}`
+                                            }
+                                        </p>
                                     </div>
                                     <div className="text-right">
                                         <p className="text-text-muted text-xs mb-1">Amount</p>
-                                        <p className="text-primary text-lg font-bold">{formatPrice(pay.amount)}</p>
+                                        <p className="text-primary text-lg font-bold">{formatPrice(item.amount || item.price)}</p>
                                     </div>
                                 </div>
+
+                                {item.type === 'training' && (
+                                    <div className="pt-3 border-t border-white/5">
+                                        <span className={`px-2.5 py-1 rounded text-xs font-bold inline-block ${
+                                            item.status === 'completed' 
+                                                ? 'bg-green-500/20 text-green-300'
+                                                : item.status === 'scheduled'
+                                                ? 'bg-blue-500/20 text-blue-300'
+                                                : 'bg-yellow-500/20 text-yellow-300'
+                                        }`}>
+                                            {item.status}
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>

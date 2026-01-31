@@ -3,40 +3,15 @@ const bcrypt = require('bcryptjs');
 
 const prisma = new PrismaClient();
 
-const FIRST_NAMES = ['John', 'Jane', 'Mike', 'Alice', 'Tom', 'Sarah', 'David', 'Emma', 'James', 'Olivia', 'Robert', 'Sophia', 'William', 'Isabella', 'Richard', 'Mia', 'Joseph', 'Charlotte', 'Thomas', 'Amelia'];
-const LAST_NAMES = ['Doe', 'Smith', 'Jones', 'Wong', 'Hardy', 'Brown', 'Wilson', 'Evans', 'Thomas', 'Roberts', 'Walker', 'Wright', 'Robinson', 'Thompson', 'White', 'Hughes', 'Edwards', 'Green', 'Hall', 'Wood'];
-
-function getRandomItem(arr) {
-    return arr[Math.floor(Math.random() * arr.length)];
-}
-
-function getRandomInt(min, max) {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
 async function main() {
-    console.log("🌱 Starting Comprehensive Database Seeding...");
+    console.log("🌱 Starting Database Seeding...");
 
-    // 1. CLEAR EXISTING DATA
-    console.log("🧹 Clearing existing data...");
-    await prisma.orderItem.deleteMany();
-    await prisma.order.deleteMany();
-    await prisma.booking.deleteMany();
-    await prisma.accessLog.deleteMany();
-    await prisma.payment.deleteMany();
-    await prisma.class.deleteMany();
-    await prisma.member.deleteMany();
-    await prisma.product.deleteMany();
-    await prisma.plan.deleteMany();
-    await prisma.trainer.deleteMany();
-    await prisma.notification.deleteMany();
-    await prisma.loyaltyReward.deleteMany();
-    await prisma.auditLog.deleteMany();
-    // Don't delete users if you want to keep login creds, but for 'whole database' we might as well reset or upsert.
-    // We will upsert users so valid logins always exist.
-    console.log("✨ Database cleared");
-
-    // 2. SEED USERS (Staff/Admin/Owner)
+    // 1. CLEAR EXISTING DATA (Optional, but good for clean slate if needed. Commented out to be safe, or just use upsert)
+    // await prisma.accessLog.deleteMany();
+    // await prisma.payment.deleteMany();
+    // await prisma.member.deleteMany();
+    // await prisma.product.deleteMany();
+    // 0. SEED USERS (Staff/Admin/Owner)
     const userPassword = await bcrypt.hash('password123', 10);
     const users = [
         { email: 'owner@gym.com', name: 'Owner User', role: 'OWNER' },
@@ -56,9 +31,9 @@ async function main() {
             }
         });
     }
-    console.log("✅ Users seeded");
+    console.log("✅ Users (Owner/Admin/Staff) seeded");
 
-    // 3. SEED PLANS
+    // 2. SEED PLANS
     const plans = [
         { name: 'Day Pass', price: 15.00, duration: 1 },
         { name: 'Monthly Standard', price: 59.99, duration: 30 },
@@ -66,231 +41,289 @@ async function main() {
         { name: 'Student Monthly', price: 39.99, duration: 30 }
     ];
 
-    const dbPlans = [];
     for (const p of plans) {
-        dbPlans.push(await prisma.plan.create({ data: p }));
+        // await prisma.plan.create({ data: p });
+        const existing = await prisma.plan.findFirst({ where: { name: p.name } });
+        if (!existing) {
+            await prisma.plan.create({ data: p });
+            // console.log(`Created ${p.name}`);
+        } else {
+            // console.log(`Skipped ${p.name} (Exists)`);
+        }
     }
     console.log("✅ Plans seeded");
 
-    // 4. SEED PRODUCTS
+    // 3. SEED PRODUCTS
     const products = [
-        { name: 'Whey Protein (Chocolate)', category: 'SUPPLEMENT', price: 49.99, stock: 50, minStock: 10, sku: 'SUPP-001' },
-        { name: 'Pre-Workout (Fruit Punch)', category: 'SUPPLEMENT', price: 34.99, stock: 30, minStock: 5, sku: 'SUPP-002' },
-        { name: 'Energy Drink', category: 'DRINK', price: 3.50, stock: 100, minStock: 20, sku: 'DRK-001' },
-        { name: 'Water Bottle', category: 'MERCH', price: 12.00, stock: 40, minStock: 10, sku: 'MRC-001' },
-        { name: 'Protein Bar', category: 'SUPPLEMENT', price: 2.50, stock: 200, minStock: 20, sku: 'SUPP-003' },
-        { name: 'Gym T-Shirt', category: 'MERCH', price: 19.99, stock: 50, minStock: 10, sku: 'MRC-002' },
-        { name: 'Lifting Straps', category: 'EQUIPMENT', price: 14.99, stock: 25, minStock: 5, sku: 'EQP-001' },
-        { name: 'Towel', category: 'MERCH', price: 5.00, stock: 80, minStock: 15, sku: 'MRC-003' }
+        { name: 'Whey Protein (Chocolate)', category: 'SUPPLEMENT', price: 49.99, stock: 20, minStock: 5, imageUrl: '/products/whey_protein_chocolate.png' },
+        { name: 'Pre-Workout (Fruit Punch)', category: 'SUPPLEMENT', price: 34.99, stock: 15, minStock: 5, imageUrl: '/products/pre_workout_fruit.png' },
+        { name: 'Energy Drink', category: 'DRINK', price: 3.50, stock: 100, minStock: 20, imageUrl: '/products/energy_drink.png' },
+        { name: 'Protein Bar', category: 'SUPPLEMENT', price: 2.50, stock: 50, minStock: 10, imageUrl: '/products/protein_bar.png' },
+        { name: 'Gym T-Shirt', category: 'MERCH', price: 19.99, stock: 30, minStock: 5, imageUrl: '/products/gym_tshirt.png' },
+        { name: 'Lifting Straps', category: 'EQUIPMENT', price: 14.99, stock: 10, minStock: 2, imageUrl: '/products/lifting_straps.png' },
+        { name: 'Energy Drink - Zero Sugar', category: 'DRINK', price: 3.50, stock: 50, minStock: 10, imageUrl: '/products/energy_drink_zero.png' },
+        { name: 'Gym Shark Water Bottle', category: 'EQUIPMENT', price: 25.00, stock: 15, minStock: 5, imageUrl: '/products/gym_shark_bottle.png' },
+        { name: 'Pre-Workout - Blue Raz', category: 'SUPPLEMENT', price: 34.99, stock: 20, minStock: 5, imageUrl: '/products/pre_workout_blue.png' }
     ];
 
-    const dbProducts = [];
     for (const p of products) {
-        dbProducts.push(await prisma.product.create({ data: p }));
+        // Check existence or upsert (Product doesn't have unique name by schema, but we want it unique logically)
+        // Since schema doesn't force unique name, upsert needs a unique field. name isn't unique in schema.
+        // So we use findFirst -> then create if not found.
+        const existing = await prisma.product.findFirst({ where: { name: p.name } });
+        if (!existing) {
+            await prisma.product.create({ data: p });
+            // console.log(`Created ${p.name}`);
+        } else {
+            // Optional: Update stock or price? For now, skip to preserve data.
+            // console.log(`Skipped ${p.name} (Exists)`);
+        }
     }
     console.log("✅ Products seeded");
 
-    // 5. SEED TRAINERS
-    const trainersData = [
-        { name: 'Arnold S.', specialty: 'Bodybuilding', bio: '7x Mr. Olympia. The legend.' },
-        { name: 'Ronda R.', specialty: 'MMA / Boxing', bio: 'Former champion. Tough love.' },
-        { name: 'Yoda', specialty: 'Mindfulness', bio: 'Do or do not, there is no try.' },
-        { name: 'Usain B.', specialty: 'Cardio / Sprint', bio: 'Fastest man alive.' }
+    // 4. SEED MEMBERS
+    const password = await bcrypt.hash('password123', 10);
+    const memberData = [
+        { firstName: 'John', lastName: 'Doe', email: 'john@doe.com', status: 'ACTIVE', points: 150 },
+        { firstName: 'Jane', lastName: 'Smith', email: 'jane@smith.com', status: 'ACTIVE', points: 340 },
+        { firstName: 'Mike', lastName: 'Jones', email: 'mike@jones.com', status: 'EXPIRED', points: 20 },
+        { firstName: 'Alice', lastName: 'Wong', email: 'alice@wong.com', status: 'PENDING', points: 0 },
+        { firstName: 'Tom', lastName: 'Hardy', email: 'tom@venom.com', status: 'ACTIVE', points: 500 }
     ];
 
-    const dbTrainers = [];
-    for (const t of trainersData) {
-        dbTrainers.push(await prisma.trainer.create({ data: t }));
-    }
-    console.log("✅ Trainers seeded");
-
-    // 6. SEED CLASSES
-    const classTypes = ['Yoga Flow', 'HIIT Blast', 'Boxing Fundamentals', 'Powerlifting', 'Zumba', 'Spin Class'];
-    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    const times = ['06:00 AM', '08:00 AM', '10:00 AM', '05:00 PM', '07:00 PM'];
-
-    const dbClasses = [];
-    for (const day of days) {
-        for (const time of times) {
-            // 70% chance of a class existing at this slot
-            if (Math.random() > 0.3) {
-                const trainer = getRandomItem(dbTrainers);
-                const cls = await prisma.class.create({
-                    data: {
-                        name: getRandomItem(classTypes),
-                        trainerId: trainer.id,
-                        dayOfWeek: day,
-                        time: time,
-                        duration: 60,
-                        capacity: 20,
-                        enrolled: 0
-                    }
-                });
-                dbClasses.push(cls);
-            }
-        }
-    }
-    console.log(`✅ Classes seeded (${dbClasses.length})`);
-
-    // 7. SEED LOYALTY REWARDS
-    const rewards = [
-        { name: 'Free Smoothie', cost: 100, description: 'One free smoothie from the bar.' },
-        { name: 'Gym T-Shirt', cost: 500, description: 'Official branded t-shirt.' },
-        { name: 'Personal Training Session', cost: 1000, description: '1 hour with a trainer.' },
-        { name: 'One Month Free', cost: 5000, description: 'Waive next month membership.' }
-    ];
-
-    for (const r of rewards) {
-        await prisma.loyaltyReward.create({ data: r });
-    }
-    console.log("✅ Loyalty Rewards seeded");
-
-    // 8. SEED MEMBERS
-    const memberPassword = await bcrypt.hash('password123', 10);
     const dbMembers = [];
-    const statuses = ['ACTIVE', 'ACTIVE', 'ACTIVE', 'EXPIRED', 'PENDING']; // Weighted towards ACTIVE
-
-    for (let i = 0; i < 50; i++) {
-        const firstName = getRandomItem(FIRST_NAMES);
-        const lastName = getRandomItem(LAST_NAMES);
-        const email = `${firstName.toLowerCase()}.${lastName.toLowerCase()}${i}@example.com`;
-        const status = getRandomItem(statuses);
-        const plan = getRandomItem(dbPlans);
-
+    for (const m of memberData) {
+        // Assign random plan
+        const plan = await prisma.plan.findFirst();
         const member = await prisma.member.create({
             data: {
-                firstName,
-                lastName,
-                email,
-                password: memberPassword,
-                status,
-                phone: `555-01${i.toString().padStart(2, '0')}`,
+                ...m,
+                password,
                 planId: plan.id,
-                startDate: new Date(),
-                expiryDate: status === 'EXPIRED' ? new Date(Date.now() - 86400000 * 10) : new Date(Date.now() + 86400000 * 30),
-                points: getRandomInt(0, 5000)
+                expiryDate: m.status === 'EXPIRED' ? new Date(Date.now() - 86400000 * 5) : new Date(Date.now() + 86400000 * 30)
             }
         });
         dbMembers.push(member);
     }
-    console.log(`✅ Members seeded (${dbMembers.length})`);
+    console.log("✅ Members seeded");
 
-    // 9. SEED BOOKINGS
-    for (const cls of dbClasses) {
-        const attendeesCount = getRandomInt(0, Math.min(cls.capacity, 10)); // 0 to 10 attendees
-        for (let i = 0; i < attendeesCount; i++) {
-            const member = getRandomItem(dbMembers);
-            // Simple check to avoid duplicate booking for same member/class
-            const exists = await prisma.booking.findFirst({
-                where: { memberId: member.id, classId: cls.id }
-            });
-            if (!exists) {
-                await prisma.booking.create({
-                    data: {
-                        memberId: member.id,
-                        classId: cls.id,
-                        status: 'CONFIRMED'
-                    }
-                });
-                // Increment enrolled count
-                await prisma.class.update({
-                    where: { id: cls.id },
-                    data: { enrolled: { increment: 1 } }
-                });
-            }
-        }
-    }
-    console.log("✅ Bookings seeded");
-
-    // 10. SEED ORDERS & PAYMENTS
+    // 5. SEED PAYMENTS (Revenue Data)
     for (const member of dbMembers) {
-        // 50% chance member bought something
-        if (Math.random() > 0.5) {
-            const orderItemsCount = getRandomInt(1, 4);
-            let total = 0;
-            const orderItemsData = [];
-
-            for (let k = 0; k < orderItemsCount; k++) {
-                const product = getRandomItem(dbProducts);
-                const quantity = getRandomInt(1, 3);
-                total += product.price * quantity;
-                orderItemsData.push({
-                    productId: product.id,
-                    quantity: quantity,
-                    price: product.price
-                });
-            }
-
-            const order = await prisma.order.create({
-                data: {
-                    memberId: member.id,
-                    total: total,
-                    status: 'COMPLETED',
-                    items: {
-                        create: orderItemsData
-                    }
-                }
-            });
-
-            // Corresponding Payment
+        // Create 3-5 random payments for each
+        const count = Math.floor(Math.random() * 3) + 1;
+        for (let i = 0; i < count; i++) {
             await prisma.payment.create({
                 data: {
-                    amount: total,
+                    amount: (Math.random() * 100).toFixed(2) * 1,
                     type: 'POS',
-                    method: getRandomItem(['CARD', 'CASH']),
-                    status: 'COMPLETED',
-                    memberId: member.id,
-                    date: new Date()
-                }
-            });
-        }
-
-        // Membership Payment
-        if (member.status === 'ACTIVE') {
-            const plan = dbPlans.find(p => p.id === member.planId);
-            await prisma.payment.create({
-                data: {
-                    amount: plan ? plan.price : 50.00,
-                    type: 'MEMBERSHIP',
                     method: 'CARD',
-                    status: 'COMPLETED',
                     memberId: member.id,
-                    date: new Date(Date.now() - getRandomInt(0, 30) * 86400000)
+                    date: new Date(Date.now() - Math.floor(Math.random() * 7 * 24 * 60 * 60 * 1000)) // Random time in last 7 days
                 }
             });
         }
     }
-    console.log("✅ Orders & Payments seeded");
+    console.log("✅ Payments seeded");
 
-    // 11. SEED NOTIFICATIONS
-    const notifications = [
-        { title: 'Gym Closed Holiday', message: 'We will be closed on New Year\'s Day.', type: 'INFO' },
-        { title: 'New Yoga Class', message: 'Check out the new sunrise yoga session.', type: 'PROMO' },
-        { title: 'Membership Due', message: 'Reminder to renewable your subscription.', type: 'ALERT' }
-    ];
-    for (const n of notifications) {
-        await prisma.notification.create({ data: n });
+    // 6. SEED ACCESS LOGS
+    for (const member of dbMembers) {
+        await prisma.accessLog.create({
+            data: {
+                memberId: member.id,
+                status: 'ALLOWED',
+                checkIn: new Date()
+            }
+        });
     }
-    console.log("✅ Notifications seeded");
+    console.log("✅ Access Logs seeded");
 
-    // 12. SEED AUDIT LOG
-    await prisma.auditLog.create({
-        data: {
-            action: 'LOGIN',
-            performedBy: 'admin@gym.com',
-            details: 'Admin logged in from web portal'
+    // 7. SEED TRAINERS
+    const trainers = [
+        {
+            name: 'Arnold S.',
+            specialization: 'Bodybuilding Coach',
+            specialty: 'Bodybuilding',
+            bio: 'Former Mr. Olympia with 20+ years of coaching experience. Specializes in strength training and muscle building.',
+            experience: 20,
+            rating: 4.9,
+            sessionPrice: 75.00,
+            availableSlots: 3,
+            specialties: 'Strength Training,Muscle Building,Bodybuilding,Nutrition',
+            imageUrl: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400&h=400&fit=crop'
+        },
+        {
+            name: 'Ronda R.',
+            specialization: 'Combat Sports Trainer',
+            specialty: 'MMA / Boxing',
+            bio: 'Champion fighter with expertise in MMA, boxing, and self-defense. Great for conditioning.',
+            experience: 15,
+            rating: 4.8,
+            sessionPrice: 80.00,
+            availableSlots: 2,
+            specialties: 'MMA,Boxing,Self-Defense,Cardio,Agility',
+            imageUrl: 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400&h=400&fit=crop'
+        },
+        {
+            name: 'James Wilson',
+            specialization: 'Fitness Coach',
+            specialty: 'General Fitness',
+            bio: 'Certified personal trainer specializing in weight loss and general fitness. Known for personalized programs.',
+            experience: 8,
+            rating: 4.7,
+            sessionPrice: 60.00,
+            availableSlots: 5,
+            specialties: 'Weight Loss,HIIT,General Fitness,Flexibility',
+            imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=400&fit=crop'
+        },
+        {
+            name: 'Sarah Chen',
+            specialization: 'Yoga & Flexibility',
+            specialty: 'Yoga & Flexibility',
+            bio: 'Certified yoga instructor and flexibility specialist. Perfect for recovery and mindfulness.',
+            experience: 10,
+            rating: 4.9,
+            sessionPrice: 55.00,
+            availableSlots: 4,
+            specialties: 'Yoga,Pilates,Flexibility,Mobility,Mindfulness',
+            imageUrl: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=400&h=400&fit=crop'
+        },
+        {
+            name: 'Marcus Johnson',
+            specialization: 'CrossFit Coach',
+            specialty: 'CrossFit',
+            bio: 'Level 2 CrossFit coach with competition experience. Specializes in functional fitness and Olympic lifting.',
+            experience: 12,
+            rating: 4.8,
+            sessionPrice: 70.00,
+            availableSlots: 2,
+            specialties: 'CrossFit,Olympic Lifting,Functional Fitness,Power Training',
+            imageUrl: 'https://images.unsplash.com/photo-1500595046891-32b56a8e7eb9?w=400&h=400&fit=crop'
+        },
+        {
+            name: 'Emily Davis',
+            specialization: 'Nutrition & Wellness',
+            specialty: 'Nutrition Coaching',
+            bio: 'Certified nutrition specialist combining diet coaching with fitness training for holistic results.',
+            experience: 7,
+            rating: 4.6,
+            sessionPrice: 50.00,
+            availableSlots: 6,
+            specialties: 'Nutrition,Wellness,Weight Management,Lifestyle Coaching',
+            imageUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&h=400&fit=crop'
         }
-    });
-    await prisma.auditLog.create({
-        data: {
-            action: 'UPDATE_INVENTORY',
-            performedBy: 'staff@gym.com',
-            details: 'Restocked Protein Bars'
-        }
-    });
-    console.log("✅ Audit Logs seeded");
+    ];
 
-    console.log("🚀 FULL Database successfully populated!");
+    const dbTrainers = [];
+    for (const t of trainers) {
+        const trainer = await prisma.trainer.create({ data: t });
+        dbTrainers.push(trainer);
+    }
+    console.log("✅ Trainers seeded");
+
+    // 8. SEED TRAINING SESSIONS
+    for (const member of dbMembers) {
+        // Create 2-4 training sessions for each member
+        const sessionCount = Math.floor(Math.random() * 3) + 2;
+        for (let i = 0; i < sessionCount; i++) {
+            const randomTrainer = dbTrainers[Math.floor(Math.random() * dbTrainers.length)];
+            const daysAgo = Math.floor(Math.random() * 30);
+            const sessionDate = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
+
+            await prisma.trainingSession.create({
+                data: {
+                    memberId: member.id,
+                    trainerId: randomTrainer.id,
+                    date: sessionDate,
+                    duration: [30, 60, 90, 120][Math.floor(Math.random() * 4)],
+                    price: randomTrainer.sessionPrice,
+                    status: daysAgo > 3 ? 'COMPLETED' : 'SCHEDULED',
+                    notes: ['Great progress!', 'Focus on form', 'Push harder next time', 'Perfect execution!'][Math.floor(Math.random() * 4)]
+                }
+            });
+        }
+    }
+    console.log("✅ Training Sessions seeded");
+
+    // 9. SEED LOYALTY REWARDS
+    const rewards = [
+        {
+            name: 'Premium Gym Towel',
+            cost: 250,
+            category: 'MERCHANDISE',
+            description: 'Luxurious microfiber gym towel',
+            imageUrl: 'https://images.unsplash.com/photo-1595777707802-c2d353eadc00?w=400&h=400&fit=crop'
+        },
+        {
+            name: 'Shaker Bottle Pack',
+            cost: 300,
+            category: 'MERCHANDISE',
+            description: 'Pack of 3 premium shaker bottles',
+            imageUrl: 'https://images.unsplash.com/photo-1608270861620-7c80fc2d865c?w=400&h=400&fit=crop'
+        },
+        {
+            name: 'Protein Powder (2kg)',
+            cost: 500,
+            category: 'SUPPLEMENT',
+            description: 'High-quality whey protein powder',
+            imageUrl: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&h=400&fit=crop'
+        },
+        {
+            name: 'BCAA Supplement',
+            cost: 350,
+            category: 'SUPPLEMENT',
+            description: 'Essential amino acids for recovery',
+            imageUrl: 'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?w=400&h=400&fit=crop'
+        },
+        {
+            name: 'Gym T-Shirt',
+            cost: 400,
+            category: 'APPAREL',
+            description: 'Official gym branded t-shirt',
+            imageUrl: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=400&h=400&fit=crop'
+        },
+        {
+            name: 'Athletic Shorts',
+            cost: 450,
+            category: 'APPAREL',
+            description: 'Breathable athletic shorts',
+            imageUrl: 'https://images.unsplash.com/photo-1506629082632-401ba14f4ef9?w=400&h=400&fit=crop'
+        },
+        {
+            name: 'Resistance Bands Set',
+            cost: 380,
+            category: 'MERCHANDISE',
+            description: '5-piece resistance band set',
+            imageUrl: 'https://images.unsplash.com/photo-1590308882746-84bedd5eb6a8?w=400&h=400&fit=crop'
+        },
+        {
+            name: '1 Month Free Membership',
+            cost: 800,
+            category: 'EXPERIENCE',
+            description: 'One month of unlimited gym access',
+            imageUrl: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400&h=400&fit=crop'
+        },
+        {
+            name: 'Free Training Session',
+            cost: 600,
+            category: 'EXPERIENCE',
+            description: '1-on-1 training session with a professional',
+            imageUrl: 'https://images.unsplash.com/photo-1583454110118-cc83b9b80313?w=400&h=400&fit=crop'
+        },
+        {
+            name: 'Water Bottle (750ml)',
+            cost: 200,
+            category: 'MERCHANDISE',
+            description: 'Stainless steel insulated water bottle',
+            imageUrl: 'https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=400&h=400&fit=crop'
+        }
+    ];
+
+    for (const reward of rewards) {
+        await prisma.loyaltyReward.create({ data: reward });
+    }
+    console.log("✅ Loyalty Rewards seeded");
+
+    console.log("🚀 Database successfully populated!");
 }
 
 main()

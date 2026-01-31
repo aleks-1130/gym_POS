@@ -7,7 +7,7 @@ import Receipt from '../../components/Receipt';
 
 export default function POS() {
     const { user } = useAuth();
-    const { formatPrice } = useCurrency();
+    const { formatPrice, rate } = useCurrency();
     const [products, setProducts] = useState([]);
     const [plans, setPlans] = useState([]);
     const [members, setMembers] = useState([]); // For POS member selection
@@ -18,6 +18,12 @@ export default function POS() {
     const [discount, setDiscount] = useState(0); // in dollars
     const [viewMode, setViewMode] = useState('POS');
     const [history, setHistory] = useState([]);
+
+    // Payment Selection
+    const [showPaymentModal, setShowPaymentModal] = useState(false);
+    const [amountTendered, setAmountTendered] = useState('');
+    const [paymentMethod, setPaymentMethod] = useState('');
+
 
     // Receipt Printing
     const [showReceiptPreview, setShowReceiptPreview] = useState(false);
@@ -82,7 +88,7 @@ export default function POS() {
             if (existing) {
                 return prev.map(p => p.id === item.id && p.type === type ? { ...p, quantity: p.quantity + 1 } : p);
             }
-            return [...prev, { ...item, type: type === 'PLAN' ? 'PLAN' : undefined, quantity: 1 }];
+            return [...prev, { ...item, type: type, quantity: 1 }];
         });
     };
 
@@ -90,7 +96,14 @@ export default function POS() {
         setCart(prev => prev.filter(item => item.id !== id));
     };
 
-    const handleCheckout = async () => {
+    const updateQuantity = (id, type, newQty) => {
+        if (newQty < 1) return;
+        setCart(prev => prev.map(item =>
+            (item.id === id && item.type === type) ? { ...item, quantity: newQty } : item
+        ));
+    };
+
+    const initiateCheckout = () => {
         if (cart.length === 0) return;
 
         // Validation for Membership
@@ -100,12 +113,18 @@ export default function POS() {
             return;
         }
 
+        setShowPaymentModal(true);
+        setAmountTendered('');
+        setPaymentMethod('');
+    };
+
+    const processPayment = async (method) => {
         setLoading(true);
         try {
             const res = await axios.post('http://localhost:5000/api/payments', {
                 amount: cartTotal,
                 type: 'POS_SALE',
-                method: 'CARD', // Default for now
+                method: method,
                 items: cart,
                 discount: discount,
                 memberId: selectedMemberId || null
@@ -120,10 +139,16 @@ export default function POS() {
                 items: cart,
                 member: memberData,
                 discount: discount,
-                cashierName: user?.name
+                cashierName: user?.name,
+                paymentDetails: {
+                    method: method,
+                    tendered: method === 'CASH' ? (parseFloat(amountTendered) / rate) : null,
+                    change: method === 'CASH' ? ((parseFloat(amountTendered) / rate) - cartTotal) : null
+                }
             });
 
             // Show Preview
+            setShowPaymentModal(false);
             setShowReceiptPreview(true);
 
             // Clear Cart (will happen after modal close or separate)
@@ -137,6 +162,7 @@ export default function POS() {
             setLoading(false);
         }
     };
+
 
     const filteredProducts = selectedCategory === 'All'
         ? products
@@ -214,6 +240,7 @@ export default function POS() {
                                 member={lastTransaction.member}
                                 discount={lastTransaction.discount}
                                 cashierName={lastTransaction.cashierName}
+                                paymentDetails={lastTransaction.paymentDetails}
                             />
                         </div>
                         <div className="p-4 border-t bg-gray-50 flex gap-4">
@@ -230,6 +257,97 @@ export default function POS() {
                                 <span className="material-icons-round">print</span> Print Receipt
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Payment Method Selection Modal */}
+            {showPaymentModal && (
+                <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6 animate-scale-up">
+                        <div className="text-center mb-6">
+                            <h2 className="text-2xl font-bold text-white mb-2">Select Payment Method</h2>
+                            <p className="text-text-muted">Total Amount Due</p>
+                            <p className="text-4xl font-bold text-primary mt-1">{formatPrice(cartTotal)}</p>
+                        </div>
+
+                        {!paymentMethod ? (
+                            <div className="grid grid-cols-2 gap-4">
+                                <button
+                                    onClick={() => setPaymentMethod('CASH')}
+                                    className="bg-green-600 hover:bg-green-700 text-white p-6 rounded-2xl flex flex-col items-center gap-3 transition-all hover:scale-[1.02]"
+                                >
+                                    <span className="material-icons-round text-4xl">payments</span>
+                                    <span className="font-bold text-lg">CASH</span>
+                                </button>
+                                <button
+                                    onClick={() => processPayment('CARD')}
+                                    disabled={loading}
+                                    className="bg-blue-600 hover:bg-blue-700 text-white p-6 rounded-2xl flex flex-col items-center gap-3 transition-all hover:scale-[1.02]"
+                                >
+                                    {loading ? (
+                                        <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
+                                    ) : (
+                                        <>
+                                            <span className="material-icons-round text-4xl">credit_card</span>
+                                            <span className="font-bold text-lg">CARD</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="space-y-6">
+                                {/* Cash Calculator */}
+                                <div>
+                                    <label className="block text-text-muted text-sm font-medium mb-2">Amount Tendered</label>
+                                    <div className="relative">
+                                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white font-bold">₱</span>
+                                        <input
+                                            type="number"
+                                            autoFocus
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-4 pl-8 pr-4 text-white text-xl font-bold focus:border-green-500 outline-none"
+                                            placeholder="0.00"
+                                            value={amountTendered}
+                                            onChange={(e) => setAmountTendered(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="bg-white/5 rounded-xl p-4 flex justify-between items-center">
+                                    <span className="text-text-secondary">Change Due:</span>
+                                    <span className={`text-2xl font-bold ${(parseFloat(amountTendered) || 0) >= (cartTotal * rate) ? 'text-green-400' : 'text-red-400'
+                                        }`}>
+                                        {formatPrice(Math.max(0, ((parseFloat(amountTendered) || 0) / rate) - cartTotal))}
+                                    </span>
+                                </div>
+
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => setPaymentMethod('')}
+                                        className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 rounded-xl"
+                                    >
+                                        Back
+                                    </button>
+                                    <button
+                                        onClick={() => processPayment('CASH')}
+                                        disabled={loading || (parseFloat(amountTendered) || 0) < (cartTotal * rate)}
+                                        className="flex-1 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl flex items-center justify-center gap-2"
+                                    >
+                                        {loading && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>}
+                                        Complete Sale
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {!paymentMethod && (
+                            <button
+                                onClick={() => setShowPaymentModal(false)}
+                                className="w-full mt-6 py-3 text-text-muted hover:text-white transition-colors"
+                            >
+                                Cancel
+                            </button>
+                        )}
                     </div>
                 </div>
             )}
@@ -345,10 +463,33 @@ export default function POS() {
                                         {item.name}
                                         {item.type === 'PLAN' && <span className="ml-2 text-[10px] bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded border border-yellow-500/30">PLAN</span>}
                                     </p>
-                                    <p className="text-text-muted text-xs mt-0.5">{formatPrice(item.price)} x {item.quantity}</p>
+                                    <div className="flex items-center gap-2 mt-1.5">
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); updateQuantity(item.id, item.type, item.quantity - 1); }}
+                                            className="w-6 h-6 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded text-white transition-colors"
+                                        >
+                                            <span className="material-icons-round text-xs">remove</span>
+                                        </button>
+                                        <input
+                                            type="number"
+                                            className="w-10 bg-transparent text-center text-text-muted text-sm font-medium focus:text-white outline-none border-b border-transparent focus:border-white/30 transition-colors"
+                                            value={item.quantity}
+                                            onClick={(e) => e.stopPropagation()}
+                                            onChange={(e) => updateQuantity(item.id, item.type, Math.max(1, parseInt(e.target.value) || 1))}
+                                        />
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); updateQuantity(item.id, item.type, item.quantity + 1); }}
+                                            className="w-6 h-6 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded text-white transition-colors"
+                                        >
+                                            <span className="material-icons-round text-xs">add</span>
+                                        </button>
+                                    </div>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                    <span className="text-white font-bold text-sm">{formatPrice(item.price * item.quantity)}</span>
+                                    <div className="text-right">
+                                        <p className="text-white font-bold text-sm">{formatPrice(item.price * item.quantity)}</p>
+                                        <p className="text-text-muted text-[10px]">{formatPrice(item.price)} each</p>
+                                    </div>
                                     <button
                                         onClick={(e) => { e.stopPropagation(); removeFromCart(item.id); }}
                                         className="w-6 h-6 flex items-center justify-center bg-white/10 text-text-muted hover:bg-red-500/20 hover:text-red-500 rounded-full transition-colors opacity-0 group-hover:opacity-100"
@@ -386,7 +527,7 @@ export default function POS() {
                     </div>
 
                     <button
-                        onClick={handleCheckout}
+                        onClick={initiateCheckout}
                         disabled={cart.length === 0 || loading}
                         className="w-full bg-primary hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl shadow-xl shadow-primary/20 active:scale-95 transition-all flex flex-col items-center justify-center"
                     >

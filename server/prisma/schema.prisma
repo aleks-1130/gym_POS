@@ -29,25 +29,26 @@ model AuditLog {
 }
 
 model Member {
-  id          Int       @id @default(autoincrement())
-  firstName   String
-  lastName    String
-  email       String?   @unique
-  password    String?   // For member portal login
-  phone       String?
-  status      String    @default("ACTIVE") // ACTIVE, EXPIRED, PENDING
-  planId      Int?
-  plan        Plan?     @relation(fields: [planId], references: [id])
-  startDate   DateTime  @default(now())
-  expiryDate  DateTime?
-  lastCheckIn DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  points      Int       @default(0)
-  payments    Payment[]
-  accessLogs  AccessLog[]
-  bookings    Booking[]
-  orders      Order[]
+  id               Int                @id @default(autoincrement())
+  firstName        String
+  lastName         String
+  email            String?            @unique
+  password         String?            // For member portal login
+  phone            String?
+  status           String             @default("ACTIVE") // ACTIVE, EXPIRED, PENDING
+  planId           Int?
+  plan             Plan?              @relation(fields: [planId], references: [id])
+  startDate        DateTime           @default(now())
+  expiryDate       DateTime?
+  lastCheckIn      DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  points           Int                @default(0)
+  payments         Payment[]
+  accessLogs       AccessLog[]
+  bookings         Booking[]
+  orders           Order[]
+  trainingSessions TrainingSession[]
 }
 
 model Plan {
@@ -92,16 +93,38 @@ model Product {
 }
 
 model Trainer {
+  id               Int               @id @default(autoincrement())
+  name             String
+  specialty        String
+  specialization   String?
+  email            String?
+  phone            String?
+  bio              String?
+  imageUrl         String?
+  experience       Int?              // years of experience
+  rating           Float?            @default(5.0)
+  sessionPrice     Float             @default(50.0)
+  availableSlots   Int?              @default(5)
+  specialties      String?           // comma-separated list
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  classes          Class[]
+  trainingSessions TrainingSession[]
+}
+
+model TrainingSession {
   id        Int      @id @default(autoincrement())
-  name      String
-  specialty String
-  email     String?
-  phone     String?
-  bio       String?
-  imageUrl  String?
+  memberId  Int
+  member    Member   @relation(fields: [memberId], references: [id])
+  trainerId Int
+  trainer   Trainer  @relation(fields: [trainerId], references: [id])
+  date      DateTime
+  duration  Int      // minutes
+  price     Float
+  status    String   @default("SCHEDULED") // SCHEDULED, COMPLETED, CANCELLED
+  notes     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  classes   Class[]
 }
 
 model Class {
@@ -163,4 +186,7 @@ model LoyaltyReward {
   name        String
   cost        Int      // points needed
   description String?
+  imageUrl    String?
+  category    String?  // MERCHANDISE, SUPPLEMENT, APPAREL, EXPERIENCE
+  createdAt   DateTime @default(now())
 }
