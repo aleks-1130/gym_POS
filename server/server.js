@@ -595,7 +595,7 @@ app.post('/api/payments', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBE
                 // A. Membership Plan Update
                 if (item.type === 'PLAN') {
                     if (!memberId) throw new Error("Member ID required for plan purchase");
-                    
+
                     const member = await prisma.member.findUnique({ where: { id: Number(memberId) } });
                     if (!member) throw new Error("Member not found");
 
@@ -614,11 +614,11 @@ app.post('/api/payments', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBE
                         }
                     });
                 }
-                
+
                 // B. Stock Deduction (Products)
                 // Only deduct if it's a tracked product (has an ID and is not a quick-add service or Plan)
-                else if (item.id && !item.type) { // Assuming plain products don't have special 'type' or it's 'PRODUCT'
-                     // Check if it's actually a product in DB
+                else if (item.id && (!item.type || item.type === 'PRODUCT')) { // Tracked products
+                    // Check if it's actually a product in DB
                     try {
                         await prisma.product.update({
                             where: { id: Number(item.id) },
