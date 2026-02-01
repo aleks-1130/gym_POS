@@ -72,15 +72,24 @@ export default function DoorScanner() {
                             <div key={i} className={`p-4 rounded-xl border-l-4 flex justify-between items-center bg-white/5 hover:bg-white/10 border hover:shadow-sm transition-all ${log.status === 'ALLOWED' ? 'border-l-emerald-500 border-white/5' : 'border-l-red-500 border-white/5'
                                 }`}>
                                 <div className="flex items-center gap-3">
-                                    <span className={`material-icons-round p-2 rounded-full ${log.status === 'ALLOWED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
-                                        }`}>
-                                        {log.status === 'ALLOWED' ? 'check' : 'block'}
-                                    </span>
+                                    {log.member?.imageUrl ? (
+                                        <div className="w-10 h-10 rounded-full overflow-hidden border border-white/10">
+                                            <img src={log.member.imageUrl} className="w-full h-full object-cover" alt="" />
+                                        </div>
+                                    ) : (
+                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs ${log.status === 'ALLOWED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
+                                            }`}>
+                                            {log.member ? `${log.member.firstName[0]}${log.member.lastName[0]}` : <span className="material-icons-round">person</span>}
+                                        </div>
+                                    )}
                                     <div>
                                         <p className="text-white font-bold text-sm">
                                             {log.member ? `${log.member.firstName} ${log.member.lastName}` : 'Unknown Tag'}
                                         </p>
-                                        <p className="text-xs text-text-muted">Main Entrance</p>
+                                        <div className="flex items-center gap-1.5 mt-0.5">
+                                            <span className={`w-1.5 h-1.5 rounded-full ${log.status === 'ALLOWED' ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
+                                            <p className="text-[10px] text-text-muted uppercase tracking-wider font-bold">Entrance • {log.status}</p>
+                                        </div>
                                     </div>
                                 </div>
                                 <span className="text-xs text-text-muted font-mono font-medium">

@@ -436,7 +436,7 @@ app.get('/api/members/:id', authenticateToken, async (req, res) => {
 
 // Only Staff/Admin can create members
 app.post('/api/members', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
-    const { firstName, lastName, email, phone, planId } = req.body;
+    const { firstName, lastName, email, phone, planId, imageUrl } = req.body;
     try {
         // Calculate expiry based on plan
         const plan = await prisma.plan.findUnique({ where: { id: Number(planId) } });
@@ -447,7 +447,7 @@ app.post('/api/members', authenticateToken, authorize(['ADMIN', 'STAFF']), async
         const member = await prisma.member.create({
             data: {
                 firstName, lastName, email, phone, planId: Number(planId),
-                startDate, expiryDate
+                startDate, expiryDate, imageUrl
             }
         });
         res.json(member);
@@ -496,11 +496,37 @@ app.post('/api/members/:id/renew', authenticateToken, authorize(['ADMIN', 'STAFF
 // Staff/Admin only
 app.post('/api/members/:id/status', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, freezeStartDate, freezeEndDate } = req.body;
+    try {
+        const updateData = { status };
+
+        if (status === 'FREEZED') {
+            updateData.freezeStartDate = freezeStartDate ? new Date(freezeStartDate) : null;
+            updateData.freezeEndDate = freezeEndDate ? new Date(freezeEndDate) : null;
+        } else if (status === 'ACTIVE') {
+            // Clear freeze dates when reactivating
+            updateData.freezeStartDate = null;
+            updateData.freezeEndDate = null;
+        }
+
+        const member = await prisma.member.update({
+            where: { id: Number(id) },
+            data: updateData
+        });
+        res.json(member);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Update member details (General)
+app.put('/api/members/:id', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    const { id } = req.params;
+    const { firstName, lastName, email, phone, imageUrl } = req.body;
     try {
         const member = await prisma.member.update({
             where: { id: Number(id) },
-            data: { status }
+            data: { firstName, lastName, email, phone, imageUrl }
         });
         res.json(member);
     } catch (e) {

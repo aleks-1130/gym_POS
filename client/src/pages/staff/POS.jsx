@@ -405,37 +405,61 @@ export default function POS() {
                     {displayItems.length === 0 && (
                         <div className="col-span-full text-center text-text-muted py-10">No items found in this category.</div>
                     )}
-                    {displayItems.map(item => (
-                        <div
-                            key={item.id}
-                            onClick={() => addToCart(item, selectedCategory === 'MEMBERSHIP' ? 'PLAN' : 'PRODUCT')}
-                            className={`group bg-surface hover:bg-primary/5 rounded-3xl p-3 cursor-pointer transition-all duration-300 border border-white/5 hover:border-primary/20 shadow-sm hover:shadow-primary/10 active:scale-95 ${selectedCategory === 'MEMBERSHIP' ? 'ring-1 ring-yellow-500/30' : ''}`}
-                        >
-                            <div className="aspect-[4/3] rounded-2xl overflow-hidden mb-3 relative bg-white/5">
-                                {item.imageUrl ? (
-                                    <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
-                                ) : (
-                                    <div className="w-full h-full flex items-center justify-center text-text-muted group-hover:text-primary/50 transition-colors">
-                                        <span className="material-icons-round text-4xl">{selectedCategory === 'MEMBERSHIP' ? 'card_membership' : 'inventory_2'}</span>
+                    {displayItems.map(item => {
+                        const isSoldOut = selectedCategory !== 'MEMBERSHIP' && item.stock <= 0;
+                        return (
+                            <div
+                                key={item.id}
+                                onClick={() => {
+                                    if (isSoldOut) return;
+                                    addToCart(item, selectedCategory === 'MEMBERSHIP' ? 'PLAN' : 'PRODUCT');
+                                }}
+                                className={`group bg-surface hover:bg-primary/5 rounded-3xl p-3 cursor-pointer transition-all duration-300 border border-white/5 hover:border-primary/20 shadow-sm hover:shadow-primary/10 active:scale-95 ${selectedCategory === 'MEMBERSHIP' ? 'ring-1 ring-yellow-500/30' : ''} ${isSoldOut ? 'opacity-70 grayscale-[0.5] cursor-not-allowed' : ''}`}
+                            >
+                                <div className="aspect-[4/3] rounded-2xl overflow-hidden mb-3 relative bg-white/5">
+                                    {item.imageUrl ? (
+                                        <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center text-text-muted group-hover:text-primary/50 transition-colors">
+                                            <span className="material-icons-round text-4xl">{selectedCategory === 'MEMBERSHIP' ? 'card_membership' : 'inventory_2'}</span>
+                                        </div>
+                                    )}
+
+                                    {/* Sold Out Overlay */}
+                                    {isSoldOut && (
+                                        <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] flex items-center justify-center z-10">
+                                            <span className="bg-red-500 text-white text-[10px] font-black px-3 py-1 rounded-full shadow-lg border border-red-400/50 uppercase tracking-widest">Sold Out</span>
+                                        </div>
+                                    )}
+
+                                    {/* Stock Badge */}
+                                    {item.stock !== undefined && (
+                                        <div className={`absolute top-2 left-2 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded-lg border shadow-sm z-20 ${item.stock <= 5 ? 'bg-red-500/80 border-red-400/50' : 'bg-surface/80 border-white/10'
+                                            }`}>
+                                            {item.stock} In Stock
+                                        </div>
+                                    )}
+
+                                    {selectedCategory === 'MEMBERSHIP' && (
+                                        <div className="absolute top-2 right-2 bg-yellow-500/90 backdrop-blur-sm text-black text-xs font-bold px-2 py-1 rounded-lg shadow-sm">
+                                            {item.duration} Days
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="px-1 mt-2">
+                                    <h3 className="text-white font-bold truncate text-sm">{item.name}</h3>
+                                    <div className="flex justify-between items-center mt-1">
+                                        <p className="text-primary font-bold">{formatPrice(item.price)}</p>
+                                        {item.category && (
+                                            <span className="text-[10px] text-text-muted uppercase font-bold tracking-tighter bg-white/5 px-1.5 py-0.5 rounded">
+                                                {item.category}
+                                            </span>
+                                        )}
                                     </div>
-                                )}
-                                {item.stock !== undefined && (
-                                    <div className="absolute top-2 right-2 bg-surface/90 backdrop-blur-sm text-white text-xs font-bold px-2 py-1 rounded-lg border border-white/10 shadow-sm">
-                                        {item.stock}
-                                    </div>
-                                )}
-                                {selectedCategory === 'MEMBERSHIP' && (
-                                    <div className="absolute top-2 right-2 bg-yellow-500/90 backdrop-blur-sm text-black text-xs font-bold px-2 py-1 rounded-lg shadow-sm">
-                                        {item.duration} Days
-                                    </div>
-                                )}
+                                </div>
                             </div>
-                            <div className="px-1 mt-2">
-                                <h3 className="text-white font-bold truncate text-sm">{item.name}</h3>
-                                <p className="text-primary font-bold mt-1">{formatPrice(item.price)}</p>
-                            </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
 

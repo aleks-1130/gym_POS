@@ -44,6 +44,9 @@ model Member {
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
   points           Int                @default(0)
+  freezeStartDate  DateTime?
+  freezeEndDate    DateTime?
+  imageUrl         String?
   payments         Payment[]
   accessLogs       AccessLog[]
   bookings         Booking[]
