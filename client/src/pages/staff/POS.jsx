@@ -486,9 +486,16 @@ export default function POS() {
                         </select>
                     </div>
 
-                    <div className="flex items-center gap-2 text-xs font-medium text-text-muted mt-2 ml-1">
-                        <span className={`w-1.5 h-1.5 rounded-full ${selectedMemberId ? 'bg-emerald-500' : 'bg-gray-600'}`}></span>
-                        <span>{selectedMemberId ? 'Member Linked' : 'No Member Linked'}</span>
+                    <div className="flex items-center gap-2 text-xs font-medium text-text-muted mt-2 ml-1 justify-between">
+                        <div className="flex items-center gap-2">
+                            <span className={`w-1.5 h-1.5 rounded-full ${selectedMemberId ? 'bg-emerald-500' : 'bg-gray-600'}`}></span>
+                            <span>{selectedMemberId ? 'Member Linked' : 'No Member Linked'}</span>
+                        </div>
+                        {selectedMemberId && (
+                            <div className="text-orange-400 font-bold">
+                                {members.find(m => m.id === Number(selectedMemberId))?.points || 0} PTS
+                            </div>
+                        )}
                     </div>
                 </div>
 

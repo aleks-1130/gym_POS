@@ -35,10 +35,10 @@ async function main() {
 
     // 2. SEED PLANS
     const plans = [
-        { name: 'Day Pass', price: 15.00, duration: 1 },
-        { name: 'Monthly Standard', price: 59.99, duration: 30 },
-        { name: 'Yearly Pro', price: 599.99, duration: 365 },
-        { name: 'Student Monthly', price: 39.99, duration: 30 }
+        { name: 'Yearly Pro', price: 20, duration: 365 },
+        { name: 'Monthly Standard', price: 10, duration: 30 },
+        { name: 'Student Monthly', price: 8, duration: 30 },
+        { name: 'Day Pass', price: 5.00, duration: 1 }
     ];
 
     for (const p of plans) {

@@ -594,15 +594,7 @@ app.get('/api/access/logs/:id', authenticateToken, authorize(['ADMIN', 'STAFF'])
     }
 });
 
-// --- MEMBERSHIP PLANS ---
-app.get('/api/plans', async (req, res) => {
-    try {
-        const plans = await prisma.plan.findMany();
-        res.json(plans);
-    } catch (e) {
-        res.status(500).json({ error: "Failed to fetch plans" });
-    }
-});
+
 
 // --- SIMULATION ROUTES (For Testing) ---
 app.post('/api/access/simulate', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
@@ -701,6 +693,18 @@ app.post('/api/payments', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBE
             }
         }
 
+        // 3. Award Loyalty Points (1 point per 100 PHP spent, Rate: 58)
+        if (memberId) {
+            // Amount is in USD (e.g. 2.50). Convert to PHP (145) then divide by 100 => 1.45 => 1 pt.
+            const points = Math.floor((parseFloat(amount) * 58) / 100);
+            if (points > 0) {
+                await prisma.member.update({
+                    where: { id: Number(memberId) },
+                    data: { points: { increment: points } }
+                });
+            }
+        }
+
         res.json(payment);
     } catch (e) {
         console.error(e);
@@ -726,6 +730,23 @@ app.get('/api/payments', authenticateToken, async (req, res) => {
         include: { member: true }
     });
     res.json(payments);
+});
+
+// --- PLAN ROUTES ---
+app.get('/api/plans', async (req, res) => {
+    try {
+        const plans = await prisma.plan.findMany();
+        // Custom Sort Order
+        const order = ['Yearly Pro', 'Monthly Standard', 'Student Monthly', 'Day Pass'];
+        plans.sort((a, b) => {
+            const indexA = order.indexOf(a.name);
+            const indexB = order.indexOf(b.name);
+            return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
+        });
+        res.json(plans);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch plans" });
+    }
 });
 
 // --- INVENTORY ROUTES ---
@@ -880,6 +901,55 @@ app.get('/api/loyalty/rewards', authenticateToken, async (req, res) => {
     const rewards = await prisma.loyaltyReward.findMany();
     res.json(rewards);
 });
+
+app.post('/api/loyalty/rewards', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
+    try {
+        const { name, cost, category, description, imageUrl } = req.body;
+        const reward = await prisma.loyaltyReward.create({
+            data: {
+                name,
+                cost: parseInt(cost) || 0,
+                category: category || 'MERCHANDISE',
+                description,
+                imageUrl
+            }
+        });
+        res.json(reward);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.put('/api/loyalty/rewards/:id', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, cost, category, description, imageUrl } = req.body;
+        const reward = await prisma.loyaltyReward.update({
+            where: { id: Number(id) },
+            data: {
+                name,
+                cost: parseInt(cost) || 0,
+                category,
+                description,
+                imageUrl
+            }
+        });
+        res.json(reward);
+    } catch (e) {
+        console.error("Update Reward Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/loyalty/rewards/:id', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        await prisma.loyaltyReward.delete({ where: { id: Number(id) } });
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
 // (Simple endpoint to add points manually for now)
 app.post('/api/members/:id/points', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
     const { id } = req.params;
@@ -1002,10 +1072,10 @@ app.post('/api/seed', async (req, res) => {
         // 2. Plans
         await prisma.plan.createMany({
             data: [
-                { name: 'Platinum Yearly', price: 999.00, duration: 365 },
-                { name: 'Gold Monthly', price: 80.00, duration: 30 },
-                { name: 'Silver Monthly', price: 50.00, duration: 30 },
-                { name: 'Day Pass', price: 15.00, duration: 1 }
+                { name: 'Yearly Pro', price: 20.00, duration: 365 },
+                { name: 'Monthly Standard', price: 10.00, duration: 30 },
+                { name: 'Student Monthly', price: 8.00, duration: 30 },
+                { name: 'Day Pass', price: 5.00, duration: 1 }
             ]
         });
 
