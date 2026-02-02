@@ -14,6 +14,29 @@ export default function ProfileResult() {
     }, [logId]);
 
     const fetchLogDetails = async () => {
+        if (logId === 'dummy') {
+            setLog({
+                id: 'dummy',
+                status: 'ALLOWED',
+                checkIn: new Date().toISOString(),
+                member: {
+                    id: 999,
+                    firstName: 'Bruce',
+                    lastName: 'Wayne',
+                    email: 'bruce@wayne.com',
+                    phone: '+1 555-BATMAN',
+                    imageUrl: 'https://images.unsplash.com/photo-1531427186611-ecfd6d936c79?auto=format&fit=crop&q=80&w=300',
+                    membershipStatus: 'ACTIVE',
+                    membershipType: 'Platinum Yearly',
+                    joinDate: '2023-01-01T00:00:00.000Z',
+                    expiryDate: '2025-12-31T00:00:00.000Z',
+                    plan: { name: 'Platinum Yearly' }
+                }
+            });
+            setLoading(false);
+            return;
+        }
+
         try {
             const res = await axios.get(`http://localhost:5000/api/access/logs/${logId}`);
             setLog(res.data);
@@ -42,7 +65,7 @@ export default function ProfileResult() {
                     <span className="material-icons-round text-6xl text-red-400 mb-4">error_outline</span>
                     <h2 className="text-2xl font-bold text-white mb-2">Error Loading Scan</h2>
                     <p className="text-text-muted mb-6">{error || 'Scan result not found'}</p>
-                    <button 
+                    <button
                         onClick={() => navigate('/scanner')}
                         className="bg-primary hover:bg-orange-600 text-white px-6 py-3 rounded-xl font-bold transition-colors"
                     >
@@ -61,7 +84,7 @@ export default function ProfileResult() {
             <div className="max-w-2xl mx-auto">
                 {/* Header */}
                 <div className="flex items-center gap-4 mb-6">
-                    <button 
+                    <button
                         onClick={() => navigate('/scanner')}
                         className="w-10 h-10 rounded-xl bg-surface border border-white/5 flex items-center justify-center hover:bg-surfaceHighlight transition-colors"
                     >
@@ -71,24 +94,21 @@ export default function ProfileResult() {
                 </div>
 
                 {/* Status Banner */}
-                <div className={`rounded-2xl p-6 mb-6 border-2 ${
-                    isAllowed 
-                        ? 'bg-emerald-500/10 border-emerald-500/30' 
+                <div className={`rounded-2xl p-6 mb-6 border-2 ${isAllowed
+                        ? 'bg-emerald-500/10 border-emerald-500/30'
                         : 'bg-red-500/10 border-red-500/30'
-                }`}>
+                    }`}>
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
-                            <div className={`w-16 h-16 rounded-full flex items-center justify-center ${
-                                isAllowed ? 'bg-emerald-500' : 'bg-red-500'
-                            }`}>
+                            <div className={`w-16 h-16 rounded-full flex items-center justify-center ${isAllowed ? 'bg-emerald-500' : 'bg-red-500'
+                                }`}>
                                 <span className="material-icons-round text-4xl text-white">
                                     {isAllowed ? 'check_circle' : 'cancel'}
                                 </span>
                             </div>
                             <div>
-                                <h2 className={`text-2xl font-bold ${
-                                    isAllowed ? 'text-emerald-400' : 'text-red-400'
-                                }`}>
+                                <h2 className={`text-2xl font-bold ${isAllowed ? 'text-emerald-400' : 'text-red-400'
+                                    }`}>
                                     Access {status}
                                 </h2>
                                 <p className="text-text-muted text-sm">
@@ -108,8 +128,8 @@ export default function ProfileResult() {
                             <div className="relative flex items-center gap-6">
                                 {member.imageUrl ? (
                                     <div className="w-24 h-24 rounded-2xl overflow-hidden border-4 border-white/10 shadow-xl">
-                                        <img 
-                                            src={member.imageUrl} 
+                                        <img
+                                            src={member.imageUrl}
                                             alt={`${member.firstName} ${member.lastName}`}
                                             className="w-full h-full object-cover"
                                         />
@@ -126,11 +146,10 @@ export default function ProfileResult() {
                                         {member.firstName} {member.lastName}
                                     </h3>
                                     <div className="flex items-center gap-2">
-                                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                                            member.membershipStatus === 'ACTIVE' 
+                                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${member.membershipStatus === 'ACTIVE'
                                                 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                                                 : 'bg-red-500/20 text-red-400 border border-red-500/30'
-                                        }`}>
+                                            }`}>
                                             {member.membershipStatus}
                                         </span>
                                         <span className="px-3 py-1 rounded-full text-xs font-bold bg-white/10 text-text-secondary border border-white/10">
@@ -225,7 +244,7 @@ export default function ProfileResult() {
 
                 {/* Action Buttons */}
                 <div className="flex gap-4 mt-6">
-                    <button 
+                    <button
                         onClick={() => navigate('/scanner')}
                         className="flex-1 bg-primary hover:bg-orange-600 text-white px-6 py-4 rounded-2xl font-bold transition-colors flex items-center justify-center gap-2"
                     >
@@ -233,7 +252,7 @@ export default function ProfileResult() {
                         Scan Next
                     </button>
                     {member && (
-                        <button 
+                        <button
                             onClick={() => navigate(`/members/${member.id}`)}
                             className="flex-1 bg-surface hover:bg-surfaceHighlight text-white px-6 py-4 rounded-2xl font-bold border border-white/10 transition-colors flex items-center justify-center gap-2"
                         >

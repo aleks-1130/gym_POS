@@ -580,6 +580,20 @@ app.get('/api/access/logs', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEM
     }
 });
 
+app.get('/api/access/logs/:id', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    const { id } = req.params;
+    try {
+        const log = await prisma.accessLog.findUnique({
+            where: { id: parseInt(id) },
+            include: { member: { include: { plan: true } } }
+        });
+        if (!log) return res.status(404).json({ error: "Log not found" });
+        res.json(log);
+    } catch (e) {
+        res.status(500).json({ error: "Fetch failed" });
+    }
+});
+
 // --- MEMBERSHIP PLANS ---
 app.get('/api/plans', async (req, res) => {
     try {

@@ -25,26 +25,11 @@ export default function DoorScanner() {
 
     const simulateScan = async (accessStatus) => {
         setScanning(true);
-        try {
-            // ID 1 is assumed to exist for demo seed
-            const response = await axios.post('http://localhost:5000/api/access/checkin', { 
-                memberId: 1, 
-                status: accessStatus 
-            });
-            
-            // Navigate to profile result page with the new log ID
-            if (response.data && response.data.id) {
-                setTimeout(() => {
-                    navigate(`/scan-result/${response.data.id}`);
-                }, 800);
-            } else {
-                fetchLogs();
-                setScanning(false);
-            }
-        } catch (e) {
-            console.error("Scan failed", e);
+        // Simulate a delay for the scanning animation
+        setTimeout(() => {
+            navigate('/scan-result/dummy');
             setScanning(false);
-        }
+        }, 1200);
     };
 
     const handleLogClick = (logId) => {
@@ -82,8 +67,8 @@ export default function DoorScanner() {
                     <p className="text-text-muted text-center mb-8 max-w-xs text-sm">Use the button below to simulate a member QR code being scanned at the entrance.</p>
 
                     <div className="flex gap-4 w-full">
-                        <button 
-                            onClick={() => simulateScan(null)} 
+                        <button
+                            onClick={() => simulateScan(null)}
                             disabled={scanning}
                             className="flex-1 bg-primary hover:bg-orange-600 disabled:bg-primary/50 text-white px-6 py-4 rounded-2xl flex flex-col items-center transition-transform active:scale-95 shadow-lg shadow-primary/20 disabled:cursor-not-allowed"
                         >
@@ -95,15 +80,15 @@ export default function DoorScanner() {
                     </div>
 
                     <div className="flex gap-4 mt-6 pt-6 border-t border-white/5 w-full justify-center">
-                        <button 
-                            onClick={() => simulateScan('ALLOWED')} 
+                        <button
+                            onClick={() => simulateScan('ALLOWED')}
                             disabled={scanning}
                             className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 px-4 py-2 rounded-xl text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             Force Allow
                         </button>
-                        <button 
-                            onClick={() => simulateScan('DENIED')} 
+                        <button
+                            onClick={() => simulateScan('DENIED')}
                             disabled={scanning}
                             className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-4 py-2 rounded-xl text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
@@ -117,14 +102,13 @@ export default function DoorScanner() {
                     <h3 className="text-lg font-bold text-white mb-4">Live Access Feed</h3>
                     <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-thin">
                         {logs.map((log, i) => (
-                            <div 
-                                key={i} 
+                            <div
+                                key={i}
                                 onClick={() => handleLogClick(log.id)}
-                                className={`p-4 rounded-xl border-l-4 flex justify-between items-center bg-white/5 hover:bg-white/10 border hover:shadow-sm transition-all cursor-pointer ${
-                                    log.status === 'ALLOWED' 
-                                        ? 'border-l-emerald-500 border-white/5' 
-                                        : 'border-l-red-500 border-white/5'
-                                }`}
+                                className={`p-4 rounded-xl border-l-4 flex justify-between items-center bg-white/5 hover:bg-white/10 border hover:shadow-sm transition-all cursor-pointer ${log.status === 'ALLOWED'
+                                    ? 'border-l-emerald-500 border-white/5'
+                                    : 'border-l-red-500 border-white/5'
+                                    }`}
                             >
                                 <div className="flex items-center gap-3">
                                     {log.member?.imageUrl ? (
@@ -132,11 +116,10 @@ export default function DoorScanner() {
                                             <img src={log.member.imageUrl} className="w-full h-full object-cover" alt="" />
                                         </div>
                                     ) : (
-                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs ${
-                                            log.status === 'ALLOWED' 
-                                                ? 'bg-emerald-500/10 text-emerald-400' 
-                                                : 'bg-red-500/10 text-red-400'
-                                        }`}>
+                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs ${log.status === 'ALLOWED'
+                                            ? 'bg-emerald-500/10 text-emerald-400'
+                                            : 'bg-red-500/10 text-red-400'
+                                            }`}>
                                             {log.member ? `${log.member.firstName[0]}${log.member.lastName[0]}` : <span className="material-icons-round">person</span>}
                                         </div>
                                     )}
@@ -145,9 +128,8 @@ export default function DoorScanner() {
                                             {log.member ? `${log.member.firstName} ${log.member.lastName}` : 'Unknown QR Code'}
                                         </p>
                                         <div className="flex items-center gap-1.5 mt-0.5">
-                                            <span className={`w-1.5 h-1.5 rounded-full ${
-                                                log.status === 'ALLOWED' ? 'bg-emerald-500' : 'bg-red-500'
-                                            }`}></span>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${log.status === 'ALLOWED' ? 'bg-emerald-500' : 'bg-red-500'
+                                                }`}></span>
                                             <p className="text-[10px] text-text-muted uppercase tracking-wider font-bold">
                                                 Entrance • {log.status}
                                             </p>

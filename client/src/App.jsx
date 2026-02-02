@@ -47,7 +47,7 @@ import ProfileResult from './components/ProfileResult';
 // Optional (only if you have this component)
 // import MemberProfile from './pages/staff/MemberProfile';
 
-const ProtectedRoute = ({ children, allowedRoles }) => {
+const ProtectedRoute = ({ children, allowedRoles, fullScreen }) => {
   const { user, loading } = useAuth();
 
   if (loading)
@@ -61,6 +61,15 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {
     return <Navigate to="/" replace />;
+  }
+
+  // Full screen mode (no sidebar, no bottom nav)
+  if (fullScreen) {
+    return (
+      <div className="bg-background min-h-screen w-full overflow-y-auto">
+        {children}
+      </div>
+    );
   }
 
   // Members use bottom nav only (no sidebar)
@@ -114,7 +123,7 @@ function AppRoutes() {
         <Route
           path="/scan-result/:logId"
           element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]} fullScreen>
               <ProfileResult />
             </ProtectedRoute>
           }
