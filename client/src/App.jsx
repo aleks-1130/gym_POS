@@ -36,15 +36,14 @@ import Profile from './pages/member/Profile';
 import Attendance from './pages/member/Attendance';
 import PurchaseHistory from './pages/member/PurchaseHistory';
 import TrainerBooking from './pages/member/TrainerBooking';
-import Announcements from './pages/member/Announcements';
+import Announcements from './pages/shared/Announcements';
 
 // Common
-import Notifications from './pages/Notifications';
+// import Notifications from './pages/Notifications';
 
 // ✅ NEW IMPORTS
-import DoorScanner from './pages/staff/DoorScanner';
-import ProfileResult from './components/ProfileResult';
-// Optional (only if you have this component)
+// import DoorScanner from './pages/staff/DoorScanner';
+import DisplayMonitor from './pages/shared/DisplayMonitor';
 // import MemberProfile from './pages/staff/MemberProfile';
 
 const ProtectedRoute = ({ children, allowedRoles, fullScreen }) => {
@@ -114,17 +113,13 @@ function AppRoutes() {
         {/* ✅ NEW ROUTES */}
         <Route
           path="/scanner"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              <DoorScanner />
-            </ProtectedRoute>
-          }
+          element={<Navigate to="/access" replace />}
         />
         <Route
-          path="/scan-result/:logId"
+          path="/display-monitor"
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]} fullScreen>
-              <ProfileResult />
+              <DisplayMonitor />
             </ProtectedRoute>
           }
         />
@@ -158,7 +153,7 @@ function AppRoutes() {
           path="/notifications"
           element={
             <ProtectedRoute>
-              <Notifications />
+              <Announcements />
             </ProtectedRoute>
           }
         />

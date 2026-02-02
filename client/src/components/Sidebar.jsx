@@ -9,13 +9,13 @@ export default function Sidebar() {
     const [isMobileOpen, setIsMobileOpen] = useState(false);
 
     const NavItem = ({ to, icon, label }) => (
-        <NavLink 
-            to={to} 
-            onClick={() => setIsMobileOpen(false)} 
+        <NavLink
+            to={to}
+            onClick={() => setIsMobileOpen(false)}
             className={({ isActive }) => `
                 relative group flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200
-                ${isActive 
-                    ? 'bg-primary text-white shadow-lg shadow-primary/25' 
+                ${isActive
+                    ? 'bg-primary text-white shadow-lg shadow-primary/25'
                     : 'text-text-secondary hover:bg-white/5 hover:text-white'
                 }
             `}
@@ -54,53 +54,71 @@ export default function Sidebar() {
 
     const menuConfig = {
         [ROLES.STAFF]: [
-            { section: "Operations", items: [
-                { to: "/payments", icon: "receipt_long", label: "POS" },
-                { to: "/members", icon: "groups", label: "Members" },
-                { to: "/access", icon: "qr_code_scanner", label: "Access" },
-            ]},
-            { section: "Programs", items: [
-                { to: "/trainers", icon: "fitness_center", label: "Trainers" },
-                { to: "/classes", icon: "event", label: "Classes" },
-            ]},
-            { section: "Engagement", items: [
-                { to: "/loyalty", icon: "loyalty", label: "Rewards" },
-                { to: "/notifications", icon: "campaign", label: "Announce" },
-            ]}
+            {
+                section: "Operations", items: [
+                    { to: "/payments", icon: "receipt_long", label: "POS" },
+                    { to: "/members", icon: "groups", label: "Members" },
+                    { to: "/access", icon: "qr_code_scanner", label: "Access" },
+                ]
+            },
+            {
+                section: "Programs", items: [
+                    { to: "/trainers", icon: "fitness_center", label: "Trainers" },
+                    { to: "/classes", icon: "event", label: "Classes" },
+                ]
+            },
+            {
+                section: "Engagement", items: [
+                    { to: "/loyalty", icon: "loyalty", label: "Rewards" },
+                    { to: "/announcements", icon: "campaign", label: "Announcements" },
+                ]
+            }
         ],
         [ROLES.ADMIN]: [
-            { section: "Operations", items: [
-                { to: "/payments", icon: "receipt_long", label: "Payments" },
-                { to: "/members", icon: "groups", label: "Members" },
-                { to: "/access", icon: "qr_code_scanner", label: "Access" },
-            ]},
-            { section: "Management", items: [
-                { to: "/inventory", icon: "inventory_2", label: "Inventory" },
-                { to: "/trainers", icon: "fitness_center", label: "Trainers" },
-                { to: "/classes", icon: "event", label: "Classes" },
-            ]},
-            { section: "Insights", items: [
-                { to: "/schedule", icon: "calendar_month", label: "Schedule" },
-                { to: "/analytics", icon: "analytics", label: "Analytics" },
-                { to: "/loyalty", icon: "loyalty", label: "Rewards" },
-                { to: "/notifications", icon: "campaign", label: "Broadcast" },
-            ]}
+            {
+                section: "Operations", items: [
+                    { to: "/payments", icon: "receipt_long", label: "Payments" },
+                    { to: "/members", icon: "groups", label: "Members" },
+                    { to: "/access", icon: "qr_code_scanner", label: "Access" },
+                ]
+            },
+            {
+                section: "Management", items: [
+                    { to: "/inventory", icon: "inventory_2", label: "Inventory" },
+                    { to: "/trainers", icon: "fitness_center", label: "Trainers" },
+                    { to: "/classes", icon: "event", label: "Classes" },
+                ]
+            },
+            {
+                section: "Insights", items: [
+                    { to: "/schedule", icon: "calendar_month", label: "Schedule" },
+                    { to: "/analytics", icon: "analytics", label: "Analytics" },
+                    { to: "/loyalty", icon: "loyalty", label: "Rewards" },
+                    { to: "/announcements", icon: "campaign", label: "Broadcast" },
+                ]
+            }
         ],
         [ROLES.OWNER]: [
-            { section: "Overview", items: [
-                { to: "/members", icon: "groups", label: "Members" },
-                { to: "/analytics", icon: "analytics", label: "Analytics" },
-            ]},
-            { section: "Administration", items: [
-                { to: "/users", icon: "admin_panel_settings", label: "Users" },
-                { to: "/audit", icon: "verified_user", label: "Audit Logs" },
-                { to: "/settings", icon: "tune", label: "Settings" },
-            ]}
+            {
+                section: "Overview", items: [
+                    { to: "/members", icon: "groups", label: "Members" },
+                    { to: "/analytics", icon: "analytics", label: "Analytics" },
+                ]
+            },
+            {
+                section: "Administration", items: [
+                    { to: "/users", icon: "admin_panel_settings", label: "Users" },
+                    { to: "/audit", icon: "verified_user", label: "Audit Logs" },
+                    { to: "/settings", icon: "tune", label: "Settings" },
+                ]
+            }
         ],
         [ROLES.MEMBER]: [
-            { section: "Services", items: [
-                { to: "/shop", icon: "shopping_bag", label: "Shop" },
-            ]}
+            {
+                section: "Services", items: [
+                    { to: "/shop", icon: "shopping_bag", label: "Shop" },
+                ]
+            }
         ]
     };
 
@@ -120,9 +138,9 @@ export default function Sidebar() {
 
             {/* Mobile Overlay */}
             {isMobileOpen && (
-                <div 
-                    className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden transition-opacity" 
-                    onClick={() => setIsMobileOpen(false)} 
+                <div
+                    className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden transition-opacity"
+                    onClick={() => setIsMobileOpen(false)}
                 />
             )}
 
@@ -146,7 +164,7 @@ export default function Sidebar() {
                             </p>
                         </div>
                     </div>
-                    
+
                     {/* Desktop Collapse Toggle */}
                     <button
                         onClick={() => setIsCollapsed(!isCollapsed)}
@@ -161,7 +179,7 @@ export default function Sidebar() {
                 {/* Navigation */}
                 <nav className="flex-1 flex flex-col px-3 py-4 gap-0.5 overflow-y-auto overflow-x-hidden no-scrollbar">
                     <NavItem to="/" icon="dashboard" label="Dashboard" />
-                    
+
                     {currentMenu.map((section, idx) => (
                         <div key={idx}>
                             <SectionDivider label={section.section} />

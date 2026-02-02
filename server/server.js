@@ -604,6 +604,35 @@ app.get('/api/plans', async (req, res) => {
     }
 });
 
+// --- SIMULATION ROUTES (For Testing) ---
+app.post('/api/access/simulate', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    try {
+        // Try to find any existing member to use for the simulation
+        let member = await prisma.member.findFirst();
+
+        let memberId;
+        if (member) {
+            memberId = member.id;
+        } else {
+            // If no members exist, we might need to return a dummy response 
+            // without creating a DB record, or create a temporary one.
+            return res.status(400).json({ error: "No members found in database to simulate scan." });
+        }
+
+        const log = await prisma.accessLog.create({
+            data: {
+                memberId: memberId,
+                status: 'ALLOWED'
+            },
+            include: { member: { include: { plan: true } } }
+        });
+        res.json(log);
+    } catch (e) {
+        console.error("Simulation error:", e);
+        res.status(500).json({ error: "Simulation failed: " + e.message });
+    }
+});
+
 // --- POS ROUTES ---
 // Payment creation - Members might pay online later, but for POS it's staff
 app.post('/api/payments', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBER']), async (req, res) => {
@@ -774,13 +803,63 @@ app.post('/api/trainers', authenticateToken, authorize(['ADMIN', 'STAFF']), asyn
     res.json(trainer);
 });
 
+app.get('/api/trainers/:id', authenticateToken, async (req, res) => {
+    try {
+        const trainer = await prisma.trainer.findUnique({
+            where: { id: Number(req.params.id) },
+            include: {
+                classes: true,
+                trainingSessions: {
+                    include: { member: true },
+                    take: 10,
+                    orderBy: { date: 'desc' }
+                }
+            }
+        });
+        res.json(trainer);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch trainer profile" });
+    }
+});
+
+app.get('/api/trainers/:id/sessions', authenticateToken, async (req, res) => {
+    try {
+        const sessions = await prisma.trainingSession.findMany({
+            where: { trainerId: Number(req.params.id) },
+            include: { member: true },
+            orderBy: { date: 'desc' }
+        });
+        res.json(sessions);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch training sessions" });
+    }
+});
+
 // --- CLASS ROUTES ---
 app.get('/api/classes', authenticateToken, async (req, res) => {
     const classes = await prisma.class.findMany({
-        include: { trainer: true },
-        orderBy: { dayOfWeek: 'asc' } // Simple sort, in real app might need better day sorting
+        include: {
+            trainer: true,
+            bookings: {
+                include: { member: true }
+            }
+        },
+        orderBy: { dayOfWeek: 'asc' }
     });
     res.json(classes);
+});
+
+app.get('/api/classes/:id/participants', authenticateToken, async (req, res) => {
+    try {
+        const participants = await prisma.booking.findMany({
+            where: { classId: Number(req.params.id) },
+            include: { member: true },
+            orderBy: { createdAt: 'desc' }
+        });
+        res.json(participants);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch participants" });
+    }
 });
 
 app.post('/api/classes', authenticateToken, authorize(['ADMIN', 'STAFF', 'TRAINER']), async (req, res) => {
@@ -827,9 +906,26 @@ app.post('/api/members/:id/points', authenticateToken, authorize(['ADMIN', 'STAF
 app.get('/api/notifications', authenticateToken, async (req, res) => {
     const notifs = await prisma.notification.findMany({
         orderBy: { date: 'desc' },
-        take: 20
+        take: 50
     });
     res.json(notifs);
+});
+
+app.post('/api/notifications', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
+    const { title, message, type } = req.body;
+    try {
+        const notif = await prisma.notification.create({
+            data: {
+                title,
+                message,
+                type: type || 'INFO',
+                date: new Date()
+            }
+        });
+        res.json(notif);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to create announcement" });
+    }
 });
 
 
