@@ -3,13 +3,13 @@ import { useCurrency } from '../context/CurrencyContext';
 
 // This component can be used in a modal or hidden iframe for printing
 export const Receipt = React.forwardRef(({ transaction, items, member, cashierName, discount = 0, paymentDetails }, ref) => {
-    const { formatPrice } = useCurrency();
+    const { formatPrice, rate } = useCurrency();
     const date = new Date();
 
     // Gym Info (Hardcoded for now, ideal if from config)
     const gymInfo = {
-        name: "IRON FORGE GYM",
-        address: "123 Fitness Blvd, Muscle City, CA 90210",
+        name: "FitOS Gym",
+        address: "123 Fitness Blvd, Gym City",
         tin: "123-456-789-000",
         vatReg: "VAT REG TIN: 123-456-789-000"
     };
@@ -17,6 +17,10 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
     // Calculations
     const subtotal = items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
     const total = Math.max(0, subtotal - discount);
+
+    // Points Calculation (1 pt per 100 Local Currency Units)
+    const conversionRate = rate || 58;
+    const pointsEarned = Math.floor((total * conversionRate) / 100);
 
     // VAT Calculation (Philippines: 12% existing in price usually, but let's assume price is VAT inclusive)
     // VATable Sales = Total / 1.12
@@ -128,6 +132,20 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
                     <span>0.00</span>
                 </div>
             </div>
+
+            {/* Loyalty Points */}
+            {member && (
+                <div className="text-xs mb-6 border-t border-black pt-2 border-dashed">
+                    <div className="flex justify-between font-bold">
+                        <span>Points Earned:</span>
+                        <span>{pointsEarned} PTS</span>
+                    </div>
+                    <div className="flex justify-between text-gray-600">
+                        <span>Total Balance:</span>
+                        <span>{(member.points || 0) + pointsEarned} PTS</span>
+                    </div>
+                </div>
+            )}
 
             {/* Footer */}
             <div className="text-center text-[10px] space-y-1 mt-8">

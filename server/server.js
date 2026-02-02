@@ -436,7 +436,7 @@ app.get('/api/members/:id', authenticateToken, async (req, res) => {
 
 // Only Staff/Admin can create members
 app.post('/api/members', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
-    const { firstName, lastName, email, phone, planId } = req.body;
+    const { firstName, lastName, email, phone, planId, imageUrl } = req.body;
     try {
         // Calculate expiry based on plan
         const plan = await prisma.plan.findUnique({ where: { id: Number(planId) } });
@@ -447,7 +447,7 @@ app.post('/api/members', authenticateToken, authorize(['ADMIN', 'STAFF']), async
         const member = await prisma.member.create({
             data: {
                 firstName, lastName, email, phone, planId: Number(planId),
-                startDate, expiryDate
+                startDate, expiryDate, imageUrl
             }
         });
         res.json(member);
@@ -496,11 +496,37 @@ app.post('/api/members/:id/renew', authenticateToken, authorize(['ADMIN', 'STAFF
 // Staff/Admin only
 app.post('/api/members/:id/status', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, freezeStartDate, freezeEndDate } = req.body;
+    try {
+        const updateData = { status };
+
+        if (status === 'FREEZED') {
+            updateData.freezeStartDate = freezeStartDate ? new Date(freezeStartDate) : null;
+            updateData.freezeEndDate = freezeEndDate ? new Date(freezeEndDate) : null;
+        } else if (status === 'ACTIVE') {
+            // Clear freeze dates when reactivating
+            updateData.freezeStartDate = null;
+            updateData.freezeEndDate = null;
+        }
+
+        const member = await prisma.member.update({
+            where: { id: Number(id) },
+            data: updateData
+        });
+        res.json(member);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Update member details (General)
+app.put('/api/members/:id', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    const { id } = req.params;
+    const { firstName, lastName, email, phone, imageUrl } = req.body;
     try {
         const member = await prisma.member.update({
             where: { id: Number(id) },
-            data: { status }
+            data: { firstName, lastName, email, phone, imageUrl }
         });
         res.json(member);
     } catch (e) {
@@ -554,13 +580,48 @@ app.get('/api/access/logs', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEM
     }
 });
 
-// --- MEMBERSHIP PLANS ---
-app.get('/api/plans', async (req, res) => {
+app.get('/api/access/logs/:id', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    const { id } = req.params;
     try {
-        const plans = await prisma.plan.findMany();
-        res.json(plans);
+        const log = await prisma.accessLog.findUnique({
+            where: { id: parseInt(id) },
+            include: { member: { include: { plan: true } } }
+        });
+        if (!log) return res.status(404).json({ error: "Log not found" });
+        res.json(log);
     } catch (e) {
-        res.status(500).json({ error: "Failed to fetch plans" });
+        res.status(500).json({ error: "Fetch failed" });
+    }
+});
+
+
+
+// --- SIMULATION ROUTES (For Testing) ---
+app.post('/api/access/simulate', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    try {
+        // Try to find any existing member to use for the simulation
+        let member = await prisma.member.findFirst();
+
+        let memberId;
+        if (member) {
+            memberId = member.id;
+        } else {
+            // If no members exist, we might need to return a dummy response 
+            // without creating a DB record, or create a temporary one.
+            return res.status(400).json({ error: "No members found in database to simulate scan." });
+        }
+
+        const log = await prisma.accessLog.create({
+            data: {
+                memberId: memberId,
+                status: 'ALLOWED'
+            },
+            include: { member: { include: { plan: true } } }
+        });
+        res.json(log);
+    } catch (e) {
+        console.error("Simulation error:", e);
+        res.status(500).json({ error: "Simulation failed: " + e.message });
     }
 });
 
@@ -632,6 +693,18 @@ app.post('/api/payments', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBE
             }
         }
 
+        // 3. Award Loyalty Points (1 point per 100 PHP spent, Rate: 58)
+        if (memberId) {
+            // Amount is in USD (e.g. 2.50). Convert to PHP (145) then divide by 100 => 1.45 => 1 pt.
+            const points = Math.floor((parseFloat(amount) * 58) / 100);
+            if (points > 0) {
+                await prisma.member.update({
+                    where: { id: Number(memberId) },
+                    data: { points: { increment: points } }
+                });
+            }
+        }
+
         res.json(payment);
     } catch (e) {
         console.error(e);
@@ -657,6 +730,23 @@ app.get('/api/payments', authenticateToken, async (req, res) => {
         include: { member: true }
     });
     res.json(payments);
+});
+
+// --- PLAN ROUTES ---
+app.get('/api/plans', async (req, res) => {
+    try {
+        const plans = await prisma.plan.findMany();
+        // Custom Sort Order
+        const order = ['Yearly Pro', 'Monthly Standard', 'Student Monthly', 'Day Pass'];
+        plans.sort((a, b) => {
+            const indexA = order.indexOf(a.name);
+            const indexB = order.indexOf(b.name);
+            return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
+        });
+        res.json(plans);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch plans" });
+    }
 });
 
 // --- INVENTORY ROUTES ---
@@ -734,13 +824,63 @@ app.post('/api/trainers', authenticateToken, authorize(['ADMIN', 'STAFF']), asyn
     res.json(trainer);
 });
 
+app.get('/api/trainers/:id', authenticateToken, async (req, res) => {
+    try {
+        const trainer = await prisma.trainer.findUnique({
+            where: { id: Number(req.params.id) },
+            include: {
+                classes: true,
+                trainingSessions: {
+                    include: { member: true },
+                    take: 10,
+                    orderBy: { date: 'desc' }
+                }
+            }
+        });
+        res.json(trainer);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch trainer profile" });
+    }
+});
+
+app.get('/api/trainers/:id/sessions', authenticateToken, async (req, res) => {
+    try {
+        const sessions = await prisma.trainingSession.findMany({
+            where: { trainerId: Number(req.params.id) },
+            include: { member: true },
+            orderBy: { date: 'desc' }
+        });
+        res.json(sessions);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch training sessions" });
+    }
+});
+
 // --- CLASS ROUTES ---
 app.get('/api/classes', authenticateToken, async (req, res) => {
     const classes = await prisma.class.findMany({
-        include: { trainer: true },
-        orderBy: { dayOfWeek: 'asc' } // Simple sort, in real app might need better day sorting
+        include: {
+            trainer: true,
+            bookings: {
+                include: { member: true }
+            }
+        },
+        orderBy: { dayOfWeek: 'asc' }
     });
     res.json(classes);
+});
+
+app.get('/api/classes/:id/participants', authenticateToken, async (req, res) => {
+    try {
+        const participants = await prisma.booking.findMany({
+            where: { classId: Number(req.params.id) },
+            include: { member: true },
+            orderBy: { createdAt: 'desc' }
+        });
+        res.json(participants);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch participants" });
+    }
 });
 
 app.post('/api/classes', authenticateToken, authorize(['ADMIN', 'STAFF', 'TRAINER']), async (req, res) => {
@@ -760,6 +900,55 @@ app.post('/api/classes', authenticateToken, authorize(['ADMIN', 'STAFF', 'TRAINE
 app.get('/api/loyalty/rewards', authenticateToken, async (req, res) => {
     const rewards = await prisma.loyaltyReward.findMany();
     res.json(rewards);
+});
+
+app.post('/api/loyalty/rewards', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
+    try {
+        const { name, cost, category, description, imageUrl } = req.body;
+        const reward = await prisma.loyaltyReward.create({
+            data: {
+                name,
+                cost: parseInt(cost) || 0,
+                category: category || 'MERCHANDISE',
+                description,
+                imageUrl
+            }
+        });
+        res.json(reward);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.put('/api/loyalty/rewards/:id', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, cost, category, description, imageUrl } = req.body;
+        const reward = await prisma.loyaltyReward.update({
+            where: { id: Number(id) },
+            data: {
+                name,
+                cost: parseInt(cost) || 0,
+                category,
+                description,
+                imageUrl
+            }
+        });
+        res.json(reward);
+    } catch (e) {
+        console.error("Update Reward Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/loyalty/rewards/:id', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        await prisma.loyaltyReward.delete({ where: { id: Number(id) } });
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 // (Simple endpoint to add points manually for now)
 app.post('/api/members/:id/points', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
@@ -787,9 +976,26 @@ app.post('/api/members/:id/points', authenticateToken, authorize(['ADMIN', 'STAF
 app.get('/api/notifications', authenticateToken, async (req, res) => {
     const notifs = await prisma.notification.findMany({
         orderBy: { date: 'desc' },
-        take: 20
+        take: 50
     });
     res.json(notifs);
+});
+
+app.post('/api/notifications', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
+    const { title, message, type } = req.body;
+    try {
+        const notif = await prisma.notification.create({
+            data: {
+                title,
+                message,
+                type: type || 'INFO',
+                date: new Date()
+            }
+        });
+        res.json(notif);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to create announcement" });
+    }
 });
 
 
@@ -866,10 +1072,10 @@ app.post('/api/seed', async (req, res) => {
         // 2. Plans
         await prisma.plan.createMany({
             data: [
-                { name: 'Platinum Yearly', price: 999.00, duration: 365 },
-                { name: 'Gold Monthly', price: 80.00, duration: 30 },
-                { name: 'Silver Monthly', price: 50.00, duration: 30 },
-                { name: 'Day Pass', price: 15.00, duration: 1 }
+                { name: 'Yearly Pro', price: 20.00, duration: 365 },
+                { name: 'Monthly Standard', price: 10.00, duration: 30 },
+                { name: 'Student Monthly', price: 8.00, duration: 30 },
+                { name: 'Day Pass', price: 5.00, duration: 1 }
             ]
         });
 
