@@ -580,7 +580,7 @@ app.get('/api/access/logs', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEM
     }
 });
 
-app.get('/api/access/logs/:id', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+app.get('/api/access/logs/:id', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
     const { id } = req.params;
     try {
         const log = await prisma.accessLog.findUnique({
@@ -597,8 +597,9 @@ app.get('/api/access/logs/:id', authenticateToken, authorize(['ADMIN', 'STAFF'])
 
 
 // --- SIMULATION ROUTES (For Testing) ---
-app.post('/api/access/simulate', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+app.post('/api/access/simulate', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
     try {
+        const { status } = req.body; // Allow forcing status
         // Try to find any existing member to use for the simulation
         let member = await prisma.member.findFirst();
 
@@ -606,15 +607,15 @@ app.post('/api/access/simulate', authenticateToken, authorize(['ADMIN', 'STAFF']
         if (member) {
             memberId = member.id;
         } else {
-            // If no members exist, we might need to return a dummy response 
-            // without creating a DB record, or create a temporary one.
+            // If no members exist, return error
             return res.status(400).json({ error: "No members found in database to simulate scan." });
         }
 
         const log = await prisma.accessLog.create({
             data: {
                 memberId: memberId,
-                status: 'ALLOWED'
+                status: status || 'ALLOWED', // Use provided status or default
+                checkIn: new Date()
             },
             include: { member: { include: { plan: true } } }
         });

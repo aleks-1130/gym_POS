@@ -18,7 +18,12 @@ export default function Access() {
 
         const checkLatestScan = async () => {
             try {
-                const res = await axios.get('http://localhost:5000/api/access/logs');
+                // FIXED: Added Auth Token
+                const token = localStorage.getItem('token');
+                const res = await axios.get('http://localhost:5000/api/access/logs', {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+
                 if (res.data && res.data.length > 0) {
                     const latest = res.data[0];
                     setHistory(res.data.slice(0, 10));
@@ -48,10 +53,19 @@ export default function Access() {
         setScanning(true);
         try {
             const token = localStorage.getItem('token');
-            const res = await axios.post('http://localhost:5000/api/access/simulate', {}, {
+            const res = await axios.post('http://localhost:5000/api/access/simulate', { status: 'ALLOWED' }, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            // The polling logic will catch the new database entry
+
+            // Immediate update (don't wait for poll)
+            setTimeout(() => {
+                setLatestLogId(res.data.id);
+                lastScanId.current = res.data.id;
+                setScanning(false);
+                // Update history locally to be snappy
+                setHistory(prev => [res.data, ...prev].slice(0, 10));
+            }, 1000); // Consistent animation duration
+
         } catch (err) {
             console.error("Simulation failed", err);
             setScanning(false);
