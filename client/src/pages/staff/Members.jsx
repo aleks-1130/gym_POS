@@ -9,7 +9,7 @@ export default function Members() {
     const [plans, setPlans] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
-    const [viewMode, setViewMode] = useState('list'); // 'list' or 'grid'
+    const [viewMode, setViewMode] = useState('grid'); // Changed from 'list' to 'grid'
 
     // Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);

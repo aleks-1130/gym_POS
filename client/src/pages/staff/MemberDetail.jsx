@@ -9,6 +9,7 @@ export default function MemberDetail() {
     const { formatPrice } = useCurrency();
     const [member, setMember] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [plans, setPlans] = useState([]);
 
     // Modals
     const [showRenewModal, setShowRenewModal] = useState(false);
@@ -17,7 +18,7 @@ export default function MemberDetail() {
     const [showPhotoModal, setShowPhotoModal] = useState(false);
 
     // Form Data
-    const [renewData, setRenewData] = useState({ duration: 30, amount: 0, method: 'CASH' });
+    const [renewData, setRenewData] = useState({ planId: '', duration: 30, amount: 0, method: 'CASH' });
     const [freezeData, setFreezeData] = useState({
         startDate: new Date().toISOString().split('T')[0],
         endDate: new Date(new Date().setDate(new Date().getDate() + 30)).toISOString().split('T')[0]
@@ -32,6 +33,7 @@ export default function MemberDetail() {
 
     useEffect(() => {
         fetchMember();
+        fetchPlans();
     }, [id]);
 
     const fetchMember = async () => {
@@ -39,13 +41,39 @@ export default function MemberDetail() {
             const res = await axios.get(`http://localhost:5000/api/members/${id}`);
             setMember(res.data);
             if (res.data.plan) {
-                setRenewData(prev => ({ ...prev, amount: res.data.plan.price, duration: res.data.plan.duration }));
+                setRenewData(prev => ({ 
+                    ...prev, 
+                    planId: res.data.plan.id,
+                    amount: res.data.plan.price, 
+                    duration: res.data.plan.duration 
+                }));
             }
         } catch (e) {
             alert("Member not found");
             navigate('/members');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const fetchPlans = async () => {
+        try {
+            const res = await axios.get('http://localhost:5000/api/plans');
+            setPlans(res.data);
+        } catch (e) {
+            console.error("Failed to fetch plans", e);
+        }
+    };
+
+    const handlePlanChange = (planId) => {
+        const selectedPlan = plans.find(p => p.id === parseInt(planId));
+        if (selectedPlan) {
+            setRenewData({
+                ...renewData,
+                planId: selectedPlan.id,
+                duration: selectedPlan.duration,
+                amount: selectedPlan.price
+            });
         }
     };
 
@@ -462,24 +490,53 @@ export default function MemberDetail() {
                         </div>
                         <form onSubmit={handleRenew} className="space-y-5">
                             <div>
+                                <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-widest">Select Plan</label>
+                                <select 
+                                    required
+                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all appearance-none cursor-pointer"
+                                    value={renewData.planId} 
+                                    onChange={e => handlePlanChange(e.target.value)}
+                                >
+                                    <option value="" className="bg-surface">-- Choose a Plan --</option>
+                                    {plans.map(plan => (
+                                        <option key={plan.id} value={plan.id} className="bg-surface">
+                                            {plan.name} - {formatPrice(plan.price)} / {plan.duration} days
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
                                 <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-widest">Duration (Days)</label>
-                                <input required type="number"
+                                <input 
+                                    required 
+                                    type="number"
                                     className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
-                                    value={renewData.duration} onChange={e => setRenewData({ ...renewData, duration: e.target.value })} />
+                                    value={renewData.duration} 
+                                    onChange={e => setRenewData({ ...renewData, duration: e.target.value })} 
+                                    readOnly
+                                />
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-widest">Amount Paid</label>
                                 <div className="relative">
                                     <span className="absolute left-4 top-3 text-text-muted">$</span>
-                                    <input required type="number" step="0.01"
+                                    <input 
+                                        required 
+                                        type="number" 
+                                        step="0.01"
                                         className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl pl-8 pr-4 py-3 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
-                                        value={renewData.amount} onChange={e => setRenewData({ ...renewData, amount: e.target.value })} />
+                                        value={renewData.amount} 
+                                        onChange={e => setRenewData({ ...renewData, amount: e.target.value })} 
+                                    />
                                 </div>
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-widest">Payment Method</label>
-                                <select className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all appearance-none cursor-pointer"
-                                    value={renewData.method} onChange={e => setRenewData({ ...renewData, method: e.target.value })}>
+                                <select 
+                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all appearance-none cursor-pointer"
+                                    value={renewData.method} 
+                                    onChange={e => setRenewData({ ...renewData, method: e.target.value })}
+                                >
                                     <option value="CASH" className="bg-surface">Cash</option>
                                     <option value="CARD" className="bg-surface">Card</option>
                                     <option value="TRANSFER" className="bg-surface">Transfer</option>
