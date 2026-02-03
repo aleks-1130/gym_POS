@@ -46,13 +46,17 @@ model Member {
   points           Int                @default(0)
   freezeStartDate  DateTime?
   freezeEndDate    DateTime?
+  birthDate        DateTime?
+  sex              String?
   imageUrl         String?
   payments         Payment[]
   accessLogs       AccessLog[]
   bookings         Booking[]
   orders           Order[]
   trainingSessions TrainingSession[]
+  membershipPeriods MembershipPeriod[]
 }
+
 
 model Plan {
   id          Int      @id @default(autoincrement())
@@ -60,7 +64,9 @@ model Plan {
   price       Float
   duration    Int      // Duration in days
   members     Member[]
+  membershipPeriods MembershipPeriod[]
 }
+
 
 model Payment {
   id        Int      @id @default(autoincrement())
@@ -113,7 +119,9 @@ model Trainer {
   updatedAt        DateTime          @updatedAt
   classes          Class[]
   trainingSessions TrainingSession[]
+  membershipPeriods MembershipPeriod[]
 }
+
 
 model TrainingSession {
   id        Int      @id @default(autoincrement())
@@ -173,6 +181,19 @@ model OrderItem {
   product   Product @relation(fields: [productId], references: [id])
   quantity  Int
   price     Float   // Price at time of purchase
+}
+
+model MembershipPeriod {
+  id        Int      @id @default(autoincrement())
+  memberId  Int
+  member    Member   @relation(fields: [memberId], references: [id])
+  planId    Int?
+  plan      Plan?    @relation(fields: [planId], references: [id])
+  startDate DateTime
+  endDate   DateTime
+  amount    Float?
+  method    String?
+  createdAt DateTime @default(now())
 }
 
 model Notification {

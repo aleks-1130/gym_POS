@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useReactToPrint } from 'react-to-print';
+import QRCode from 'react-qr-code';
 
 export default function Members() {
     const navigate = useNavigate();
@@ -15,6 +16,7 @@ export default function Members() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [showTCModal, setShowTCModal] = useState(false);
     const [newMember, setNewMember] = useState(null);
+    const [qrMember, setQrMember] = useState(null);
 
     const [formData, setFormData] = useState({
         firstName: '',
@@ -22,6 +24,9 @@ export default function Members() {
         email: '',
         phone: '',
         planId: '',
+        paymentMethod: 'CASH',
+        birthDate: '',
+        sex: '',
         imageUrl: '',
         agreedToTC: false
     });
@@ -102,13 +107,17 @@ export default function Members() {
         }
         setSubmitting(true);
         try {
-            const res = await axios.post('http://localhost:5000/api/members', {
+            const payload = {
                 ...formData,
-                planId: formData.planId ? Number(formData.planId) : null
-            });
+                planId: formData.planId ? Number(formData.planId) : null,
+                paymentMethod: formData.paymentMethod,
+                birthDate: formData.birthDate || null,
+                sex: formData.sex || null
+            };
+            const res = await axios.post('http://localhost:5000/api/members', payload);
             setNewMember(res.data);
             setIsModalOpen(false);
-            setFormData({ firstName: '', lastName: '', email: '', phone: '', planId: '', imageUrl: '', agreedToTC: false });
+            setFormData({ firstName: '', lastName: '', email: '', phone: '', planId: '', birthDate: '', sex: '', imageUrl: '', agreedToTC: false });
             fetchData(); // Refresh list
             setShowTCModal(true); // Show printing modal
         } catch (e) {
@@ -133,6 +142,7 @@ export default function Members() {
             default: return 'bg-white/5 text-text-muted border-white/10';
         }
     };
+    const getQrValue = (memberId) => (memberId ? `MEMBER:${memberId}` : '');
 
     return (
         <div className="space-y-6">
@@ -230,7 +240,20 @@ export default function Members() {
                                             {new Date(member.startDate).toLocaleDateString()}
                                         </td>
                                         <td className="p-6 text-right">
-                                            <span className="material-icons-round text-text-muted group-hover:text-primary transition-colors">chevron_right</span>
+                                            <div className="flex items-center justify-end gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setQrMember(member);
+                                                    }}
+                                                    className="w-9 h-9 rounded-lg border border-white/10 bg-white/5 text-text-muted hover:text-white hover:border-primary/30 transition-all flex items-center justify-center"
+                                                    title="View QR Code"
+                                                >
+                                                    <span className="material-icons-round text-[18px]">qr_code_2</span>
+                                                </button>
+                                                <span className="material-icons-round text-text-muted group-hover:text-primary transition-colors">chevron_right</span>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -262,9 +285,22 @@ export default function Members() {
                                         {member.firstName[0]}{member.lastName[0]}
                                     </div>
                                 )}
-                                <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${getStatusColor(member.status)}`}>
-                                    {member.status}
-                                </span>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setQrMember(member);
+                                        }}
+                                        className="w-8 h-8 rounded-lg border border-white/10 bg-white/5 text-text-muted hover:text-white hover:border-primary/30 transition-all flex items-center justify-center"
+                                        title="View QR Code"
+                                    >
+                                        <span className="material-icons-round text-[16px]">qr_code_2</span>
+                                    </button>
+                                    <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${getStatusColor(member.status)}`}>
+                                        {member.status}
+                                    </span>
+                                </div>
                             </div>
 
                             <div>
@@ -399,6 +435,34 @@ export default function Members() {
                                 </div>
                             </div>
 
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Birthday</label>
+                                    <input
+                                        type="date"
+                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
+                                        value={formData.birthDate}
+                                        onChange={e => setFormData({ ...formData, birthDate: e.target.value })}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Sex</label>
+                                    <div className="relative">
+                                        <select
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none appearance-none cursor-pointer transition-all"
+                                            value={formData.sex}
+                                            onChange={e => setFormData({ ...formData, sex: e.target.value })}
+                                        >
+                                            <option value="" className="bg-surface">Select sex</option>
+                                            <option value="Male" className="bg-surface">Male</option>
+                                            <option value="Female" className="bg-surface">Female</option>
+                                            <option value="Other" className="bg-surface">Other</option>
+                                        </select>
+                                        <span className="material-icons-round absolute right-4 top-3 text-text-muted pointer-events-none text-sm">expand_more</span>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div>
                                 <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Membership Plan</label>
                                 <div className="relative">
@@ -414,6 +478,22 @@ export default function Members() {
                                                 {plan.name} - ${plan.price} ({plan.duration} days)
                                             </option>
                                         ))}
+                                    </select>
+                                    <span className="material-icons-round absolute right-4 top-3 text-text-muted pointer-events-none text-sm">expand_more</span>
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Payment Method</label>
+                                <div className="relative">
+                                    <select
+                                        required
+                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none appearance-none cursor-pointer transition-all"
+                                        value={formData.paymentMethod}
+                                        onChange={e => setFormData({ ...formData, paymentMethod: e.target.value })}
+                                    >
+                                        <option value="CASH" className="bg-surface">Cash</option>
+                                        <option value="CARD" className="bg-surface">Card</option>
+                                        <option value="TRANSFER" className="bg-surface">Transfer</option>
                                     </select>
                                     <span className="material-icons-round absolute right-4 top-3 text-text-muted pointer-events-none text-sm">expand_more</span>
                                 </div>
@@ -496,6 +576,16 @@ export default function Members() {
                                     <p><strong>Expiry Date:</strong> {new Date(newMember.expiryDate).toLocaleDateString()}</p>
                                 </div>
                             </div>
+                            <div className="border border-black p-3 rounded mb-8 text-sm flex items-center justify-between gap-6">
+                                <div>
+                                    <p className="font-bold border-b border-black mb-1">MEMBER QR CODE</p>
+                                    <p><strong>ID:</strong> {newMember.id}</p>
+                                    <p><strong>Code:</strong> MEMBER:{newMember.id}</p>
+                                </div>
+                                <div className="bg-white p-2 border border-black">
+                                    <QRCode value={getQrValue(newMember.id)} size={96} />
+                                </div>
+                            </div>
 
                             <div className="space-y-4 text-xs leading-relaxed">
                                 <section>
@@ -541,6 +631,33 @@ export default function Members() {
                                 <span className="material-icons-round">print</span>
                                 Print Agreement
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* QR Code Modal */}
+            {qrMember && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[70] animate-fade-in">
+                    <div className="bg-surface rounded-3xl border border-white/10 w-full max-w-sm shadow-2xl overflow-hidden">
+                        <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
+                            <div>
+                                <h2 className="text-lg font-bold text-white">Member QR Code</h2>
+                                <p className="text-xs text-text-muted">{qrMember.firstName} {qrMember.lastName}</p>
+                            </div>
+                            <button onClick={() => setQrMember(null)} className="text-text-muted hover:text-white transition-colors">
+                                <span className="material-icons-round">close</span>
+                            </button>
+                        </div>
+
+                        <div className="p-6 flex flex-col items-center gap-4">
+                            <div className="bg-white p-4 rounded-2xl shadow-lg">
+                                <QRCode value={getQrValue(qrMember.id)} size={180} />
+                            </div>
+                            <div className="text-center">
+                                <p className="text-xs text-text-muted">Member ID</p>
+                                <p className="text-white font-mono text-sm">MEMBER:{qrMember.id}</p>
+                            </div>
                         </div>
                     </div>
                 </div>

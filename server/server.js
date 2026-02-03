@@ -425,7 +425,7 @@ app.get('/api/members/:id', authenticateToken, async (req, res) => {
     try {
         const member = await prisma.member.findUnique({
             where: { id: Number(id) },
-            include: { plan: true, payments: { orderBy: { date: 'desc' } }, accessLogs: { orderBy: { checkIn: 'desc' }, take: 20 } }
+            include: { plan: true, payments: { orderBy: { date: 'desc' } }, accessLogs: { orderBy: { checkIn: 'desc' }, take: 20 }, membershipPeriods: { include: { plan: true }, orderBy: { startDate: 'desc' } } }
         });
         if (!member) return res.status(404).json({ error: "Member not found" });
         res.json(member);
@@ -436,7 +436,7 @@ app.get('/api/members/:id', authenticateToken, async (req, res) => {
 
 // Only Staff/Admin can create members
 app.post('/api/members', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
-    const { firstName, lastName, email, phone, planId, imageUrl } = req.body;
+    const { firstName, lastName, email, phone, planId, imageUrl, birthDate, sex, paymentMethod } = req.body;
     try {
         // Calculate expiry based on plan
         const plan = await prisma.plan.findUnique({ where: { id: Number(planId) } });
@@ -447,9 +447,34 @@ app.post('/api/members', authenticateToken, authorize(['ADMIN', 'STAFF']), async
         const member = await prisma.member.create({
             data: {
                 firstName, lastName, email, phone, planId: Number(planId),
-                startDate, expiryDate, imageUrl
+                startDate, expiryDate, imageUrl,
+                birthDate: birthDate ? new Date(birthDate) : null,
+                sex: sex || null,
+                ...(planId ? {
+                    membershipPeriods: {
+                        create: {
+                            planId: Number(planId),
+                            startDate,
+                            endDate: expiryDate,
+                            amount: plan ? plan.price : null,
+                            method: paymentMethod || null
+                        }
+                    }
+                } : {})
             }
         });
+
+        if (plan) {
+            await prisma.payment.create({
+                data: {
+                    amount: plan.price,
+                    type: 'MEMBERSHIP',
+                    method: paymentMethod || 'CASH',
+                    memberId: member.id
+                }
+            });
+        }
+
         res.json(member);
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -459,22 +484,48 @@ app.post('/api/members', authenticateToken, authorize(['ADMIN', 'STAFF']), async
 // Only Staff/Admin can renew members (unless we add self-service later)
 app.post('/api/members/:id/renew', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
     const { id } = req.params;
-    const { duration, amount, method } = req.body; // duration in days
+    const { duration, amount, method, planId } = req.body; // duration in days
     try {
         const member = await prisma.member.findUnique({ where: { id: Number(id) } });
         if (!member) return res.status(404).json({ error: "Member not found" });
 
-        // Calculate new expiry
-        const currentExpiry = new Date(member.expiryDate) > new Date() ? new Date(member.expiryDate) : new Date();
+        const now = new Date();
+        const currentExpiry = member.expiryDate && new Date(member.expiryDate) > now ? new Date(member.expiryDate) : now;
         const newExpiry = new Date(currentExpiry);
         newExpiry.setDate(newExpiry.getDate() + Number(duration));
 
-        // Update member and login payment
+        const existingPeriods = await prisma.membershipPeriod.count({
+            where: { memberId: Number(id) }
+        });
+
+        if (existingPeriods === 0 && member.planId && member.startDate && member.expiryDate) {
+            await prisma.membershipPeriod.create({
+                data: {
+                    memberId: Number(id),
+                    planId: member.planId,
+                    startDate: member.startDate,
+                    endDate: member.expiryDate
+                }
+            });
+        }
+
         const updatedMember = await prisma.member.update({
             where: { id: Number(id) },
             data: {
                 expiryDate: newExpiry,
-                status: 'ACTIVE'
+                status: 'ACTIVE',
+                ...(planId ? { planId: Number(planId) } : {})
+            }
+        });
+
+        await prisma.membershipPeriod.create({
+            data: {
+                memberId: Number(id),
+                planId: planId ? Number(planId) : member.planId,
+                startDate: currentExpiry,
+                endDate: newExpiry,
+                amount: amount !== undefined && amount !== null ? parseFloat(amount) : null,
+                method: method || null
             }
         });
 
@@ -522,11 +573,19 @@ app.post('/api/members/:id/status', authenticateToken, authorize(['ADMIN', 'STAF
 // Update member details (General)
 app.put('/api/members/:id', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
     const { id } = req.params;
-    const { firstName, lastName, email, phone, imageUrl } = req.body;
+    const { firstName, lastName, email, phone, imageUrl, birthDate, sex } = req.body;
     try {
         const member = await prisma.member.update({
             where: { id: Number(id) },
-            data: { firstName, lastName, email, phone, imageUrl }
+            data: {
+                firstName,
+                lastName,
+                email,
+                phone,
+                imageUrl,
+                birthDate: birthDate ? new Date(birthDate) : null,
+                sex: sex || null
+            }
         });
         res.json(member);
     } catch (e) {
@@ -570,7 +629,25 @@ app.get('/api/access/logs', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEM
 
         const logs = await prisma.accessLog.findMany({
             where,
-            include: { member: true },
+            include: {
+                member: {
+                    select: {
+                        id: true,
+                        firstName: true,
+                        lastName: true,
+                        email: true,
+                        phone: true,
+                        status: true,
+                        startDate: true,
+                        createdAt: true,
+                        expiryDate: true,
+                        birthDate: true,
+                        sex: true,
+                        imageUrl: true,
+                        plan: { select: { name: true } }
+                    }
+                }
+            },
             orderBy: { checkIn: 'desc' },
             take: 50
         });
@@ -585,7 +662,25 @@ app.get('/api/access/logs/:id', authenticateToken, authorize(['OWNER', 'ADMIN', 
     try {
         const log = await prisma.accessLog.findUnique({
             where: { id: parseInt(id) },
-            include: { member: { include: { plan: true } } }
+            include: {
+                member: {
+                    select: {
+                        id: true,
+                        firstName: true,
+                        lastName: true,
+                        email: true,
+                        phone: true,
+                        status: true,
+                        startDate: true,
+                        createdAt: true,
+                        expiryDate: true,
+                        birthDate: true,
+                        sex: true,
+                        imageUrl: true,
+                        plan: { select: { name: true } }
+                    }
+                }
+            }
         });
         if (!log) return res.status(404).json({ error: "Log not found" });
         res.json(log);
