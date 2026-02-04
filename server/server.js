@@ -127,6 +127,21 @@ app.post('/api/auth/member-setup', async (req, res) => {
 
 
 // --- DASHBOARD ROUTES ---
+app.get('/api/health-stats', async (req, res) => {
+    try {
+        const expenseSum = await prisma.expense.aggregate({ _sum: { amount: true } });
+        const expenseCount = await prisma.expense.count();
+        res.json({
+            message: "Direct DB Check",
+            totalAmount: expenseSum._sum.amount,
+            count: expenseCount,
+            dbUrl: process.env.DATABASE_URL
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
     try {
         // If Member, return only their own stats (or simplified generic stats)
@@ -154,6 +169,20 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
             where: { date: { gte: today } }
         });
 
+        // Calculate Net Profit (Month to Date)
+        const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        const monthlyRevenue = await prisma.payment.aggregate({
+            _sum: { amount: true },
+            where: { date: { gte: firstDayOfMonth } }
+        });
+        const monthlyExpenses = await prisma.expense.aggregate({
+            _sum: { amount: true },
+            where: { date: { gte: firstDayOfMonth } }
+        });
+
+        const totalRev = monthlyRevenue._sum.amount || 0;
+        const totalExp = monthlyExpenses._sum.amount || 0;
+
         const expiring = await prisma.member.count({
             where: {
                 expiryDate: {
@@ -166,7 +195,10 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
         res.json({
             activeMembers: totalMembers,
             revenueToday: todayRevenue._sum.amount || 0,
-            expiringSoon: expiring
+            monthlyRevenue: monthlyRevenue._sum.amount || 0,
+            expiringSoon: expiring,
+            netProfit: totalRev - totalExp,
+            totalExpenses: totalExp
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -863,7 +895,9 @@ app.post('/api/products', authenticateToken, authorize(['ADMIN', 'STAFF']), asyn
                 price: parseFloat(price) || 0,
                 stock: Number(stock) || 0,
                 minStock: Number(minStock) || 0,
-                imageUrl
+                imageUrl,
+                supplyCost: parseFloat(req.body.supplyCost) || 0,
+                supplierId: req.body.supplierId ? Number(req.body.supplierId) : null
             }
         });
         res.json(product);
@@ -883,7 +917,9 @@ app.put('/api/products/:id', authenticateToken, authorize(['ADMIN', 'STAFF']), a
                 price: parseFloat(price) || 0,
                 stock: Number(stock) || 0,
                 minStock: Number(minStock) || 0,
-                imageUrl
+                imageUrl,
+                supplyCost: parseFloat(req.body.supplyCost) || 0,
+                supplierId: req.body.supplierId ? Number(req.body.supplierId) : null
             }
         });
         res.json(product);
@@ -1075,6 +1111,278 @@ app.get('/api/notifications', authenticateToken, async (req, res) => {
         take: 50
     });
     res.json(notifs);
+});
+
+// --- SUPPLIER ROUTES ---
+
+// Get All Suppliers
+app.get('/api/suppliers', authenticateToken, async (req, res) => {
+    try {
+        const suppliers = await prisma.supplier.findMany({
+            include: { _count: { select: { products: true } } },
+            orderBy: { name: 'asc' }
+        });
+        res.json(suppliers);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch suppliers" });
+    }
+});
+
+// Create Supplier
+app.post('/api/suppliers', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
+    const { name, contact, email, address, notes } = req.body;
+    try {
+        const supplier = await prisma.supplier.create({
+            data: { name, contact, email, address, notes }
+        });
+        await logAudit("CREATE_SUPPLIER", req.user.id.toString(), `Supplier: ${supplier.name}`, "Created new supplier");
+        res.json(supplier);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to create supplier" });
+    }
+});
+
+// Update Supplier
+app.put('/api/suppliers/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
+    const { id } = req.params;
+    const { name, contact, email, address, notes } = req.body;
+    try {
+        const supplier = await prisma.supplier.update({
+            where: { id: Number(id) },
+            data: { name, contact, email, address, notes }
+        });
+        await logAudit("UPDATE_SUPPLIER", req.user.id.toString(), `Supplier: ${supplier.name}`, "Updated details");
+        res.json(supplier);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to update supplier" });
+    }
+});
+
+// Delete Supplier
+app.delete('/api/suppliers/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
+    const { id } = req.params;
+    try {
+        // Check for linked expenses/products?
+        // For now, allow delete (will set constraints later if needed or rely on cascade)
+        // Prisma default might fail if relations exist without cascade.
+        // Let's check first.
+        const linkedProducts = await prisma.product.count({ where: { supplierId: Number(id) } });
+        if (linkedProducts > 0) {
+            return res.status(400).json({ error: "Cannot delete supplier with linked products" });
+        }
+
+        await prisma.supplier.delete({ where: { id: Number(id) } });
+        await logAudit("DELETE_SUPPLIER", req.user.id.toString(), `Supplier ID: ${id}`, "Deleted supplier");
+        res.json({ message: "Supplier deleted" });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+
+// --- INVENTORY RESTOCK ROUTE ---
+app.post('/api/inventory/restock', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
+    const { productId, quantity, notes } = req.body;
+
+    if (!productId || !quantity) {
+        return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    try {
+        // 1. Get Product to retrieve Fixed Cost and Assigned Supplier
+        const product = await prisma.product.findUnique({ where: { id: Number(productId) } });
+        if (!product) return res.status(404).json({ error: "Product not found" });
+
+        // Enforce Supplier Isolation
+        if (!product.supplierId) {
+            return res.status(400).json({ error: "Product has no assigned supplier. Please link a supplier first." });
+        }
+
+        // Use the product's fixed USD supply cost directly. 
+        // Frontend will handle display conversion.
+        const costPerUnit = product.supplyCost || 0;
+        const totalCost = Number(quantity) * costPerUnit;
+
+        // 3. Update Stock
+        const updatedProduct = await prisma.product.update({
+            where: { id: Number(productId) },
+            data: {
+                stock: { increment: Number(quantity) }
+            }
+        });
+
+        // 4. Create Expense Record
+        const expense = await prisma.expense.create({
+            data: {
+                title: `Restock: ${product.name} (x${quantity})`,
+                amount: totalCost,
+                category: "INVENTORY",
+                date: new Date(),
+                notes: notes || `Restocked ${quantity} units @ ${costPerUnit}/unit (Fixed Cost)`,
+                recordedBy: req.user.id.toString(),
+                supplierId: product.supplierId // Strictly use product's supplier
+            }
+        });
+
+        // 5. Audit Log
+        await logAudit(
+            "RESTOCK_INVENTORY",
+            req.user.id.toString(),
+            `Product: ${product.name}`,
+            `Added ${quantity} units. Fixed Cost: ${totalCost}`
+        );
+
+        res.json({
+            message: "Restock successful",
+            newStock: updatedProduct.stock,
+            expenseId: expense.id
+        });
+
+    } catch (e) {
+        console.error("Restock Error:", e);
+        res.status(500).json({ error: "Restock failed" });
+    }
+});
+
+
+// --- EXPENSE ROUTES ---
+app.get('/api/expenses', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
+    try {
+        const { start, end, category } = req.query;
+        const where = {};
+        if (start && end) {
+            where.date = {
+                gte: new Date(start),
+                lte: new Date(end)
+            };
+        }
+        if (category) where.category = category;
+
+        const expenses = await prisma.expense.findMany({
+            where,
+            orderBy: { date: 'desc' }
+        });
+        res.json(expenses);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch expenses" });
+    }
+});
+
+app.post('/api/expenses', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
+    try {
+        const { title, amount, category, date, recurring, frequency, notes } = req.body;
+        const expense = await prisma.expense.create({
+            data: {
+                title,
+                amount: parseFloat(amount),
+                category,
+                date: new Date(date),
+                recurring: recurring || false,
+                frequency,
+                notes,
+                recordedBy: req.user.email
+            }
+        });
+        res.json(expense);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/expenses/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
+    try {
+        await prisma.expense.delete({ where: { id: Number(req.params.id) } });
+        res.json({ message: "Expense deleted" });
+    } catch (e) {
+        res.status(500).json({ error: "Failed to delete expense" });
+    }
+});
+
+// --- SUPPLIER ROUTES ---
+app.get('/api/suppliers', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
+    try {
+        const suppliers = await prisma.supplier.findMany({ orderBy: { name: 'asc' } });
+        res.json(suppliers);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch suppliers" });
+    }
+});
+
+app.post('/api/suppliers', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
+    try {
+        const { name, contact, email, address, notes } = req.body;
+        const supplier = await prisma.supplier.create({
+            data: { name, contact, email, address, notes }
+        });
+        res.json(supplier);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.put('/api/suppliers/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, contact, email, address, notes } = req.body;
+        const supplier = await prisma.supplier.update({
+            where: { id: Number(id) },
+            data: { name, contact, email, address, notes }
+        });
+        res.json(supplier);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/suppliers/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
+    try {
+        await prisma.supplier.delete({ where: { id: Number(req.params.id) } });
+        res.json({ message: "Supplier deleted" });
+    } catch (e) {
+        res.status(500).json({ error: "Failed to delete supplier" });
+    }
+});
+
+// --- INVENTORY RESTOCK ROUTE ---
+app.post('/api/inventory/restock', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
+    const { productId, supplierId, quantity, costPerUnit, notes } = req.body;
+
+    // Validation
+    if (!productId || !quantity || !costPerUnit) {
+        return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    try {
+        const totalCost = parseFloat(quantity) * parseFloat(costPerUnit);
+        const product = await prisma.product.findUnique({ where: { id: Number(productId) } });
+
+        if (!product) return res.status(404).json({ error: "Product not found" });
+
+        // Transaction: Update Stock + Create Expense
+        await prisma.$transaction([
+            prisma.product.update({
+                where: { id: Number(productId) },
+                data: { stock: { increment: Number(quantity) } }
+            }),
+            prisma.expense.create({
+                data: {
+                    title: `Restock: ${product.name} (x${quantity})`,
+                    amount: totalCost,
+                    category: 'INVENTORY',
+                    date: new Date(),
+                    recurring: false,
+                    notes: notes || `Restocked ${quantity} units @ ${costPerUnit}/unit`,
+                    recordedBy: req.user.email,
+                    supplierId: supplierId ? Number(supplierId) : null
+                }
+            })
+        ]);
+
+        res.json({ message: "Stock updated and expense recorded successfully" });
+    } catch (e) {
+        console.error("Restock Error:", e);
+        res.status(500).json({ error: "Restock failed: " + e.message });
+    }
 });
 
 app.post('/api/notifications', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {

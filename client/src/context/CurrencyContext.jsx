@@ -35,17 +35,19 @@ export function CurrencyProvider({ children }) {
     }, []);
 
     // Helper to format price
-    // Assumes input price is in USD
-    const formatPrice = (amountInUSD) => {
-        if (amountInUSD === undefined || amountInUSD === null) return '₱0.00';
-        const converted = amountInUSD * rate;
+    // Default assumes input is in USD. Pass skipConversion=true if input is already in PHP.
+    const formatPrice = (amount, skipConversion = false) => {
+        if (amount === undefined || amount === null) return '₱0.00';
+
+        // If already PHP, don't multiply by rate
+        const finalAmount = skipConversion ? amount : (amount * rate);
 
         return new Intl.NumberFormat('en-PH', {
             style: 'currency',
             currency: 'PHP',
             minimumFractionDigits: 2,
             maximumFractionDigits: 2
-        }).format(converted);
+        }).format(finalAmount);
     };
 
     const value = {

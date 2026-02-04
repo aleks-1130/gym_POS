@@ -21,6 +21,8 @@ import AuditLogs from './pages/owner/AuditLogs';
 
 // Admin Pages
 import Analytics from './pages/admin/Analytics';
+import Expenses from './pages/admin/Expenses';
+import Suppliers from './pages/admin/Suppliers';
 
 // Staff Pages
 import Inventory from './pages/staff/Inventory';
@@ -235,6 +237,22 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
               <UserManagement />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/expenses"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
+              <Expenses />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/suppliers"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
+              <Suppliers />
             </ProtectedRoute>
           }
         />

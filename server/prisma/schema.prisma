@@ -99,6 +99,9 @@ model Product {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   orderItems  OrderItem[]
+  supplierId  Int?
+  supplier    Supplier? @relation(fields: [supplierId], references: [id])
+  supplyCost  Float    @default(0)
 }
 
 model Trainer {
@@ -119,9 +122,7 @@ model Trainer {
   updatedAt        DateTime          @updatedAt
   classes          Class[]
   trainingSessions TrainingSession[]
-  membershipPeriods MembershipPeriod[]
 }
-
 
 model TrainingSession {
   id        Int      @id @default(autoincrement())
@@ -213,4 +214,33 @@ model LoyaltyReward {
   imageUrl    String?
   category    String?  // MERCHANDISE, SUPPLEMENT, APPAREL, EXPERIENCE
   createdAt   DateTime @default(now())
+}
+
+model Expense {
+  id          Int      @id @default(autoincrement())
+  title       String
+  amount      Float
+  category    String   // SALARY, UTILITIES, SUPPLIES, MAINTENANCE, OTHER, INVENTORY
+  date        DateTime @default(now())
+  recurring   Boolean  @default(false)
+  frequency   String?  // MONTHLY, WEEKLY
+  notes       String?
+  recordedBy  String?  // User email or ID
+  supplierId  Int?
+  supplier    Supplier? @relation(fields: [supplierId], references: [id])
+  createdAt   DateTime @default(now())
+  inventoryTransactionId Int? // Link to specific inventory restock if needed
+}
+
+model Supplier {
+  id        Int       @id @default(autoincrement())
+  name      String
+  contact   String?
+  email     String?
+  address   String?
+  notes     String?
+  products  Product[]
+  expenses  Expense[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 }
