@@ -51,6 +51,7 @@ const AdminDashboard = ({ stats }) => {
 
     const chartOptions = {
         responsive: true,
+        maintainAspectRatio: false,
         plugins: { legend: { display: false } },
         scales: {
             x: { grid: { display: false }, ticks: { color: '#9CA3AF' } },
@@ -60,6 +61,7 @@ const AdminDashboard = ({ stats }) => {
 
     return (
         <>
+            {/* ... (previous stats cards) ... */}
             {/* Daily Overview */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                 <StatCard title="Revenue (Today)" value={formatPrice(data.revenueToday)} icon="payments" trend={12.5} />
@@ -93,9 +95,9 @@ const AdminDashboard = ({ stats }) => {
             </div>
 
             <div className="grid lg:grid-cols-3 gap-8">
-                <div className="lg:col-span-2 bg-surface p-6 rounded-3xl border border-white/5 shadow-sm">
+                <div className="lg:col-span-2 bg-surface p-6 rounded-3xl border border-white/5 shadow-sm min-w-0">
                     <h3 className="text-lg font-bold text-white mb-6">Revenue Trends</h3>
-                    <div className="h-80 w-full">
+                    <div className="h-80 w-full relative overflow-hidden">
                         <Line data={revenueChartData} options={chartOptions} />
                     </div>
                 </div>
