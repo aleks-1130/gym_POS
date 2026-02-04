@@ -27,7 +27,36 @@ ChartJS.register(
 );
 
 export default function Analytics() {
-    const { formatPrice } = useCurrency();
+    const { formatPrice, rate } = useCurrency(); // Get rate
+    const [stats, setStats] = React.useState({
+        revenue: 0,
+        monthlyRevenue: 0,
+        expenses: 0,
+    });
+
+    React.useEffect(() => {
+        const fetchStats = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                const res = await fetch('http://localhost:5000/api/dashboard/stats', {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                const data = await res.json();
+                setStats({
+                    revenue: data.revenueToday || 0,
+                    monthlyRevenue: data.monthlyRevenue || 0,
+                    expenses: data.totalExpenses || 0
+                });
+            } catch (e) {
+                console.error("Failed to fetch stats", e);
+            }
+        };
+        fetchStats();
+    }, []);
+
+    // Calculate Net Profit (USD)
+    const netProfit = stats.monthlyRevenue - stats.expenses;
+
     // --- Mock Data ---
 
     // 1. Revenue Trends (Line Chart)
@@ -151,6 +180,24 @@ export default function Analytics() {
                 </div>
             </div>
 
+            {/* Financial Summary */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div className="bg-surface p-6 rounded-2xl border border-white/5 shadow-sm">
+                    <p className="text-text-muted text-sm font-medium">Total Expenses (MTD)</p>
+                    <h2 className="text-3xl font-bold text-red-500 mt-2">{formatPrice(stats.expenses)}</h2>
+                </div>
+                <div className="bg-surface p-6 rounded-2xl border border-white/5 shadow-sm">
+                    <p className="text-text-muted text-sm font-medium">Net Profit (MTD)</p>
+                    <h2 className={`text-3xl font-bold mt-2 ${netProfit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                        {formatPrice(netProfit)}
+                    </h2>
+                </div>
+                <div className="bg-surface p-6 rounded-2xl border border-white/5 shadow-sm">
+                    <p className="text-text-muted text-sm font-medium">Total Revenue (MTD)</p>
+                    <h2 className="text-3xl font-bold text-white mt-2">{formatPrice(stats.monthlyRevenue)}</h2>
+                </div>
+            </div>
+
             {/* Top Row: Charts */}
             <div className="grid lg:grid-cols-2 gap-6 mb-6">
                 {/* Revenue Trends */}
@@ -198,9 +245,9 @@ export default function Analytics() {
                 <div className="lg:col-span-3 bg-surface p-6 rounded-3xl border border-white/5 shadow-sm">
                     <h3 className="text-lg font-bold text-white mb-6">Top Performing Products</h3>
                     <div className="space-y-2">
-                        <ProductRow rank="1" name="Whey Protein Isolate" category="Supplements" price="1,230.00" growth="15" imageColor="bg-amber-600" />
-                        <ProductRow rank="2" name="Pre-Workout Blue Raz" category="Supplements" price="945.50" growth="10" imageColor="bg-white/20" />
-                        <ProductRow rank="3" name="Gym Shark Water Bottle" category="Merch" price="620.00" growth="20" imageColor="bg-zinc-800" />
+                        <ProductRow rank="1" name="Whey Protein Isolate" category="Supplements" price={1230.00} growth="15" imageColor="bg-amber-600" />
+                        <ProductRow rank="2" name="Pre-Workout Blue Raz" category="Supplements" price={945.50} growth="10" imageColor="bg-white/20" />
+                        <ProductRow rank="3" name="Gym Shark Water Bottle" category="Merch" price={620.00} growth="20" imageColor="bg-zinc-800" />
                     </div>
                 </div>
             </div>

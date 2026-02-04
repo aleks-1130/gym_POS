@@ -95,8 +95,11 @@ async function main() {
     for (const m of memberData) {
         // Assign random plan
         const plan = await prisma.plan.findFirst();
-        const member = await prisma.member.create({
-            data: {
+
+        const member = await prisma.member.upsert({
+            where: { email: m.email },
+            update: {},
+            create: {
                 ...m,
                 password,
                 planId: plan.id,
@@ -322,6 +325,49 @@ async function main() {
         await prisma.loyaltyReward.create({ data: reward });
     }
     console.log("✅ Loyalty Rewards seeded");
+
+    // 10. SEED SUPPLIERS
+    const suppliers = [
+        { name: 'Gym Pro Supplies', contact: 'John Sales', email: 'sales@gympro.com', address: '123 Warehouse Dr', notes: 'Main equipment supplier' },
+        { name: 'NutriWhole Wholesale', contact: 'Alice Nutrition', email: 'alice@nutriwhole.com', address: '456 Wellness Blvd', notes: 'Supplements' },
+        { name: 'CleanTech Solutions', contact: 'Bob Cleaner', email: 'bob@cleantech.com', address: '789 San Ildefonso', notes: 'Cleaning supplies' }
+    ];
+
+    for (const s of suppliers) {
+        // Upsert assumes a unique field, but name isn't unique in schema.
+        // So we verify existence first.
+        const existing = await prisma.supplier.findFirst({ where: { name: s.name } });
+        if (!existing) {
+            await prisma.supplier.create({ data: s });
+        }
+    }
+    console.log("✅ Suppliers seeded");
+
+    // 11. SEED EXPENSES
+    const expenses = [
+        { title: 'Electricity Bill', amount: 15000.00, category: 'UTILITIES', date: new Date(), notes: 'Current Bill' },
+        { title: 'Water Bill', amount: 3000.00, category: 'UTILITIES', date: new Date(), notes: 'Current Bill' },
+        { title: 'Staff Salary', amount: 45000.00, category: 'SALARY', date: new Date(), notes: 'Monthly Payroll' },
+        { title: 'Cleaning Supplies', amount: 2500.00, category: 'SUPPLIES', date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), notes: 'Detergents and sanitizers' },
+        { title: 'Gym Equipment Maintenance', amount: 5000.00, category: 'MAINTENANCE', date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), notes: 'Treadmill repair' },
+        { title: 'Internet Bill', amount: 2000.00, category: 'UTILITIES', date: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000), notes: 'Fiber connection' }
+    ];
+
+    for (const e of expenses) {
+        // Check for duplicates based on title and amount (date is approximate in check)
+        // Since we use dynamic dates for seed, we'll check title/amount.
+        const existing = await prisma.expense.findFirst({
+            where: {
+                title: e.title,
+                amount: e.amount
+            }
+        });
+
+        if (!existing) {
+            await prisma.expense.create({ data: e });
+        }
+    }
+    console.log("✅ Expenses seeded");
 
     console.log("🚀 Database successfully populated!");
 }
