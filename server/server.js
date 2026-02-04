@@ -657,6 +657,48 @@ app.get('/api/access/logs', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEM
     }
 });
 
+// Aggregate access traffic for members without exposing member details
+app.get('/api/access/traffic', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF', 'MEMBER']), async (req, res) => {
+    try {
+        const now = new Date();
+        const startParam = req.query.start ? new Date(req.query.start) : null;
+        const endParam = req.query.end ? new Date(req.query.end) : null;
+
+        const startDate = startParam && !isNaN(startParam.getTime())
+            ? startParam
+            : new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+
+        const endDate = endParam && !isNaN(endParam.getTime())
+            ? endParam
+            : now;
+
+        const logs = await prisma.accessLog.findMany({
+            where: {
+                checkIn: {
+                    gte: startDate,
+                    lte: endDate
+                }
+            },
+            select: {
+                checkIn: true,
+                status: true
+            },
+            orderBy: { checkIn: 'desc' },
+            take: 1000
+        });
+
+        res.json({
+            range: {
+                start: startDate,
+                end: endDate
+            },
+            logs
+        });
+    } catch (e) {
+        res.status(500).json({ error: "Traffic fetch failed" });
+    }
+});
+
 app.get('/api/access/logs/:id', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
     const { id } = req.params;
     try {

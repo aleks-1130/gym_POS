@@ -119,7 +119,6 @@ model Trainer {
   updatedAt        DateTime          @updatedAt
   classes          Class[]
   trainingSessions TrainingSession[]
-  membershipPeriods MembershipPeriod[]
 }
 
 
