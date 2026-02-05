@@ -164,12 +164,32 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
+        // Calculate Financials (Today)
         const todayRevenue = await prisma.payment.aggregate({
             _sum: { amount: true },
             where: { date: { gte: today } }
         });
 
-        // Calculate Net Profit (Month to Date)
+        const todaySales = await prisma.payment.aggregate({
+            _sum: { amount: true },
+            where: {
+                date: { gte: today },
+                type: 'STORE_PURCHASE'
+            }
+        });
+
+        const todayExpenses = await prisma.expense.aggregate({
+            _sum: { amount: true },
+            where: { date: { gte: today } }
+        });
+
+        // Use explicit numbers
+        const revToday = todayRevenue._sum.amount ? Number(todayRevenue._sum.amount) : 0;
+        const expToday = todayExpenses._sum.amount ? Number(todayExpenses._sum.amount) : 0;
+        const salesTodayVal = todaySales._sum.amount ? Number(todaySales._sum.amount) : 0;
+        const netProfitToday = revToday - expToday; // Revenue - Expenses
+
+        // Calculate Net Profit (Month to Date) - Still useful for trends if needed, but primary display is Today
         const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
         const monthlyRevenue = await prisma.payment.aggregate({
             _sum: { amount: true },
@@ -192,13 +212,65 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
             }
         });
 
+        // Chart Data (Last 7 Days)
+        const chartLabels = [];
+        const chartData = [];
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date();
+            d.setHours(0, 0, 0, 0);
+            d.setDate(d.getDate() - i);
+
+            const nextD = new Date(d);
+            nextD.setDate(d.getDate() + 1);
+
+            const dailyRev = await prisma.payment.aggregate({
+                _sum: { amount: true },
+                where: {
+                    date: { gte: d, lt: nextD }
+                }
+            });
+
+            chartLabels.push(d.toLocaleDateString('en-US', { weekday: 'short' })); // Mon, Tue...
+            chartData.push(dailyRev._sum.amount || 0);
+        }
+
+        // Recent Activity (Audit Logs + Access Logs mixed or just AuditLogs)
+        // Let's use AuditLogs for admin actions and maybe Members joining
+        const recentLogs = await prisma.auditLog.findMany({
+            take: 5,
+            orderBy: { timestamp: 'desc' },
+            select: { performedBy: true, action: true, timestamp: true, details: true } // Changed userEmail to performedBy
+        });
+
+        const recentActivity = recentLogs.map(log => {
+            const timeDiff = Math.floor((new Date() - new Date(log.timestamp)) / 60000); // Minutes
+            let timeStr = `${timeDiff}m ago`;
+            if (timeDiff > 60) timeStr = `${Math.floor(timeDiff / 60)}h ago`;
+            if (timeDiff > 1440) timeStr = `${Math.floor(timeDiff / 1440)}d ago`;
+
+            return {
+                user: log.performedBy.split('@')[0], // Simple name extraction
+                action: log.action.toLowerCase().replace('_', ' '),
+                time: timeStr
+            };
+        });
+
         res.json({
             activeMembers: totalMembers,
-            revenueToday: todayRevenue._sum.amount || 0,
-            monthlyRevenue: monthlyRevenue._sum.amount || 0,
+            revenueToday: revToday,
+            salesToday: salesTodayVal,
+            expensesToday: expToday,
+            netProfitToday: netProfitToday,
+
+            monthlyRevenue: totalRev,
+            totalExpenses: totalExp,
             expiringSoon: expiring,
-            netProfit: totalRev - totalExp,
-            totalExpenses: totalExp
+
+            chartData: {
+                labels: chartLabels,
+                data: chartData
+            },
+            recentActivity: recentActivity
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -362,98 +434,29 @@ app.post('/api/members/book', authenticateToken, async (req, res) => {
     }
 });
 
-  // Cancel Booking
-  app.post('/api/members/cancel-booking', authenticateToken, async (req, res) => {
+// Cancel Booking
+// Cancel Booking
+app.post('/api/members/cancel-booking', authenticateToken, async (req, res) => {
     const { classId } = req.body;
     const memberId = req.user.id;
 
     try {
         const booking = await prisma.booking.findFirst({
             where: { memberId, classId, status: 'CONFIRMED' }
-  });
+        });
 
-  // Book a Trainer Session (Member)
-  app.post('/api/members/book-training', authenticateToken, authorize(['MEMBER']), async (req, res) => {
-      const { trainerId, date, time, duration, notes, method } = req.body;
-      const memberId = req.user.id;
-
-      if (!trainerId || !date || !time || !duration || !method) {
-          return res.status(400).json({ error: "Missing required booking details" });
-      }
-      const allowedMethods = ['CASH', 'CARD', 'GCASH'];
-      if (!allowedMethods.includes(method)) {
-          return res.status(400).json({ error: "Invalid payment method" });
-      }
-
-      try {
-          const trainer = await prisma.trainer.findUnique({ where: { id: Number(trainerId) } });
-          if (!trainer) return res.status(404).json({ error: "Trainer not found" });
-
-          if (trainer.availableSlots !== null && trainer.availableSlots <= 0) {
-              return res.status(400).json({ error: "Trainer is fully booked" });
-          }
-
-          const startDateTime = new Date(`${date}T${time}`);
-          if (isNaN(startDateTime.getTime())) {
-              return res.status(400).json({ error: "Invalid date or time" });
-          }
-
-          const allowedDurations = (trainer.sessionDurations || '60')
-              .split(',')
-              .map((value) => Number(value.trim()))
-              .filter((value) => Number.isFinite(value) && value > 0);
-          if (!allowedDurations.includes(Number(duration))) {
-              return res.status(400).json({ error: "Selected duration not available" });
-          }
-
-          const sessionRate = trainer.sessionPrice ?? 300;
-          const totalAmount = (Number(duration) / 60) * Number(sessionRate);
-
-          await prisma.$transaction(async (tx) => {
-              await tx.trainingSession.create({
-                  data: {
-                      memberId,
-                      trainerId: Number(trainerId),
-                      date: startDateTime,
-                      duration: Number(duration),
-                      price: totalAmount,
-                      status: 'SCHEDULED',
-                      notes: notes || null
-                  }
-              });
-
-              await tx.payment.create({
-                  data: {
-                      amount: totalAmount,
-                      type: 'TRAINING',
-                      method,
-                      status: 'COMPLETED',
-                      memberId
-                  }
-              });
-
-              if (trainer.availableSlots !== null) {
-                  await tx.trainer.update({
-                      where: { id: Number(trainerId) },
-                      data: { availableSlots: { decrement: 1 } }
-                  });
-              }
-          });
-
-          res.json({ message: "Training session booked and paid" });
-      } catch (e) {
-          res.status(500).json({ error: "Failed to book training session", detail: e?.message });
-      }
-  });
         if (!booking) return res.status(404).json({ error: "Booking not found" });
 
         await prisma.$transaction([
-            prisma.booking.delete({ where: { id: booking.id } }),
+            prisma.booking.delete({
+                where: { id: booking.id }
+            }),
             prisma.class.update({
                 where: { id: classId },
                 data: { enrolled: { decrement: 1 } }
             })
         ]);
+
         res.json({ message: "Booking cancelled" });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -490,8 +493,8 @@ app.post('/api/members/checkout', authenticateToken, async (req, res) => {
             });
         }
 
-        // Award Loyalty Points (1 point per $10 spent)
-        const points = Math.floor(total / 10);
+        // Award Loyalty Points (1 point per ₱100 spent - adjusted for PHP)
+        const points = Math.floor(total / 100);
         if (points > 0) {
             await prisma.member.update({
                 where: { id: memberId },
@@ -499,12 +502,24 @@ app.post('/api/members/checkout', authenticateToken, async (req, res) => {
             });
         }
 
+        // Record Payment for Financial Tracking
+        await prisma.payment.create({
+            data: {
+                amount: parseFloat(total),
+                type: 'STORE_PURCHASE',
+                method: 'CASH', // Defaulting to CASH for now
+                memberId,
+                date: new Date()
+            }
+        });
+
         res.json({ message: "Order placed successfully!", orderId: order.id });
     } catch (e) {
         console.error(e);
         res.status(500).json({ error: "Checkout failed" });
     }
 });
+
 
 // Get Member Orders
 app.get('/api/members/orders', authenticateToken, async (req, res) => {
@@ -1358,137 +1373,67 @@ app.get('/api/notifications', authenticateToken, async (req, res) => {
     res.json(notifs);
 });
 
-// --- SUPPLIER ROUTES ---
-
-// Get All Suppliers
-app.get('/api/suppliers', authenticateToken, async (req, res) => {
+app.post('/api/notifications', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
+    const { title, message, type } = req.body;
     try {
-        const suppliers = await prisma.supplier.findMany({
-            include: { _count: { select: { products: true } } },
-            orderBy: { name: 'asc' }
+        const notif = await prisma.notification.create({
+            data: {
+                title,
+                message,
+                type: type || 'INFO',
+                date: new Date()
+            }
         });
-        res.json(suppliers);
+        res.json(notif);
     } catch (e) {
-        res.status(500).json({ error: "Failed to fetch suppliers" });
+        res.status(500).json({ error: "Failed to create announcement" });
     }
 });
-
-// Create Supplier
-app.post('/api/suppliers', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
-    const { name, contact, email, address, notes } = req.body;
-    try {
-        const supplier = await prisma.supplier.create({
-            data: { name, contact, email, address, notes }
-        });
-        await logAudit("CREATE_SUPPLIER", req.user.id.toString(), `Supplier: ${supplier.name}`, "Created new supplier");
-        res.json(supplier);
-    } catch (e) {
-        res.status(500).json({ error: "Failed to create supplier" });
-    }
-});
-
-// Update Supplier
-app.put('/api/suppliers/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
-    const { id } = req.params;
-    const { name, contact, email, address, notes } = req.body;
-    try {
-        const supplier = await prisma.supplier.update({
-            where: { id: Number(id) },
-            data: { name, contact, email, address, notes }
-        });
-        await logAudit("UPDATE_SUPPLIER", req.user.id.toString(), `Supplier: ${supplier.name}`, "Updated details");
-        res.json(supplier);
-    } catch (e) {
-        res.status(500).json({ error: "Failed to update supplier" });
-    }
-});
-
-// Delete Supplier
-app.delete('/api/suppliers/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
-    const { id } = req.params;
-    try {
-        // Check for linked expenses/products?
-        // For now, allow delete (will set constraints later if needed or rely on cascade)
-        // Prisma default might fail if relations exist without cascade.
-        // Let's check first.
-        const linkedProducts = await prisma.product.count({ where: { supplierId: Number(id) } });
-        if (linkedProducts > 0) {
-            return res.status(400).json({ error: "Cannot delete supplier with linked products" });
-        }
-
-        await prisma.supplier.delete({ where: { id: Number(id) } });
-        await logAudit("DELETE_SUPPLIER", req.user.id.toString(), `Supplier ID: ${id}`, "Deleted supplier");
-        res.json({ message: "Supplier deleted" });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
 
 // --- INVENTORY RESTOCK ROUTE ---
 app.post('/api/inventory/restock', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
-    const { productId, quantity, notes } = req.body;
+    const { productId, quantity, costPerUnit, notes } = req.body;
 
-    if (!productId || !quantity) {
+    // Validation
+    if (!productId || !quantity || !costPerUnit) {
         return res.status(400).json({ error: "Missing required fields" });
     }
 
     try {
-        // 1. Get Product to retrieve Fixed Cost and Assigned Supplier
+        const totalCost = parseFloat(quantity) * parseFloat(costPerUnit);
         const product = await prisma.product.findUnique({ where: { id: Number(productId) } });
+
         if (!product) return res.status(404).json({ error: "Product not found" });
 
-        // Enforce Supplier Isolation
-        if (!product.supplierId) {
-            return res.status(400).json({ error: "Product has no assigned supplier. Please link a supplier first." });
-        }
+        // Transaction: Update Stock + Create Expense
+        const [updatedProduct, expense] = await prisma.$transaction([
+            prisma.product.update({
+                where: { id: Number(productId) },
+                data: {
+                    stock: { increment: Number(quantity) },
+                    supplyCost: parseFloat(costPerUnit)
+                }
+            }),
+            prisma.expense.create({
+                data: {
+                    title: `Restock: ${product.name} (x${quantity})`,
+                    amount: totalCost,
+                    category: 'INVENTORY',
+                    date: new Date(),
+                    recurring: false,
+                    notes: notes || `Restocked ${quantity} units @ ${costPerUnit}/unit`,
+                    recordedBy: req.user.email,
+                    supplierId: supplierId ? Number(supplierId) : null
+                }
+            })
+        ]);
 
-        // Use the product's fixed USD supply cost directly. 
-        // Frontend will handle display conversion.
-        const costPerUnit = product.supplyCost || 0;
-        const totalCost = Number(quantity) * costPerUnit;
-
-        // 3. Update Stock
-        const updatedProduct = await prisma.product.update({
-            where: { id: Number(productId) },
-            data: {
-                stock: { increment: Number(quantity) }
-            }
-        });
-
-        // 4. Create Expense Record
-        const expense = await prisma.expense.create({
-            data: {
-                title: `Restock: ${product.name} (x${quantity})`,
-                amount: totalCost,
-                category: "INVENTORY",
-                date: new Date(),
-                notes: notes || `Restocked ${quantity} units @ ${costPerUnit}/unit (Fixed Cost)`,
-                recordedBy: req.user.id.toString(),
-                supplierId: product.supplierId // Strictly use product's supplier
-            }
-        });
-
-        // 5. Audit Log
-        await logAudit(
-            "RESTOCK_INVENTORY",
-            req.user.id.toString(),
-            `Product: ${product.name}`,
-            `Added ${quantity} units. Fixed Cost: ${totalCost}`
-        );
-
-        res.json({
-            message: "Restock successful",
-            newStock: updatedProduct.stock,
-            expenseId: expense.id
-        });
-
+        res.json({ message: "Stock updated and expense recorded successfully" });
     } catch (e) {
         console.error("Restock Error:", e);
-        res.status(500).json({ error: "Restock failed" });
+        res.status(500).json({ error: "Restock failed: " + e.message });
     }
 });
-
 
 // --- EXPENSE ROUTES ---
 app.get('/api/expenses', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
@@ -1505,7 +1450,8 @@ app.get('/api/expenses', authenticateToken, authorize(['OWNER', 'ADMIN']), async
 
         const expenses = await prisma.expense.findMany({
             where,
-            orderBy: { date: 'desc' }
+            orderBy: { date: 'desc' },
+            include: { supplier: true }
         });
         res.json(expenses);
     } catch (e) {
@@ -1546,7 +1492,16 @@ app.delete('/api/expenses/:id', authenticateToken, authorize(['OWNER', 'ADMIN'])
 // --- SUPPLIER ROUTES ---
 app.get('/api/suppliers', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
     try {
-        const suppliers = await prisma.supplier.findMany({ orderBy: { name: 'asc' } });
+        console.log("DEBUG: Fetching suppliers with products...");
+        const suppliers = await prisma.supplier.findMany({
+            orderBy: { name: 'asc' },
+            include: {
+                _count: { select: { products: true } },
+                products: {
+                    select: { id: true, name: true, price: true, stock: true, supplyCost: true }
+                }
+            }
+        });
         res.json(suppliers);
     } catch (e) {
         res.status(500).json({ error: "Failed to fetch suppliers" });
@@ -1585,65 +1540,6 @@ app.delete('/api/suppliers/:id', authenticateToken, authorize(['OWNER', 'ADMIN']
         res.json({ message: "Supplier deleted" });
     } catch (e) {
         res.status(500).json({ error: "Failed to delete supplier" });
-    }
-});
-
-// --- INVENTORY RESTOCK ROUTE ---
-app.post('/api/inventory/restock', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
-    const { productId, supplierId, quantity, costPerUnit, notes } = req.body;
-
-    // Validation
-    if (!productId || !quantity || !costPerUnit) {
-        return res.status(400).json({ error: "Missing required fields" });
-    }
-
-    try {
-        const totalCost = parseFloat(quantity) * parseFloat(costPerUnit);
-        const product = await prisma.product.findUnique({ where: { id: Number(productId) } });
-
-        if (!product) return res.status(404).json({ error: "Product not found" });
-
-        // Transaction: Update Stock + Create Expense
-        await prisma.$transaction([
-            prisma.product.update({
-                where: { id: Number(productId) },
-                data: { stock: { increment: Number(quantity) } }
-            }),
-            prisma.expense.create({
-                data: {
-                    title: `Restock: ${product.name} (x${quantity})`,
-                    amount: totalCost,
-                    category: 'INVENTORY',
-                    date: new Date(),
-                    recurring: false,
-                    notes: notes || `Restocked ${quantity} units @ ${costPerUnit}/unit`,
-                    recordedBy: req.user.email,
-                    supplierId: supplierId ? Number(supplierId) : null
-                }
-            })
-        ]);
-
-        res.json({ message: "Stock updated and expense recorded successfully" });
-    } catch (e) {
-        console.error("Restock Error:", e);
-        res.status(500).json({ error: "Restock failed: " + e.message });
-    }
-});
-
-app.post('/api/notifications', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
-    const { title, message, type } = req.body;
-    try {
-        const notif = await prisma.notification.create({
-            data: {
-                title,
-                message,
-                type: type || 'INFO',
-                date: new Date()
-            }
-        });
-        res.json(notif);
-    } catch (e) {
-        res.status(500).json({ error: "Failed to create announcement" });
     }
 });
 

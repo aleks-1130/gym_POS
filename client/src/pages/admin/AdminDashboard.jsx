@@ -27,20 +27,27 @@ ChartJS.register(
 const AdminDashboard = ({ stats }) => {
     const { formatPrice } = useCurrency();
     // Fallback data if stats are missing or loading error
-    const data = stats || { activeMembers: 0, revenueToday: 0, expiringSoon: 0, monthlyRevenue: 0, totalExpenses: 0 };
+    const data = stats || {
+        activeMembers: 0,
+        revenueToday: 0,
+        salesToday: 0,
+        expensesToday: 0,
+        netProfitToday: 0,
+        expiringSoon: 0,
+        monthlyRevenue: 0,
+        totalExpenses: 0
+    };
 
     // Calculate Net Profit on Frontend: Revenue (USD) - Expenses (USD)
     const netProfit = data.monthlyRevenue - data.totalExpenses;
 
-    // Mock chart data for now (backend only returns total numbers, not time-series yet in the specific endpoint analyzed)
-    // To fix this properly later, backend endpoint /stats needs to return specific chart data arrays.
-    // using static dummy chart data for visual consistency.
+    // Use Real Chart Data from Backend (or fallback)
     const revenueChartData = {
-        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        labels: data.chartData?.labels || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
         datasets: [
             {
-                label: 'Weekly Revenue',
-                data: [1200, 1900, 300, 500, 200, 3000, 4500],
+                label: 'Revenue (Last 7 Days)',
+                data: data.chartData?.data || [0, 0, 0, 0, 0, 0, 0],
                 borderColor: '#FF8C00',
                 backgroundColor: 'rgba(255, 140, 0, 0.2)',
                 tension: 0.4,
@@ -62,36 +69,34 @@ const AdminDashboard = ({ stats }) => {
     return (
         <>
             {/* ... (previous stats cards) ... */}
-            {/* Daily Overview */}
+            {/* Daily Financials */}
+            <h3 className="text-lg font-bold text-white mb-4">Today's Overview</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                <StatCard title="Revenue (Today)" value={formatPrice(data.revenueToday)} icon="payments" trend={12.5} />
-                <StatCard title="Active Members" value={data.activeMembers} icon="group" trend={-2.4} />
-                <StatCard title="Expiring Soon (7 Days)" value={data.expiringSoon} icon="warning" isAlert />
+
+                <StatCard
+                    title="Revenue Today"
+                    value={formatPrice(data.revenueToday)}
+                    icon="payments"
+                />
+                <StatCard
+                    title="Expenses Today"
+                    value={formatPrice(data.expensesToday)}
+                    icon="receipt_long"
+                    isAlert={data.expensesToday > data.revenueToday}
+                />
+                <StatCard
+                    title="Net Profit (Today)"
+                    value={formatPrice(data.netProfitToday)}
+                    icon="monetization_on"
+                    isSuccess={data.netProfitToday >= 0}
+                    isAlert={data.netProfitToday < 0}
+                />
             </div>
 
-            {/* Monthly Financials */}
-            <div className="mb-8">
-                <h3 className="text-lg font-bold text-white mb-4">Financial Overview (This Month)</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <StatCard
-                        title="Total Revenue"
-                        value={formatPrice(data.monthlyRevenue)}
-                        icon="account_balance_wallet"
-                    />
-                    <StatCard
-                        title="Total Expenses"
-                        value={formatPrice(data.totalExpenses)}
-                        icon="money_off"
-                        isAlert
-                    />
-                    <StatCard
-                        title="Net Profit"
-                        value={formatPrice(netProfit)}
-                        icon="monetization_on"
-                        isSuccess={netProfit >= 0}
-                        isAlert={netProfit < 0}
-                    />
-                </div>
+            {/* Member Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                <StatCard title="Active Members" value={data.activeMembers} icon="group" />
+                <StatCard title="Expiring Soon (7 Days)" value={data.expiringSoon} icon="warning" isAlert={data.expiringSoon > 0} />
             </div>
 
             <div className="grid lg:grid-cols-3 gap-8">
@@ -104,11 +109,14 @@ const AdminDashboard = ({ stats }) => {
 
                 <div className="bg-surface p-6 rounded-3xl border border-white/5 shadow-sm">
                     <h3 className="text-lg font-bold text-white mb-6">Recent Activity</h3>
-                    {/* Static activity for Admin Demo */}
                     <div className="space-y-1">
-                        <ActivityItem user="Alex Trainer" action="scheduled a new class" time="2m ago" />
-                        <ActivityItem user="Sarah Connor" action="checked in" time="15m ago" />
-                        <ActivityItem user="Bruce Wayne" action="renewed membership" time="1h ago" />
+                        {data.recentActivity && data.recentActivity.length > 0 ? (
+                            data.recentActivity.map((item, index) => (
+                                <ActivityItem key={index} user={item.user} action={item.action} time={item.time} />
+                            ))
+                        ) : (
+                            <p className="text-text-muted text-sm p-2">No recent activity</p>
+                        )}
                     </div>
                 </div>
             </div>
