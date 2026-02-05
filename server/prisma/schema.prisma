@@ -116,6 +116,7 @@ model Trainer {
   experience       Int?              // years of experience
   rating           Float?            @default(5.0)
   sessionPrice     Float             @default(50.0)
+  sessionDurations String?           // comma-separated minutes e.g. "60,120,180"
   availableSlots   Int?              @default(5)
   specialties      String?           // comma-separated list
   createdAt        DateTime          @default(now())

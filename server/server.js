@@ -362,15 +362,89 @@ app.post('/api/members/book', authenticateToken, async (req, res) => {
     }
 });
 
-// Cancel Booking
-app.post('/api/members/cancel-booking', authenticateToken, async (req, res) => {
+  // Cancel Booking
+  app.post('/api/members/cancel-booking', authenticateToken, async (req, res) => {
     const { classId } = req.body;
     const memberId = req.user.id;
 
     try {
         const booking = await prisma.booking.findFirst({
             where: { memberId, classId, status: 'CONFIRMED' }
-        });
+  });
+
+  // Book a Trainer Session (Member)
+  app.post('/api/members/book-training', authenticateToken, authorize(['MEMBER']), async (req, res) => {
+      const { trainerId, date, time, duration, notes, method } = req.body;
+      const memberId = req.user.id;
+
+      if (!trainerId || !date || !time || !duration || !method) {
+          return res.status(400).json({ error: "Missing required booking details" });
+      }
+      const allowedMethods = ['CASH', 'CARD', 'GCASH'];
+      if (!allowedMethods.includes(method)) {
+          return res.status(400).json({ error: "Invalid payment method" });
+      }
+
+      try {
+          const trainer = await prisma.trainer.findUnique({ where: { id: Number(trainerId) } });
+          if (!trainer) return res.status(404).json({ error: "Trainer not found" });
+
+          if (trainer.availableSlots !== null && trainer.availableSlots <= 0) {
+              return res.status(400).json({ error: "Trainer is fully booked" });
+          }
+
+          const startDateTime = new Date(`${date}T${time}`);
+          if (isNaN(startDateTime.getTime())) {
+              return res.status(400).json({ error: "Invalid date or time" });
+          }
+
+          const allowedDurations = (trainer.sessionDurations || '60')
+              .split(',')
+              .map((value) => Number(value.trim()))
+              .filter((value) => Number.isFinite(value) && value > 0);
+          if (!allowedDurations.includes(Number(duration))) {
+              return res.status(400).json({ error: "Selected duration not available" });
+          }
+
+          const sessionRate = trainer.sessionPrice ?? 300;
+          const totalAmount = (Number(duration) / 60) * Number(sessionRate);
+
+          await prisma.$transaction(async (tx) => {
+              await tx.trainingSession.create({
+                  data: {
+                      memberId,
+                      trainerId: Number(trainerId),
+                      date: startDateTime,
+                      duration: Number(duration),
+                      price: totalAmount,
+                      status: 'SCHEDULED',
+                      notes: notes || null
+                  }
+              });
+
+              await tx.payment.create({
+                  data: {
+                      amount: totalAmount,
+                      type: 'TRAINING',
+                      method,
+                      status: 'COMPLETED',
+                      memberId
+                  }
+              });
+
+              if (trainer.availableSlots !== null) {
+                  await tx.trainer.update({
+                      where: { id: Number(trainerId) },
+                      data: { availableSlots: { decrement: 1 } }
+                  });
+              }
+          });
+
+          res.json({ message: "Training session booked and paid" });
+      } catch (e) {
+          res.status(500).json({ error: "Failed to book training session", detail: e?.message });
+      }
+  });
         if (!booking) return res.status(404).json({ error: "Booking not found" });
 
         await prisma.$transaction([
@@ -991,11 +1065,106 @@ app.get('/api/trainers', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/trainers', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
-    const { name, specialty, bio } = req.body;
+    const {
+        name,
+        specialty,
+        specialization,
+        email,
+        phone,
+        bio,
+        imageUrl,
+        experience,
+        rating,
+        sessionPrice,
+        sessionDurations,
+        availableSlots,
+        specialties
+    } = req.body;
     const trainer = await prisma.trainer.create({
-        data: { name, specialty, bio }
+        data: {
+            name,
+            specialty,
+            specialization,
+            email,
+            phone,
+            bio,
+            imageUrl,
+            experience: experience !== undefined && experience !== '' ? Number(experience) : undefined,
+            rating: rating !== undefined && rating !== '' ? Number(rating) : undefined,
+            sessionPrice: sessionPrice !== undefined && sessionPrice !== '' ? Number(sessionPrice) : undefined,
+            sessionDurations,
+            availableSlots: availableSlots !== undefined && availableSlots !== '' ? Number(availableSlots) : undefined,
+            specialties
+        }
     });
     res.json(trainer);
+});
+
+app.put('/api/trainers/:id', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    const trainerId = Number(req.params.id);
+    const {
+        name,
+        specialty,
+        specialization,
+        email,
+        phone,
+        bio,
+        imageUrl,
+        experience,
+        rating,
+        sessionPrice,
+        sessionDurations,
+        availableSlots,
+        specialties
+    } = req.body;
+
+    try {
+        const trainer = await prisma.trainer.update({
+            where: { id: trainerId },
+            data: {
+                name,
+                specialty,
+                specialization,
+                email,
+                phone,
+                bio,
+                imageUrl,
+                experience: experience !== undefined && experience !== '' ? Number(experience) : undefined,
+                rating: rating !== undefined && rating !== '' ? Number(rating) : undefined,
+                sessionPrice: sessionPrice !== undefined && sessionPrice !== '' ? Number(sessionPrice) : undefined,
+                sessionDurations,
+                availableSlots: availableSlots !== undefined && availableSlots !== '' ? Number(availableSlots) : undefined,
+                specialties
+            }
+        });
+        res.json(trainer);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to update trainer", detail: e?.message });
+    }
+});
+
+app.delete('/api/trainers/:id', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    const trainerId = Number(req.params.id);
+    try {
+        const classes = await prisma.class.findMany({
+            where: { trainerId },
+            select: { id: true }
+        });
+        const classIds = classes.map((cls) => cls.id);
+
+        await prisma.$transaction(async (tx) => {
+            if (classIds.length > 0) {
+                await tx.booking.deleteMany({ where: { classId: { in: classIds } } });
+                await tx.class.deleteMany({ where: { id: { in: classIds } } });
+            }
+
+            await tx.trainingSession.deleteMany({ where: { trainerId } });
+            await tx.trainer.delete({ where: { id: trainerId } });
+        });
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: "Failed to delete trainer", detail: e?.message });
+    }
 });
 
 app.get('/api/trainers/:id', authenticateToken, async (req, res) => {
@@ -1068,6 +1237,40 @@ app.post('/api/classes', authenticateToken, authorize(['ADMIN', 'STAFF', 'TRAINE
         }
     });
     res.json(gymClass);
+});
+
+app.put('/api/classes/:id', authenticateToken, authorize(['ADMIN', 'STAFF', 'TRAINER']), async (req, res) => {
+    const classId = Number(req.params.id);
+    const { name, trainerId, dayOfWeek, time, duration, capacity } = req.body;
+    try {
+        const gymClass = await prisma.class.update({
+            where: { id: classId },
+            data: {
+                name,
+                dayOfWeek,
+                time,
+                duration: duration !== undefined && duration !== '' ? Number(duration) : undefined,
+                capacity: capacity !== undefined && capacity !== '' ? Number(capacity) : undefined,
+                trainerId: trainerId !== undefined && trainerId !== '' ? Number(trainerId) : undefined
+            }
+        });
+        res.json(gymClass);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to update class", detail: e?.message });
+    }
+});
+
+app.delete('/api/classes/:id', authenticateToken, authorize(['ADMIN', 'STAFF', 'TRAINER']), async (req, res) => {
+    const classId = Number(req.params.id);
+    try {
+        await prisma.$transaction(async (tx) => {
+            await tx.booking.deleteMany({ where: { classId } });
+            await tx.class.delete({ where: { id: classId } });
+        });
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: "Failed to delete class", detail: e?.message });
+    }
 });
 
 // --- LOYALTY ROUTES ---

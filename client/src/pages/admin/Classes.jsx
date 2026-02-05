@@ -274,9 +274,10 @@ export default function Classes() {
 
             {/* Participants Modal */}
             {selectedClass && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                <div className="fixed inset-0 z-[100] overflow-y-auto">
                     <div className="absolute inset-0 bg-background/80 backdrop-blur-md" onClick={() => setSelectedClass(null)}></div>
-                    <div className="bg-surface w-full max-w-2xl max-h-[85vh] rounded-2xl border border-white/10 shadow-2xl relative z-10 overflow-hidden flex flex-col">
+                    <div className="relative min-h-full w-full flex items-center justify-center p-4 sm:p-6">
+                        <div className="bg-surface w-full max-w-2xl max-h-[88vh] rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col">
                         {/* Header */}
                         <div className="sticky top-0 z-10 p-6 border-b border-white/10 bg-surface/95 backdrop-blur flex items-center justify-between">
                             <div className="flex items-center gap-3">
@@ -361,17 +362,19 @@ export default function Classes() {
                                 Export List
                             </button>
                         </div>
+                        </div>
                     </div>
                 </div>
             )}
 
             {showForm && (
-                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+                <div className="fixed inset-0 z-[110] overflow-y-auto">
                     <div className="absolute inset-0 bg-background/80 backdrop-blur-md" onClick={() => { setShowForm(false); setEditingClass(null); }}></div>
-                    <form
-                        onSubmit={handleSaveClass}
-                        className="bg-surface w-full max-w-3xl max-h-[90vh] rounded-2xl border border-white/10 shadow-2xl relative z-10 overflow-hidden flex flex-col"
-                    >
+                    <div className="relative min-h-full w-full flex items-center justify-center p-4 sm:p-6">
+                        <form
+                            onSubmit={handleSaveClass}
+                            className="bg-surface w-full max-w-5xl h-[calc(100vh-3rem)] rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col"
+                        >
                         <div className="sticky top-0 z-10 p-6 border-b border-white/10 bg-surface/95 backdrop-blur flex items-center justify-between">
                             <div>
                                 <h2 className="text-xl font-semibold text-white">
@@ -478,7 +481,8 @@ export default function Classes() {
                                 {saving ? 'Saving...' : 'Save Class'}
                             </button>
                         </div>
-                    </form>
+                        </form>
+                    </div>
                 </div>
             )}
 

@@ -60,13 +60,9 @@ export default function Trainers() {
         <div className="space-y-6 animate-fade-in relative pb-10">
             <header className="flex justify-between items-center">
                 <div>
-                    <h1 className="text-4xl font-black text-white tracking-tighter uppercase italic">Professional Trainers</h1>
-                    <p className="text-text-muted mt-1 font-medium">Manage your elite fitness staff and their coaching history</p>
+                    <h1 className="text-3xl font-bold text-white">Trainer Directory</h1>
+                    <p className="text-text-muted mt-1">View trainer profiles and coaching history</p>
                 </div>
-                <button className="bg-primary hover:bg-orange-600 text-white font-black py-3 px-6 rounded-2xl shadow-xl shadow-primary/20 flex items-center gap-2 transition-all active:scale-95 uppercase text-xs tracking-widest">
-                    <span className="material-icons-round">person_add</span>
-                    Add Trainer
-                </button>
             </header>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -126,9 +122,10 @@ export default function Trainers() {
 
             {/* Modal for Profile / Sessions */}
             {viewMode && selectedTrainer && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-10">
-                    <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setViewMode(null)}></div>
-                    <div className="bg-surface w-full max-w-4xl max-h-[90vh] rounded-[3rem] border border-white/10 shadow-2xl relative z-10 overflow-hidden flex flex-col animate-in slide-in-from-bottom-5 duration-500">
+                <div className="fixed inset-0 z-[100] overflow-y-auto">
+                    <div className="absolute inset-0 bg-background/80 backdrop-blur-md" onClick={() => setViewMode(null)}></div>
+                    <div className="relative min-h-full w-full flex items-center justify-center p-4 sm:p-6">
+                        <div className="bg-surface w-full max-w-4xl max-h-[92vh] rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col">
                         {/* Modal Header */}
                         <div className="p-8 border-b border-white/5 bg-white/[0.02] flex items-center justify-between">
                             <div className="flex items-center gap-5">
@@ -263,6 +260,7 @@ export default function Trainers() {
                                     )}
                                 </div>
                             )}
+                        </div>
                         </div>
                     </div>
                 </div>

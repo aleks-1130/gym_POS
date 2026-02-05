@@ -30,6 +30,8 @@ import Members from './pages/staff/Members';
 import MemberDetail from './pages/staff/MemberDetail';
 import Trainers from './pages/staff/Trainers';
 import Classes from './pages/staff/Classes';
+import AdminTrainers from './pages/admin/Trainers';
+import AdminClasses from './pages/admin/Classes';
 
 // Member Pages
 import Schedule from './pages/member/Schedule';
@@ -98,6 +100,18 @@ const ProtectedRoute = ({ children, allowedRoles, fullScreen }) => {
 };
 
 function AppRoutes() {
+  const { user } = useAuth();
+
+  const TrainersRoute = () => {
+    if (user?.role === ROLES.ADMIN) return <AdminTrainers />;
+    return <Trainers />;
+  };
+
+  const ClassesRoute = () => {
+    if (user?.role === ROLES.ADMIN) return <AdminClasses />;
+    return <Classes />;
+  };
+
   return (
     <div className="flex-1 w-full bg-background overflow-auto relative">
       <Routes>
@@ -201,7 +215,7 @@ function AppRoutes() {
           path="/trainers"
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              <Trainers />
+              <TrainersRoute />
             </ProtectedRoute>
           }
         />
@@ -209,7 +223,7 @@ function AppRoutes() {
           path="/classes"
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              <Classes />
+              <ClassesRoute />
             </ProtectedRoute>
           }
         />

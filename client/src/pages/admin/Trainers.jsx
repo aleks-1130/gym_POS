@@ -271,9 +271,10 @@ export default function Trainers() {
 
             {/* Modal for Profile / Sessions */}
             {viewMode && selectedTrainer && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                <div className="fixed inset-0 z-[100] overflow-y-auto">
                     <div className="absolute inset-0 bg-background/80 backdrop-blur-md" onClick={() => setViewMode(null)}></div>
-                    <div className="bg-surface w-full max-w-4xl max-h-[90vh] rounded-2xl border border-white/10 shadow-2xl relative z-10 overflow-hidden flex flex-col">
+                    <div className="relative min-h-full w-full flex items-center justify-center p-4 sm:p-6">
+                        <div className="bg-surface w-full max-w-4xl max-h-[92vh] rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col">
                         {/* Modal Header */}
                         <div className="sticky top-0 z-10 p-6 border-b border-white/10 bg-surface/95 backdrop-blur flex items-center justify-between">
                             <div className="flex items-center gap-4">
@@ -429,6 +430,7 @@ export default function Trainers() {
                                 </div>
                             )}
                         </div>
+                        </div>
                     </div>
                 </div>
             )}
@@ -440,7 +442,7 @@ export default function Trainers() {
                     <div className="relative min-h-full w-full flex items-center justify-center p-4 sm:p-6">
                         <form
                             onSubmit={handleSaveTrainer}
-                            className="bg-[#1a1d24] w-full max-w-3xl max-h-[92vh] rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col"
+                            className="bg-[#1a1d24] w-full max-w-5xl h-[calc(100vh-3rem)] rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col"
                         >
                         {/* Form Header */}
                         <div className="sticky top-0 z-10 p-5 sm:p-6 border-b border-white/10 bg-[#1a1d24] flex items-center justify-between">
