@@ -13,7 +13,6 @@ const Suppliers = () => {
         notes: ''
     });
     const [editingId, setEditingId] = useState(null);
-    const [viewProducts, setViewProducts] = useState(null); // Selected supplier for product view
 
     useEffect(() => {
         fetchSuppliers();
@@ -124,17 +123,6 @@ const Suppliers = () => {
                                 </button>
                             </div>
 
-                            {/* View Products Button Overlay */}
-                            <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button
-                                    onClick={() => setViewProducts(supplier)}
-                                    className="px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-lg shadow-lg hover:bg-orange-600 transition-colors flex items-center gap-1"
-                                >
-                                    <span className="material-icons-round text-xs">visibility</span>
-                                    View Products
-                                </button>
-                            </div>
-
                             {/* Card Content */}
                             <div className="flex items-start gap-4 mb-4">
                                 <div className="w-12 h-12 bg-gradient-to-br from-white/10 to-white/5 rounded-2xl flex items-center justify-center border border-white/10">
@@ -181,8 +169,7 @@ const Suppliers = () => {
                                 </div>
                             </div>
                         </div>
-                    ))
-                    }
+                    ))}
 
                     {/* Empty State Add Card */}
                     <button
@@ -198,165 +185,99 @@ const Suppliers = () => {
                         </div>
                         <span className="font-bold">Register New Supplier</span>
                     </button>
-                </div >
+                </div>
             )}
 
             {/* Modal */}
-            {
-                showModal && (
-                    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                        <div className="bg-surface w-full max-w-lg rounded-3xl border border-white/10 shadow-2xl overflow-hidden animate-fade-in-up">
-                            <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
-                                <h2 className="text-2xl font-bold text-white">
-                                    {editingId ? 'Edit Supplier' : 'New Supplier'}
-                                </h2>
-                                <button onClick={() => setShowModal(false)} className="text-text-muted hover:text-white transition-colors">
-                                    <span className="material-icons-round">close</span>
-                                </button>
+            {showModal && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-surface w-full max-w-lg rounded-3xl border border-white/10 shadow-2xl overflow-hidden animate-fade-in-up">
+                        <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
+                            <h2 className="text-2xl font-bold text-white">
+                                {editingId ? 'Edit Supplier' : 'New Supplier'}
+                            </h2>
+                            <button onClick={() => setShowModal(false)} className="text-text-muted hover:text-white transition-colors">
+                                <span className="material-icons-round">close</span>
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+                            <div>
+                                <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">Company Name</label>
+                                <div className="relative">
+                                    <span className="absolute left-4 top-3.5 text-text-muted material-icons-round text-sm">business</span>
+                                    <input
+                                        required
+                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all placeholder:text-white/20"
+                                        value={formData.name}
+                                        onChange={e => setFormData({ ...formData, name: e.target.value })}
+                                        placeholder="e.g. Acme Fitness Co."
+                                    />
+                                </div>
                             </div>
 
-                            <form onSubmit={handleSubmit} className="p-6 space-y-5">
+                            <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">Company Name</label>
-                                    <div className="relative">
-                                        <span className="absolute left-4 top-3.5 text-text-muted material-icons-round text-sm">business</span>
-                                        <input
-                                            required
-                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all placeholder:text-white/20"
-                                            value={formData.name}
-                                            onChange={e => setFormData({ ...formData, name: e.target.value })}
-                                            placeholder="e.g. Acme Fitness Co."
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">Contact Phone</label>
-                                        <input
-                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none transition-colors"
-                                            value={formData.contact}
-                                            onChange={e => setFormData({ ...formData, contact: e.target.value })}
-                                            placeholder="0917..."
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">Email</label>
-                                        <input
-                                            type="email"
-                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none transition-colors"
-                                            value={formData.email}
-                                            onChange={e => setFormData({ ...formData, email: e.target.value })}
-                                            placeholder="contact@..."
-                                        />
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">Address</label>
+                                    <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">Contact Phone</label>
                                     <input
                                         className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none transition-colors"
-                                        value={formData.address}
-                                        onChange={e => setFormData({ ...formData, address: e.target.value })}
-                                        placeholder="Warehouse Access..."
+                                        value={formData.contact}
+                                        onChange={e => setFormData({ ...formData, contact: e.target.value })}
+                                        placeholder="0917..."
                                     />
                                 </div>
-
                                 <div>
-                                    <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">Notes</label>
-                                    <textarea
-                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none transition-colors min-h-[100px]"
-                                        value={formData.notes}
-                                        onChange={e => setFormData({ ...formData, notes: e.target.value })}
-                                        placeholder="Delivery schedules, payment terms, etc."
+                                    <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">Email</label>
+                                    <input
+                                        type="email"
+                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none transition-colors"
+                                        value={formData.email}
+                                        onChange={e => setFormData({ ...formData, email: e.target.value })}
+                                        placeholder="contact@..."
                                     />
                                 </div>
-
-                                <div className="flex gap-3 pt-4">
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowModal(false)}
-                                        className="flex-1 py-3.5 rounded-xl font-bold text-text-muted hover:bg-white/5 hover:text-white transition-colors"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        className="flex-1 py-3.5 rounded-xl font-bold bg-primary text-white hover:bg-orange-600 shadow-lg shadow-primary/20 transition-all transform hover:-translate-y-0.5"
-                                    >
-                                        {editingId ? 'Save Changes' : 'Create Supplier'}
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                )
-            }
-
-            {/* View Products Modal */}
-            {
-                viewProducts && (
-                    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                        <div className="bg-surface w-full max-w-2xl rounded-3xl border border-white/10 shadow-2xl overflow-hidden animate-fade-in-up">
-                            <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
-                                <div>
-                                    <h2 className="text-2xl font-bold text-white mb-1">
-                                        {viewProducts.name}
-                                    </h2>
-                                    <p className="text-text-muted text-sm">Product Catalog</p>
-                                </div>
-                                <button onClick={() => setViewProducts(null)} className="text-text-muted hover:text-white transition-colors">
-                                    <span className="material-icons-round">close</span>
-                                </button>
                             </div>
 
-                            <div className="p-6 max-h-[60vh] overflow-y-auto">
-                                {viewProducts.products && viewProducts.products.length > 0 ? (
-                                    <table className="w-full text-left border-collapse">
-                                        <thead>
-                                            <tr className="text-xs font-bold text-text-muted uppercase tracking-wider border-b border-white/10">
-                                                <th className="pb-3 pl-2">Product Name</th>
-                                                <th className="pb-3">Stock</th>
-                                                <th className="pb-3">Supply Cost</th>
-                                                <th className="pb-3 pr-2 text-right">Selling Price</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="text-sm divide-y divide-white/5">
-                                            {viewProducts.products.map(product => (
-                                                <tr key={product.id} className="hover:bg-white/5 transition-colors">
-                                                    <td className="py-3 pl-2 font-medium text-white">{product.name}</td>
-                                                    <td className="py-3">
-                                                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${product.stock < 5 ? 'bg-red-500/20 text-red-500' : 'bg-emerald-500/20 text-emerald-500'}`}>
-                                                            {product.stock} units
-                                                        </span>
-                                                    </td>
-                                                    <td className="py-3 text-text-secondary">₱{product.supplyCost?.toFixed(2) || '0.00'}</td>
-                                                    <td className="py-3 pr-2 text-right font-bold text-primary">₱{product.price?.toFixed(2)}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                ) : (
-                                    <div className="text-center py-12 text-text-muted">
-                                        <span className="material-icons-round text-4xl mb-2 opacity-50">inventory_2</span>
-                                        <p>No products linked to this supplier.</p>
-                                    </div>
-                                )}
+                            <div>
+                                <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">Address</label>
+                                <input
+                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none transition-colors"
+                                    value={formData.address}
+                                    onChange={e => setFormData({ ...formData, address: e.target.value })}
+                                    placeholder="Warehouse Access..."
+                                />
                             </div>
 
-                            <div className="p-4 border-t border-white/5 bg-surfaceHighlight flex justify-end">
+                            <div>
+                                <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">Notes</label>
+                                <textarea
+                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none transition-colors min-h-[100px]"
+                                    value={formData.notes}
+                                    onChange={e => setFormData({ ...formData, notes: e.target.value })}
+                                    placeholder="Delivery schedules, payment terms, etc."
+                                />
+                            </div>
+
+                            <div className="flex gap-3 pt-4">
                                 <button
-                                    onClick={() => setViewProducts(null)}
-                                    className="px-6 py-2 rounded-xl font-bold bg-white/10 text-white hover:bg-white/20 transition-colors"
+                                    type="button"
+                                    onClick={() => setShowModal(false)}
+                                    className="flex-1 py-3.5 rounded-xl font-bold text-text-muted hover:bg-white/5 hover:text-white transition-colors"
                                 >
-                                    Close
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="flex-1 py-3.5 rounded-xl font-bold bg-primary text-white hover:bg-orange-600 shadow-lg shadow-primary/20 transition-all transform hover:-translate-y-0.5"
+                                >
+                                    {editingId ? 'Save Changes' : 'Create Supplier'}
                                 </button>
                             </div>
-                        </div>
+                        </form>
                     </div>
-                )
-            }
-        </div >
+                </div>
+            )}
+        </div>
     );
 };
 
