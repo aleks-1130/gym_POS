@@ -85,6 +85,8 @@ export default function Sidebar() {
             {
                 section: "Management", items: [
                     { to: "/inventory", icon: "inventory_2", label: "Inventory" },
+                    { to: "/suppliers", icon: "local_shipping", label: "Suppliers" },
+                    { to: "/expenses", icon: "monetization_on", label: "Expenses" },
                     { to: "/trainers", icon: "fitness_center", label: "Trainers" },
                     { to: "/classes", icon: "event", label: "Classes" },
                 ]
@@ -110,6 +112,8 @@ export default function Sidebar() {
                     { to: "/users", icon: "admin_panel_settings", label: "Users" },
                     { to: "/audit", icon: "verified_user", label: "Audit Logs" },
                     { to: "/settings", icon: "tune", label: "Settings" },
+                    { to: "/suppliers", icon: "local_shipping", label: "Suppliers" },
+                    { to: "/expenses", icon: "monetization_on", label: "Expenses" },
                 ]
             }
         ],

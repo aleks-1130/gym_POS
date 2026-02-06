@@ -6,6 +6,7 @@ export default function Profile() {
     const { user, logout } = useAuth();
     const [orders, setOrders] = useState([]);
     const [showQR, setShowQR] = useState(false);
+    const qrValue = user?.id ? `MEMBER:${user.id}` : '';
 
     useEffect(() => {
         // Fetch bookings/orders if needed
@@ -59,7 +60,13 @@ export default function Profile() {
                         </div>
                         {showQR && (
                             <div className="bg-white p-3 rounded-xl shadow-lg">
-                                <QRCode value={`MEMBER:${user?.id}`} size={100} />
+                                {qrValue ? (
+                                    <QRCode value={qrValue} size={100} />
+                                ) : (
+                                    <div className="w-[100px] h-[100px] bg-gray-100 text-gray-500 text-xs flex items-center justify-center rounded-lg">
+                                        QR Unavailable
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>

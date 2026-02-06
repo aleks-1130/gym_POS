@@ -27,17 +27,27 @@ ChartJS.register(
 const AdminDashboard = ({ stats }) => {
     const { formatPrice } = useCurrency();
     // Fallback data if stats are missing or loading error
-    const data = stats || { activeMembers: 0, revenueToday: 0, expiringSoon: 0 };
+    const data = stats || {
+        activeMembers: 0,
+        revenueToday: 0,
+        salesToday: 0,
+        expensesToday: 0,
+        netProfitToday: 0,
+        expiringSoon: 0,
+        monthlyRevenue: 0,
+        totalExpenses: 0
+    };
 
-    // Mock chart data for now (backend only returns total numbers, not time-series yet in the specific endpoint analyzed)
-    // To fix this properly later, backend endpoint /stats needs to return specific chart data arrays.
-    // using static dummy chart data for visual consistency.
+    // Calculate Net Profit on Frontend: Revenue (USD) - Expenses (USD)
+    const netProfit = data.monthlyRevenue - data.totalExpenses;
+
+    // Use Real Chart Data from Backend (or fallback)
     const revenueChartData = {
-        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        labels: data.chartData?.labels || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
         datasets: [
             {
-                label: 'Weekly Revenue',
-                data: [1200, 1900, 300, 500, 200, 3000, 4500],
+                label: 'Revenue (Last 7 Days)',
+                data: data.chartData?.data || [0, 0, 0, 0, 0, 0, 0],
                 borderColor: '#FF8C00',
                 backgroundColor: 'rgba(255, 140, 0, 0.2)',
                 tension: 0.4,
@@ -48,6 +58,7 @@ const AdminDashboard = ({ stats }) => {
 
     const chartOptions = {
         responsive: true,
+        maintainAspectRatio: false,
         plugins: { legend: { display: false } },
         scales: {
             x: { grid: { display: false }, ticks: { color: '#9CA3AF' } },
@@ -57,27 +68,55 @@ const AdminDashboard = ({ stats }) => {
 
     return (
         <>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <StatCard title="Total Revenue (Today)" value={formatPrice(data.revenueToday)} icon="payments" trend={12.5} />
-                <StatCard title="Active Members" value={data.activeMembers} icon="group" trend={-2.4} />
-                <StatCard title="Expiring Soon (7 Days)" value={data.expiringSoon} icon="warning" isAlert />
+            {/* ... (previous stats cards) ... */}
+            {/* Daily Financials */}
+            <h3 className="text-lg font-bold text-white mb-4">Today's Overview</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+
+                <StatCard
+                    title="Revenue Today"
+                    value={formatPrice(data.revenueToday)}
+                    icon="payments"
+                />
+                <StatCard
+                    title="Expenses Today"
+                    value={formatPrice(data.expensesToday)}
+                    icon="receipt_long"
+                    isAlert={data.expensesToday > data.revenueToday}
+                />
+                <StatCard
+                    title="Net Profit (Today)"
+                    value={formatPrice(data.netProfitToday)}
+                    icon="monetization_on"
+                    isSuccess={data.netProfitToday >= 0}
+                    isAlert={data.netProfitToday < 0}
+                />
+            </div>
+
+            {/* Member Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                <StatCard title="Active Members" value={data.activeMembers} icon="group" />
+                <StatCard title="Expiring Soon (7 Days)" value={data.expiringSoon} icon="warning" isAlert={data.expiringSoon > 0} />
             </div>
 
             <div className="grid lg:grid-cols-3 gap-8">
-                <div className="lg:col-span-2 bg-surface p-6 rounded-3xl border border-white/5 shadow-sm">
+                <div className="lg:col-span-2 bg-surface p-6 rounded-3xl border border-white/5 shadow-sm min-w-0">
                     <h3 className="text-lg font-bold text-white mb-6">Revenue Trends</h3>
-                    <div className="h-80 w-full">
+                    <div className="h-80 w-full relative overflow-hidden">
                         <Line data={revenueChartData} options={chartOptions} />
                     </div>
                 </div>
 
                 <div className="bg-surface p-6 rounded-3xl border border-white/5 shadow-sm">
                     <h3 className="text-lg font-bold text-white mb-6">Recent Activity</h3>
-                    {/* Static activity for Admin Demo */}
                     <div className="space-y-1">
-                        <ActivityItem user="Alex Trainer" action="scheduled a new class" time="2m ago" />
-                        <ActivityItem user="Sarah Connor" action="checked in" time="15m ago" />
-                        <ActivityItem user="Bruce Wayne" action="renewed membership" time="1h ago" />
+                        {data.recentActivity && data.recentActivity.length > 0 ? (
+                            data.recentActivity.map((item, index) => (
+                                <ActivityItem key={index} user={item.user} action={item.action} time={item.time} />
+                            ))
+                        ) : (
+                            <p className="text-text-muted text-sm p-2">No recent activity</p>
+                        )}
                     </div>
                 </div>
             </div>
@@ -86,23 +125,29 @@ const AdminDashboard = ({ stats }) => {
 };
 
 // Internal Sub-components
-const StatCard = ({ title, value, icon, trend, isAlert }) => (
-    <div className="bg-surface p-6 rounded-3xl border border-white/5 shadow-sm flex items-center justify-between">
-        <div>
-            <p className="text-text-muted text-sm font-medium mb-1">{title}</p>
-            <h3 className="text-2xl font-bold text-white">{value}</h3>
-            {trend && (
-                <p className={`text-xs font-medium mt-2 flex items-center gap-1 ${trend > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    <span className="material-icons-round text-[14px]">{trend > 0 ? 'trending_up' : 'trending_down'}</span>
-                    {Math.abs(trend)}% vs last week
-                </p>
-            )}
+const StatCard = ({ title, value, icon, trend, isAlert, isSuccess }) => {
+    let iconClass = 'bg-primary/10 text-primary';
+    if (isAlert) iconClass = 'bg-red-500/10 text-red-500';
+    if (isSuccess) iconClass = 'bg-emerald-500/10 text-emerald-500';
+
+    return (
+        <div className="bg-surface p-6 rounded-3xl border border-white/5 shadow-sm flex items-center justify-between hover:border-primary/20 transition-colors">
+            <div>
+                <p className="text-text-muted text-sm font-medium mb-1">{title}</p>
+                <h3 className="text-2xl font-bold text-white">{value}</h3>
+                {trend !== undefined && (
+                    <p className={`text-xs font-medium mt-2 flex items-center gap-1 ${trend > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        <span className="material-icons-round text-[14px]">{trend > 0 ? 'trending_up' : 'trending_down'}</span>
+                        {Math.abs(trend)}% vs last week
+                    </p>
+                )}
+            </div>
+            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${iconClass}`}>
+                <span className="material-icons-round text-2xl">{icon}</span>
+            </div>
         </div>
-        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isAlert ? 'bg-red-500/10 text-red-500' : 'bg-primary/10 text-primary'}`}>
-            <span className="material-icons-round text-2xl">{icon}</span>
-        </div>
-    </div>
-);
+    );
+};
 
 const ActivityItem = ({ user, action, time }) => (
     <div className="flex items-center gap-4 py-3 border-b border-white/5 last:border-0 hover:bg-white/5 p-2 rounded-xl transition-colors">

@@ -11,7 +11,7 @@ import Login from './pages/auth/Login';
 // Shared
 import Dashboard from './pages/shared/Dashboard';
 import Payments from './pages/shared/Payments';
-import Access from './pages/shared/Access';
+import Access from './pages/staff/Access';
 import Loyalty from './pages/shared/Loyalty';
 
 // Owner Pages
@@ -21,6 +21,8 @@ import AuditLogs from './pages/owner/AuditLogs';
 
 // Admin Pages
 import Analytics from './pages/admin/Analytics';
+import Expenses from './pages/admin/Expenses';
+import Suppliers from './pages/admin/Suppliers';
 
 // Staff Pages
 import Inventory from './pages/staff/Inventory';
@@ -28,6 +30,8 @@ import Members from './pages/staff/Members';
 import MemberDetail from './pages/staff/MemberDetail';
 import Trainers from './pages/staff/Trainers';
 import Classes from './pages/staff/Classes';
+import AdminTrainers from './pages/admin/Trainers';
+import AdminClasses from './pages/admin/Classes';
 
 // Member Pages
 import Schedule from './pages/member/Schedule';
@@ -37,15 +41,14 @@ import Attendance from './pages/member/Attendance';
 import PurchaseHistory from './pages/member/PurchaseHistory';
 import TrainerBooking from './pages/member/TrainerBooking';
 import Announcements from './pages/shared/Announcements';
+import GymTraffic from './pages/member/GymTraffic';
 
 
 // Common
 // import Notifications from './pages/Notifications';
 
 // ✅ NEW IMPORTS
-import DoorScanner from './pages/staff/DoorScanner';
 import DisplayMonitor from './pages/shared/DisplayMonitor';
-import ProfileResult from './components/ProfileResult';
 // import MemberProfile from './pages/staff/MemberProfile';
 
 const ProtectedRoute = ({ children, allowedRoles, fullScreen }) => {
@@ -97,6 +100,18 @@ const ProtectedRoute = ({ children, allowedRoles, fullScreen }) => {
 };
 
 function AppRoutes() {
+  const { user } = useAuth();
+
+  const TrainersRoute = () => {
+    if (user?.role === ROLES.ADMIN) return <AdminTrainers />;
+    return <Trainers />;
+  };
+
+  const ClassesRoute = () => {
+    if (user?.role === ROLES.ADMIN) return <AdminClasses />;
+    return <Classes />;
+  };
+
   return (
     <div className="flex-1 w-full bg-background overflow-auto relative">
       <Routes>
@@ -112,23 +127,7 @@ function AppRoutes() {
           }
         />
 
-        {/* ✅ NEW ROUTES */}
-        <Route
-          path="/scanner"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              <DoorScanner />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/scan-result/:logId"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]} fullScreen>
-              <ProfileResult />
-            </ProtectedRoute>
-          }
-        />
+        {/* Display Monitor */}
         <Route
           path="/display-monitor"
           element={
@@ -216,7 +215,7 @@ function AppRoutes() {
           path="/trainers"
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              <Trainers />
+              <TrainersRoute />
             </ProtectedRoute>
           }
         />
@@ -224,7 +223,7 @@ function AppRoutes() {
           path="/classes"
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              <Classes />
+              <ClassesRoute />
             </ProtectedRoute>
           }
         />
@@ -253,6 +252,22 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
               <UserManagement />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/expenses"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
+              <Expenses />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/suppliers"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
+              <Suppliers />
             </ProtectedRoute>
           }
         />
@@ -320,6 +335,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
               <Announcements />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/gym-traffic"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
+              <GymTraffic />
             </ProtectedRoute>
           }
         />

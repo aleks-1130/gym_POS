@@ -27,7 +27,47 @@ ChartJS.register(
 );
 
 export default function Analytics() {
-    const { formatPrice } = useCurrency();
+    const { formatPrice, rate } = useCurrency(); // Get rate
+    const [viewMode, setViewMode] = React.useState('monthly'); // 'daily' or 'monthly'
+    const [stats, setStats] = React.useState(null);
+
+    React.useEffect(() => {
+        const fetchStats = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                const res = await fetch('http://localhost:5000/api/dashboard/stats', {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                const data = await res.json();
+                setStats(data); // Store full response
+            } catch (e) {
+                console.error("Failed to fetch stats", e);
+            }
+        };
+        fetchStats();
+    }, []);
+
+    // Derived Data based on View Mode
+    const displayData = React.useMemo(() => {
+        if (!stats) return { expenses: 0, revenue: 0, profit: 0 };
+
+        if (viewMode === 'daily') {
+            return {
+                label: '(Today)',
+                expenses: stats.expensesToday || 0,
+                revenue: stats.revenueToday || 0,
+                profit: stats.netProfitToday || 0
+            };
+        } else {
+            return {
+                label: '(This Month)',
+                expenses: stats.totalExpenses || 0,
+                revenue: stats.monthlyRevenue || 0,
+                profit: (stats.monthlyRevenue || 0) - (stats.totalExpenses || 0)
+            };
+        }
+    }, [stats, viewMode]);
+
     // --- Mock Data ---
 
     // 1. Revenue Trends (Line Chart)
@@ -141,13 +181,49 @@ export default function Analytics() {
                     <h1 className="text-3xl font-bold text-white">Analytics Dashboard</h1>
                     <p className="text-text-muted mt-1">Deep insights into gym performance</p>
                 </div>
-                <div className="relative">
-                    <input
-                        type="text"
-                        placeholder="Search"
-                        className="pl-10 pr-4 py-2 bg-surfaceHighlight border border-white/10 rounded-xl text-sm focus:ring-primary focus:border-primary w-64 text-white placeholder-text-muted"
-                    />
-                    <span className="material-icons-round absolute left-3 top-2 text-text-muted text-lg">search</span>
+                <div className="flex gap-4">
+                    {/* Toggle Buttons */}
+                    <div className="bg-surfaceHighlight p-1 rounded-xl flex border border-white/10">
+                        <button
+                            onClick={() => setViewMode('daily')}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${viewMode === 'daily' ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:text-white'}`}
+                        >
+                            Daily
+                        </button>
+                        <button
+                            onClick={() => setViewMode('monthly')}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${viewMode === 'monthly' ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:text-white'}`}
+                        >
+                            Monthly
+                        </button>
+                    </div>
+
+                    <div className="relative hidden md:block">
+                        <input
+                            type="text"
+                            placeholder="Search"
+                            className="pl-10 pr-4 py-2 bg-surfaceHighlight border border-white/10 rounded-xl text-sm focus:ring-primary focus:border-primary w-64 text-white placeholder-text-muted h-full"
+                        />
+                        <span className="material-icons-round absolute left-3 top-2.5 text-text-muted text-lg">search</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* Financial Summary */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div className="bg-surface p-6 rounded-2xl border border-white/5 shadow-sm">
+                    <p className="text-text-muted text-sm font-medium">Total Expenses {displayData.label}</p>
+                    <h2 className="text-3xl font-bold text-red-500 mt-2">{formatPrice(displayData.expenses)}</h2>
+                </div>
+                <div className="bg-surface p-6 rounded-2xl border border-white/5 shadow-sm">
+                    <p className="text-text-muted text-sm font-medium">Net Profit {displayData.label}</p>
+                    <h2 className={`text-3xl font-bold mt-2 ${displayData.profit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                        {formatPrice(displayData.profit)}
+                    </h2>
+                </div>
+                <div className="bg-surface p-6 rounded-2xl border border-white/5 shadow-sm">
+                    <p className="text-text-muted text-sm font-medium">Total Revenue {displayData.label}</p>
+                    <h2 className="text-3xl font-bold text-white mt-2">{formatPrice(displayData.revenue)}</h2>
                 </div>
             </div>
 
@@ -198,9 +274,9 @@ export default function Analytics() {
                 <div className="lg:col-span-3 bg-surface p-6 rounded-3xl border border-white/5 shadow-sm">
                     <h3 className="text-lg font-bold text-white mb-6">Top Performing Products</h3>
                     <div className="space-y-2">
-                        <ProductRow rank="1" name="Whey Protein Isolate" category="Supplements" price="1,230.00" growth="15" imageColor="bg-amber-600" />
-                        <ProductRow rank="2" name="Pre-Workout Blue Raz" category="Supplements" price="945.50" growth="10" imageColor="bg-white/20" />
-                        <ProductRow rank="3" name="Gym Shark Water Bottle" category="Merch" price="620.00" growth="20" imageColor="bg-zinc-800" />
+                        <ProductRow rank="1" name="Whey Protein Isolate" category="Supplements" price={1230.00} growth="15" imageColor="bg-amber-600" />
+                        <ProductRow rank="2" name="Pre-Workout Blue Raz" category="Supplements" price={945.50} growth="10" imageColor="bg-white/20" />
+                        <ProductRow rank="3" name="Gym Shark Water Bottle" category="Merch" price={620.00} growth="20" imageColor="bg-zinc-800" />
                     </div>
                 </div>
             </div>
