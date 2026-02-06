@@ -82,7 +82,8 @@ export default function POS() {
 
     // Calculate Total
     const subtotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
-    const cartTotal = Math.max(0, subtotal - discount);
+    const discountAmount = Math.floor((subtotal * discount) / 100);
+    const cartTotal = Math.max(0, subtotal - discountAmount);
 
     const addToCart = (item, type = 'PRODUCT') => {
         setCart(prev => {
@@ -160,7 +161,7 @@ export default function POS() {
                 type: paymentType,
                 method: method,
                 items: cart,
-                discount: discount,
+                discount: discountAmount,
                 memberId: selectedMemberId || null,
                 cashTendered: tendered,
                 changeDue: change,
@@ -176,7 +177,7 @@ export default function POS() {
                 transaction: transactionData,
                 items: cart,
                 member: memberData,
-                discount: discount,
+                discount: discountAmount,
                 cashierName: user?.name,
                 paymentDetails: {
                     method: method,
@@ -654,15 +655,27 @@ export default function POS() {
                     </div>
 
                     {/* Discount Input */}
-                    <div className="flex justify-between items-center mb-6">
-                        <span className="text-text-secondary text-sm font-medium">Discount</span>
-                        <input
-                            type="number"
-                            min="0"
-                            className="w-24 bg-surfaceHighlight border border-white/10 rounded-lg px-2 py-1 text-right text-white text-sm focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
-                            value={discount}
-                            onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
-                        />
+                    <div className="mb-6 space-y-2">
+                        <div className="flex justify-between items-center">
+                            <span className="text-text-secondary text-sm font-medium">Discount (%)</span>
+                            <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                className="w-24 bg-surfaceHighlight border border-white/10 rounded-lg px-2 py-1 text-right text-white text-sm focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                                value={discount}
+                                onChange={(e) => {
+                                    const val = parseFloat(e.target.value) || 0;
+                                    setDiscount(Math.min(100, Math.max(0, val)));
+                                }}
+                            />
+                        </div>
+                        {discount > 0 && (
+                            <div className="flex justify-between items-center text-xs text-green-400">
+                                <span>Less</span>
+                                <span>-{formatPrice(discountAmount)}</span>
+                            </div>
+                        )}
                     </div>
 
                     <div className="flex justify-between items-end mb-6">

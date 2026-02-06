@@ -35,6 +35,7 @@ import Classes from './pages/staff/Classes';
 import TransactionDetail from './pages/staff/TransactionDetail';
 import AdminTrainers from './pages/admin/Trainers';
 import AdminClasses from './pages/admin/Classes';
+import TrainingManager from './pages/admin/TrainingManager';
 
 // Member Pages
 import Schedule from './pages/member/Schedule';
@@ -106,7 +107,7 @@ function AppRoutes() {
   const { user } = useAuth();
 
   const TrainersRoute = () => {
-    if (user?.role === ROLES.ADMIN) return <AdminTrainers />;
+    if (user?.role === ROLES.ADMIN || user?.role === ROLES.OWNER) return <AdminTrainers />;
     return <Trainers />;
   };
 
@@ -235,6 +236,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
               <ClassesRoute />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/training"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
+              <TrainingManager />
             </ProtectedRoute>
           }
         />

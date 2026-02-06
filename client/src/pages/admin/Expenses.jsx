@@ -14,6 +14,13 @@ const Expenses = () => {
         notes: ''
     });
 
+    const [selectedCategory, setSelectedCategory] = useState('ALL');
+    const categories = ['ALL', 'UTILITIES', 'SALARY', 'SUPPLIES', 'MAINTENANCE', 'RENT', 'OTHER'];
+
+    const filteredExpenses = selectedCategory === 'ALL'
+        ? expenses
+        : expenses.filter(expense => expense.category === selectedCategory);
+
     useEffect(() => {
         fetchExpenses();
     }, []);
@@ -67,11 +74,11 @@ const Expenses = () => {
     };
 
     const { formatPrice } = useCurrency();
-    const totalExpenses = expenses.reduce((sum, item) => sum + item.amount, 0);
+    const totalExpenses = filteredExpenses.reduce((sum, item) => sum + item.amount, 0);
 
     const currentMonth = new Date().getMonth();
     const currentYear = new Date().getFullYear();
-    const mtdExpenses = expenses.reduce((sum, item) => {
+    const mtdExpenses = filteredExpenses.reduce((sum, item) => {
         const itemDate = new Date(item.date);
         if (itemDate.getMonth() === currentMonth && itemDate.getFullYear() === currentYear) {
             return sum + item.amount;
@@ -86,7 +93,7 @@ const Expenses = () => {
     const groupExpenses = () => {
         if (viewMode === 'LIST') return null;
 
-        return expenses.reduce((groups, expense) => {
+        return filteredExpenses.reduce((groups, expense) => {
             let key;
             const date = new Date(expense.date);
 
@@ -115,6 +122,16 @@ const Expenses = () => {
                 </div>
 
                 <div className="flex gap-2">
+                    <select
+                        value={selectedCategory}
+                        onChange={(e) => setSelectedCategory(e.target.value)}
+                        className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-500"
+                    >
+                        {categories.map(cat => (
+                            <option key={cat} value={cat}>{cat === 'ALL' ? 'All Categories' : cat.charAt(0) + cat.slice(1).toLowerCase()}</option>
+                        ))}
+                    </select>
+
                     <div className="bg-white dark:bg-gray-800 p-1 rounded-lg border border-gray-200 dark:border-gray-700 flex">
                         {['LIST', 'DAILY', 'MONTHLY', 'YEARLY'].map((mode) => (
                             <button
@@ -180,7 +197,7 @@ const Expenses = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                            {expenses.map((expense) => (
+                            {filteredExpenses.map((expense) => (
                                 <tr key={expense.id} className="text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                     <td className="p-4">{new Date(expense.date).toLocaleDateString()}</td>
                                     <td className="p-4 font-medium">{expense.title}</td>
@@ -205,7 +222,7 @@ const Expenses = () => {
                             ))}
                         </tbody>
                     </table>
-                    {expenses.length === 0 && !loading && (
+                    {filteredExpenses.length === 0 && !loading && (
                         <div className="p-8 text-center text-gray-500">No expenses recorded yet.</div>
                     )}
                 </div>
@@ -270,7 +287,7 @@ const Expenses = () => {
                             </table>
                         </div>
                     ))}
-                    {expenses.length === 0 && !loading && (
+                    {filteredExpenses.length === 0 && !loading && (
                         <div className="p-12 text-center bg-white dark:bg-gray-800 rounded-xl border border-dashed border-gray-200 dark:border-gray-700">
                             <p className="text-gray-500 dark:text-gray-400">No expenses recorded yet.</p>
                             <button

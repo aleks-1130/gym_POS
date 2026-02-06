@@ -12,7 +12,9 @@ export default function TransactionDetail() {
     const [loading, setLoading] = useState(true);
     const [returnModalOpen, setReturnModalOpen] = useState(false);
     const [voidModalOpen, setVoidModalOpen] = useState(false);
+    const [completeModalOpen, setCompleteModalOpen] = useState(false);
     const [pin, setPin] = useState('');
+    const [cashTendered, setCashTendered] = useState('');
     const [returnQuantities, setReturnQuantities] = useState({});
     const [actionLoading, setActionLoading] = useState(false);
     const receiptRef = useRef();
@@ -51,7 +53,9 @@ export default function TransactionDetail() {
     const closeModals = () => {
         setReturnModalOpen(false);
         setVoidModalOpen(false);
+        setCompleteModalOpen(false);
         setPin('');
+        setCashTendered('');
     };
 
     const handleReturnSubmit = async () => {
@@ -96,6 +100,28 @@ export default function TransactionDetail() {
         }
     };
 
+    const handleCompleteSubmit = async () => {
+        if (!payment) return;
+        if (!cashTendered || Number(cashTendered) < payment.amount) {
+            return alert(`Please enter at least ${formatPrice(payment.amount)}`);
+        }
+
+        setActionLoading(true);
+        try {
+            // No PIN needed for completing a sale, just cash
+            const res = await axios.post(`http://localhost:5000/api/payments/${payment.id}/complete`, {
+                cashTendered: Number(cashTendered)
+            });
+            alert("Payment Completed!");
+            fetchPayment(); // Refresh
+            closeModals();
+        } catch (e) {
+            alert(e.response?.data?.error || 'Completion failed');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
     if (loading) {
         return <div className="text-white p-8">Loading transaction...</div>;
     }
@@ -124,6 +150,14 @@ export default function TransactionDetail() {
                     >
                         Print Receipt
                     </button>
+                    {payment.status === 'PENDING' && (
+                        <button
+                            onClick={() => setCompleteModalOpen(true)}
+                            className="px-4 py-2 rounded-xl bg-green-500 text-white font-bold shadow-lg shadow-green-500/20 hover:bg-green-600 transition-all animation-pulse"
+                        >
+                            Complete Payment
+                        </button>
+                    )}
                     <button
                         onClick={openReturnModal}
                         disabled={payment.status === 'VOIDED'}
@@ -216,7 +250,7 @@ export default function TransactionDetail() {
                                 items={receiptItems}
                                 member={payment.member}
                                 cashierName={payment.cashier?.name || 'Staff'}
-                                discount={0}
+                                discount={payment.discount || 0}
                                 paymentDetails={{
                                     method: payment.method,
                                     tendered: payment.cashTendered,
@@ -314,6 +348,55 @@ export default function TransactionDetail() {
                                 className="flex-1 py-3 bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white font-bold rounded-xl"
                             >
                                 {actionLoading ? 'Processing...' : 'Void Transaction'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {completeModalOpen && (
+                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-sm w-full p-6">
+                        <h3 className="text-xl font-bold text-white mb-2">Complete Payment</h3>
+                        <p className="text-text-muted text-sm mb-4">Enter Cash Tendered to complete this transaction.</p>
+
+                        <div className="bg-white/5 p-4 rounded-xl mb-4 text-center">
+                            <p className="text-text-muted text-xs uppercase font-bold">Total Amount</p>
+                            <p className="text-2xl font-bold text-white">{formatPrice(payment.amount)}</p>
+                        </div>
+
+                        <div className="mb-4">
+                            <label className="block text-xs text-text-secondary font-bold mb-2">Cash Tendered</label>
+                            <input
+                                type="number"
+                                className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-3 px-4 text-white text-lg font-bold"
+                                placeholder="0.00"
+                                value={cashTendered}
+                                onChange={(e) => setCashTendered(e.target.value)}
+                                autoFocus
+                            />
+                        </div>
+
+                        {cashTendered && Number(cashTendered) >= payment.amount && (
+                            <div className="bg-green-500/10 border border-green-500/20 p-3 rounded-xl mb-4 text-center">
+                                <p className="text-green-400 text-xs font-bold uppercase">Change Due</p>
+                                <p className="text-xl font-bold text-green-400">{formatPrice(Number(cashTendered) - payment.amount)}</p>
+                            </div>
+                        )}
+
+                        <div className="mt-6 flex gap-3">
+                            <button
+                                onClick={closeModals}
+                                className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 rounded-xl"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleCompleteSubmit}
+                                disabled={actionLoading || !cashTendered || Number(cashTendered) < payment.amount}
+                                className="flex-1 py-3 bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white font-bold rounded-xl"
+                            >
+                                {actionLoading ? 'Processing...' : 'Complete'}
                             </button>
                         </div>
                     </div>

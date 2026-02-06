@@ -46,7 +46,13 @@ export default function TrainerBooking() {
     const fetchTrainers = async () => {
         try {
             const res = await axios.get('http://localhost:5000/api/trainers');
-            setTrainers(res.data);
+            if (Array.isArray(res.data)) {
+                const validTrainers = res.data.filter(t => t && typeof t === 'object');
+                setTrainers(validTrainers);
+            } else {
+                console.error("Trainers response is not an array", res.data);
+                setTrainers([]);
+            }
         } catch (error) {
             console.error("Failed to fetch trainers");
         } finally {
@@ -149,7 +155,7 @@ export default function TrainerBooking() {
                     <div className="bg-surface rounded-xl sm:rounded-2xl p-4 sm:p-5 border border-white/5">
                         <p className="text-text-muted text-xs sm:text-sm mb-1">Avg. Rate</p>
                         <p className="text-2xl sm:text-3xl font-bold text-emerald-400">
-                            {trainers.length > 0 
+                            {trainers.length > 0
                                 ? formatPrice(trainers.reduce((sum, t) => sum + (t.sessionPrice ?? 300), 0) / trainers.length, true)
                                 : formatPrice(0, true)
                             }
@@ -162,31 +168,28 @@ export default function TrainerBooking() {
                     <div className="flex gap-2 min-w-max px-4 sm:px-0">
                         <button
                             onClick={() => setFilterView('all')}
-                            className={`px-4 py-2 rounded-lg font-medium text-sm transition-all whitespace-nowrap ${
-                                filterView === 'all'
-                                    ? 'bg-primary text-background'
-                                    : 'bg-white/5 text-text-muted hover:bg-white/10'
-                            }`}
+                            className={`px-4 py-2 rounded-lg font-medium text-sm transition-all whitespace-nowrap ${filterView === 'all'
+                                ? 'bg-primary text-background'
+                                : 'bg-white/5 text-text-muted hover:bg-white/10'
+                                }`}
                         >
                             All Trainers
                         </button>
                         <button
                             onClick={() => setFilterView('available')}
-                            className={`px-4 py-2 rounded-lg font-medium text-sm transition-all whitespace-nowrap ${
-                                filterView === 'available'
-                                    ? 'bg-primary text-background'
-                                    : 'bg-white/5 text-text-muted hover:bg-white/10'
-                            }`}
+                            className={`px-4 py-2 rounded-lg font-medium text-sm transition-all whitespace-nowrap ${filterView === 'available'
+                                ? 'bg-primary text-background'
+                                : 'bg-white/5 text-text-muted hover:bg-white/10'
+                                }`}
                         >
                             Available Now
                         </button>
                         <button
                             onClick={() => setFilterView('top-rated')}
-                            className={`px-4 py-2 rounded-lg font-medium text-sm transition-all whitespace-nowrap ${
-                                filterView === 'top-rated'
-                                    ? 'bg-primary text-background'
-                                    : 'bg-white/5 text-text-muted hover:bg-white/10'
-                            }`}
+                            className={`px-4 py-2 rounded-lg font-medium text-sm transition-all whitespace-nowrap ${filterView === 'top-rated'
+                                ? 'bg-primary text-background'
+                                : 'bg-white/5 text-text-muted hover:bg-white/10'
+                                }`}
                         >
                             Top Rated
                         </button>
@@ -199,7 +202,7 @@ export default function TrainerBooking() {
                 <div className="text-center py-12 px-4">
                     <span className="material-icons-round text-5xl text-text-muted opacity-50 block mb-3">person_off</span>
                     <p className="text-text-muted text-base">No trainers match your filter</p>
-                    <button 
+                    <button
                         onClick={() => setFilterView('all')}
                         className="mt-4 px-4 py-2 bg-primary text-background rounded-lg font-medium text-sm"
                     >
@@ -213,9 +216,9 @@ export default function TrainerBooking() {
                             {/* Trainer Image */}
                             <div className="aspect-[4/3] sm:aspect-square bg-white/5 overflow-hidden relative">
                                 {trainer.imageUrl ? (
-                                    <img 
-                                        src={trainer.imageUrl} 
-                                        alt={trainer.name} 
+                                    <img
+                                        src={trainer.imageUrl}
+                                        alt={trainer.name}
                                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                                         loading="lazy"
                                     />
@@ -281,7 +284,7 @@ export default function TrainerBooking() {
                                         <div className="flex items-center gap-2 text-sm">
                                             <div className={`w-2 h-2 rounded-full ${trainer.availableSlots > 0 ? 'bg-green-400' : 'bg-red-400'}`}></div>
                                             <span className={trainer.availableSlots > 0 ? 'text-green-400' : 'text-red-400'}>
-                                                {trainer.availableSlots > 0 
+                                                {trainer.availableSlots > 0
                                                     ? `${trainer.availableSlots} slots this week`
                                                     : 'Fully booked'
                                                 }
@@ -296,11 +299,10 @@ export default function TrainerBooking() {
                                             setShowBookingModal(true);
                                         }}
                                         disabled={trainer.availableSlots === 0}
-                                        className={`w-full py-3.5 sm:py-3 rounded-xl font-bold text-sm sm:text-base transition-all active:scale-95 flex items-center justify-center gap-2 touch-manipulation ${
-                                            trainer.availableSlots === 0
-                                                ? 'bg-white/5 text-text-muted cursor-not-allowed opacity-50'
-                                                : 'bg-primary text-background hover:brightness-110 shadow-lg shadow-primary/25'
-                                        }`}
+                                        className={`w-full py-3.5 sm:py-3 rounded-xl font-bold text-sm sm:text-base transition-all active:scale-95 flex items-center justify-center gap-2 touch-manipulation ${trainer.availableSlots === 0
+                                            ? 'bg-white/5 text-text-muted cursor-not-allowed opacity-50'
+                                            : 'bg-primary text-background hover:brightness-110 shadow-lg shadow-primary/25'
+                                            }`}
                                     >
                                         <span className="material-icons-round text-lg">event</span>
                                         Book Session
@@ -314,16 +316,16 @@ export default function TrainerBooking() {
 
             {/* Booking Modal - Mobile Optimized */}
             {showBookingModal && selectedTrainer && (
-                <div 
+                <div
                     className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center sm:justify-center"
                     onClick={closeModal}
-                    style={{ 
+                    style={{
                         paddingBottom: 'env(safe-area-inset-bottom)',
                         paddingTop: 'env(safe-area-inset-top)'
                     }}
                 >
-                    <div 
-                        className="w-full sm:max-w-lg bg-surface rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 flex flex-col max-h-[90vh] sm:max-h-[85vh] overflow-hidden animate-slide-up sm:animate-none" 
+                    <div
+                        className="w-full sm:max-w-lg bg-surface rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 flex flex-col max-h-[90vh] sm:max-h-[85vh] overflow-hidden animate-slide-up sm:animate-none"
                         onClick={e => e.stopPropagation()}
                     >
                         {/* Modal Header - Sticky */}
@@ -332,7 +334,7 @@ export default function TrainerBooking() {
                                 <h2 className="text-xl sm:text-2xl font-bold text-white truncate">Book Session</h2>
                                 <p className="text-text-muted text-sm mt-0.5 truncate">with {selectedTrainer.name}</p>
                             </div>
-                            <button 
+                            <button
                                 onClick={closeModal}
                                 className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors flex-shrink-0 touch-manipulation"
                                 aria-label="Close modal"
@@ -397,11 +399,10 @@ export default function TrainerBooking() {
                                                 key={duration}
                                                 type="button"
                                                 onClick={() => setBookingData({ ...bookingData, duration })}
-                                                className={`px-3 py-2 rounded-xl text-sm font-semibold border transition-all ${
-                                                    bookingData.duration === duration
-                                                        ? 'bg-primary/15 text-primary border-primary/40'
-                                                        : 'bg-white/5 text-text-muted border-white/10 hover:text-white'
-                                                }`}
+                                                className={`px-3 py-2 rounded-xl text-sm font-semibold border transition-all ${bookingData.duration === duration
+                                                    ? 'bg-primary/15 text-primary border-primary/40'
+                                                    : 'bg-white/5 text-text-muted border-white/10 hover:text-white'
+                                                    }`}
                                             >
                                                 {duration} min
                                             </button>
@@ -418,11 +419,10 @@ export default function TrainerBooking() {
                                                 key={method}
                                                 type="button"
                                                 onClick={() => setBookingData({ ...bookingData, paymentMethod: method })}
-                                                className={`px-4 py-3 rounded-xl text-sm font-semibold border transition-all ${
-                                                    bookingData.paymentMethod === method
-                                                        ? 'bg-primary/15 text-primary border-primary/40'
-                                                        : 'bg-white/5 text-text-muted border-white/10 hover:text-white'
-                                                }`}
+                                                className={`px-4 py-3 rounded-xl text-sm font-semibold border transition-all ${bookingData.paymentMethod === method
+                                                    ? 'bg-primary/15 text-primary border-primary/40'
+                                                    : 'bg-white/5 text-text-muted border-white/10 hover:text-white'
+                                                    }`}
                                             >
                                                 {method}
                                             </button>

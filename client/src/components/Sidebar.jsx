@@ -64,6 +64,7 @@ export default function Sidebar() {
             {
                 section: "Programs", items: [
                     { to: "/trainers", icon: "fitness_center", label: "Trainers" },
+                    { to: "/admin/training", icon: "event_note", label: "Training Sessions" },
                     { to: "/classes", icon: "event", label: "Classes" },
                 ]
             },
@@ -89,6 +90,7 @@ export default function Sidebar() {
                     { to: "/expenses", icon: "monetization_on", label: "Expenses" },
                     { to: "/pos-settings", icon: "pin", label: "POS Settings" },
                     { to: "/trainers", icon: "fitness_center", label: "Trainers" },
+                    { to: "/admin/training", icon: "event_note", label: "Training Sessions" },
                     { to: "/classes", icon: "event", label: "Classes" },
                 ]
             },

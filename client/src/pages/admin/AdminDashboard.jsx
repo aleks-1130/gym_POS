@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useCurrency } from '../../context/CurrencyContext';
 import { Line } from 'react-chartjs-2';
 import {
@@ -12,6 +12,8 @@ import {
     Legend,
     ArcElement,
 } from 'chart.js';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 
 ChartJS.register(
     CategoryScale,
@@ -26,6 +28,10 @@ ChartJS.register(
 
 const AdminDashboard = ({ stats }) => {
     const { formatPrice } = useCurrency();
+    const navigate = useNavigate();
+
+    // Revenue Breakdown moved to Analytics page
+
     // Fallback data if stats are missing or loading error
     const data = stats || { activeMembers: 0, revenueToday: 0, expiringSoon: 0, monthlyRevenue: 0, totalExpenses: 0 };
 
@@ -59,12 +65,22 @@ const AdminDashboard = ({ stats }) => {
         },
     };
 
+
+
+
     return (
         <>
             {/* ... (previous stats cards) ... */}
             {/* Daily Overview */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                <StatCard title="Revenue (Today)" value={formatPrice(data.revenueToday)} icon="payments" trend={12.5} />
+                <StatCard
+                    title="Revenue (Today)"
+                    value={formatPrice(data.revenueToday)}
+                    icon="payments"
+                    trend={12.5}
+                    onClick={() => navigate('/analytics')}
+                    isClickable
+                />
                 <StatCard title="Active Members" value={data.activeMembers} icon="group" trend={-2.4} />
                 <StatCard title="Expiring Soon (7 Days)" value={data.expiringSoon} icon="warning" isAlert />
             </div>
@@ -83,6 +99,8 @@ const AdminDashboard = ({ stats }) => {
                         value={formatPrice(data.totalExpenses)}
                         icon="money_off"
                         isAlert
+                        onClick={() => navigate('/expenses')}
+                        isClickable
                     />
                     <StatCard
                         title="Net Profit"
@@ -112,18 +130,23 @@ const AdminDashboard = ({ stats }) => {
                     </div>
                 </div>
             </div>
+
+
         </>
     );
 };
 
 // Internal Sub-components
-const StatCard = ({ title, value, icon, trend, isAlert, isSuccess }) => {
+const StatCard = ({ title, value, icon, trend, isAlert, isSuccess, onClick, isClickable }) => {
     let iconClass = 'bg-primary/10 text-primary';
     if (isAlert) iconClass = 'bg-red-500/10 text-red-500';
     if (isSuccess) iconClass = 'bg-emerald-500/10 text-emerald-500';
 
     return (
-        <div className="bg-surface p-6 rounded-3xl border border-white/5 shadow-sm flex items-center justify-between hover:border-primary/20 transition-colors">
+        <div
+            onClick={onClick}
+            className={`bg-surface p-6 rounded-3xl border border-white/10 shadow-sm flex items-center justify-between transition-all ${isClickable ? 'cursor-pointer hover:border-primary/50 hover:bg-white/5 active:scale-95' : ''}`}
+        >
             <div>
                 <p className="text-text-muted text-sm font-medium mb-1">{title}</p>
                 <h3 className="text-2xl font-bold text-white">{value}</h3>
