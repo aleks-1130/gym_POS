@@ -3,9 +3,11 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useReactToPrint } from 'react-to-print';
 import QRCode from 'react-qr-code';
+import { useCurrency } from '../../context/CurrencyContext';
 
 export default function Members() {
     const navigate = useNavigate();
+    const { formatPrice, rate } = useCurrency();
     const [members, setMembers] = useState([]);
     const [plans, setPlans] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -17,6 +19,13 @@ export default function Members() {
     const [showTCModal, setShowTCModal] = useState(false);
     const [newMember, setNewMember] = useState(null);
     const [qrMember, setQrMember] = useState(null);
+    const [showPaymentModal, setShowPaymentModal] = useState(false);
+    const [amountTendered, setAmountTendered] = useState('');
+    const [gcashReference, setGcashReference] = useState('');
+    const [gcashDate, setGcashDate] = useState('');
+    const [gcashTime, setGcashTime] = useState('');
+    const [showTransactionModal, setShowTransactionModal] = useState(false);
+    const [transactionInfo, setTransactionInfo] = useState(null);
 
     const [formData, setFormData] = useState({
         firstName: '',
@@ -99,8 +108,7 @@ export default function Members() {
         }
     };
 
-    const handleRegister = async (e) => {
-        e.preventDefault();
+    const submitRegistration = async (paymentInfo = {}) => {
         if (!formData.agreedToTC) {
             alert("Member must agree to the Terms and Conditions to proceed.");
             return;
@@ -112,14 +120,22 @@ export default function Members() {
                 planId: formData.planId ? Number(formData.planId) : null,
                 paymentMethod: formData.paymentMethod,
                 birthDate: formData.birthDate || null,
-                sex: formData.sex || null
+                sex: formData.sex || null,
+                ...paymentInfo
             };
             const res = await axios.post('http://localhost:5000/api/members', payload);
-            setNewMember(res.data);
+            const member = res.data?.member || res.data;
+            const payment = res.data?.payment || null;
+            setNewMember(member);
             setIsModalOpen(false);
             setFormData({ firstName: '', lastName: '', email: '', phone: '', planId: '', birthDate: '', sex: '', imageUrl: '', agreedToTC: false });
             fetchData(); // Refresh list
-            setShowTCModal(true); // Show printing modal
+            if (payment) {
+                setTransactionInfo(payment);
+                setShowTransactionModal(true);
+            } else {
+                setShowTCModal(true);
+            }
         } catch (e) {
             console.error(e);
             alert("Failed to register member. Check email uniqueness or connection.");
@@ -128,11 +144,34 @@ export default function Members() {
         }
     };
 
+    const handleRegister = (e) => {
+        e.preventDefault();
+        if (!formData.agreedToTC) {
+            alert("Member must agree to the Terms and Conditions to proceed.");
+            return;
+        }
+        if (formData.paymentMethod === 'CASH' || formData.paymentMethod === 'GCASH') {
+            setShowPaymentModal(true);
+            setAmountTendered('');
+            setGcashReference('');
+            setGcashDate('');
+            setGcashTime('');
+            return;
+        }
+        submitRegistration();
+    };
+
     const filteredMembers = members.filter(m =>
         m.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         m.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (m.email && m.email.toLowerCase().includes(searchTerm.toLowerCase()))
     );
+
+    const selectedPlan = plans.find(plan => plan.id === Number(formData.planId));
+    const planPrice = selectedPlan ? selectedPlan.price : 0;
+    const cashTenderedValue = parseFloat(amountTendered) || 0;
+    const amountDueLocal = planPrice * rate;
+    const changeDue = Math.max(0, (cashTenderedValue / rate) - planPrice);
 
     const getStatusColor = (status) => {
         switch (status) {
@@ -493,6 +532,7 @@ export default function Members() {
                                     >
                                         <option value="CASH" className="bg-surface">Cash</option>
                                         <option value="CARD" className="bg-surface">Card</option>
+                                        <option value="GCASH" className="bg-surface">GCash</option>
                                         <option value="TRANSFER" className="bg-surface">Transfer</option>
                                     </select>
                                     <span className="material-icons-round absolute right-4 top-3 text-text-muted pointer-events-none text-sm">expand_more</span>
@@ -542,6 +582,175 @@ export default function Members() {
                     </div>
                     {/* Hidden canvas for capture */}
                     <canvas ref={canvasRef} className="hidden" />
+                </div>
+            )}
+
+            {/* Cash Payment Modal */}
+            {showPaymentModal && formData.paymentMethod === 'CASH' && (
+                <div className="fixed inset-0 z-[55] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6">
+                        <div className="text-center mb-6">
+                            <h2 className="text-2xl font-bold text-white mb-2">Cash Payment</h2>
+                            <p className="text-text-muted">Amount Due</p>
+                            <p className="text-4xl font-bold text-primary mt-1">{formatPrice(planPrice)}</p>
+                        </div>
+
+                        <div className="space-y-6">
+                            <div>
+                                <label className="block text-text-muted text-sm font-medium mb-2">Amount Tendered</label>
+                                <div className="relative">
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white font-bold">₱</span>
+                                    <input
+                                        type="number"
+                                        autoFocus
+                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-4 pl-8 pr-4 text-white text-xl font-bold focus:border-green-500 outline-none"
+                                        placeholder="0.00"
+                                        value={amountTendered}
+                                        onChange={(e) => setAmountTendered(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="bg-white/5 rounded-xl p-4 flex justify-between items-center">
+                                <span className="text-text-secondary">Change Due:</span>
+                                <span className={`text-2xl font-bold ${cashTenderedValue >= amountDueLocal ? 'text-green-400' : 'text-red-400'}`}>
+                                    {formatPrice(changeDue)}
+                                </span>
+                            </div>
+
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setShowPaymentModal(false)}
+                                    className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 rounded-xl"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        const tenderedUsd = cashTenderedValue / rate;
+                                        if (cashTenderedValue < amountDueLocal) return;
+                                        setShowPaymentModal(false);
+                                        submitRegistration({
+                                            cashTendered: tenderedUsd,
+                                            changeDue: changeDue
+                                        });
+                                    }}
+                                    disabled={cashTenderedValue < amountDueLocal || submitting}
+                                    className="flex-1 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl flex items-center justify-center gap-2"
+                                >
+                                    {submitting && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>}
+                                    Confirm Payment
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* GCash Payment Modal */}
+            {showPaymentModal && formData.paymentMethod === 'GCASH' && (
+                <div className="fixed inset-0 z-[55] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6">
+                        <div className="text-center mb-6">
+                            <h2 className="text-2xl font-bold text-white mb-2">GCash Payment</h2>
+                            <p className="text-text-muted">Amount Due</p>
+                            <p className="text-4xl font-bold text-primary mt-1">{formatPrice(planPrice)}</p>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-text-muted text-sm font-medium mb-2">GCash Reference ID</label>
+                                <input
+                                    type="text"
+                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-3 px-4 text-white text-sm font-bold focus:border-primary outline-none"
+                                    placeholder="Enter GCash transaction ID"
+                                    value={gcashReference}
+                                    onChange={(e) => setGcashReference(e.target.value)}
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-text-muted text-sm font-medium mb-2">Date</label>
+                                    <input
+                                        type="date"
+                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-3 px-4 text-white text-sm focus:border-primary outline-none"
+                                        value={gcashDate}
+                                        onChange={(e) => setGcashDate(e.target.value)}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-text-muted text-sm font-medium mb-2">Time</label>
+                                    <input
+                                        type="time"
+                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-3 px-4 text-white text-sm focus:border-primary outline-none"
+                                        value={gcashTime}
+                                        onChange={(e) => setGcashTime(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setShowPaymentModal(false)}
+                                    className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 rounded-xl"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (!gcashReference || !gcashDate || !gcashTime) return;
+                                        setShowPaymentModal(false);
+                                        submitRegistration({
+                                            gcashReference,
+                                            gcashDate,
+                                            gcashTime
+                                        });
+                                    }}
+                                    disabled={!gcashReference || !gcashDate || !gcashTime || submitting}
+                                    className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl flex items-center justify-center gap-2"
+                                >
+                                    {submitting && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>}
+                                    Confirm Payment
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Transaction Info Modal */}
+            {showTransactionModal && transactionInfo && (
+                <div className="fixed inset-0 z-[58] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-sm w-full p-6">
+                        <h3 className="text-xl font-bold text-white mb-2">Transaction Created</h3>
+                        <p className="text-text-muted text-sm mb-4">Please record the details below.</p>
+                        <div className="bg-white/5 rounded-xl p-4 space-y-3 text-sm">
+                            <div className="flex justify-between text-text-muted">
+                                <span>Transaction ID</span>
+                                <span className="text-white font-bold">#{transactionInfo.id}</span>
+                            </div>
+                            <div className="flex justify-between text-text-muted">
+                                <span>Date</span>
+                                <span className="text-white">{new Date(transactionInfo.date).toLocaleDateString('en-US')}</span>
+                            </div>
+                            <div className="flex justify-between text-text-muted">
+                                <span>Time</span>
+                                <span className="text-white">{new Date(transactionInfo.date).toLocaleTimeString()}</span>
+                            </div>
+                        </div>
+                        <div className="mt-6 flex gap-3">
+                            <button
+                                onClick={() => {
+                                    setShowTransactionModal(false);
+                                    setShowTCModal(true);
+                                }}
+                                className="flex-1 py-3 bg-primary hover:bg-orange-600 text-white font-bold rounded-xl"
+                            >
+                                Continue
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 

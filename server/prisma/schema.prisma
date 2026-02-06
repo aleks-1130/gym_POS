@@ -11,13 +11,15 @@ datasource db {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  password  String
-  name      String?
-  role      String   @default("STAFF") // OWNER, ADMIN, STAFF
-  createdAt DateTime @default(now())
-}
+    id        Int      @id @default(autoincrement())
+    email     String   @unique
+    password  String
+    name      String?
+    role      String   @default("STAFF") // OWNER, ADMIN, STAFF
+    createdAt DateTime @default(now())
+    payments  Payment[] @relation("PaymentCashier")
+    notes     MemberNote[]
+  }
 
 model AuditLog {
   id          Int      @id @default(autoincrement())
@@ -54,8 +56,9 @@ model Member {
   bookings         Booking[]
   orders           Order[]
   trainingSessions TrainingSession[]
-  membershipPeriods MembershipPeriod[]
-}
+    membershipPeriods MembershipPeriod[]
+    notes            MemberNote[]
+  }
 
 
 model Plan {
@@ -69,14 +72,36 @@ model Plan {
 
 
 model Payment {
-  id        Int      @id @default(autoincrement())
-  amount    Float
-  type      String   // MEMBERSHIP, POS, etc.
-  method    String   // CASH, CARD
-  status    String   @default("COMPLETED")
-  date      DateTime @default(now())
-  memberId  Int?
-  member    Member?  @relation(fields: [memberId], references: [id])
+    id             Int           @id @default(autoincrement())
+    amount         Float
+    type           String        // MEMBERSHIP, POS, etc.
+    method         String        // CASH, CARD
+    status         String        @default("COMPLETED")
+    date           DateTime      @default(now())
+    memberId       Int?
+    member         Member?       @relation(fields: [memberId], references: [id])
+    cashierId      Int?
+    cashier        User?         @relation("PaymentCashier", fields: [cashierId], references: [id])
+    pointsAwarded  Int           @default(0)
+    pointsReversed Int           @default(0)
+    refundedAmount Float         @default(0)
+    cashTendered   Float?
+    changeDue      Float?
+    externalRef    String?
+    externalDate   DateTime?
+    items          PaymentItem[]
+}
+
+model PaymentItem {
+    id               Int      @id @default(autoincrement())
+    paymentId        Int
+    payment          Payment  @relation(fields: [paymentId], references: [id])
+    productId        Int?
+    name             String
+    type             String   // PRODUCT, PLAN, OTHER
+    quantity         Int
+    unitPrice        Float
+    returnedQuantity Int      @default(0)
 }
 
 model AccessLog {
@@ -231,6 +256,23 @@ model Expense {
   supplier    Supplier? @relation(fields: [supplierId], references: [id])
   createdAt   DateTime @default(now())
   inventoryTransactionId Int? // Link to specific inventory restock if needed
+}
+
+model PosConfig {
+  id           Int      @id @default(autoincrement())
+  voidPinHash  String?
+  returnPinHash String?
+  updatedAt    DateTime @updatedAt
+}
+
+model MemberNote {
+  id        Int      @id @default(autoincrement())
+  memberId  Int
+  member    Member   @relation(fields: [memberId], references: [id])
+  content   String
+  createdAt DateTime @default(now())
+  createdBy Int?
+  author    User?    @relation(fields: [createdBy], references: [id])
 }
 
 model Supplier {

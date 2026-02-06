@@ -4,7 +4,7 @@ import { useCurrency } from '../context/CurrencyContext';
 // This component can be used in a modal or hidden iframe for printing
 export const Receipt = React.forwardRef(({ transaction, items, member, cashierName, discount = 0, paymentDetails }, ref) => {
     const { formatPrice, rate } = useCurrency();
-    const date = new Date();
+    const transactionDate = transaction?.date ? new Date(transaction.date) : new Date();
 
     // Gym Info (Hardcoded for now, ideal if from config)
     const gymInfo = {
@@ -41,7 +41,7 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
             <div className="mb-4 border-b border-black pb-2 border-dashed">
                 <div className="flex justify-between">
                     <span>Date:</span>
-                    <span>{date.toLocaleDateString()} {date.toLocaleTimeString()}</span>
+                    <span>{transactionDate.toLocaleDateString()} {transactionDate.toLocaleTimeString()}</span>
                 </div>
                 <div className="flex justify-between">
                     <span>Invoice #:</span>
@@ -103,11 +103,11 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
                     <>
                         <div className="flex justify-between mt-2 text-xs">
                             <span>Cash Tendered:</span>
-                            <span>{formatPrice(paymentDetails.tendered)}</span>
+                            <span>{formatPrice(paymentDetails.tendered ?? transaction?.cashTendered)}</span>
                         </div>
                         <div className="flex justify-between text-xs">
                             <span>Change Due:</span>
-                            <span>{formatPrice(paymentDetails.change)}</span>
+                            <span>{formatPrice(paymentDetails.change ?? transaction?.changeDue)}</span>
                         </div>
                     </>
                 )}
@@ -152,7 +152,7 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
                 <p className="font-bold">THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX</p>
                 <p>ACCREDITED PRINTER: SUPER PRINTS INC.</p>
                 <p>TIN: 999-888-777-000</p>
-                <p>Date Issued: {date.toLocaleDateString()}</p>
+                <p>Date Issued: {transactionDate.toLocaleDateString()}</p>
                 <p className="mt-4">Thank you for training with us!</p>
             </div>
         </div>

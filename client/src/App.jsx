@@ -23,6 +23,8 @@ import AuditLogs from './pages/owner/AuditLogs';
 import Analytics from './pages/admin/Analytics';
 import Expenses from './pages/admin/Expenses';
 import Suppliers from './pages/admin/Suppliers';
+import PosSettings from './pages/admin/PosSettings';
+import Transactions from './pages/admin/Transactions';
 
 // Staff Pages
 import Inventory from './pages/staff/Inventory';
@@ -30,6 +32,7 @@ import Members from './pages/staff/Members';
 import MemberDetail from './pages/staff/MemberDetail';
 import Trainers from './pages/staff/Trainers';
 import Classes from './pages/staff/Classes';
+import TransactionDetail from './pages/staff/TransactionDetail';
 import AdminTrainers from './pages/admin/Trainers';
 import AdminClasses from './pages/admin/Classes';
 
@@ -143,6 +146,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER]}>
               <Payments />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/pos/transactions/:id"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
+              <TransactionDetail />
             </ProtectedRoute>
           }
         />
@@ -268,6 +279,22 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
               <Suppliers />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/transactions"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
+              <Transactions />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/pos-settings"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
+              <PosSettings />
             </ProtectedRoute>
           }
         />

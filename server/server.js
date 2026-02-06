@@ -9,6 +9,7 @@ const app = express();
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 5000;
 const SECRET = process.env.JWT_SECRET;
+const POS_PIN_MIN_LENGTH = 4;
 
 app.use(cors());
 app.use(express.json());
@@ -61,6 +62,25 @@ const logAudit = async (action, performedBy, target, details) => {
     } catch (e) {
         console.error("Audit Log Error:", e);
     }
+};
+
+const getPosConfig = async () => {
+    let config = await prisma.posConfig.findFirst();
+    if (!config) {
+        config = await prisma.posConfig.create({ data: {} });
+    }
+    return config;
+};
+
+const adjustMemberPoints = async (memberId, delta) => {
+    if (!memberId || !delta) return;
+    const member = await prisma.member.findUnique({ where: { id: Number(memberId) } });
+    if (!member) return;
+    const nextPoints = Math.max(0, (member.points || 0) + Number(delta));
+    await prisma.member.update({
+        where: { id: Number(memberId) },
+        data: { points: nextPoints }
+    });
 };
 
 // --- AUTH ROUTES ---
@@ -542,7 +562,7 @@ app.get('/api/members/:id', authenticateToken, async (req, res) => {
 
 // Only Staff/Admin can create members
 app.post('/api/members', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
-    const { firstName, lastName, email, phone, planId, imageUrl, birthDate, sex, paymentMethod } = req.body;
+    const { firstName, lastName, email, phone, planId, imageUrl, birthDate, sex, paymentMethod, cashTendered, changeDue, gcashReference, gcashDate, gcashTime } = req.body;
     try {
         // Calculate expiry based on plan
         const plan = await prisma.plan.findUnique({ where: { id: Number(planId) } });
@@ -570,18 +590,45 @@ app.post('/api/members', authenticateToken, authorize(['ADMIN', 'STAFF']), async
             }
         });
 
+        let payment = null;
         if (plan) {
-            await prisma.payment.create({
+            const pointsAwarded = Math.floor((plan.price * 58) / 100);
+            const externalDate = (gcashDate && gcashTime) ? new Date(`${gcashDate}T${gcashTime}`) : null;
+            payment = await prisma.payment.create({
                 data: {
                     amount: plan.price,
                     type: 'MEMBERSHIP',
                     method: paymentMethod || 'CASH',
-                    memberId: member.id
+                    memberId: member.id,
+                    cashierId: req.user.id,
+                    pointsAwarded,
+                    cashTendered: paymentMethod === 'CASH' ? (cashTendered !== undefined ? Number(cashTendered) : null) : null,
+                    changeDue: paymentMethod === 'CASH' ? (changeDue !== undefined ? Number(changeDue) : null) : null,
+                    externalRef: paymentMethod === 'GCASH' ? (gcashReference || null) : null,
+                    externalDate: paymentMethod === 'GCASH' ? externalDate : null
                 }
             });
+
+            await prisma.paymentItem.create({
+                data: {
+                    paymentId: payment.id,
+                    productId: null,
+                    name: plan.name,
+                    type: 'PLAN',
+                    quantity: 1,
+                    unitPrice: plan.price
+                }
+            });
+
+            if (pointsAwarded > 0) {
+                await prisma.member.update({
+                    where: { id: member.id },
+                    data: { points: { increment: pointsAwarded } }
+                });
+            }
         }
 
-        res.json(member);
+        res.json({ member, payment });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -590,7 +637,7 @@ app.post('/api/members', authenticateToken, authorize(['ADMIN', 'STAFF']), async
 // Only Staff/Admin can renew members (unless we add self-service later)
 app.post('/api/members/:id/renew', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
     const { id } = req.params;
-    const { duration, amount, method, planId } = req.body; // duration in days
+    const { duration, amount, method, planId, cashTendered, changeDue, gcashReference, gcashDate, gcashTime } = req.body; // duration in days
     try {
         const member = await prisma.member.findUnique({ where: { id: Number(id) } });
         if (!member) return res.status(404).json({ error: "Member not found" });
@@ -635,18 +682,86 @@ app.post('/api/members/:id/renew', authenticateToken, authorize(['ADMIN', 'STAFF
             }
         });
 
-        await prisma.payment.create({
+        const externalDate = (gcashDate && gcashTime) ? new Date(`${gcashDate}T${gcashTime}`) : null;
+        const pointsAwarded = Math.floor((parseFloat(amount) * 58) / 100);
+
+        const payment = await prisma.payment.create({
             data: {
                 amount: parseFloat(amount),
-                type: 'MEMBERSHIP_RENEWAL',
+                type: 'MEMBERSHIP',
                 method,
-                memberId: Number(id)
+                memberId: Number(id),
+                cashierId: req.user.id,
+                pointsAwarded,
+                cashTendered: method === 'CASH' ? (cashTendered !== undefined ? Number(cashTendered) : null) : null,
+                changeDue: method === 'CASH' ? (changeDue !== undefined ? Number(changeDue) : null) : null,
+                externalRef: method === 'GCASH' ? (gcashReference || null) : null,
+                externalDate: method === 'GCASH' ? externalDate : null
             }
         });
 
-        res.json(updatedMember);
+        let planName = 'Membership Renewal';
+        if (planId) {
+            const plan = await prisma.plan.findUnique({ where: { id: Number(planId) } });
+            if (plan?.name) planName = plan.name;
+        }
+
+        await prisma.paymentItem.create({
+            data: {
+                paymentId: payment.id,
+                productId: null,
+                name: planName,
+                type: 'PLAN',
+                quantity: 1,
+                unitPrice: parseFloat(amount)
+            }
+        });
+
+        if (pointsAwarded > 0) {
+            await prisma.member.update({
+                where: { id: Number(id) },
+                data: { points: { increment: pointsAwarded } }
+            });
+        }
+
+        res.json({ member: updatedMember, payment });
     } catch (e) {
         res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/members/:id/notes', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
+    const { id } = req.params;
+    try {
+        const notes = await prisma.memberNote.findMany({
+            where: { memberId: Number(id) },
+            orderBy: { createdAt: 'desc' },
+            include: { author: { select: { id: true, name: true, email: true } } }
+        });
+        res.json(notes);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch notes" });
+    }
+});
+
+app.post('/api/members/:id/notes', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
+    const { id } = req.params;
+    const { content } = req.body;
+    if (!content || !String(content).trim()) {
+        return res.status(400).json({ error: "Note content required" });
+    }
+    try {
+        const note = await prisma.memberNote.create({
+            data: {
+                memberId: Number(id),
+                content: String(content).trim(),
+                createdBy: req.user.id
+            },
+            include: { author: { select: { id: true, name: true, email: true } } }
+        });
+        res.json(note);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to create note" });
     }
 });
 
@@ -872,7 +987,7 @@ app.post('/api/access/simulate', authenticateToken, authorize(['OWNER', 'ADMIN',
 // --- POS ROUTES ---
 // Payment creation - Members might pay online later, but for POS it's staff
 app.post('/api/payments', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBER']), async (req, res) => {
-    const { amount, type, method, memberId, items, discount } = req.body;
+    const { amount, type, method, memberId, items, discount, cashTendered, changeDue, externalRef, externalDate } = req.body;
 
     // If Member, reinforce memberId to own ID
     if (req.user.role === 'MEMBER') {
@@ -881,21 +996,44 @@ app.post('/api/payments', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBE
     }
 
     try {
+        const parsedAmount = parseFloat(amount);
+        const pointsAwarded = memberId ? Math.floor((parsedAmount * 58) / 100) : 0;
+        const cashierId = req.user.role === 'MEMBER' ? null : req.user.id;
+
         // 1. Create Payment Record
         const payment = await prisma.payment.create({
             data: {
-                amount: parseFloat(amount),
+                amount: parsedAmount,
                 type,
                 method,
                 memberId: memberId ? Number(memberId) : null,
-                // store items in JSON or related if needed, but schema seems to rely on Orders or just plain Payment logs?
+                cashierId,
+                pointsAwarded,
+                cashTendered: method === 'CASH' ? (cashTendered !== undefined ? Number(cashTendered) : null) : null,
+                changeDue: method === 'CASH' ? (changeDue !== undefined ? Number(changeDue) : null) : null,
+                externalRef: method === 'GCASH' ? (externalRef || null) : null,
+                externalDate: method === 'GCASH' && externalDate ? new Date(externalDate) : null,
+                // store items in JSON or related if needed, but schema seems to rely on Orders or just plain
+                // Payment logs?
                 // The provided schema scan didn't show 'items' relation on Payment, but 'Order' has items.
-                // However, the original code didn't save items to a relation in this route, so we'll stick to logic side-effects.
+                // However, the original code didn't save items to a relation in this route, so we'll stick to logic
+                // side-effects.
             }
         });
 
         // 2. Process Items (Stock Deduction & Membership Updates)
         if (items && items.length > 0) {
+            const paymentItems = items.map((item) => ({
+                paymentId: payment.id,
+                productId: item.type === 'PRODUCT' && item.id ? Number(item.id) : null,
+                name: item.name || 'Item',
+                type: item.type || 'PRODUCT',
+                quantity: Number(item.quantity) || 1,
+                unitPrice: parseFloat(item.price) || 0
+            }));
+
+            await prisma.paymentItem.createMany({ data: paymentItems });
+
             for (const item of items) {
                 // A. Membership Plan Update
                 if (item.type === 'PLAN') {
@@ -905,7 +1043,8 @@ app.post('/api/payments', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBE
                     if (!member) throw new Error("Member not found");
 
                     // Calculate new expiry
-                    const currentExpiry = new Date(member.expiryDate) > new Date() ? new Date(member.expiryDate) : new Date();
+                    const currentExpiry = new Date(member.expiryDate) > new Date() ? new Date(member.expiryDate) :
+                        new Date();
                     const newExpiry = new Date(currentExpiry);
                     // Add duration (days)
                     newExpiry.setDate(newExpiry.getDate() + (item.duration || 30));
@@ -940,11 +1079,10 @@ app.post('/api/payments', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBE
         // 3. Award Loyalty Points (1 point per 100 PHP spent, Rate: 58)
         if (memberId) {
             // Amount is in USD (e.g. 2.50). Convert to PHP (145) then divide by 100 => 1.45 => 1 pt.
-            const points = Math.floor((parseFloat(amount) * 58) / 100);
-            if (points > 0) {
+            if (pointsAwarded > 0) {
                 await prisma.member.update({
                     where: { id: Number(memberId) },
-                    data: { points: { increment: points } }
+                    data: { points: { increment: pointsAwarded } }
                 });
             }
         }
@@ -955,7 +1093,6 @@ app.post('/api/payments', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBE
         res.status(500).json({ error: e.message });
     }
 });
-
 app.get('/api/payments', authenticateToken, async (req, res) => {
     // Member: see own payments
     if (req.user.role === 'MEMBER') {
@@ -967,13 +1104,234 @@ app.get('/api/payments', authenticateToken, async (req, res) => {
         return res.json(videos);
     }
 
+    if (req.user.role === 'STAFF') {
+        const payments = await prisma.payment.findMany({
+            where: { cashierId: req.user.id },
+            take: 50,
+            orderBy: { date: 'desc' },
+            include: { member: true, cashier: true }
+        });
+        return res.json(payments);
+    }
+
     // Staff/Admin: see all
     const payments = await prisma.payment.findMany({
         take: 50,
         orderBy: { date: 'desc' },
-        include: { member: true }
+        include: { member: true, cashier: true }
     });
     res.json(payments);
+});
+
+app.get('/api/payments/:id', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
+    const paymentId = Number(req.params.id);
+    try {
+        const payment = await prisma.payment.findUnique({
+            where: { id: paymentId },
+            include: { member: true, items: true, cashier: true }
+        });
+        if (!payment) return res.status(404).json({ error: "Payment not found" });
+        if (req.user.role === 'STAFF' && payment.cashierId !== req.user.id) {
+            return res.status(403).json({ error: "Access denied" });
+        }
+        res.json(payment);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch payment" });
+    }
+});
+
+app.post('/api/payments/:id/return-items', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
+    const paymentId = Number(req.params.id);
+    const { pin, items } = req.body;
+
+    if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: "No return items provided" });
+    }
+
+    try {
+        const config = await getPosConfig();
+        if (!config.returnPinHash) {
+            return res.status(400).json({ error: "Return PIN is not configured" });
+        }
+        if (!pin || !(await bcrypt.compare(String(pin), config.returnPinHash))) {
+            return res.status(403).json({ error: "Invalid PIN" });
+        }
+
+        const payment = await prisma.payment.findUnique({
+            where: { id: paymentId },
+            include: { items: true }
+        });
+        if (!payment) return res.status(404).json({ error: "Payment not found" });
+        if (req.user.role === 'STAFF' && payment.cashierId !== req.user.id) {
+            return res.status(403).json({ error: "Access denied" });
+        }
+        if (payment.status !== 'COMPLETED' && payment.status !== 'RETURNED') {
+            return res.status(400).json({ error: "Only completed payments can be returned" });
+        }
+
+        let refundAmount = 0;
+        let totalReturnedQty = 0;
+
+        for (const reqItem of items) {
+            const itemId = Number(reqItem.itemId);
+            const qty = Number(reqItem.quantity) || 0;
+            if (!itemId || qty <= 0) continue;
+
+            const item = payment.items.find(i => i.id === itemId);
+            if (!item) continue;
+            if (!item.productId) continue;
+
+            const availableQty = item.quantity - (item.returnedQuantity || 0);
+            const returnQty = Math.min(availableQty, qty);
+            if (returnQty <= 0) continue;
+
+            refundAmount += returnQty * item.unitPrice;
+            totalReturnedQty += returnQty;
+
+            await prisma.paymentItem.update({
+                where: { id: item.id },
+                data: { returnedQuantity: { increment: returnQty } }
+            });
+
+            if (item.productId) {
+                await prisma.product.update({
+                    where: { id: item.productId },
+                    data: { stock: { increment: returnQty } }
+                });
+            }
+        }
+
+        if (refundAmount <= 0) {
+            return res.status(400).json({ error: "Nothing to return" });
+        }
+
+        const pointsReversal = payment.memberId ? Math.floor((refundAmount * 58) / 100) : 0;
+        if (pointsReversal > 0) {
+            await adjustMemberPoints(payment.memberId, -pointsReversal);
+        }
+
+        const updated = await prisma.payment.update({
+            where: { id: paymentId },
+            data: {
+                status: 'RETURNED',
+                refundedAmount: { increment: refundAmount },
+                pointsReversed: { increment: pointsReversal }
+            },
+            include: { member: true, items: true }
+        });
+
+        res.json(updated);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to return items" });
+    }
+});
+
+// --- POS SETTINGS (Admin/Owner) ---
+app.get('/api/pos/settings', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
+    try {
+        const config = await getPosConfig();
+        res.json({
+            hasVoidPin: Boolean(config.voidPinHash),
+            hasReturnPin: Boolean(config.returnPinHash)
+        });
+    } catch (e) {
+        res.status(500).json({ error: "Failed to load POS settings" });
+    }
+});
+
+app.post('/api/pos/settings', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
+    const { voidPin, returnPin } = req.body;
+    try {
+        if (voidPin === undefined && returnPin === undefined) {
+            return res.status(400).json({ error: "No settings provided" });
+        }
+
+        const data = {};
+
+        if (voidPin !== undefined) {
+            if (voidPin === '') {
+                data.voidPinHash = null;
+            } else if (String(voidPin).length < POS_PIN_MIN_LENGTH) {
+                return res.status(400).json({ error: `Void PIN must be at least ${POS_PIN_MIN_LENGTH} digits` });
+            } else {
+                data.voidPinHash = await bcrypt.hash(String(voidPin), 10);
+            }
+        }
+
+        if (returnPin !== undefined) {
+            if (returnPin === '') {
+                data.returnPinHash = null;
+            } else if (String(returnPin).length < POS_PIN_MIN_LENGTH) {
+                return res.status(400).json({ error: `Return PIN must be at least ${POS_PIN_MIN_LENGTH} digits` });
+            } else {
+                data.returnPinHash = await bcrypt.hash(String(returnPin), 10);
+            }
+        }
+
+        const config = await getPosConfig();
+        await prisma.posConfig.update({
+            where: { id: config.id },
+            data
+        });
+
+        res.json({ message: "POS settings updated" });
+    } catch (e) {
+        res.status(500).json({ error: "Failed to update POS settings" });
+    }
+});
+
+// --- POS VOID ---
+app.post('/api/payments/:id/void', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
+    const { pin } = req.body;
+    const paymentId = Number(req.params.id);
+
+    try {
+        const config = await getPosConfig();
+        if (!config.voidPinHash) {
+            return res.status(400).json({ error: "Void PIN is not configured" });
+        }
+        if (!pin || !(await bcrypt.compare(String(pin), config.voidPinHash))) {
+            return res.status(403).json({ error: "Invalid PIN" });
+        }
+
+        const payment = await prisma.payment.findUnique({
+            where: { id: paymentId },
+            include: { items: true }
+        });
+        if (!payment) return res.status(404).json({ error: "Payment not found" });
+        if (req.user.role === 'STAFF' && payment.cashierId !== req.user.id) {
+            return res.status(403).json({ error: "Access denied" });
+        }
+        if (payment.status !== 'COMPLETED') {
+            return res.status(400).json({ error: "Only completed payments can be voided" });
+        }
+
+        for (const item of payment.items) {
+            if (item.productId) {
+                await prisma.product.update({
+                    where: { id: item.productId },
+                    data: { stock: { increment: item.quantity } }
+                });
+            }
+        }
+
+        const pointsReversal = payment.memberId ? (payment.pointsAwarded || 0) : 0;
+        if (pointsReversal > 0) {
+            await adjustMemberPoints(payment.memberId, -pointsReversal);
+        }
+
+        const updated = await prisma.payment.update({
+            where: { id: paymentId },
+            data: {
+                status: 'VOIDED',
+                pointsReversed: { increment: pointsReversal }
+            },
+            include: { member: true, items: true }
+        });
+        res.json(updated);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to void payment" });
+    }
 });
 
 // --- PLAN ROUTES ---
@@ -1875,3 +2233,4 @@ app.listen(PORT, async () => {
         console.error("Seeding failed:", e);
     }
 });
+
