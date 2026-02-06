@@ -23,6 +23,9 @@ export default function POS() {
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [amountTendered, setAmountTendered] = useState('');
     const [paymentMethod, setPaymentMethod] = useState('');
+    const [gcashReference, setGcashReference] = useState('');
+    const [gcashDate, setGcashDate] = useState('');
+    const [gcashTime, setGcashTime] = useState('');
 
 
     // Receipt Printing
@@ -75,6 +78,7 @@ export default function POS() {
             console.error("Failed to fetch history");
         }
     }
+
 
     // Calculate Total
     const subtotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
@@ -136,18 +140,32 @@ export default function POS() {
         setShowPaymentModal(true);
         setAmountTendered('');
         setPaymentMethod('');
+        setGcashReference('');
+        setGcashDate('');
+        setGcashTime('');
     };
 
     const processPayment = async (method) => {
         setLoading(true);
         try {
+            const tendered = method === 'CASH' ? (parseFloat(amountTendered) / rate) : null;
+            const change = method === 'CASH' ? ((parseFloat(amountTendered) / rate) - cartTotal) : null;
+
+            const hasPlan = cart.some(item => item.type === 'PLAN');
+            const paymentType = hasPlan ? 'MEMBERSHIP' : 'POS_SALE';
+
+            const externalDate = (gcashDate && gcashTime) ? `${gcashDate}T${gcashTime}` : null;
             const res = await axios.post('http://localhost:5000/api/payments', {
                 amount: cartTotal,
-                type: 'POS_SALE',
+                type: paymentType,
                 method: method,
                 items: cart,
                 discount: discount,
-                memberId: selectedMemberId || null
+                memberId: selectedMemberId || null,
+                cashTendered: tendered,
+                changeDue: change,
+                externalRef: method === 'GCASH' ? gcashReference : null,
+                externalDate: method === 'GCASH' ? externalDate : null
             });
 
             // Prepare Reciept Data
@@ -162,8 +180,8 @@ export default function POS() {
                 cashierName: user?.name,
                 paymentDetails: {
                     method: method,
-                    tendered: method === 'CASH' ? (parseFloat(amountTendered) / rate) : null,
-                    change: method === 'CASH' ? ((parseFloat(amountTendered) / rate) - cartTotal) : null
+                    tendered: tendered,
+                    change: change
                 }
             });
 
@@ -181,6 +199,14 @@ export default function POS() {
         } finally {
             setLoading(false);
         }
+    };
+
+    const renderStatusBadge = (status) => {
+        const value = status || 'COMPLETED';
+        const base = "px-2 py-1 rounded text-xs font-bold";
+        if (value === 'VOIDED') return <span className={`${base} bg-red-500/10 text-red-400 border border-red-500/20`}>VOIDED</span>;
+        if (value === 'RETURNED') return <span className={`${base} bg-amber-500/10 text-amber-400 border border-amber-500/20`}>RETURNED</span>;
+        return <span className={`${base} bg-emerald-500/10 text-emerald-400 border border-emerald-500/20`}>COMPLETED</span>;
     };
 
 
@@ -210,12 +236,15 @@ export default function POS() {
                                 <th className="px-6 py-4">Amount</th>
                                 <th className="px-6 py-4">Method</th>
                                 <th className="px-6 py-4">Member</th>
+                                <th className="px-6 py-4">Cashier</th>
+                                <th className="px-6 py-4">Change</th>
+                                <th className="px-6 py-4">Status</th>
                                 <th className="px-6 py-4">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
                             {history.length === 0 && (
-                                <tr><td colSpan="6" className="p-6 text-center text-text-muted">No transactions found.</td></tr>
+                                <tr><td colSpan="9" className="p-6 text-center text-text-muted">No transactions found.</td></tr>
                             )}
                             {history.map(pay => (
                                 <tr key={pay.id} className="hover:bg-white/5 transition-colors">
@@ -224,11 +253,18 @@ export default function POS() {
                                     <td className="px-6 py-4 text-white font-bold">{formatPrice(pay.amount)}</td>
                                     <td className="px-6 py-4 text-text-secondary">{pay.method}</td>
                                     <td className="px-6 py-4 text-white">{pay.member ? `${pay.member.firstName} ${pay.member.lastName}` : 'Walk-in'}</td>
+                                    <td className="px-6 py-4 text-white">{pay.cashier?.name || 'N/A'}</td>
+                                    <td className="px-6 py-4 text-white">
+                                        {pay.method === 'CASH' ? formatPrice(pay.changeDue || 0) : '-'}
+                                    </td>
+                                    <td className="px-6 py-4">{renderStatusBadge(pay.status)}</td>
                                     <td className="px-6 py-4">
-                                        {/* Simple reprint not fully wired as we don't store items perfectly yet, but placeholder */}
-                                        <button className="text-text-muted hover:text-white" title="Reprint functionality requires item storage update">
-                                            <span className="material-icons-round text-sm">print</span>
-                                        </button>
+                                        <a
+                                            href={`/pos/transactions/${pay.id}`}
+                                            className="text-xs font-bold px-3 py-1 rounded-lg border border-white/10 text-white hover:bg-white/10"
+                                        >
+                                            View Transaction
+                                        </a>
                                     </td>
                                 </tr>
                             ))}
@@ -281,6 +317,7 @@ export default function POS() {
                 </div>
             )}
 
+
             {/* Payment Method Selection Modal */}
             {showPaymentModal && (
                 <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -314,32 +351,84 @@ export default function POS() {
                                         </>
                                     )}
                                 </button>
+                                <button
+                                    onClick={() => setPaymentMethod('GCASH')}
+                                    disabled={loading}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white p-6 rounded-2xl flex flex-col items-center gap-3 transition-all hover:scale-[1.02]"
+                                >
+                                    {loading ? (
+                                        <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
+                                    ) : (
+                                        <>
+                                            <span className="material-icons-round text-4xl">account_balance_wallet</span>
+                                            <span className="font-bold text-lg">GCASH</span>
+                                        </>
+                                    )}
+                                </button>
                             </div>
                         ) : (
                             <div className="space-y-6">
                                 {/* Cash Calculator */}
-                                <div>
-                                    <label className="block text-text-muted text-sm font-medium mb-2">Amount Tendered</label>
-                                    <div className="relative">
-                                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white font-bold">₱</span>
-                                        <input
-                                            type="number"
-                                            autoFocus
-                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-4 pl-8 pr-4 text-white text-xl font-bold focus:border-green-500 outline-none"
-                                            placeholder="0.00"
-                                            value={amountTendered}
-                                            onChange={(e) => setAmountTendered(e.target.value)}
-                                        />
+                                {paymentMethod === 'GCASH' && (
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-text-muted text-sm font-medium mb-2">GCash Reference ID</label>
+                                            <input
+                                                type="text"
+                                                className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-4 px-4 text-white text-base font-bold focus:border-primary outline-none"
+                                                placeholder="Enter GCash transaction ID"
+                                                value={gcashReference}
+                                                onChange={(e) => setGcashReference(e.target.value)}
+                                            />
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="block text-text-muted text-sm font-medium mb-2">Date</label>
+                                                <input
+                                                    type="date"
+                                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-4 px-4 text-white text-base focus:border-primary outline-none"
+                                                    value={gcashDate}
+                                                    onChange={(e) => setGcashDate(e.target.value)}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-text-muted text-sm font-medium mb-2">Time</label>
+                                                <input
+                                                    type="time"
+                                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-4 px-4 text-white text-base focus:border-primary outline-none"
+                                                    value={gcashTime}
+                                                    onChange={(e) => setGcashTime(e.target.value)}
+                                                />
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
+                                )}
+                                {paymentMethod === 'CASH' && (
+                                    <>
+                                        <div>
+                                            <label className="block text-text-muted text-sm font-medium mb-2">Amount Tendered</label>
+                                            <div className="relative">
+                                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white font-bold">₱</span>
+                                                <input
+                                                    type="number"
+                                                    autoFocus
+                                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-4 pl-8 pr-4 text-white text-xl font-bold focus:border-green-500 outline-none"
+                                                    placeholder="0.00"
+                                                    value={amountTendered}
+                                                    onChange={(e) => setAmountTendered(e.target.value)}
+                                                />
+                                            </div>
+                                        </div>
 
-                                <div className="bg-white/5 rounded-xl p-4 flex justify-between items-center">
-                                    <span className="text-text-secondary">Change Due:</span>
-                                    <span className={`text-2xl font-bold ${(parseFloat(amountTendered) || 0) >= (cartTotal * rate) ? 'text-green-400' : 'text-red-400'
-                                        }`}>
-                                        {formatPrice(Math.max(0, ((parseFloat(amountTendered) || 0) / rate) - cartTotal))}
-                                    </span>
-                                </div>
+                                        <div className="bg-white/5 rounded-xl p-4 flex justify-between items-center">
+                                            <span className="text-text-secondary">Change Due:</span>
+                                            <span className={`text-2xl font-bold ${(parseFloat(amountTendered) || 0) >= (cartTotal * rate) ? 'text-green-400' : 'text-red-400'
+                                                }`}>
+                                                {formatPrice(Math.max(0, ((parseFloat(amountTendered) || 0) / rate) - cartTotal))}
+                                            </span>
+                                        </div>
+                                    </>
+                                )}
 
                                 <div className="flex gap-3">
                                     <button
@@ -349,8 +438,12 @@ export default function POS() {
                                         Back
                                     </button>
                                     <button
-                                        onClick={() => processPayment('CASH')}
-                                        disabled={loading || (parseFloat(amountTendered) || 0) < (cartTotal * rate)}
+                                        onClick={() => processPayment(paymentMethod)}
+                                        disabled={
+                                            loading ||
+                                            (paymentMethod === 'CASH' && (parseFloat(amountTendered) || 0) < (cartTotal * rate)) ||
+                                            (paymentMethod === 'GCASH' && (!gcashReference || !gcashDate || !gcashTime))
+                                        }
                                         className="flex-1 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl flex items-center justify-center gap-2"
                                     >
                                         {loading && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>}

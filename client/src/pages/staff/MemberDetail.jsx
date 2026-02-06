@@ -6,7 +6,7 @@ import { useCurrency } from '../../context/CurrencyContext';
 export default function MemberDetail() {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { formatPrice } = useCurrency();
+    const { formatPrice, rate } = useCurrency();
     const [member, setMember] = useState(null);
     const [loading, setLoading] = useState(true);
     const [plans, setPlans] = useState([]);
@@ -21,12 +21,17 @@ export default function MemberDetail() {
 
     // Form Data
     const [renewData, setRenewData] = useState({ planId: '', duration: 30, amount: 0, method: 'CASH' });
+    const [renewAmountTendered, setRenewAmountTendered] = useState('');
+    const [renewGcashReference, setRenewGcashReference] = useState('');
+    const [renewGcashDate, setRenewGcashDate] = useState('');
+    const [renewGcashTime, setRenewGcashTime] = useState('');
     const [freezeData, setFreezeData] = useState({
         startDate: new Date().toISOString().split('T')[0],
         endDate: new Date(new Date().setDate(new Date().getDate() + 30)).toISOString().split('T')[0]
     });
     const [passwordData, setPasswordData] = useState('');
     const [noteData, setNoteData] = useState('');
+    const [notes, setNotes] = useState([]);
 
     // Photo Capture
     const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -41,6 +46,7 @@ export default function MemberDetail() {
     useEffect(() => {
         fetchMember();
         fetchPlans();
+        fetchNotes();
     }, [id]);
 
     const fetchMember = async () => {
@@ -69,6 +75,15 @@ export default function MemberDetail() {
             setPlans(res.data);
         } catch (e) {
             console.error("Failed to fetch plans", e);
+        }
+    };
+
+    const fetchNotes = async () => {
+        try {
+            const res = await axios.get(`http://localhost:5000/api/members/${id}/notes`);
+            setNotes(res.data);
+        } catch (e) {
+            console.error("Failed to fetch notes", e);
         }
     };
 
@@ -146,16 +161,42 @@ export default function MemberDetail() {
         }
     };
 
-    const handleRenew = async (e) => {
-        e.preventDefault();
+    const submitRenew = async (paymentInfo = {}) => {
         try {
-            await axios.post(`http://localhost:5000/api/members/${id}/renew`, renewData);
+            const res = await axios.post(`http://localhost:5000/api/members/${id}/renew`, {
+                ...renewData,
+                ...paymentInfo
+            });
             setShowRenewModal(false);
-            fetchMember();
             alert("Membership Renewed!");
+            fetchMember();
         } catch (e) {
             alert("Renewal failed");
         }
+    };
+
+    const handleRenew = (e) => {
+        e.preventDefault();
+        if (renewData.method === 'CASH') {
+            const tendered = parseFloat(renewAmountTendered) || 0;
+            if (tendered < (renewData.amount * rate)) return;
+            const tenderedUsd = tendered / rate;
+            const changeDue = Math.max(0, (tenderedUsd - renewData.amount));
+            submitRenew({ cashTendered: tenderedUsd, changeDue });
+            return;
+        }
+
+        if (renewData.method === 'GCASH') {
+            if (!renewGcashReference || !renewGcashDate || !renewGcashTime) return;
+            submitRenew({
+                gcashReference: renewGcashReference,
+                gcashDate: renewGcashDate,
+                gcashTime: renewGcashTime
+            });
+            return;
+        }
+
+        submitRenew();
     };
 
     const handleSetPassword = async (e) => {
@@ -933,23 +974,36 @@ export default function MemberDetail() {
                             Add Note
                         </button>
                     </div>
-                    <div className="p-6 space-y-4">
-                        <div className="py-16 text-center">
-                            <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                                <span className="material-icons-round text-3xl text-text-muted">note</span>
-                            </div>
-                            <p className="text-text-muted font-medium">No notes yet</p>
-                            <p className="text-text-muted text-sm mt-1">Add notes about this member</p>
-                            <button 
-                                onClick={() => setShowNotesModal(true)}
-                                className="mt-4 bg-primary/10 hover:bg-primary/20 text-primary px-6 py-2 rounded-xl text-sm font-bold border border-primary/20 transition-all"
-                            >
-                                Create First Note
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+                      <div className="p-6 space-y-4">
+                          {notes.length === 0 ? (
+                              <div className="py-16 text-center">
+                                  <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                                      <span className="material-icons-round text-3xl text-text-muted">note</span>
+                                  </div>
+                                  <p className="text-text-muted font-medium">No notes yet</p>
+                                  <p className="text-text-muted text-sm mt-1">Add notes about this member</p>
+                                  <button 
+                                      onClick={() => setShowNotesModal(true)}
+                                      className="mt-4 bg-primary/10 hover:bg-primary/20 text-primary px-6 py-2 rounded-xl text-sm font-bold border border-primary/20 transition-all"
+                                  >
+                                      Create First Note
+                                  </button>
+                              </div>
+                          ) : (
+                              <div className="space-y-3">
+                                  {notes.map(note => (
+                                      <div key={note.id} className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                                          <div className="text-xs text-text-muted mb-2">
+                                              {note.author?.name || note.author?.email || 'Staff'} • {new Date(note.createdAt).toLocaleString()}
+                                          </div>
+                                          <p className="text-sm text-white whitespace-pre-wrap">{note.content}</p>
+                                      </div>
+                                  ))}
+                              </div>
+                          )}
+                      </div>
+                  </div>
+              )}
 
             {/* MODALS */}
 
@@ -1053,32 +1107,77 @@ export default function MemberDetail() {
                                     readOnly
                                 />
                             </div>
-                            <div>
-                                <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-widest">Amount Paid</label>
-                                <div className="relative">
-                                    <span className="absolute left-4 top-3 text-text-muted">$</span>
-                                    <input 
-                                        required 
-                                        type="number" 
-                                        step="0.01"
-                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl pl-8 pr-4 py-3 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
-                                        value={renewData.amount} 
-                                        onChange={e => setRenewData({ ...renewData, amount: e.target.value })} 
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-widest">Payment Method</label>
-                                <select 
-                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all appearance-none cursor-pointer"
-                                    value={renewData.method} 
-                                    onChange={e => setRenewData({ ...renewData, method: e.target.value })}
-                                >
-                                    <option value="CASH" className="bg-surface">Cash</option>
-                                    <option value="CARD" className="bg-surface">Card</option>
-                                    <option value="TRANSFER" className="bg-surface">Transfer</option>
-                                </select>
-                            </div>
+                              <div>
+                                  <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-widest">Payment Method</label>
+                                  <select 
+                                      className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all appearance-none cursor-pointer"
+                                      value={renewData.method} 
+                                      onChange={e => setRenewData({ ...renewData, method: e.target.value })}
+                                  >
+                                      <option value="CASH" className="bg-surface">Cash</option>
+                                      <option value="CARD" className="bg-surface">Card</option>
+                                      <option value="GCASH" className="bg-surface">GCash</option>
+                                  </select>
+                              </div>
+                              {renewData.method === 'CASH' && (
+                                  <div className="space-y-4">
+                                      <div>
+                                          <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-widest">Amount Tendered</label>
+                                          <div className="relative">
+                                              <span className="absolute left-4 top-3 text-text-muted">₱</span>
+                                              <input
+                                                  required
+                                                  type="number"
+                                                  className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl pl-8 pr-4 py-3 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
+                                                  value={renewAmountTendered}
+                                                  onChange={e => setRenewAmountTendered(e.target.value)}
+                                              />
+                                          </div>
+                                      </div>
+                                      <div className="bg-white/5 rounded-xl p-4 flex justify-between items-center">
+                                          <span className="text-text-secondary text-xs font-bold uppercase tracking-widest">Change Due</span>
+                                          <span className={`text-lg font-bold ${(parseFloat(renewAmountTendered) || 0) >= (renewData.amount * rate) ? 'text-emerald-400' : 'text-red-400'}`}>
+                                              {formatPrice(Math.max(0, ((parseFloat(renewAmountTendered) || 0) / rate) - renewData.amount))}
+                                          </span>
+                                      </div>
+                                  </div>
+                              )}
+                              {renewData.method === 'GCASH' && (
+                                  <div className="space-y-4">
+                                      <div>
+                                          <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-widest">GCash Reference ID</label>
+                                          <input
+                                              required
+                                              type="text"
+                                              className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
+                                              value={renewGcashReference}
+                                              onChange={e => setRenewGcashReference(e.target.value)}
+                                          />
+                                      </div>
+                                      <div className="grid grid-cols-2 gap-3">
+                                          <div>
+                                              <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-widest">Date</label>
+                                              <input
+                                                  required
+                                                  type="date"
+                                                  className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
+                                                  value={renewGcashDate}
+                                                  onChange={e => setRenewGcashDate(e.target.value)}
+                                              />
+                                          </div>
+                                          <div>
+                                              <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-widest">Time</label>
+                                              <input
+                                                  required
+                                                  type="time"
+                                                  className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
+                                                  value={renewGcashTime}
+                                                  onChange={e => setRenewGcashTime(e.target.value)}
+                                              />
+                                          </div>
+                                      </div>
+                                  </div>
+                              )}
                             <div className="pt-4 flex justify-end gap-3">
                                 <button type="button" onClick={() => setShowRenewModal(false)} className="text-text-muted hover:text-white px-5 py-2.5 font-medium transition-all">Cancel</button>
                                 <button type="submit" className="bg-primary hover:bg-orange-600 text-white font-bold px-8 py-2.5 rounded-2xl shadow-lg shadow-primary/20 transition-all active:scale-95">Confirm Renew</button>
@@ -1087,6 +1186,7 @@ export default function MemberDetail() {
                     </div>
                 </div>
             )}
+
 
             {/* Photo Update Modal */}
             {showPhotoModal && (
@@ -1151,7 +1251,21 @@ export default function MemberDetail() {
                             </div>
                             <h3 className="text-xl font-bold text-white">Add Staff Note</h3>
                         </div>
-                        <form onSubmit={(e) => { e.preventDefault(); setShowNotesModal(false); setNoteData(''); }} className="space-y-4">
+                        <form
+                            onSubmit={async (e) => {
+                                e.preventDefault();
+                                if (!noteData.trim()) return;
+                                try {
+                                    await axios.post(`http://localhost:5000/api/members/${id}/notes`, { content: noteData.trim() });
+                                    setNoteData('');
+                                    setShowNotesModal(false);
+                                    fetchNotes();
+                                } catch (e) {
+                                    alert("Failed to save note");
+                                }
+                            }}
+                            className="space-y-4"
+                        >
                             <div>
                                 <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-widest">Note</label>
                                 <textarea
