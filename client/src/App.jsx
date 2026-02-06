@@ -5,7 +5,9 @@ import { ROLES } from './constants/roles';
 import Sidebar from './components/Sidebar';
 import BottomNav from './components/BottomNav';
 
-// Auth
+// Auth & Public
+import Landing from './pages/Landing'; // Added
+import Signup from './pages/auth/Signup'; // Added
 import Login from './pages/auth/Login';
 
 // Shared
@@ -13,6 +15,7 @@ import Dashboard from './pages/shared/Dashboard';
 import Payments from './pages/shared/Payments';
 import Access from './pages/shared/Access';
 import Loyalty from './pages/shared/Loyalty';
+import Announcements from './pages/shared/Announcements';
 
 // Owner Pages
 import Settings from './pages/owner/Settings';
@@ -36,17 +39,11 @@ import Profile from './pages/member/Profile';
 import Attendance from './pages/member/Attendance';
 import PurchaseHistory from './pages/member/PurchaseHistory';
 import TrainerBooking from './pages/member/TrainerBooking';
-import Announcements from './pages/shared/Announcements';
-
-
-// Common
-// import Notifications from './pages/Notifications';
 
 // ✅ NEW IMPORTS
 import DoorScanner from './pages/staff/DoorScanner';
 import DisplayMonitor from './pages/shared/DisplayMonitor';
 import ProfileResult from './components/ProfileResult';
-// import MemberProfile from './pages/staff/MemberProfile';
 
 const ProtectedRoute = ({ children, allowedRoles, fullScreen }) => {
   const { user, loading } = useAuth();
@@ -60,11 +57,11 @@ const ProtectedRoute = ({ children, allowedRoles, fullScreen }) => {
 
   if (!user) return <Navigate to="/login" />;
 
+  // Changed redirect to /dashboard so logged in users don't loop to Landing
   if (allowedRoles && !allowedRoles.includes(user.role)) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
-  // Full screen mode (no sidebar, no bottom nav)
   if (fullScreen) {
     return (
       <div className="bg-background min-h-screen w-full overflow-y-auto">
@@ -73,7 +70,6 @@ const ProtectedRoute = ({ children, allowedRoles, fullScreen }) => {
     );
   }
 
-  // Members use bottom nav only (no sidebar)
   if (user.role === ROLES.MEMBER) {
     return (
       <div className="flex flex-col bg-background min-h-screen overflow-x-hidden">
@@ -85,7 +81,6 @@ const ProtectedRoute = ({ children, allowedRoles, fullScreen }) => {
     );
   }
 
-  // Staff/Admin/Owner use sidebar
   return (
     <div className="flex flex-col lg:flex-row bg-background h-screen overflow-hidden">
       <Sidebar />
@@ -100,19 +95,22 @@ function AppRoutes() {
   return (
     <div className="flex-1 w-full bg-background overflow-auto relative">
       <Routes>
+        {/* --- PUBLIC ROUTES (No Protection) --- */}
+        <Route path="/" element={<Landing />} />
+        <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
 
-        {/* Public / Common Routes */}
+        {/* --- DASHBOARD (Protected) --- */}
         <Route
-          path="/"
+          path="/dashboard"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER]}>
               <Dashboard />
             </ProtectedRoute>
           }
         />
 
-        {/* ✅ NEW ROUTES */}
+        {/* --- STAFF/ADMIN TOOLS --- */}
         <Route
           path="/scanner"
           element={
@@ -138,191 +136,36 @@ function AppRoutes() {
           }
         />
 
-        {/* Shared / Hybrid Routes */}
-        <Route
-          path="/payments"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER]}>
-              <Payments />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/loyalty"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER]}>
-              <Loyalty />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/access"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER]}>
-              <Access />
-            </ProtectedRoute>
-          }
-        />
+        {/* --- SHARED ROUTES --- */}
+        <Route path="/payments" element={<ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER]}><Payments /></ProtectedRoute>} />
+        <Route path="/loyalty" element={<ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER]}><Loyalty /></ProtectedRoute>} />
+        <Route path="/access" element={<ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER]}><Access /></ProtectedRoute>} />
+        <Route path="/notifications" element={<ProtectedRoute><Announcements /></ProtectedRoute>} />
+        <Route path="/announcements" element={<ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}><Announcements /></ProtectedRoute>} />
 
-        <Route
-          path="/notifications"
-          element={
-            <ProtectedRoute>
-              <Announcements />
-            </ProtectedRoute>
-          }
-        />
+        {/* --- STAFF MANAGEMENT --- */}
+        <Route path="/members" element={<ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}><Members /></ProtectedRoute>} />
+        <Route path="/members/:id" element={<ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}><MemberDetail /></ProtectedRoute>} />
+        <Route path="/inventory" element={<ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}><Inventory /></ProtectedRoute>} />
+        <Route path="/trainers" element={<ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}><Trainers /></ProtectedRoute>} />
+        <Route path="/classes" element={<ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}><Classes /></ProtectedRoute>} />
 
-        {/* Staff / Admin Routes */}
-        <Route
-          path="/members"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              <Members />
-            </ProtectedRoute>
-          }
-        />
-        {/* Existing staff detail route */}
-        <Route
-          path="/members/:id"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              <MemberDetail />
-            </ProtectedRoute>
-          }
-        />
+        {/* --- ADMIN/OWNER ONLY --- */}
+        <Route path="/analytics" element={<ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}><Analytics /></ProtectedRoute>} />
+        <Route path="/settings" element={<ProtectedRoute allowedRoles={[ROLES.OWNER]}><Settings /></ProtectedRoute>} />
+        <Route path="/users" element={<ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}><UserManagement /></ProtectedRoute>} />
+        <Route path="/audit" element={<ProtectedRoute allowedRoles={[ROLES.OWNER]}><AuditLogs /></ProtectedRoute>} />
 
-        {/* Optional member full profile route (NO conflict) */}
-        {/*
-        <Route
-          path="/members/profile/:memberId"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              <MemberProfile />
-            </ProtectedRoute>
-          }
-        />
-        */}
+        {/* --- MEMBER FEATURES --- */}
+        <Route path="/schedule" element={<ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.MEMBER, ROLES.ADMIN, ROLES.STAFF]}><Schedule /></ProtectedRoute>} />
+        <Route path="/shop" element={<ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.MEMBER, ROLES.ADMIN]}><MemberShop /></ProtectedRoute>} />
+        <Route path="/profile" element={<ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.MEMBER, ROLES.ADMIN, ROLES.STAFF]}><Profile /></ProtectedRoute>} />
+        <Route path="/attendance" element={<ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}><Attendance /></ProtectedRoute>} />
+        <Route path="/purchase-history" element={<ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}><PurchaseHistory /></ProtectedRoute>} />
+        <Route path="/trainer-booking" element={<ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}><TrainerBooking /></ProtectedRoute>} />
 
-        <Route
-          path="/inventory"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              <Inventory />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/trainers"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              <Trainers />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/classes"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              <Classes />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Admin / Owner Routes */}
-        <Route
-          path="/analytics"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
-              <Analytics />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Owner Only Routes */}
-        <Route
-          path="/settings"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER]}>
-              <Settings />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/users"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
-              <UserManagement />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/audit"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER]}>
-              <AuditLogs />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Member / Mixed Routes */}
-        <Route
-          path="/schedule"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.MEMBER, ROLES.ADMIN, ROLES.STAFF]}>
-              <Schedule />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/shop"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.MEMBER, ROLES.ADMIN]}>
-              <MemberShop />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/profile"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.MEMBER, ROLES.ADMIN, ROLES.STAFF]}>
-              <Profile />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/attendance"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              <Attendance />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/purchase-history"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              <PurchaseHistory />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/trainer-booking"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              <TrainerBooking />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/announcements"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              <Announcements />
-            </ProtectedRoute>
-          }
-        />
+        {/* Catch-all */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>
   );
