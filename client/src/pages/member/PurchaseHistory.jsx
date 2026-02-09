@@ -9,22 +9,33 @@ export default function PurchaseHistory() {
     const [payments, setPayments] = useState([]);
     const [trainingSessions, setTrainingSessions] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState('all'); // all, membership, training
+    const [activeTab, setActiveTab] = useState('all'); // all, membership, training, app_purchase
 
     useEffect(() => {
         fetchPaymentHistory();
     }, []);
 
     const fetchPaymentHistory = async () => {
+        const token = sessionStorage.getItem('token') || localStorage.getItem('token');
         try {
-            const [paymentsRes, sessionsRes] = await Promise.all([
-                axios.get('http://localhost:5000/api/payments'),
-                axios.get('http://localhost:5000/api/members/training-sessions')
-            ]);
-            setPayments(paymentsRes.data);
-            setTrainingSessions(sessionsRes.data);
+            const paymentsRes = await axios.get('http://localhost:5000/api/payments', {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined
+            });
+            setPayments(paymentsRes.data || []);
         } catch (error) {
-            console.error("Failed to fetch payment history", error);
+            console.error("Failed to fetch payments", error);
+            setPayments([]);
+        }
+
+        try {
+            const sessionsRes = await axios.get('http://localhost:5000/api/members/training-sessions', {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined
+            });
+            setTrainingSessions(sessionsRes.data || []);
+        } catch (error) {
+            // Training sessions may be forbidden for some roles; don't block payments
+            console.warn("Failed to fetch training sessions", error);
+            setTrainingSessions([]);
         } finally {
             setLoading(false);
         }
@@ -33,15 +44,29 @@ export default function PurchaseHistory() {
     if (loading) return <div className="text-white p-6 text-center">Loading payment history...</div>;
 
     // Combine all transactions for filtering
+    const mapPaymentType = (payment) => {
+        const normalized = String(payment.type || '').toUpperCase();
+        if (normalized === 'IN_APP_PURCHASE') return 'app_purchase';
+        if (normalized === 'MEMBERSHIP') return 'membership';
+        if (normalized === 'TRAINING') return 'training';
+        return 'other';
+    };
+
+    const paymentsWithType = payments
+        .map(p => ({ ...p, type: mapPaymentType(p), rawType: p.type, category: 'Payment' }))
+        .filter(p => p.type !== 'training');
+
     const allTransactions = [
-        ...payments.map(p => ({ ...p, type: 'membership', category: 'Membership Payment' })),
+        ...paymentsWithType,
         ...trainingSessions.map(s => ({ ...s, type: 'training', category: 'Training Session' }))
     ].sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
 
     const filteredTransactions = activeTab === 'all' 
         ? allTransactions 
         : activeTab === 'membership'
-        ? payments
+        ? paymentsWithType.filter(p => p.type === 'membership')
+        : activeTab === 'app_purchase'
+        ? paymentsWithType.filter(p => p.type === 'app_purchase')
         : trainingSessions;
 
     const totalSpent = allTransactions.reduce((sum, item) => sum + (item.amount || item.price || 0), 0);
@@ -73,6 +98,7 @@ export default function PurchaseHistory() {
                 {[
                     { id: 'all', label: 'All', icon: 'receipt_long' },
                     { id: 'membership', label: 'Membership', icon: 'card_membership' },
+                    { id: 'app_purchase', label: 'Shop', icon: 'shopping_bag' },
                     { id: 'training', label: 'Training', icon: 'person' }
                 ].map(tab => (
                     <button
@@ -120,18 +146,22 @@ export default function PurchaseHistory() {
                                         <td className="px-4 sm:px-6 py-4">
                                             <div className="flex items-center gap-2">
                                                 <span className={`material-icons-round text-base ${
-                                                    item.type === 'membership' ? 'text-blue-400' : 'text-purple-400'
+                                                    item.type === 'membership' ? 'text-blue-400' :
+                                                    item.type === 'app_purchase' ? 'text-emerald-400' : 'text-purple-400'
                                                 }`}>
-                                                    {item.type === 'membership' ? 'card_membership' : 'person'}
+                                                    {item.type === 'membership' ? 'card_membership' :
+                                                     item.type === 'app_purchase' ? 'shopping_bag' : 'person'}
                                                 </span>
-                                                <span className="bg-white/10 text-text-secondary px-2.5 py-1 rounded text-xs font-bold capitalize">
-                                                    {item.type}
+                                                <span className="bg-white/10 text-text-secondary px-2.5 py-1 rounded text-xs font-bold uppercase">
+                                                    {item.type === 'app_purchase' ? 'IN APP PURCHASE' : item.type}
                                                 </span>
                                             </div>
                                         </td>
                                         <td className="px-4 sm:px-6 py-4 text-text-secondary">
-                                            {item.type === 'membership' 
-                                                ? item.method 
+                                            {item.type === 'membership'
+                                                ? item.method
+                                                : item.type === 'app_purchase'
+                                                ? `Paid via ${item.method || 'N/A'}`
                                                 : `Session with ${item.trainerName || 'Trainer'}`
                                             }
                                         </td>
@@ -164,12 +194,14 @@ export default function PurchaseHistory() {
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <span className={`material-icons-round text-base ${
-                                            item.type === 'membership' ? 'text-blue-400' : 'text-purple-400'
+                                            item.type === 'membership' ? 'text-blue-400' :
+                                            item.type === 'app_purchase' ? 'text-emerald-400' : 'text-purple-400'
                                         }`}>
-                                            {item.type === 'membership' ? 'card_membership' : 'person'}
+                                            {item.type === 'membership' ? 'card_membership' :
+                                             item.type === 'app_purchase' ? 'shopping_bag' : 'person'}
                                         </span>
-                                        <span className="bg-white/10 text-text-secondary px-2 py-1 rounded text-xs font-bold capitalize flex-shrink-0">
-                                            {item.type}
+                                        <span className="bg-white/10 text-text-secondary px-2 py-1 rounded text-xs font-bold uppercase flex-shrink-0">
+                                            {item.type === 'app_purchase' ? 'IN APP PURCHASE' : item.type}
                                         </span>
                                     </div>
                                 </div>
@@ -178,11 +210,13 @@ export default function PurchaseHistory() {
                                     <div>
                                         <p className="text-text-muted text-xs mb-1">Description</p>
                                         <p className="text-white text-sm font-medium">
-                                            {item.type === 'membership' 
-                                                ? item.method 
+                                            {item.type === 'membership'
+                                                ? item.method
+                                                : item.type === 'app_purchase'
+                                                ? `Paid via ${item.method || 'N/A'}`
                                                 : `Session with ${item.trainerName || 'Trainer'}`
                                             }
-                                        </p>
+                                    </p>
                                     </div>
                                     <div className="text-right">
                                         <p className="text-text-muted text-xs mb-1">Amount</p>

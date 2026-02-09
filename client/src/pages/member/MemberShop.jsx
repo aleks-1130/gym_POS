@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
+import { useNavigate } from 'react-router-dom';
 
 export default function MemberShop() {
     const { formatPrice } = useCurrency();
+    const navigate = useNavigate();
     const [products, setProducts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [cart, setCart] = useState([]);
@@ -95,9 +97,9 @@ export default function MemberShop() {
     };
 
     const handleCheckout = () => {
-        // Implement your checkout logic here
-        alert(`Proceeding to checkout with ${getTotalItems()} items. Total: ${formatPrice(getCartTotal())}`);
-        // You can navigate to checkout page or open payment modal
+        if (cart.length === 0) return;
+        setShowCartModal(false);
+        navigate('/shop-checkout');
     };
 
     if (loading) {

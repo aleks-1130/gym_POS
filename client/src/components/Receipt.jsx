@@ -5,6 +5,7 @@ import { useCurrency } from '../context/CurrencyContext';
 export const Receipt = React.forwardRef(({ transaction, items, member, cashierName, discount = 0, paymentDetails }, ref) => {
     const { formatPrice, rate } = useCurrency();
     const transactionDate = transaction?.date ? new Date(transaction.date) : new Date();
+    const skipConversion = transaction?.type === 'TRAINING';
 
     // Gym Info (Hardcoded for now, ideal if from config)
     const gymInfo = {
@@ -20,7 +21,7 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
 
     // Points Calculation (1 pt per 100 Local Currency Units)
     const conversionRate = rate || 58;
-    const pointsEarned = Math.floor((total * conversionRate) / 100);
+    const pointsEarned = Math.floor((skipConversion ? total : (total * conversionRate)) / 100);
 
     // VAT Calculation (Philippines: 12% existing in price usually, but let's assume price is VAT inclusive)
     // VATable Sales = Total / 1.12
@@ -75,8 +76,8 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
                             <tr key={idx}>
                                 <td className="align-top">{item.quantity}</td>
                                 <td className="align-top pr-2">{item.name}</td>
-                                <td className="text-right align-top">{formatPrice(item.price).replace('$', '')}</td>
-                                <td className="text-right align-top">{formatPrice(item.price * item.quantity).replace('$', '')}</td>
+                                <td className="text-right align-top">{formatPrice(item.price, skipConversion).replace('$', '')}</td>
+                                <td className="text-right align-top">{formatPrice(item.price * item.quantity, skipConversion).replace('$', '')}</td>
                             </tr>
                         ))}
                     </tbody>
@@ -87,27 +88,27 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
             <div className="space-y-1 mb-6">
                 <div className="flex justify-between">
                     <span>Subtotal:</span>
-                    <span>{formatPrice(subtotal).replace('$', '')}</span>
+                    <span>{formatPrice(subtotal, skipConversion).replace('$', '')}</span>
                 </div>
                 {discount > 0 && (
                     <div className="flex justify-between text-red-600 print:text-black">
                         <span>Discount:</span>
-                        <span>-{formatPrice(discount).replace('$', '')}</span>
+                        <span>-{formatPrice(discount, skipConversion).replace('$', '')}</span>
                     </div>
                 )}
                 <div className="flex justify-between font-bold text-lg mt-2 border-t border-dashed border-black pt-2">
                     <span>TOTAL:</span>
-                    <span>{formatPrice(total)}</span>
+                    <span>{formatPrice(total, skipConversion)}</span>
                 </div>
                 {paymentDetails && paymentDetails.method === 'CASH' && (
                     <>
                         <div className="flex justify-between mt-2 text-xs">
                             <span>Cash Tendered:</span>
-                            <span>{formatPrice(paymentDetails.tendered ?? transaction?.cashTendered)}</span>
+                            <span>{formatPrice(paymentDetails.tendered ?? transaction?.cashTendered, skipConversion)}</span>
                         </div>
                         <div className="flex justify-between text-xs">
                             <span>Change Due:</span>
-                            <span>{formatPrice(paymentDetails.change ?? transaction?.changeDue)}</span>
+                            <span>{formatPrice(paymentDetails.change ?? transaction?.changeDue, skipConversion)}</span>
                         </div>
                     </>
                 )}
@@ -117,11 +118,11 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
             <div className="text-xs mb-6 border-t border-black pt-2 border-dashed">
                 <div className="flex justify-between">
                     <span>VATable Sales:</span>
-                    <span>{formatPrice(vatableSales).replace('$', '')}</span>
+                    <span>{formatPrice(vatableSales, skipConversion).replace('$', '')}</span>
                 </div>
                 <div className="flex justify-between">
                     <span>VAT Amount (12%):</span>
-                    <span>{formatPrice(vatAmount).replace('$', '')}</span>
+                    <span>{formatPrice(vatAmount, skipConversion).replace('$', '')}</span>
                 </div>
                 <div className="flex justify-between">
                     <span>VAT Exempt Sales:</span>

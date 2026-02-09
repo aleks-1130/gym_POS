@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import QRCode from 'react-qr-code';
 
@@ -6,11 +7,79 @@ export default function Profile() {
     const { user, logout } = useAuth();
     const [orders, setOrders] = useState([]);
     const [showQR, setShowQR] = useState(false);
+    const [member, setMember] = useState(null);
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [showPasswordModal, setShowPasswordModal] = useState(false);
+    const [editForm, setEditForm] = useState({
+        firstName: '',
+        lastName: '',
+        email: '',
+        phone: ''
+    });
+    const [passwordForm, setPasswordForm] = useState({
+        currentPassword: '',
+        newPassword: ''
+    });
     const qrValue = user?.id ? `MEMBER:${user.id}` : '';
 
     useEffect(() => {
+        const fetchMember = async () => {
+            if (!user?.id) return;
+            try {
+                const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+                const res = await axios.get(`http://localhost:5000/api/members/${user.id}`, {
+                    headers: token ? { Authorization: `Bearer ${token}` } : undefined
+                });
+                setMember(res.data);
+                setEditForm({
+                    firstName: res.data?.firstName || '',
+                    lastName: res.data?.lastName || '',
+                    email: res.data?.email || '',
+                    phone: res.data?.phone || ''
+                });
+            } catch (error) {
+                console.error('Failed to fetch member profile', error);
+            }
+        };
+
+        fetchMember();
         // Fetch bookings/orders if needed
-    }, []);
+    }, [user?.id]);
+
+    const memberSince = member?.startDate || member?.createdAt || user?.createdAt;
+    const memberSinceLabel = memberSince
+        ? new Date(memberSince).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+        : 'N/A';
+
+    const handleSaveProfile = async (e) => {
+        e.preventDefault();
+        if (!user?.id) return;
+        try {
+            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+            const res = await axios.put(`http://localhost:5000/api/members/${user.id}`, editForm, {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined
+            });
+            setMember(res.data);
+            setShowEditModal(false);
+        } catch (error) {
+            console.error('Failed to update profile', error);
+        }
+    };
+
+    const handleChangePassword = async (e) => {
+        e.preventDefault();
+        if (!user?.id) return;
+        try {
+            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+            await axios.post(`http://localhost:5000/api/members/${user.id}/change-password`, passwordForm, {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined
+            });
+            setPasswordForm({ currentPassword: '', newPassword: '' });
+            setShowPasswordModal(false);
+        } catch (error) {
+            console.error('Failed to update password', error);
+        }
+    };
 
     return (
         <div className="space-y-4 pb-20 px-4 max-w-2xl mx-auto">
@@ -85,7 +154,7 @@ export default function Profile() {
                             </div>
                             <div className="flex-1 min-w-0">
                                 <p className="text-text-muted text-xs font-medium mb-0.5">Email Address</p>
-                                <p className="text-white font-medium truncate text-sm">{user?.email || 'N/A'}</p>
+                                <p className="text-white font-medium truncate text-sm">{member?.email || user?.email || 'N/A'}</p>
                             </div>
                         </div>
                     </div>
@@ -116,7 +185,7 @@ export default function Profile() {
                             </div>
                             <div>
                                 <p className="text-text-muted text-xs font-medium mb-0.5">Member Since</p>
-                                <p className="text-white font-medium text-sm">{user?.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'N/A'}</p>
+                                <p className="text-white font-medium text-sm">{memberSinceLabel}</p>
                             </div>
                         </div>
                     </div>
@@ -127,18 +196,24 @@ export default function Profile() {
             <div>
                 <h3 className="text-sm font-bold text-white mb-3 px-1">Quick Actions</h3>
                 <div className="grid grid-cols-2 gap-2">
-                    <button className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center">
+                    <button
+                        onClick={() => setShowEditModal(true)}
+                        className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center"
+                    >
                         <span className="material-icons-round text-primary text-xl block mb-1">edit</span>
                         <span className="text-xs font-medium text-white block">Edit Profile</span>
                     </button>
-                    <button className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center">
+                    <button
+                        onClick={() => setShowPasswordModal(true)}
+                        className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center"
+                    >
                         <span className="material-icons-round text-primary text-xl block mb-1">lock</span>
                         <span className="text-xs font-medium text-white block">Password</span>
                     </button>
-                    <button className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center">
-                        <span className="material-icons-round text-primary text-xl block mb-1">payment</span>
-                        <span className="text-xs font-medium text-white block">Payment</span>
-                    </button>
+                    <a href="/payment-methods" className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center">
+                        <span className="material-icons-round text-primary text-xl block mb-1">credit_card</span>
+                        <span className="text-xs font-medium text-white block">Payment Methods</span>
+                    </a>
                     <button className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center">
                         <span className="material-icons-round text-primary text-xl block mb-1">notifications</span>
                         <span className="text-xs font-medium text-white block">Notifications</span>
@@ -178,6 +253,115 @@ export default function Profile() {
             <div className="text-center py-4">
                 <p className="text-text-muted text-xs">FitOS v1.0.0</p>
             </div>
+
+            {showEditModal && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-surface border border-white/10 rounded-2xl w-full max-w-md p-5">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-bold text-white">Edit Profile</h3>
+                            <button
+                                onClick={() => setShowEditModal(false)}
+                                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-all"
+                            >
+                                <span className="material-icons-round text-white/70">close</span>
+                            </button>
+                        </div>
+                        <form onSubmit={handleSaveProfile} className="space-y-3">
+                            <input
+                                className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white"
+                                placeholder="First Name"
+                                value={editForm.firstName}
+                                onChange={(e) => setEditForm((prev) => ({ ...prev, firstName: e.target.value }))}
+                                required
+                            />
+                            <input
+                                className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white"
+                                placeholder="Last Name"
+                                value={editForm.lastName}
+                                onChange={(e) => setEditForm((prev) => ({ ...prev, lastName: e.target.value }))}
+                                required
+                            />
+                            <input
+                                type="email"
+                                className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white"
+                                placeholder="Email"
+                                value={editForm.email}
+                                onChange={(e) => setEditForm((prev) => ({ ...prev, email: e.target.value }))}
+                            />
+                            <input
+                                className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white"
+                                placeholder="Phone"
+                                value={editForm.phone}
+                                onChange={(e) => setEditForm((prev) => ({ ...prev, phone: e.target.value }))}
+                            />
+                            <div className="flex gap-2 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowEditModal(false)}
+                                    className="flex-1 py-2.5 rounded-xl bg-white/5 text-text-muted hover:text-white"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="flex-1 py-2.5 rounded-xl bg-primary text-background font-bold"
+                                >
+                                    Save
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {showPasswordModal && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-surface border border-white/10 rounded-2xl w-full max-w-md p-5">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-bold text-white">Change Password</h3>
+                            <button
+                                onClick={() => setShowPasswordModal(false)}
+                                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-all"
+                            >
+                                <span className="material-icons-round text-white/70">close</span>
+                            </button>
+                        </div>
+                        <form onSubmit={handleChangePassword} className="space-y-3">
+                            <input
+                                type="password"
+                                className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white"
+                                placeholder="Current Password"
+                                value={passwordForm.currentPassword}
+                                onChange={(e) => setPasswordForm((prev) => ({ ...prev, currentPassword: e.target.value }))}
+                                required
+                            />
+                            <input
+                                type="password"
+                                className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white"
+                                placeholder="New Password"
+                                value={passwordForm.newPassword}
+                                onChange={(e) => setPasswordForm((prev) => ({ ...prev, newPassword: e.target.value }))}
+                                required
+                            />
+                            <div className="flex gap-2 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPasswordModal(false)}
+                                    className="flex-1 py-2.5 rounded-xl bg-white/5 text-text-muted hover:text-white"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="flex-1 py-2.5 rounded-xl bg-primary text-background font-bold"
+                                >
+                                    Update
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

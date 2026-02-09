@@ -52,6 +52,7 @@ model Member {
   sex              String?
   imageUrl         String?
   payments         Payment[]
+  paymentMethods   PaymentMethod[]
   accessLogs       AccessLog[]
   bookings         Booking[]
   orders           Order[]
@@ -102,6 +103,22 @@ model PaymentItem {
     quantity         Int
     unitPrice        Float
     returnedQuantity Int      @default(0)
+}
+
+model PaymentMethod {
+  id        Int      @id @default(autoincrement())
+  memberId  Int
+  member    Member   @relation(fields: [memberId], references: [id])
+  type      String   // GCASH, CARD
+  label     String
+  name      String?  // account/card holder
+  phone     String?  // GCASH mobile
+  brand     String?  // card brand
+  last4     String?  // last 4 digits
+  expMonth  String?  // MM
+  expYear   String?  // YYYY
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
 }
 
 model AccessLog {
@@ -160,6 +177,9 @@ model TrainingSession {
   duration  Int      // minutes
   price     Float
   status    String   @default("SCHEDULED") // SCHEDULED, COMPLETED, CANCELLED
+  paymentStatus String @default("PAID") // PAID, UNPAID
+  paymentMethod String? // CASH, CARD, GCASH
+  paidAt     DateTime?
   notes     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

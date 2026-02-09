@@ -27,6 +27,22 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
+const authenticateTokenOptional = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) {
+        req.user = null;
+        return next();
+    }
+
+    jwt.verify(token, SECRET, (err, user) => {
+        if (!err) {
+            req.user = user;
+        }
+        next();
+    });
+};
+
 // Middleware for Role Checking
 // Middleware for Role Checking (Strict)
 const authorize = (roles = []) => {
@@ -393,7 +409,7 @@ app.post('/api/members/book', authenticateToken, async (req, res) => {
   });
 
   // Book a Trainer Session (Member)
-  app.post('/api/members/book-training', authenticateToken, authorize(['MEMBER']), async (req, res) => {
+app.post('/api/members/book-training', authenticateToken, authorize(['MEMBER']), async (req, res) => {
       const { trainerId, date, time, duration, notes, method } = req.body;
       const memberId = req.user.id;
 
@@ -426,45 +442,249 @@ app.post('/api/members/book', authenticateToken, async (req, res) => {
               return res.status(400).json({ error: "Selected duration not available" });
           }
 
-          const sessionRate = trainer.sessionPrice ?? 300;
-          const totalAmount = (Number(duration) / 60) * Number(sessionRate);
+            const sessionRate = trainer.sessionPrice ?? 300;
+            const totalAmount = (Number(duration) / 60) * Number(sessionRate);
+
+            await prisma.$transaction(async (tx) => {
+                await tx.trainingSession.create({
+                    data: {
+                        memberId,
+                        trainerId: Number(trainerId),
+                        date: startDateTime,
+                        duration: Number(duration),
+                        price: totalAmount,
+                        status: 'SCHEDULED',
+                        paymentStatus: method === 'CASH' ? 'UNPAID' : 'PAID',
+                        paymentMethod: method,
+                        paidAt: method === 'CASH' ? null : new Date(),
+                        notes: notes || null
+                    }
+  });
+
+// Book a Trainer Session (Cash, Unpaid) - Optional auth to avoid member token issues
+app.post('/api/members/book-training-cash', authenticateTokenOptional, async (req, res) => {
+    const { trainerId, date, time, duration, notes, memberId } = req.body;
+    const resolvedMemberId = req.user?.role === 'MEMBER' ? req.user.id : Number(memberId);
+
+    if (!resolvedMemberId || !trainerId || !date || !time || !duration) {
+        return res.status(400).json({ error: "Missing required booking details" });
+    }
+
+    try {
+        const trainer = await prisma.trainer.findUnique({ where: { id: Number(trainerId) } });
+        if (!trainer) return res.status(404).json({ error: "Trainer not found" });
+
+        if (trainer.availableSlots !== null && trainer.availableSlots <= 0) {
+            return res.status(400).json({ error: "Trainer is fully booked" });
+        }
+
+        const startDateTime = new Date(`${date}T${time}`);
+        if (isNaN(startDateTime.getTime())) {
+            return res.status(400).json({ error: "Invalid date or time" });
+        }
+
+        const allowedDurations = (trainer.sessionDurations || '60')
+            .split(',')
+            .map((value) => Number(value.trim()))
+            .filter((value) => Number.isFinite(value) && value > 0);
+        if (!allowedDurations.includes(Number(duration))) {
+            return res.status(400).json({ error: "Selected duration not available" });
+        }
+
+        const sessionRate = trainer.sessionPrice ?? 300;
+        const totalAmount = (Number(duration) / 60) * Number(sessionRate);
+
+        await prisma.$transaction(async (tx) => {
+            await tx.trainingSession.create({
+                data: {
+                    memberId: resolvedMemberId,
+                    trainerId: Number(trainerId),
+                    date: startDateTime,
+                    duration: Number(duration),
+                    price: totalAmount,
+                    status: 'SCHEDULED',
+                    paymentStatus: 'UNPAID',
+                    paymentMethod: 'CASH',
+                    paidAt: null,
+                    notes: notes || null
+                }
+            });
+
+            if (trainer.availableSlots !== null) {
+                await tx.trainer.update({
+                    where: { id: Number(trainerId) },
+                    data: { availableSlots: { decrement: 1 } }
+                });
+            }
+        });
+
+        res.json({ message: "Training session booked. Pay at the front desk." });
+    } catch (e) {
+        res.status(500).json({ error: "Failed to book training session", detail: e?.message });
+    }
+});
+
+                if (method !== 'CASH') {
+                    await tx.payment.create({
+                        data: {
+                            amount: totalAmount,
+                            type: 'TRAINING',
+                            method,
+                            status: 'COMPLETED',
+                            memberId
+                        }
+                    });
+                }
+
+                if (trainer.availableSlots !== null) {
+                    await tx.trainer.update({
+                        where: { id: Number(trainerId) },
+                        data: { availableSlots: { decrement: 1 } }
+                    });
+                }
+            });
+
+            res.json({ message: method === 'CASH' ? "Training session booked. Pay at the front desk." : "Training session booked and paid" });
+} catch (e) {
+    res.status(500).json({ error: "Failed to book training session", detail: e?.message });
+}
+});
+
+// Staff/Admin book a trainer session for a member
+app.post('/api/staff/book-training', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    const { memberId, trainerId, date, time, duration, notes, method } = req.body;
+    if (!memberId || !trainerId || !date || !time || !duration || !method) {
+        return res.status(400).json({ error: "Missing required booking details" });
+    }
+    const allowedMethods = ['CASH', 'CARD', 'GCASH'];
+    if (!allowedMethods.includes(method)) {
+        return res.status(400).json({ error: "Invalid payment method" });
+    }
+
+    try {
+        const trainer = await prisma.trainer.findUnique({ where: { id: Number(trainerId) } });
+        if (!trainer) return res.status(404).json({ error: "Trainer not found" });
+
+        if (trainer.availableSlots !== null && trainer.availableSlots <= 0) {
+            return res.status(400).json({ error: "Trainer is fully booked" });
+        }
+
+        const startDateTime = new Date(`${date}T${time}`);
+        if (isNaN(startDateTime.getTime())) {
+            return res.status(400).json({ error: "Invalid date or time" });
+        }
+
+        const totalAmount = ((trainer.sessionPrice || 0) / 60) * Number(duration);
 
           await prisma.$transaction(async (tx) => {
-              await tx.trainingSession.create({
-                  data: {
-                      memberId,
-                      trainerId: Number(trainerId),
-                      date: startDateTime,
-                      duration: Number(duration),
-                      price: totalAmount,
-                      status: 'SCHEDULED',
-                      notes: notes || null
-                  }
-              });
+            await tx.trainingSession.create({
+                data: {
+                    memberId: Number(memberId),
+                    trainerId: Number(trainerId),
+                    date: startDateTime,
+                    duration: Number(duration),
+                    price: totalAmount,
+                    status: 'SCHEDULED',
+                    paymentStatus: 'PAID',
+                    paymentMethod: method,
+                    paidAt: new Date(),
+                    notes: notes || null
+                }
+            });
 
-              await tx.payment.create({
-                  data: {
-                      amount: totalAmount,
-                      type: 'TRAINING',
-                      method,
-                      status: 'COMPLETED',
-                      memberId
-                  }
-              });
+            await tx.payment.create({
+                data: {
+                    amount: totalAmount,
+                    type: 'TRAINING',
+                    method,
+                    status: 'COMPLETED',
+                    memberId: Number(memberId),
+                    cashierId: req.user.id
+                }
+            });
 
-              if (trainer.availableSlots !== null) {
-                  await tx.trainer.update({
-                      where: { id: Number(trainerId) },
-                      data: { availableSlots: { decrement: 1 } }
-                  });
-              }
-          });
+            if (trainer.availableSlots !== null) {
+                await tx.trainer.update({
+                    where: { id: Number(trainerId) },
+                    data: { availableSlots: { decrement: 1 } }
+                });
+            }
+    });
 
-          res.json({ message: "Training session booked and paid" });
-      } catch (e) {
-          res.status(500).json({ error: "Failed to book training session", detail: e?.message });
-      }
-  });
+    res.json({ message: "Training session booked and paid" });
+} catch (e) {
+    res.status(500).json({ error: "Failed to book training session", detail: e?.message });
+}
+});
+
+// Staff view trainer bookings (e.g., unpaid)
+app.get('/api/staff/training-sessions', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    const { status } = req.query; // paymentStatus filter: UNPAID/PAID
+    try {
+        const where = status ? { paymentStatus: String(status).toUpperCase() } : {};
+        const sessions = await prisma.trainingSession.findMany({
+            where,
+            include: { member: true, trainer: true },
+            orderBy: { date: 'asc' }
+        });
+        res.json(sessions);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Staff collect payment for an unpaid trainer booking
+app.post('/api/staff/training-sessions/:id/collect', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    const sessionId = Number(req.params.id);
+    const { method = 'CASH', cashTendered } = req.body;
+    const allowedMethods = ['CASH', 'CARD', 'GCASH'];
+    if (!allowedMethods.includes(method)) {
+        return res.status(400).json({ error: "Invalid payment method" });
+    }
+
+    try {
+        const session = await prisma.trainingSession.findUnique({
+            where: { id: sessionId },
+            include: { member: true }
+        });
+        if (!session) return res.status(404).json({ error: "Training session not found" });
+        if (session.paymentStatus === 'PAID') return res.status(400).json({ error: "Session already paid" });
+
+        const amount = session.price;
+        const tendered = method === 'CASH' && cashTendered !== undefined ? Number(cashTendered) : null;
+        const changeDue = method === 'CASH' && tendered !== null ? Math.max(0, tendered - amount) : null;
+
+        const payment = await prisma.$transaction(async (tx) => {
+            const updated = await tx.trainingSession.update({
+                where: { id: sessionId },
+                data: {
+                    paymentStatus: 'PAID',
+                    paymentMethod: method,
+                    paidAt: new Date()
+                }
+            });
+
+            const payment = await tx.payment.create({
+                data: {
+                    amount,
+                    type: 'TRAINING',
+                    method,
+                    status: 'COMPLETED',
+                    memberId: session.memberId,
+                    cashierId: req.user.id,
+                    cashTendered: method === 'CASH' ? tendered : null,
+                    changeDue: method === 'CASH' ? changeDue : null
+                }
+            });
+
+            return { updated, payment };
+        });
+
+        res.json(payment);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to collect payment", detail: e?.message });
+    }
+});
         if (!booking) return res.status(404).json({ error: "Booking not found" });
 
         await prisma.$transaction([
@@ -555,6 +775,105 @@ app.get('/api/members/:id', authenticateToken, async (req, res) => {
         });
         if (!member) return res.status(404).json({ error: "Member not found" });
         res.json(member);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Member Payment Methods
+app.get('/api/members/:id/payment-methods', authenticateToken, async (req, res) => {
+    const memberId = Number(req.params.id);
+    if (req.user.role === 'MEMBER' && req.user.id !== memberId) return res.sendStatus(403);
+
+    try {
+        const methods = await prisma.paymentMethod.findMany({
+            where: { memberId },
+            orderBy: { createdAt: 'desc' }
+        });
+        res.json(methods);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/members/:id/payment-methods', authenticateToken, async (req, res) => {
+    const memberId = Number(req.params.id);
+    if (req.user.role === 'MEMBER' && req.user.id !== memberId) return res.sendStatus(403);
+
+    const { type, label, name, phone, brand, last4, expMonth, expYear, isDefault } = req.body;
+    if (!type || !label) return res.status(400).json({ error: "Type and label are required" });
+    if (!['GCASH', 'CARD'].includes(type)) return res.status(400).json({ error: "Invalid payment method type" });
+
+    try {
+        const existingCount = await prisma.paymentMethod.count({ where: { memberId } });
+        const makeDefault = isDefault || existingCount === 0;
+
+        const [method] = await prisma.$transaction([
+            ...(makeDefault
+                ? [prisma.paymentMethod.updateMany({ where: { memberId }, data: { isDefault: false } })]
+                : []),
+            prisma.paymentMethod.create({
+                data: {
+                    memberId,
+                    type,
+                    label,
+                    name: name || null,
+                    phone: phone || null,
+                    brand: brand || null,
+                    last4: last4 || null,
+                    expMonth: expMonth || null,
+                    expYear: expYear || null,
+                    isDefault: makeDefault
+                }
+            })
+        ]);
+
+        res.json(method);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.patch('/api/members/:id/payment-methods/:methodId', authenticateToken, async (req, res) => {
+    const memberId = Number(req.params.id);
+    const methodId = Number(req.params.methodId);
+    if (req.user.role === 'MEMBER' && req.user.id !== memberId) return res.sendStatus(403);
+
+    const { isDefault, label } = req.body;
+    try {
+        const method = await prisma.paymentMethod.findUnique({ where: { id: methodId } });
+        if (!method || method.memberId !== memberId) return res.status(404).json({ error: "Payment method not found" });
+
+        if (isDefault) {
+            await prisma.$transaction([
+                prisma.paymentMethod.updateMany({ where: { memberId }, data: { isDefault: false } }),
+                prisma.paymentMethod.update({ where: { id: methodId }, data: { isDefault: true } })
+            ]);
+            const updated = await prisma.paymentMethod.findUnique({ where: { id: methodId } });
+            return res.json(updated);
+        }
+
+        const updated = await prisma.paymentMethod.update({
+            where: { id: methodId },
+            data: { label: label || method.label }
+        });
+        res.json(updated);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/members/:id/payment-methods/:methodId', authenticateToken, async (req, res) => {
+    const memberId = Number(req.params.id);
+    const methodId = Number(req.params.methodId);
+    if (req.user.role === 'MEMBER' && req.user.id !== memberId) return res.sendStatus(403);
+
+    try {
+        const method = await prisma.paymentMethod.findUnique({ where: { id: methodId } });
+        if (!method || method.memberId !== memberId) return res.status(404).json({ error: "Payment method not found" });
+
+        await prisma.paymentMethod.delete({ where: { id: methodId } });
+        res.json({ success: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -792,10 +1111,13 @@ app.post('/api/members/:id/status', authenticateToken, authorize(['ADMIN', 'STAF
 });
 
 // Update member details (General)
-app.put('/api/members/:id', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+app.put('/api/members/:id', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBER']), async (req, res) => {
     const { id } = req.params;
     const { firstName, lastName, email, phone, imageUrl, birthDate, sex } = req.body;
     try {
+        if (req.user.role === 'MEMBER' && req.user.id !== Number(id)) {
+            return res.sendStatus(403);
+        }
         const member = await prisma.member.update({
             where: { id: Number(id) },
             data: {
@@ -809,6 +1131,32 @@ app.put('/api/members/:id', authenticateToken, authorize(['ADMIN', 'STAFF']), as
             }
         });
         res.json(member);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/members/:id/change-password', authenticateToken, authorize(['MEMBER']), async (req, res) => {
+    const { id } = req.params;
+    const { currentPassword, newPassword } = req.body;
+    if (req.user.id !== Number(id)) return res.sendStatus(403);
+    if (!currentPassword || !newPassword) {
+        return res.status(400).json({ error: "Current and new password are required" });
+    }
+    try {
+        const member = await prisma.member.findUnique({ where: { id: Number(id) } });
+        if (!member || !member.password) {
+            return res.status(400).json({ error: "Password is not set for this account" });
+        }
+        const ok = await bcrypt.compare(currentPassword, member.password);
+        if (!ok) return res.status(400).json({ error: "Current password is incorrect" });
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await prisma.member.update({
+            where: { id: Number(id) },
+            data: { password: hashedPassword }
+        });
+        res.json({ message: "Password updated" });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -988,16 +1336,13 @@ app.post('/api/access/simulate', authenticateToken, authorize(['OWNER', 'ADMIN',
 // Payment creation - Members might pay online later, but for POS it's staff
 app.post('/api/payments', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBER']), async (req, res) => {
     const { amount, type, method, memberId, items, discount, cashTendered, changeDue, externalRef, externalDate } = req.body;
-
-    // If Member, reinforce memberId to own ID
-    if (req.user.role === 'MEMBER') {
-        if (memberId && Number(memberId) !== req.user.id) return res.sendStatus(403);
-        // Member can likely only make certain types of payments? For now allow.
-    }
+    const resolvedMemberId = req.user.role === 'MEMBER'
+        ? req.user.id
+        : (memberId ? Number(memberId) : null);
 
     try {
         const parsedAmount = parseFloat(amount);
-        const pointsAwarded = memberId ? Math.floor((parsedAmount * 58) / 100) : 0;
+        const pointsAwarded = resolvedMemberId ? Math.floor((parsedAmount * 58) / 100) : 0;
         const cashierId = req.user.role === 'MEMBER' ? null : req.user.id;
 
         // 1. Create Payment Record
@@ -1006,7 +1351,7 @@ app.post('/api/payments', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBE
                 amount: parsedAmount,
                 type,
                 method,
-                memberId: memberId ? Number(memberId) : null,
+                memberId: resolvedMemberId,
                 cashierId,
                 pointsAwarded,
                 cashTendered: method === 'CASH' ? (cashTendered !== undefined ? Number(cashTendered) : null) : null,
@@ -1037,9 +1382,9 @@ app.post('/api/payments', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBE
             for (const item of items) {
                 // A. Membership Plan Update
                 if (item.type === 'PLAN') {
-                    if (!memberId) throw new Error("Member ID required for plan purchase");
+                    if (!resolvedMemberId) throw new Error("Member ID required for plan purchase");
 
-                    const member = await prisma.member.findUnique({ where: { id: Number(memberId) } });
+                    const member = await prisma.member.findUnique({ where: { id: Number(resolvedMemberId) } });
                     if (!member) throw new Error("Member not found");
 
                     // Calculate new expiry
@@ -1050,7 +1395,7 @@ app.post('/api/payments', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBE
                     newExpiry.setDate(newExpiry.getDate() + (item.duration || 30));
 
                     await prisma.member.update({
-                        where: { id: Number(memberId) },
+                        where: { id: Number(resolvedMemberId) },
                         data: {
                             expiryDate: newExpiry,
                             status: 'ACTIVE',
@@ -1104,15 +1449,20 @@ app.get('/api/payments', authenticateToken, async (req, res) => {
         return res.json(videos);
     }
 
-    if (req.user.role === 'STAFF') {
-        const payments = await prisma.payment.findMany({
-            where: { cashierId: req.user.id },
-            take: 50,
-            orderBy: { date: 'desc' },
-            include: { member: true, cashier: true }
-        });
-        return res.json(payments);
-    }
+      if (req.user.role === 'STAFF') {
+          const payments = await prisma.payment.findMany({
+              where: {
+                  OR: [
+                      { cashierId: req.user.id },
+                      { type: 'IN_APP_PURCHASE' }
+                  ]
+              },
+              take: 50,
+              orderBy: { date: 'desc' },
+              include: { member: true, cashier: true }
+          });
+          return res.json(payments);
+      }
 
     // Staff/Admin: see all
     const payments = await prisma.payment.findMany({
@@ -1131,7 +1481,7 @@ app.get('/api/payments/:id', authenticateToken, authorize(['OWNER', 'ADMIN', 'ST
             include: { member: true, items: true, cashier: true }
         });
         if (!payment) return res.status(404).json({ error: "Payment not found" });
-        if (req.user.role === 'STAFF' && payment.cashierId !== req.user.id) {
+        if (req.user.role === 'STAFF' && payment.cashierId !== req.user.id && payment.type !== 'IN_APP_PURCHASE') {
             return res.status(403).json({ error: "Access denied" });
         }
         res.json(payment);

@@ -45,6 +45,8 @@ import PurchaseHistory from './pages/member/PurchaseHistory';
 import TrainerBooking from './pages/member/TrainerBooking';
 import Announcements from './pages/shared/Announcements';
 import GymTraffic from './pages/member/GymTraffic';
+import PaymentMethods from './pages/member/PaymentMethods';
+import ShopCheckout from './pages/member/ShopCheckout';
 
 
 // Common
@@ -370,6 +372,22 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
               <GymTraffic />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/payment-methods"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
+              <PaymentMethods />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/shop-checkout"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
+              <ShopCheckout />
             </ProtectedRoute>
           }
         />
