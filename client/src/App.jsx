@@ -6,8 +6,8 @@ import Sidebar from './components/Sidebar';
 import BottomNav from './components/BottomNav';
 
 // Auth & Public
-import Landing from './pages/Landing'; // Added
-import Signup from './pages/auth/Signup'; // Added
+import Landing from './pages/Landing';
+import Signup from './pages/auth/Signup';
 import Login from './pages/auth/Login';
 
 // Shared
@@ -99,8 +99,11 @@ function AppRoutes() {
         <Route path="/" element={<Landing />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
+        {/* Public / Common Routes */}
+        {/* Public Landing Page */}
+        <Route path="/" element={<Landing />} />
 
-        {/* --- DASHBOARD (Protected) --- */}
+        {/* Protected Dashboard */}
         <Route
           path="/dashboard"
           element={

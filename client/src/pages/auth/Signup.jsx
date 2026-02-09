@@ -95,7 +95,7 @@ export default function Signup() {
                         disabled={loading}
                         className="w-full bg-primary hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed py-4 rounded-2xl font-bold text-lg mt-4 transition-all shadow-lg shadow-primary/20 active:scale-95"
                     >
-                        {loading ? 'Creating Account...' : 'Join the Elite'}
+                        {loading ? 'Creating Account...' : 'Become Fit'}
                     </button>
                 </form>
 
