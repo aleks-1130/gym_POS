@@ -23,6 +23,11 @@ export default function Trainers() {
         sessionPrice: '',
         sessionDurations: ['60'],
         availableSlots: '',
+<<<<<<< HEAD
+=======
+        commissionRate: '',
+        baseSalary: '',
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
         bio: '',
         imageUrl: ''
     });
@@ -83,6 +88,11 @@ export default function Trainers() {
             sessionPrice: '',
             sessionDurations: ['60'],
             availableSlots: '',
+<<<<<<< HEAD
+=======
+            commissionRate: '',
+            baseSalary: '',
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
             bio: '',
             imageUrl: ''
         });
@@ -109,6 +119,11 @@ export default function Trainers() {
                 ? trainer.sessionDurations.split(',').map((value) => value.trim()).filter(Boolean)
                 : ['60'],
             availableSlots: trainer.availableSlots ?? '',
+<<<<<<< HEAD
+=======
+            commissionRate: trainer.commissionRate ? (trainer.commissionRate * 100).toFixed(0) : '',
+            baseSalary: trainer.baseSalary ?? '',
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
             bio: trainer.bio || '',
             imageUrl: trainer.imageUrl || ''
         });
@@ -130,6 +145,7 @@ export default function Trainers() {
         if (!formData.name.trim()) return alert('Trainer name is required.');
         setSaving(true);
         try {
+<<<<<<< HEAD
             if (formMode === 'create') {
                 await axios.post('http://localhost:5000/api/trainers', {
                     ...formData,
@@ -140,10 +156,40 @@ export default function Trainers() {
                     ...formData,
                     sessionDurations: formData.sessionDurations.join(',')
                 });
+=======
+            const token = localStorage.getItem('token');
+            const config = { headers: { Authorization: `Bearer ${token}` } };
+
+            if (formMode === 'create') {
+                await axios.post('http://localhost:5000/api/trainers', {
+                    ...formData,
+                    commissionRate: formData.commissionRate ? parseFloat(formData.commissionRate) / 100 : 0,
+                    baseSalary: parseFloat(formData.baseSalary) || 0,
+                    sessionDurations: formData.sessionDurations.join(',')
+                }, config);
+            } else {
+                if (!selectedTrainer) {
+                    setSaving(false);
+                    return;
+                }
+
+                const payload = {
+                    ...formData,
+                    commissionRate: formData.commissionRate ? parseFloat(formData.commissionRate) / 100 : 0,
+                    baseSalary: parseFloat(formData.baseSalary) || 0,
+                    sessionDurations: formData.sessionDurations.join(',')
+                };
+
+                await axios.put(`http://localhost:5000/api/trainers/${selectedTrainer.id}`, payload, config);
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
             }
             setShowForm(false);
             await fetchTrainers();
         } catch (error) {
+<<<<<<< HEAD
+=======
+            console.error(error);
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
             alert(error?.response?.data?.error || 'Failed to save trainer.');
         } finally {
             setSaving(false);
@@ -154,7 +200,14 @@ export default function Trainers() {
         const confirmed = confirm(`Delete trainer ${trainer.name}?`);
         if (!confirmed) return;
         try {
+<<<<<<< HEAD
             await axios.delete(`http://localhost:5000/api/trainers/${trainer.id}`);
+=======
+            const token = localStorage.getItem('token');
+            await axios.delete(`http://localhost:5000/api/trainers/${trainer.id}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
             await fetchTrainers();
         } catch (error) {
             alert(error?.response?.data?.error || 'Failed to delete trainer.');
@@ -275,6 +328,7 @@ export default function Trainers() {
                     <div className="absolute inset-0 bg-background/80 backdrop-blur-md" onClick={() => setViewMode(null)}></div>
                     <div className="relative min-h-full w-full flex items-center justify-center p-4 sm:p-6">
                         <div className="bg-surface w-full max-w-4xl max-h-[92vh] rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col">
+<<<<<<< HEAD
                         {/* Modal Header */}
                         <div className="sticky top-0 z-10 p-6 border-b border-white/10 bg-surface/95 backdrop-blur flex items-center justify-between">
                             <div className="flex items-center gap-4">
@@ -430,6 +484,166 @@ export default function Trainers() {
                                 </div>
                             )}
                         </div>
+=======
+                            {/* Modal Header */}
+                            <div className="sticky top-0 z-10 p-6 border-b border-white/10 bg-surface/95 backdrop-blur flex items-center justify-between">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-14 h-14 rounded-xl overflow-hidden border border-white/10">
+                                        {selectedTrainer.imageUrl ? (
+                                            <img src={selectedTrainer.imageUrl} alt="" className="w-full h-full object-cover" />
+                                        ) : (
+                                            <div className="w-full h-full bg-surfaceHighlight flex items-center justify-center text-lg font-bold text-primary">
+                                                {selectedTrainer.name[0]}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-semibold text-white leading-none">{selectedTrainer.name}</h2>
+                                        <p className="text-sm text-gray-500">{selectedTrainer.specialty || 'General Trainer'}</p>
+
+                                        {/* DIAGNOSTIC: Show raw values */}
+                                        <div className="mt-1 text-xs text-blue-600 bg-blue-50 p-1 rounded border border-blue-100">
+                                            Rate: {selectedTrainer.commissionRate} | Salary: {selectedTrainer.baseSalary}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => setViewMode('profile')}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${viewMode === 'profile'
+                                            ? 'bg-primary/15 text-primary border-primary/40'
+                                            : 'bg-white/5 text-text-secondary border-white/10 hover:text-white'
+                                            }`}
+                                    >
+                                        Profile
+                                    </button>
+                                    <button
+                                        onClick={() => setViewMode('sessions')}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${viewMode === 'sessions'
+                                            ? 'bg-primary/15 text-primary border-primary/40'
+                                            : 'bg-white/5 text-text-secondary border-white/10 hover:text-white'
+                                            }`}
+                                    >
+                                        Sessions
+                                    </button>
+                                    <button
+                                        onClick={() => setViewMode(null)}
+                                        className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center text-white transition-all"
+                                    >
+                                        <X size={18} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Modal Content */}
+                            <div className="flex-1 overflow-y-auto no-scrollbar p-6">
+                                {viewMode === 'profile' ? (
+                                    <div className="space-y-8">
+                                        <div className="bg-white/[0.02] rounded-2xl p-6 border border-white/5">
+                                            <h3 className="text-lg font-bold text-white mb-4">Biography</h3>
+                                            <p className="text-text-secondary leading-relaxed text-lg">
+                                                {selectedTrainer.bio || "No biography available for this trainer yet. More details coming soon."}
+                                            </p>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div className="bg-white/[0.02] rounded-2xl p-6 border border-white/5">
+                                                <h3 className="text-lg font-bold text-white mb-4">Specs & Skills</h3>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {(selectedTrainer.specialty || 'Fitness,Coaching,Nutrition').split(',').map((skill, i) => (
+                                                        <span key={i} className="px-4 py-2 bg-primary/10 text-primary border border-primary/20 rounded-xl text-xs font-black uppercase tracking-widest">
+                                                            {skill.trim()}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div className="bg-white/[0.02] rounded-2xl p-6 border border-white/5">
+                                                <h3 className="text-lg font-bold text-white mb-4">Performance</h3>
+                                                <div className="space-y-4">
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-text-muted text-sm font-bold uppercase tracking-widest">Global Rating</span>
+                                                        <div className="flex items-center gap-1.5 text-amber-500 font-black">
+                                                            <span>{selectedTrainer.rating || '5.0'}</span>
+                                                            <Star size={16} fill="currentColor" />
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-text-muted text-sm font-bold uppercase tracking-widest">Classes Hosted</span>
+                                                        <span className="text-white font-black">{selectedTrainer.classes?.length || 0}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-6">
+                                        {sessionsLoading ? (
+                                            <div className="flex flex-col items-center justify-center py-20">
+                                                <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
+                                                <p className="text-text-muted font-bold uppercase tracking-widest text-xs">Fetching sessions...</p>
+                                            </div>
+                                        ) : sessions.length > 0 ? (
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-left border-separate border-spacing-y-4 -mt-4">
+                                                    <thead>
+                                                        <tr className="text-text-muted text-[10px] font-black uppercase tracking-[0.2em]">
+                                                            <th className="px-6 py-2">Member</th>
+                                                            <th className="px-6 py-2">Date & Time</th>
+                                                            <th className="px-6 py-2">Duration</th>
+                                                            <th className="px-6 py-2">Status</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {sessions.map((session) => (
+                                                            <tr key={session.id} className="bg-white/[0.03] hover:bg-white/[0.06] transition-all group rounded-3xl">
+                                                                <td className="px-6 py-5 first:rounded-l-3xl">
+                                                                    <div className="flex items-center gap-4">
+                                                                        <div className="w-10 h-10 rounded-full bg-surfaceHighlight flex items-center justify-center font-black text-xs text-text-muted">
+                                                                            {session.member?.firstName?.[0]}
+                                                                        </div>
+                                                                        <div>
+                                                                            <p className="text-white font-black text-sm">{session.member?.firstName} {session.member?.lastName}</p>
+                                                                            <p className="text-[10px] text-text-muted font-bold tracking-widest uppercase italic">Member #{session.memberId}</p>
+                                                                        </div>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-6 py-5">
+                                                                    <div className="flex flex-col">
+                                                                        <span className="text-white font-bold text-sm">
+                                                                            {new Date(session.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                                        </span>
+                                                                        <span className="text-text-muted text-[10px] font-black uppercase">
+                                                                            {new Date(session.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                                        </span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-6 py-5 font-bold text-white text-sm">
+                                                                    {session.duration} min
+                                                                </td>
+                                                                <td className="px-6 py-5 last:rounded-r-3xl">
+                                                                    <span className={`px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${session.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                                                                        session.status === 'SCHEDULED' ? 'bg-primary/10 text-primary border-primary/20' :
+                                                                            'bg-red-500/10 text-red-500 border-red-500/20'
+                                                                        }`}>
+                                                                        {session.status}
+                                                                    </span>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : (
+                                            <div className="text-center py-20 bg-white/[0.01] rounded-[2rem] border border-white/5 border-dashed">
+                                                <History size={48} className="text-text-muted/20 mx-auto mb-4" />
+                                                <h4 className="text-lg font-bold text-white/30">No Session History</h4>
+                                                <p className="text-text-muted/20 text-xs font-bold uppercase tracking-widest mt-2">Past training sessions will appear here</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
                         </div>
                     </div>
                 </div>
@@ -444,6 +658,7 @@ export default function Trainers() {
                             onSubmit={handleSaveTrainer}
                             className="bg-[#1a1d24] w-full max-w-5xl h-[calc(100vh-3rem)] rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col"
                         >
+<<<<<<< HEAD
                         {/* Form Header */}
                         <div className="sticky top-0 z-10 p-5 sm:p-6 border-b border-white/10 bg-[#1a1d24] flex items-center justify-between">
                             <div>
@@ -592,10 +807,195 @@ export default function Trainers() {
                                         onChange={(e) => handleFormChange('imageUrl', e.target.value)}
                                         className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
                                         placeholder="https://..."
+=======
+                            {/* Form Header */}
+                            <div className="sticky top-0 z-10 p-5 sm:p-6 border-b border-white/10 bg-[#1a1d24] flex items-center justify-between">
+                                <div>
+                                    <h2 className="text-xl font-semibold text-white">
+                                        {formMode === 'create' ? 'Add Trainer' : 'Edit Trainer'}
+                                    </h2>
+                                    <p className="text-gray-400 text-sm mt-1">
+                                        Manage core trainer details
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowForm(false)}
+                                    className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center text-white transition-all"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+
+                            {/* Form Content */}
+                            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6 bg-[#13151a] modal-scroll-container">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                                    <div>
+                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Full Name</label>
+                                        <input
+                                            value={formData.name}
+                                            onChange={(e) => handleFormChange('name', e.target.value)}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                            placeholder="Trainer name"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Primary Specialty</label>
+                                        <input
+                                            value={formData.specialty}
+                                            onChange={(e) => handleFormChange('specialty', e.target.value)}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                            placeholder="Strength, Yoga, HIIT"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Specialties (comma)</label>
+                                        <input
+                                            value={formData.specialties}
+                                            onChange={(e) => handleFormChange('specialties', e.target.value)}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                            placeholder="Strength, Mobility, Nutrition"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Experience (years)</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={formData.experience}
+                                            onChange={(e) => handleFormChange('experience', e.target.value)}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Session Price</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={formData.sessionPrice}
+                                            onChange={(e) => handleFormChange('sessionPrice', e.target.value)}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                            placeholder="300"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Session Durations</label>
+                                        <div className="mt-2 flex flex-wrap gap-2">
+                                            {['60', '120', '180'].map((value) => {
+                                                const isActive = formData.sessionDurations.includes(value);
+                                                return (
+                                                    <button
+                                                        key={value}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setFormData((prev) => {
+                                                                const exists = prev.sessionDurations.includes(value);
+                                                                const next = exists
+                                                                    ? prev.sessionDurations.filter((item) => item !== value)
+                                                                    : [...prev.sessionDurations, value];
+                                                                return { ...prev, sessionDurations: next.length ? next : ['60'] };
+                                                            });
+                                                        }}
+                                                        className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${isActive
+                                                            ? 'bg-orange-500/15 text-orange-500 border-orange-500/40'
+                                                            : 'bg-white/5 text-gray-400 border-white/10 hover:text-white'
+                                                            }`}
+                                                    >
+                                                        {value} min
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Available Slots</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={formData.availableSlots}
+                                            onChange={(e) => handleFormChange('availableSlots', e.target.value)}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Email</label>
+                                        <input
+                                            type="email"
+                                            value={formData.email}
+                                            onChange={(e) => handleFormChange('email', e.target.value)}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                            placeholder="trainer@email.com"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Phone</label>
+                                        <input
+                                            value={formData.phone}
+                                            onChange={(e) => handleFormChange('phone', e.target.value)}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                            placeholder="(000) 000-0000"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Rating</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="5"
+                                            step="0.1"
+                                            value={formData.rating}
+                                            onChange={(e) => handleFormChange('rating', e.target.value)}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Commission Rate (%)</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            value={formData.commissionRate}
+                                            onChange={(e) => handleFormChange('commissionRate', e.target.value)}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                            placeholder="e.g. 30"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Base Salary ($)</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={formData.baseSalary}
+                                            onChange={(e) => handleFormChange('baseSalary', e.target.value)}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                            placeholder="e.g. 2000"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Image URL</label>
+                                        <input
+                                            value={formData.imageUrl}
+                                            onChange={(e) => handleFormChange('imageUrl', e.target.value)}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                            placeholder="https://..."
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Bio</label>
+                                    <textarea
+                                        value={formData.bio}
+                                        onChange={(e) => handleFormChange('bio', e.target.value)}
+                                        className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 min-h-[140px]"
+                                        placeholder="Trainer background and achievements"
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
                                     />
                                 </div>
                             </div>
 
+<<<<<<< HEAD
                             <div>
                                 <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Bio</label>
                                 <textarea
@@ -628,12 +1028,42 @@ export default function Trainers() {
                     </div>
                 </div>
             )}
+=======
+                            {/* Form Footer */}
+                            <div className="sticky bottom-0 p-5 sm:p-6 border-t border-white/10 bg-[#1a1d24] flex items-center justify-end gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowForm(false)}
+                                    className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm font-medium hover:bg-white/10 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleSaveTrainer}
+                                    disabled={saving}
+                                    style={{ position: 'relative', zIndex: 50 }}
+                                    className="px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium shadow-lg shadow-orange-500/20 disabled:opacity-70 transition-colors"
+                                >
+                                    {saving ? 'Saving...' : 'Save Trainer'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div >
+            )
+            }
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
 
             <style>{`
                 @keyframes fade-in { 0% { opacity: 0; transform: translateY(10px); } 100% { opacity: 1; transform: translateY(0); } }
                 .animate-fade-in { animation: fade-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
                 .no-scrollbar::-webkit-scrollbar { display: none; }
             `}</style>
+<<<<<<< HEAD
         </div>
+=======
+        </div >
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
     );
 }

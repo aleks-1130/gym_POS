@@ -13,7 +13,10 @@ const Suppliers = () => {
         notes: ''
     });
     const [editingId, setEditingId] = useState(null);
+<<<<<<< HEAD
     const [viewProducts, setViewProducts] = useState(null); // Selected supplier for product view
+=======
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
 
     useEffect(() => {
         fetchSuppliers();
@@ -124,6 +127,7 @@ const Suppliers = () => {
                                 </button>
                             </div>
 
+<<<<<<< HEAD
                             {/* View Products Button Overlay */}
                             <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button
@@ -135,6 +139,8 @@ const Suppliers = () => {
                                 </button>
                             </div>
 
+=======
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
                             {/* Card Content */}
                             <div className="flex items-start gap-4 mb-4">
                                 <div className="w-12 h-12 bg-gradient-to-br from-white/10 to-white/5 rounded-2xl flex items-center justify-center border border-white/10">
@@ -181,8 +187,12 @@ const Suppliers = () => {
                                 </div>
                             </div>
                         </div>
+<<<<<<< HEAD
                     ))
                     }
+=======
+                    ))}
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
 
                     {/* Empty State Add Card */}
                     <button
@@ -198,6 +208,7 @@ const Suppliers = () => {
                         </div>
                         <span className="font-bold">Register New Supplier</span>
                     </button>
+<<<<<<< HEAD
                 </div >
             )}
 
@@ -357,6 +368,101 @@ const Suppliers = () => {
                 )
             }
         </div >
+=======
+                </div>
+            )}
+
+            {/* Modal */}
+            {showModal && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-surface w-full max-w-lg rounded-3xl border border-white/10 shadow-2xl overflow-hidden animate-fade-in-up">
+                        <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
+                            <h2 className="text-2xl font-bold text-white">
+                                {editingId ? 'Edit Supplier' : 'New Supplier'}
+                            </h2>
+                            <button onClick={() => setShowModal(false)} className="text-text-muted hover:text-white transition-colors">
+                                <span className="material-icons-round">close</span>
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+                            <div>
+                                <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">Company Name</label>
+                                <div className="relative">
+                                    <span className="absolute left-4 top-3.5 text-text-muted material-icons-round text-sm">business</span>
+                                    <input
+                                        required
+                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all placeholder:text-white/20"
+                                        value={formData.name}
+                                        onChange={e => setFormData({ ...formData, name: e.target.value })}
+                                        placeholder="e.g. Acme Fitness Co."
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">Contact Phone</label>
+                                    <input
+                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none transition-colors"
+                                        value={formData.contact}
+                                        onChange={e => setFormData({ ...formData, contact: e.target.value })}
+                                        placeholder="0917..."
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">Email</label>
+                                    <input
+                                        type="email"
+                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none transition-colors"
+                                        value={formData.email}
+                                        onChange={e => setFormData({ ...formData, email: e.target.value })}
+                                        placeholder="contact@..."
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">Address</label>
+                                <input
+                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none transition-colors"
+                                    value={formData.address}
+                                    onChange={e => setFormData({ ...formData, address: e.target.value })}
+                                    placeholder="Warehouse Access..."
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-text-secondary mb-1.5 uppercase tracking-wider">Notes</label>
+                                <textarea
+                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none transition-colors min-h-[100px]"
+                                    value={formData.notes}
+                                    onChange={e => setFormData({ ...formData, notes: e.target.value })}
+                                    placeholder="Delivery schedules, payment terms, etc."
+                                />
+                            </div>
+
+                            <div className="flex gap-3 pt-4">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowModal(false)}
+                                    className="flex-1 py-3.5 rounded-xl font-bold text-text-muted hover:bg-white/5 hover:text-white transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="flex-1 py-3.5 rounded-xl font-bold bg-primary text-white hover:bg-orange-600 shadow-lg shadow-primary/20 transition-all transform hover:-translate-y-0.5"
+                                >
+                                    {editingId ? 'Save Changes' : 'Create Supplier'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+        </div>
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
     );
 };
 

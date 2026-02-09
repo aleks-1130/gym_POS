@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useCurrency } from '../../context/CurrencyContext';
 import { Line } from 'react-chartjs-2';
 import {
@@ -12,6 +12,8 @@ import {
     Legend,
     ArcElement,
 } from 'chart.js';
+import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 
 ChartJS.register(
     CategoryScale,
@@ -26,7 +28,12 @@ ChartJS.register(
 
 const AdminDashboard = ({ stats }) => {
     const { formatPrice } = useCurrency();
+    const navigate = useNavigate();
+
+    // Revenue Breakdown moved to Analytics page
+
     // Fallback data if stats are missing or loading error
+<<<<<<< HEAD
     const data = stats || {
         activeMembers: 0,
         revenueToday: 0,
@@ -37,6 +44,12 @@ const AdminDashboard = ({ stats }) => {
         monthlyRevenue: 0,
         totalExpenses: 0
     };
+=======
+    const data = stats || { activeMembers: 0, revenueToday: 0, expiringSoon: 0, monthlyRevenue: 0, totalExpenses: 0 };
+
+    // Calculate Net Profit on Frontend: Revenue (USD) - Expenses (USD)
+    const netProfit = data.monthlyRevenue - data.totalExpenses;
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
 
     // Calculate Net Profit on Frontend: Revenue (USD) - Expenses (USD)
     const netProfit = data.monthlyRevenue - data.totalExpenses;
@@ -66,9 +79,13 @@ const AdminDashboard = ({ stats }) => {
         },
     };
 
+
+
+
     return (
         <>
             {/* ... (previous stats cards) ... */}
+<<<<<<< HEAD
             {/* Daily Financials */}
             <h3 className="text-lg font-bold text-white mb-4">Today's Overview</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -97,6 +114,47 @@ const AdminDashboard = ({ stats }) => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                 <StatCard title="Active Members" value={data.activeMembers} icon="group" />
                 <StatCard title="Expiring Soon (7 Days)" value={data.expiringSoon} icon="warning" isAlert={data.expiringSoon > 0} />
+=======
+            {/* Daily Overview */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <StatCard
+                    title="Revenue (Today)"
+                    value={formatPrice(data.revenueToday)}
+                    icon="payments"
+                    trend={12.5}
+                    onClick={() => navigate('/analytics')}
+                    isClickable
+                />
+                <StatCard title="Active Members" value={data.activeMembers} icon="group" trend={-2.4} />
+                <StatCard title="Expiring Soon (7 Days)" value={data.expiringSoon} icon="warning" isAlert />
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
+            </div>
+
+            {/* Monthly Financials */}
+            <div className="mb-8">
+                <h3 className="text-lg font-bold text-white mb-4">Financial Overview (This Month)</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <StatCard
+                        title="Total Revenue"
+                        value={formatPrice(data.monthlyRevenue)}
+                        icon="account_balance_wallet"
+                    />
+                    <StatCard
+                        title="Total Expenses"
+                        value={formatPrice(data.totalExpenses)}
+                        icon="money_off"
+                        isAlert
+                        onClick={() => navigate('/expenses')}
+                        isClickable
+                    />
+                    <StatCard
+                        title="Net Profit"
+                        value={formatPrice(netProfit)}
+                        icon="monetization_on"
+                        isSuccess={netProfit >= 0}
+                        isAlert={netProfit < 0}
+                    />
+                </div>
             </div>
 
             <div className="grid lg:grid-cols-3 gap-8">
@@ -120,18 +178,31 @@ const AdminDashboard = ({ stats }) => {
                     </div>
                 </div>
             </div>
+
+
         </>
     );
 };
 
 // Internal Sub-components
+<<<<<<< HEAD
 const StatCard = ({ title, value, icon, trend, isAlert, isSuccess }) => {
+=======
+const StatCard = ({ title, value, icon, trend, isAlert, isSuccess, onClick, isClickable }) => {
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
     let iconClass = 'bg-primary/10 text-primary';
     if (isAlert) iconClass = 'bg-red-500/10 text-red-500';
     if (isSuccess) iconClass = 'bg-emerald-500/10 text-emerald-500';
 
     return (
+<<<<<<< HEAD
         <div className="bg-surface p-6 rounded-3xl border border-white/5 shadow-sm flex items-center justify-between hover:border-primary/20 transition-colors">
+=======
+        <div
+            onClick={onClick}
+            className={`bg-surface p-6 rounded-3xl border border-white/10 shadow-sm flex items-center justify-between transition-all ${isClickable ? 'cursor-pointer hover:border-primary/50 hover:bg-white/5 active:scale-95' : ''}`}
+        >
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
             <div>
                 <p className="text-text-muted text-sm font-medium mb-1">{title}</p>
                 <h3 className="text-2xl font-bold text-white">{value}</h3>

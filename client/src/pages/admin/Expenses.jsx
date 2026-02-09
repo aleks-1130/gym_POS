@@ -14,6 +14,16 @@ const Expenses = () => {
         notes: ''
     });
 
+<<<<<<< HEAD
+=======
+    const [selectedCategory, setSelectedCategory] = useState('ALL');
+    const categories = ['ALL', 'UTILITIES', 'SALARY', 'SUPPLIES', 'MAINTENANCE', 'RENT', 'OTHER'];
+
+    const filteredExpenses = selectedCategory === 'ALL'
+        ? expenses
+        : expenses.filter(expense => expense.category === selectedCategory);
+
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
     useEffect(() => {
         fetchExpenses();
     }, []);
@@ -67,11 +77,19 @@ const Expenses = () => {
     };
 
     const { formatPrice } = useCurrency();
+<<<<<<< HEAD
     const totalExpenses = expenses.reduce((sum, item) => sum + item.amount, 0);
 
     const currentMonth = new Date().getMonth();
     const currentYear = new Date().getFullYear();
     const mtdExpenses = expenses.reduce((sum, item) => {
+=======
+    const totalExpenses = filteredExpenses.reduce((sum, item) => sum + item.amount, 0);
+
+    const currentMonth = new Date().getMonth();
+    const currentYear = new Date().getFullYear();
+    const mtdExpenses = filteredExpenses.reduce((sum, item) => {
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
         const itemDate = new Date(item.date);
         if (itemDate.getMonth() === currentMonth && itemDate.getFullYear() === currentYear) {
             return sum + item.amount;
@@ -86,7 +104,11 @@ const Expenses = () => {
     const groupExpenses = () => {
         if (viewMode === 'LIST') return null;
 
+<<<<<<< HEAD
         return expenses.reduce((groups, expense) => {
+=======
+        return filteredExpenses.reduce((groups, expense) => {
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
             let key;
             const date = new Date(expense.date);
 
@@ -115,6 +137,19 @@ const Expenses = () => {
                 </div>
 
                 <div className="flex gap-2">
+<<<<<<< HEAD
+=======
+                    <select
+                        value={selectedCategory}
+                        onChange={(e) => setSelectedCategory(e.target.value)}
+                        className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-500"
+                    >
+                        {categories.map(cat => (
+                            <option key={cat} value={cat}>{cat === 'ALL' ? 'All Categories' : cat.charAt(0) + cat.slice(1).toLowerCase()}</option>
+                        ))}
+                    </select>
+
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
                     <div className="bg-white dark:bg-gray-800 p-1 rounded-lg border border-gray-200 dark:border-gray-700 flex">
                         {['LIST', 'DAILY', 'MONTHLY', 'YEARLY'].map((mode) => (
                             <button
@@ -180,7 +215,11 @@ const Expenses = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+<<<<<<< HEAD
                             {expenses.map((expense) => (
+=======
+                            {filteredExpenses.map((expense) => (
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
                                 <tr key={expense.id} className="text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                     <td className="p-4">{new Date(expense.date).toLocaleDateString()}</td>
                                     <td className="p-4 font-medium">{expense.title}</td>
@@ -205,7 +244,11 @@ const Expenses = () => {
                             ))}
                         </tbody>
                     </table>
+<<<<<<< HEAD
                     {expenses.length === 0 && !loading && (
+=======
+                    {filteredExpenses.length === 0 && !loading && (
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
                         <div className="p-8 text-center text-gray-500">No expenses recorded yet.</div>
                     )}
                 </div>
@@ -270,7 +313,11 @@ const Expenses = () => {
                             </table>
                         </div>
                     ))}
+<<<<<<< HEAD
                     {expenses.length === 0 && !loading && (
+=======
+                    {filteredExpenses.length === 0 && !loading && (
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
                         <div className="p-12 text-center bg-white dark:bg-gray-800 rounded-xl border border-dashed border-gray-200 dark:border-gray-700">
                             <p className="text-gray-500 dark:text-gray-400">No expenses recorded yet.</p>
                             <button

@@ -23,6 +23,11 @@ import AuditLogs from './pages/owner/AuditLogs';
 import Analytics from './pages/admin/Analytics';
 import Expenses from './pages/admin/Expenses';
 import Suppliers from './pages/admin/Suppliers';
+<<<<<<< HEAD
+=======
+import PosSettings from './pages/admin/PosSettings';
+import Transactions from './pages/admin/Transactions';
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
 
 // Staff Pages
 import Inventory from './pages/staff/Inventory';
@@ -30,8 +35,15 @@ import Members from './pages/staff/Members';
 import MemberDetail from './pages/staff/MemberDetail';
 import Trainers from './pages/staff/Trainers';
 import Classes from './pages/staff/Classes';
+<<<<<<< HEAD
 import AdminTrainers from './pages/admin/Trainers';
 import AdminClasses from './pages/admin/Classes';
+=======
+import TransactionDetail from './pages/staff/TransactionDetail';
+import AdminTrainers from './pages/admin/Trainers';
+import AdminClasses from './pages/admin/Classes';
+import TrainingManager from './pages/admin/TrainingManager';
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
 
 // Member Pages
 import Schedule from './pages/member/Schedule';
@@ -103,7 +115,11 @@ function AppRoutes() {
   const { user } = useAuth();
 
   const TrainersRoute = () => {
+<<<<<<< HEAD
     if (user?.role === ROLES.ADMIN) return <AdminTrainers />;
+=======
+    if (user?.role === ROLES.ADMIN || user?.role === ROLES.OWNER) return <AdminTrainers />;
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
     return <Trainers />;
   };
 
@@ -143,6 +159,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER]}>
               <Payments />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/pos/transactions/:id"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
+              <TransactionDetail />
             </ProtectedRoute>
           }
         />
@@ -224,6 +248,17 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
               <ClassesRoute />
+<<<<<<< HEAD
+=======
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/training"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
+              <TrainingManager />
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
             </ProtectedRoute>
           }
         />
@@ -272,6 +307,25 @@ function AppRoutes() {
           }
         />
         <Route
+<<<<<<< HEAD
+=======
+          path="/transactions"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
+              <Transactions />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/pos-settings"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
+              <PosSettings />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
           path="/audit"
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER]}>

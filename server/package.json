@@ -9,9 +9,9 @@
         "prisma:generate": "prisma generate",
         "prisma:push": "prisma db push"
     },
-    "keywords": [],
-    "author": "",
-    "license": "ISC",
+    "prisma": {
+        "seed": "node prisma/seed_data.js"
+    },
     "dependencies": {
         "@prisma/client": "^5.7.1",
         "bcryptjs": "^2.4.3",

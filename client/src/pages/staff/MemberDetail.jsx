@@ -6,7 +6,7 @@ import { useCurrency } from '../../context/CurrencyContext';
 export default function MemberDetail() {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { formatPrice } = useCurrency();
+    const { formatPrice, rate } = useCurrency();
     const [member, setMember] = useState(null);
     const [loading, setLoading] = useState(true);
     const [plans, setPlans] = useState([]);
@@ -17,16 +17,24 @@ export default function MemberDetail() {
     const [showPasswordModal, setShowPasswordModal] = useState(false);
     const [showPhotoModal, setShowPhotoModal] = useState(false);
     const [showNotesModal, setShowNotesModal] = useState(false);
+    const [showEditModal, setShowEditModal] = useState(false); // NEW
     const [showMoreActions, setShowMoreActions] = useState(false);
 
     // Form Data
     const [renewData, setRenewData] = useState({ planId: '', duration: 30, amount: 0, method: 'CASH' });
+    const [renewAmountTendered, setRenewAmountTendered] = useState('');
+    const [renewGcashReference, setRenewGcashReference] = useState('');
+    const [renewGcashDate, setRenewGcashDate] = useState('');
+    const [renewGcashTime, setRenewGcashTime] = useState('');
     const [freezeData, setFreezeData] = useState({
         startDate: new Date().toISOString().split('T')[0],
         endDate: new Date(new Date().setDate(new Date().getDate() + 30)).toISOString().split('T')[0]
     });
     const [passwordData, setPasswordData] = useState('');
     const [noteData, setNoteData] = useState('');
+    const [notes, setNotes] = useState([]);
+    // Edit Form Data
+    const [editFormData, setEditFormData] = useState({});
 
     // Photo Capture
     const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -41,6 +49,7 @@ export default function MemberDetail() {
     useEffect(() => {
         fetchMember();
         fetchPlans();
+        fetchNotes();
     }, [id]);
 
     const fetchMember = async () => {
@@ -48,11 +57,11 @@ export default function MemberDetail() {
             const res = await axios.get(`http://localhost:5000/api/members/${id}`);
             setMember(res.data);
             if (res.data.plan) {
-                setRenewData(prev => ({ 
-                    ...prev, 
+                setRenewData(prev => ({
+                    ...prev,
                     planId: res.data.plan.id,
-                    amount: res.data.plan.price, 
-                    duration: res.data.plan.duration 
+                    amount: res.data.plan.price,
+                    duration: res.data.plan.duration
                 }));
             }
         } catch (e) {
@@ -69,6 +78,15 @@ export default function MemberDetail() {
             setPlans(res.data);
         } catch (e) {
             console.error("Failed to fetch plans", e);
+        }
+    };
+
+    const fetchNotes = async () => {
+        try {
+            const res = await axios.get(`http://localhost:5000/api/members/${id}/notes`);
+            setNotes(res.data);
+        } catch (e) {
+            console.error("Failed to fetch notes", e);
         }
     };
 
@@ -146,16 +164,42 @@ export default function MemberDetail() {
         }
     };
 
-    const handleRenew = async (e) => {
-        e.preventDefault();
+    const submitRenew = async (paymentInfo = {}) => {
         try {
-            await axios.post(`http://localhost:5000/api/members/${id}/renew`, renewData);
+            const res = await axios.post(`http://localhost:5000/api/members/${id}/renew`, {
+                ...renewData,
+                ...paymentInfo
+            });
             setShowRenewModal(false);
-            fetchMember();
             alert("Membership Renewed!");
+            fetchMember();
         } catch (e) {
             alert("Renewal failed");
         }
+    };
+
+    const handleRenew = (e) => {
+        e.preventDefault();
+        if (renewData.method === 'CASH') {
+            const tendered = parseFloat(renewAmountTendered) || 0;
+            if (tendered < (renewData.amount * rate)) return;
+            const tenderedUsd = tendered / rate;
+            const changeDue = Math.max(0, (tenderedUsd - renewData.amount));
+            submitRenew({ cashTendered: tenderedUsd, changeDue });
+            return;
+        }
+
+        if (renewData.method === 'GCASH') {
+            if (!renewGcashReference || !renewGcashDate || !renewGcashTime) return;
+            submitRenew({
+                gcashReference: renewGcashReference,
+                gcashDate: renewGcashDate,
+                gcashTime: renewGcashTime
+            });
+            return;
+        }
+
+        submitRenew();
     };
 
     const handleSetPassword = async (e) => {
@@ -167,6 +211,30 @@ export default function MemberDetail() {
             alert("Password set successfully!");
         } catch (e) {
             alert("Failed to set password");
+        }
+    };
+
+    const handleEditClick = () => {
+        setEditFormData({
+            firstName: member.firstName,
+            lastName: member.lastName,
+            email: member.email,
+            phone: member.phone || '',
+            expiryDate: member.expiryDate ? new Date(member.expiryDate).toISOString().split('T')[0] : '',
+            sex: member.sex || ''
+        });
+        setShowEditModal(true);
+    };
+
+    const handleEditSave = async (e) => {
+        e.preventDefault();
+        try {
+            await axios.put(`http://localhost:5000/api/members/${id}`, editFormData);
+            setShowEditModal(false);
+            fetchMember();
+            alert("Member details updated!");
+        } catch (e) {
+            alert("Failed to update member");
         }
     };
 
@@ -189,7 +257,7 @@ export default function MemberDetail() {
         if (!member?.accessLogs) return [];
         const now = new Date();
         const logs = member.accessLogs;
-        
+
         if (activityFilter === '7days') {
             const weekAgo = new Date(now.setDate(now.getDate() - 7));
             return logs.filter(log => new Date(log.checkIn) >= weekAgo);
@@ -204,19 +272,19 @@ export default function MemberDetail() {
     const getGroupedLogs = () => {
         const logs = getFilteredLogs();
         const grouped = {};
-        
+
         logs.forEach(log => {
-            const date = new Date(log.checkIn).toLocaleDateString('en-US', { 
-                month: 'short', 
-                day: 'numeric', 
-                year: 'numeric' 
+            const date = new Date(log.checkIn).toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric'
             });
             if (!grouped[date]) {
                 grouped[date] = [];
             }
             grouped[date].push(log);
         });
-        
+
         return grouped;
     };
 
@@ -226,7 +294,7 @@ export default function MemberDetail() {
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         const recentLogs = logs.filter(log => new Date(log.checkIn) >= thirtyDaysAgo);
-        
+
         const visitsPerWeek = (recentLogs.length / 30) * 7;
         if (visitsPerWeek >= 4) return { label: 'High', color: 'emerald', icon: 'trending_up' };
         if (visitsPerWeek >= 2) return { label: 'Medium', color: 'amber', icon: 'trending_flat' };
@@ -237,13 +305,13 @@ export default function MemberDetail() {
     const getLastActive = () => {
         const logs = member?.accessLogs || [];
         if (logs.length === 0) return 'Never';
-        
+
         const lastLog = logs[0];
         const lastDate = new Date(lastLog.checkIn);
         const now = new Date();
         const diffMs = now - lastDate;
         const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-        
+
         if (diffDays === 0) return 'Today';
         if (diffDays === 1) return 'Yesterday';
         if (diffDays < 7) return `${diffDays} days ago`;
@@ -305,24 +373,32 @@ export default function MemberDetail() {
                                         initials
                                     )}
                                 </div>
-                                <button 
+                                <button
                                     onClick={() => setShowPhotoModal(true)}
                                     className="absolute -bottom-2 -right-2 bg-primary hover:bg-orange-600 text-white p-3 rounded-2xl shadow-lg transition-all active:scale-95"
                                 >
                                     <span className="material-icons-round text-sm">photo_camera</span>
                                 </button>
                             </div>
-                            
+
                             <div>
-                                <h1 className="text-4xl font-extrabold text-white tracking-tight mb-3">
-                                    {member.firstName} {member.lastName}
-                                </h1>
+                                <div className="flex items-center gap-3">
+                                    <h1 className="text-4xl font-extrabold text-white tracking-tight mb-1">
+                                        {member.firstName} {member.lastName}
+                                    </h1>
+                                    <button
+                                        onClick={handleEditClick}
+                                        className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-full transition-colors"
+                                        title="Edit Profile"
+                                    >
+                                        <span className="material-icons-round text-sm">edit</span>
+                                    </button>
+                                </div>
                                 <div className="flex items-center gap-3 flex-wrap mb-3">
-                                    <span className={`px-4 py-1.5 rounded-full text-xs font-bold border ${
-                                        member.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                                    <span className={`px-4 py-1.5 rounded-full text-xs font-bold border ${member.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
                                         member.status === 'FREEZED' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
-                                        'bg-red-500/10 text-red-400 border-red-500/20'
-                                    }`}>
+                                            'bg-red-500/10 text-red-400 border-red-500/20'
+                                        }`}>
                                         {member.status}
                                     </span>
                                     <span className="px-4 py-1.5 rounded-full text-xs font-bold bg-white/10 text-text-secondary border border-white/10">
@@ -386,7 +462,7 @@ export default function MemberDetail() {
                             {new Date(member.freezeStartDate).toLocaleDateString()} — {new Date(member.freezeEndDate).toLocaleDateString()}
                         </p>
                     </div>
-                    <button 
+                    <button
                         onClick={() => handleStatusChange('ACTIVE')}
                         className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold transition-all"
                     >
@@ -409,11 +485,10 @@ export default function MemberDetail() {
                             {isExpired ? `Expired ${Math.abs(daysRemaining)} days ago` : `Only ${daysRemaining} days remaining`}
                         </p>
                     </div>
-                    <button 
+                    <button
                         onClick={() => setShowRenewModal(true)}
-                        className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                            isExpired ? 'bg-red-500 hover:bg-red-600' : 'bg-amber-500 hover:bg-amber-600'
-                        } text-white`}
+                        className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${isExpired ? 'bg-red-500 hover:bg-red-600' : 'bg-amber-500 hover:bg-amber-600'
+                            } text-white`}
                     >
                         Renew Now
                     </button>
@@ -422,33 +497,33 @@ export default function MemberDetail() {
 
             {/* Action Bar */}
             <div className="bg-surface rounded-2xl border border-white/5 p-4 flex items-center gap-3 flex-wrap">
-                <button 
-                    onClick={() => setShowRenewModal(true)} 
+                <button
+                    onClick={() => setShowRenewModal(true)}
                     className="bg-primary hover:bg-orange-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg shadow-primary/20 flex items-center gap-2 transition-all active:scale-95"
                 >
-                    <span className="material-icons-round text-[20px]">autorenew</span> 
+                    <span className="material-icons-round text-[20px]">autorenew</span>
                     Renew Plan
                 </button>
 
                 {member.status !== 'FREEZED' ? (
-                    <button 
-                        onClick={() => setShowFreezeModal(true)} 
+                    <button
+                        onClick={() => setShowFreezeModal(true)}
                         className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 px-6 py-3 rounded-xl font-medium flex items-center gap-2 transition-all"
                     >
-                        <span className="material-icons-round text-[18px]">ac_unit</span> 
+                        <span className="material-icons-round text-[18px]">ac_unit</span>
                         Freeze
                     </button>
                 ) : (
-                    <button 
-                        onClick={() => handleStatusChange('ACTIVE')} 
+                    <button
+                        onClick={() => handleStatusChange('ACTIVE')}
                         className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 px-6 py-3 rounded-xl font-medium flex items-center gap-2 transition-all"
                     >
-                        <span className="material-icons-round text-[18px]">play_arrow</span> 
+                        <span className="material-icons-round text-[18px]">play_arrow</span>
                         Unfreeze
                     </button>
                 )}
 
-                <button 
+                <button
                     onClick={() => setShowPasswordModal(true)}
                     className="bg-surfaceHighlight hover:bg-white/10 text-white px-6 py-3 rounded-xl font-medium flex items-center gap-2 border border-white/5 transition-all"
                 >
@@ -456,7 +531,7 @@ export default function MemberDetail() {
                     Reset Password
                 </button>
 
-                <button 
+                <button
                     onClick={() => setShowNotesModal(true)}
                     className="bg-surfaceHighlight hover:bg-white/10 text-white px-6 py-3 rounded-xl font-medium flex items-center gap-2 border border-white/5 transition-all"
                 >
@@ -476,52 +551,48 @@ export default function MemberDetail() {
 
             {/* Tab Navigation */}
             <div className="bg-surface rounded-2xl border border-white/5 p-2 flex gap-2">
-                <button 
+                <button
                     onClick={() => setActiveTab('overview')}
-                    className={`flex-1 px-6 py-3 rounded-xl font-bold transition-all ${
-                        activeTab === 'overview' 
-                            ? 'bg-primary text-white shadow-lg shadow-primary/20' 
-                            : 'text-text-muted hover:text-white hover:bg-white/5'
-                    }`}
+                    className={`flex-1 px-6 py-3 rounded-xl font-bold transition-all ${activeTab === 'overview'
+                        ? 'bg-primary text-white shadow-lg shadow-primary/20'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                        }`}
                 >
                     <span className="flex items-center justify-center gap-2">
                         <span className="material-icons-round text-[18px]">dashboard</span>
                         Overview
                     </span>
                 </button>
-                <button 
+                <button
                     onClick={() => setActiveTab('activity')}
-                    className={`flex-1 px-6 py-3 rounded-xl font-bold transition-all ${
-                        activeTab === 'activity' 
-                            ? 'bg-primary text-white shadow-lg shadow-primary/20' 
-                            : 'text-text-muted hover:text-white hover:bg-white/5'
-                    }`}
+                    className={`flex-1 px-6 py-3 rounded-xl font-bold transition-all ${activeTab === 'activity'
+                        ? 'bg-primary text-white shadow-lg shadow-primary/20'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                        }`}
                 >
                     <span className="flex items-center justify-center gap-2">
                         <span className="material-icons-round text-[18px]">history</span>
                         Activity
                     </span>
                 </button>
-                <button 
+                <button
                     onClick={() => setActiveTab('payments')}
-                    className={`flex-1 px-6 py-3 rounded-xl font-bold transition-all ${
-                        activeTab === 'payments' 
-                            ? 'bg-primary text-white shadow-lg shadow-primary/20' 
-                            : 'text-text-muted hover:text-white hover:bg-white/5'
-                    }`}
+                    className={`flex-1 px-6 py-3 rounded-xl font-bold transition-all ${activeTab === 'payments'
+                        ? 'bg-primary text-white shadow-lg shadow-primary/20'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                        }`}
                 >
                     <span className="flex items-center justify-center gap-2">
                         <span className="material-icons-round text-[18px]">receipt_long</span>
                         Payments
                     </span>
                 </button>
-                <button 
+                <button
                     onClick={() => setActiveTab('notes')}
-                    className={`flex-1 px-6 py-3 rounded-xl font-bold transition-all ${
-                        activeTab === 'notes' 
-                            ? 'bg-primary text-white shadow-lg shadow-primary/20' 
-                            : 'text-text-muted hover:text-white hover:bg-white/5'
-                    }`}
+                    className={`flex-1 px-6 py-3 rounded-xl font-bold transition-all ${activeTab === 'notes'
+                        ? 'bg-primary text-white shadow-lg shadow-primary/20'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                        }`}
                 >
                     <span className="flex items-center justify-center gap-2">
                         <span className="material-icons-round text-[18px]">description</span>
@@ -545,18 +616,18 @@ export default function MemberDetail() {
                                         {formatPrice(member.plan?.price || 0)} / {member.plan?.duration || 0} Days
                                     </p>
                                 </div>
-                                
+
                                 {/* Circular Progress */}
                                 <div className="relative w-28 h-28">
                                     <svg className="transform -rotate-90 w-28 h-28">
                                         <circle cx="56" cy="56" r="48" stroke="currentColor" strokeWidth="8" fill="none" className="text-white/10" />
-                                        <circle 
-                                            cx="56" 
-                                            cy="56" 
-                                            r="48" 
-                                            stroke="currentColor" 
-                                            strokeWidth="8" 
-                                            fill="none" 
+                                        <circle
+                                            cx="56"
+                                            cy="56"
+                                            r="48"
+                                            stroke="currentColor"
+                                            strokeWidth="8"
+                                            fill="none"
                                             strokeDasharray={`${2 * Math.PI * 48}`}
                                             strokeDashoffset={`${2 * Math.PI * 48 * (1 - progress / 100)}`}
                                             className={`transition-all duration-1000 ${progress > 90 ? 'text-red-500' : 'text-primary'}`}
@@ -577,7 +648,7 @@ export default function MemberDetail() {
                                     <span className="text-white font-bold">{Math.round(progress)}%</span>
                                 </div>
                                 <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                                    <div 
+                                    <div
                                         className={`h-full rounded-full transition-all duration-1000 ${progress > 90 ? 'bg-red-500' : 'bg-primary'}`}
                                         style={{ width: `${progress}%` }}
                                     ></div>
@@ -688,7 +759,7 @@ export default function MemberDetail() {
                                     <span className="material-icons-round text-primary">history</span>
                                     Recent Activity
                                 </h3>
-                                <button 
+                                <button
                                     onClick={() => setActiveTab('activity')}
                                     className="text-primary text-sm font-bold hover:underline"
                                 >
@@ -699,11 +770,10 @@ export default function MemberDetail() {
                                 {getFilteredLogs().slice(0, 5).map((log) => (
                                     <div key={log.id} className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl border border-white/5 hover:border-primary/20 transition-all group">
                                         <div className="flex-shrink-0">
-                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                                                log.status === 'ALLOWED' 
-                                                    ? 'bg-emerald-500/10 text-emerald-400' 
-                                                    : 'bg-red-500/10 text-red-400'
-                                            }`}>
+                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${log.status === 'ALLOWED'
+                                                ? 'bg-emerald-500/10 text-emerald-400'
+                                                : 'bg-red-500/10 text-red-400'
+                                                }`}>
                                                 <span className="material-icons-round text-lg">
                                                     {log.status === 'ALLOWED' ? 'check_circle' : 'cancel'}
                                                 </span>
@@ -714,20 +784,19 @@ export default function MemberDetail() {
                                                 {log.status === 'ALLOWED' ? 'Successful Check-in' : 'Access Denied'}
                                             </p>
                                             <p className="text-text-muted text-xs mt-0.5">
-                                                {new Date(log.checkIn).toLocaleString('en-US', { 
-                                                    month: 'short', 
-                                                    day: 'numeric', 
+                                                {new Date(log.checkIn).toLocaleString('en-US', {
+                                                    month: 'short',
+                                                    day: 'numeric',
                                                     year: 'numeric',
-                                                    hour: '2-digit', 
-                                                    minute: '2-digit' 
+                                                    hour: '2-digit',
+                                                    minute: '2-digit'
                                                 })}
                                             </p>
                                         </div>
-                                        <span className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${
-                                            log.status === 'ALLOWED' 
-                                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
-                                                : 'bg-red-500/10 text-red-400 border-red-500/20'
-                                        }`}>
+                                        <span className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${log.status === 'ALLOWED'
+                                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                            : 'bg-red-500/10 text-red-400 border-red-500/20'
+                                            }`}>
                                             {log.status}
                                         </span>
                                     </div>
@@ -755,33 +824,30 @@ export default function MemberDetail() {
                             Activity Timeline
                         </h3>
                         <div className="flex gap-2">
-                            <button 
+                            <button
                                 onClick={() => setActivityFilter('7days')}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                    activityFilter === '7days' 
-                                        ? 'bg-primary text-white' 
-                                        : 'bg-white/5 text-text-muted hover:text-white'
-                                }`}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activityFilter === '7days'
+                                    ? 'bg-primary text-white'
+                                    : 'bg-white/5 text-text-muted hover:text-white'
+                                    }`}
                             >
                                 7 Days
                             </button>
-                            <button 
+                            <button
                                 onClick={() => setActivityFilter('30days')}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                    activityFilter === '30days' 
-                                        ? 'bg-primary text-white' 
-                                        : 'bg-white/5 text-text-muted hover:text-white'
-                                }`}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activityFilter === '30days'
+                                    ? 'bg-primary text-white'
+                                    : 'bg-white/5 text-text-muted hover:text-white'
+                                    }`}
                             >
                                 30 Days
                             </button>
-                            <button 
+                            <button
                                 onClick={() => setActivityFilter('all')}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                    activityFilter === 'all' 
-                                        ? 'bg-primary text-white' 
-                                        : 'bg-white/5 text-text-muted hover:text-white'
-                                }`}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activityFilter === 'all'
+                                    ? 'bg-primary text-white'
+                                    : 'bg-white/5 text-text-muted hover:text-white'
+                                    }`}
                             >
                                 All Time
                             </button>
@@ -801,11 +867,10 @@ export default function MemberDetail() {
                                     {logs.map((log) => (
                                         <div key={log.id} className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl border border-white/5 hover:border-primary/20 transition-all group">
                                             <div className="flex-shrink-0">
-                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                                                    log.status === 'ALLOWED' 
-                                                        ? 'bg-emerald-500/10 text-emerald-400' 
-                                                        : 'bg-red-500/10 text-red-400'
-                                                }`}>
+                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${log.status === 'ALLOWED'
+                                                    ? 'bg-emerald-500/10 text-emerald-400'
+                                                    : 'bg-red-500/10 text-red-400'
+                                                    }`}>
                                                     <span className="material-icons-round text-lg">
                                                         {log.status === 'ALLOWED' ? 'check_circle' : 'cancel'}
                                                     </span>
@@ -816,17 +881,16 @@ export default function MemberDetail() {
                                                     {log.status === 'ALLOWED' ? 'Successful Check-in' : 'Access Denied'}
                                                 </p>
                                                 <p className="text-text-muted text-xs mt-0.5">
-                                                    {new Date(log.checkIn).toLocaleTimeString('en-US', { 
-                                                        hour: '2-digit', 
-                                                        minute: '2-digit' 
+                                                    {new Date(log.checkIn).toLocaleTimeString('en-US', {
+                                                        hour: '2-digit',
+                                                        minute: '2-digit'
                                                     })}
                                                 </p>
                                             </div>
-                                            <span className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${
-                                                log.status === 'ALLOWED' 
-                                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
-                                                    : 'bg-red-500/10 text-red-400 border-red-500/20'
-                                            }`}>
+                                            <span className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${log.status === 'ALLOWED'
+                                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                                : 'bg-red-500/10 text-red-400 border-red-500/20'
+                                                }`}>
                                                 {log.status}
                                             </span>
                                         </div>
@@ -884,10 +948,10 @@ export default function MemberDetail() {
                                         </span>
                                         <p className="text-xs text-text-muted flex items-center justify-end gap-1.5">
                                             <span className="material-icons-round text-xs">event</span>
-                                            {new Date(pay.date).toLocaleDateString('en-US', { 
-                                                month: 'short', 
-                                                day: 'numeric', 
-                                                year: 'numeric' 
+                                            {new Date(pay.date).toLocaleDateString('en-US', {
+                                                month: 'short',
+                                                day: 'numeric',
+                                                year: 'numeric'
                                             })}
                                         </p>
                                     </div>
@@ -925,7 +989,7 @@ export default function MemberDetail() {
                             <span className="material-icons-round text-primary">description</span>
                             Staff Notes
                         </h3>
-                        <button 
+                        <button
                             onClick={() => setShowNotesModal(true)}
                             className="bg-primary hover:bg-orange-600 text-white px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2"
                         >
@@ -934,19 +998,32 @@ export default function MemberDetail() {
                         </button>
                     </div>
                     <div className="p-6 space-y-4">
-                        <div className="py-16 text-center">
-                            <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                                <span className="material-icons-round text-3xl text-text-muted">note</span>
+                        {notes.length === 0 ? (
+                            <div className="py-16 text-center">
+                                <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                                    <span className="material-icons-round text-3xl text-text-muted">note</span>
+                                </div>
+                                <p className="text-text-muted font-medium">No notes yet</p>
+                                <p className="text-text-muted text-sm mt-1">Add notes about this member</p>
+                                <button
+                                    onClick={() => setShowNotesModal(true)}
+                                    className="mt-4 bg-primary/10 hover:bg-primary/20 text-primary px-6 py-2 rounded-xl text-sm font-bold border border-primary/20 transition-all"
+                                >
+                                    Create First Note
+                                </button>
                             </div>
-                            <p className="text-text-muted font-medium">No notes yet</p>
-                            <p className="text-text-muted text-sm mt-1">Add notes about this member</p>
-                            <button 
-                                onClick={() => setShowNotesModal(true)}
-                                className="mt-4 bg-primary/10 hover:bg-primary/20 text-primary px-6 py-2 rounded-xl text-sm font-bold border border-primary/20 transition-all"
-                            >
-                                Create First Note
-                            </button>
-                        </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {notes.map(note => (
+                                    <div key={note.id} className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                                        <div className="text-xs text-text-muted mb-2">
+                                            {note.author?.name || note.author?.email || 'Staff'} • {new Date(note.createdAt).toLocaleString()}
+                                        </div>
+                                        <p className="text-sm text-white whitespace-pre-wrap">{note.content}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -1028,10 +1105,10 @@ export default function MemberDetail() {
                         <form onSubmit={handleRenew} className="space-y-5">
                             <div>
                                 <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-widest">Select Plan</label>
-                                <select 
+                                <select
                                     required
                                     className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all appearance-none cursor-pointer"
-                                    value={renewData.planId} 
+                                    value={renewData.planId}
                                     onChange={e => handlePlanChange(e.target.value)}
                                 >
                                     <option value="" className="bg-surface">-- Choose a Plan --</option>
@@ -1044,44 +1121,166 @@ export default function MemberDetail() {
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-widest">Duration (Days)</label>
-                                <input 
-                                    required 
+                                <input
+                                    required
                                     type="number"
                                     className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
-                                    value={renewData.duration} 
-                                    onChange={e => setRenewData({ ...renewData, duration: e.target.value })} 
+                                    value={renewData.duration}
+                                    onChange={e => setRenewData({ ...renewData, duration: e.target.value })}
                                     readOnly
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-widest">Amount Paid</label>
-                                <div className="relative">
-                                    <span className="absolute left-4 top-3 text-text-muted">$</span>
-                                    <input 
-                                        required 
-                                        type="number" 
-                                        step="0.01"
-                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl pl-8 pr-4 py-3 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
-                                        value={renewData.amount} 
-                                        onChange={e => setRenewData({ ...renewData, amount: e.target.value })} 
-                                    />
-                                </div>
-                            </div>
-                            <div>
                                 <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-widest">Payment Method</label>
-                                <select 
+                                <select
                                     className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all appearance-none cursor-pointer"
-                                    value={renewData.method} 
+                                    value={renewData.method}
                                     onChange={e => setRenewData({ ...renewData, method: e.target.value })}
                                 >
                                     <option value="CASH" className="bg-surface">Cash</option>
                                     <option value="CARD" className="bg-surface">Card</option>
-                                    <option value="TRANSFER" className="bg-surface">Transfer</option>
+                                    <option value="GCASH" className="bg-surface">GCash</option>
                                 </select>
                             </div>
+                            {renewData.method === 'CASH' && (
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-widest">Amount Tendered</label>
+                                        <div className="relative">
+                                            <span className="absolute left-4 top-3 text-text-muted">₱</span>
+                                            <input
+                                                required
+                                                type="number"
+                                                className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl pl-8 pr-4 py-3 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
+                                                value={renewAmountTendered}
+                                                onChange={e => setRenewAmountTendered(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="bg-white/5 rounded-xl p-4 flex justify-between items-center">
+                                        <span className="text-text-secondary text-xs font-bold uppercase tracking-widest">Change Due</span>
+                                        <span className={`text-lg font-bold ${(parseFloat(renewAmountTendered) || 0) >= (renewData.amount * rate) ? 'text-emerald-400' : 'text-red-400'}`}>
+                                            {formatPrice(Math.max(0, ((parseFloat(renewAmountTendered) || 0) / rate) - renewData.amount))}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+                            {renewData.method === 'GCASH' && (
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-widest">GCash Reference ID</label>
+                                        <input
+                                            required
+                                            type="text"
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
+                                            value={renewGcashReference}
+                                            onChange={e => setRenewGcashReference(e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-widest">Date</label>
+                                            <input
+                                                required
+                                                type="date"
+                                                className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
+                                                value={renewGcashDate}
+                                                onChange={e => setRenewGcashDate(e.target.value)}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-widest">Time</label>
+                                            <input
+                                                required
+                                                type="time"
+                                                className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
+                                                value={renewGcashTime}
+                                                onChange={e => setRenewGcashTime(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                             <div className="pt-4 flex justify-end gap-3">
                                 <button type="button" onClick={() => setShowRenewModal(false)} className="text-text-muted hover:text-white px-5 py-2.5 font-medium transition-all">Cancel</button>
                                 <button type="submit" className="bg-primary hover:bg-orange-600 text-white font-bold px-8 py-2.5 rounded-2xl shadow-lg shadow-primary/20 transition-all active:scale-95">Confirm Renew</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+
+            {/* Edit Member Modal */}
+            {showEditModal && (
+                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-lg w-full p-6 animate-scale-up">
+                        <h2 className="text-2xl font-bold text-white mb-6">Edit Member Details</h2>
+                        <form onSubmit={handleEditSave} className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-text-muted text-sm font-medium mb-1">First Name</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none"
+                                        value={editFormData.firstName || ''}
+                                        onChange={e => setEditFormData({ ...editFormData, firstName: e.target.value })}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-text-muted text-sm font-medium mb-1">Last Name</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none"
+                                        value={editFormData.lastName || ''}
+                                        onChange={e => setEditFormData({ ...editFormData, lastName: e.target.value })}
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-text-muted text-sm font-medium mb-1">Email</label>
+                                <input
+                                    type="email"
+                                    required
+                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none"
+                                    value={editFormData.email || ''}
+                                    onChange={e => setEditFormData({ ...editFormData, email: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-text-muted text-sm font-medium mb-1">Phone</label>
+                                <input
+                                    type="tel"
+                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none"
+                                    value={editFormData.phone || ''}
+                                    onChange={e => setEditFormData({ ...editFormData, phone: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-text-muted text-sm font-medium mb-1 text-orange-400">Expiry Date (Override)</label>
+                                <input
+                                    type="date"
+                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none"
+                                    value={editFormData.expiryDate || ''}
+                                    onChange={e => setEditFormData({ ...editFormData, expiryDate: e.target.value })}
+                                />
+                            </div>
+                            <div className="flex gap-3 mt-6">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowEditModal(false)}
+                                    className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 rounded-xl"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="flex-1 py-3 bg-primary hover:bg-orange-600 text-white font-bold rounded-xl"
+                                >
+                                    Save Changes
+                                </button>
                             </div>
                         </form>
                     </div>
@@ -1151,7 +1350,21 @@ export default function MemberDetail() {
                             </div>
                             <h3 className="text-xl font-bold text-white">Add Staff Note</h3>
                         </div>
-                        <form onSubmit={(e) => { e.preventDefault(); setShowNotesModal(false); setNoteData(''); }} className="space-y-4">
+                        <form
+                            onSubmit={async (e) => {
+                                e.preventDefault();
+                                if (!noteData.trim()) return;
+                                try {
+                                    await axios.post(`http://localhost:5000/api/members/${id}/notes`, { content: noteData.trim() });
+                                    setNoteData('');
+                                    setShowNotesModal(false);
+                                    fetchNotes();
+                                } catch (e) {
+                                    alert("Failed to save note");
+                                }
+                            }}
+                            className="space-y-4"
+                        >
                             <div>
                                 <label className="block text-xs font-bold text-text-secondary mb-2 uppercase tracking-widest">Note</label>
                                 <textarea

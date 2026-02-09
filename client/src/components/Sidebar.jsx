@@ -22,8 +22,8 @@ export default function Sidebar() {
         >
             {({ isActive }) => (
                 <>
-                    <span className="material-icons-round text-xl flex-shrink-0">{icon}</span>
-                    <span className={`font-medium text-sm whitespace-nowrap transition-all duration-300 ${isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'}`}>
+                    <span className="material-icons-round text-[19px] flex-shrink-0">{icon}</span>
+                    <span className={`font-semibold text-[13px] whitespace-nowrap transition-all duration-300 ${isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'}`}>
                         {label}
                     </span>
                     {!isActive && (
@@ -35,7 +35,7 @@ export default function Sidebar() {
     );
 
     const SectionDivider = ({ label }) => (
-        <div className="px-3 mt-6 mb-2">
+        <div className="px-3 mt-4 mb-1.5">
             <div className={`flex items-center gap-2 transition-all duration-300 ${isCollapsed ? 'lg:justify-center' : ''}`}>
                 {!isCollapsed && (
                     <>
@@ -64,6 +64,7 @@ export default function Sidebar() {
             {
                 section: "Programs", items: [
                     { to: "/trainers", icon: "fitness_center", label: "Trainers" },
+                    { to: "/admin/training", icon: "event_note", label: "Training Sessions" },
                     { to: "/classes", icon: "event", label: "Classes" },
                 ]
             },
@@ -77,7 +78,7 @@ export default function Sidebar() {
         [ROLES.ADMIN]: [
             {
                 section: "Operations", items: [
-                    { to: "/payments", icon: "receipt_long", label: "Payments" },
+                    { to: "/payments", icon: "receipt_long", label: "POS" },
                     { to: "/members", icon: "groups", label: "Members" },
                     { to: "/access", icon: "qr_code_scanner", label: "Access" },
                 ]
@@ -87,7 +88,12 @@ export default function Sidebar() {
                     { to: "/inventory", icon: "inventory_2", label: "Inventory" },
                     { to: "/suppliers", icon: "local_shipping", label: "Suppliers" },
                     { to: "/expenses", icon: "monetization_on", label: "Expenses" },
+<<<<<<< HEAD
+=======
+                    { to: "/pos-settings", icon: "pin", label: "POS Settings" },
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
                     { to: "/trainers", icon: "fitness_center", label: "Trainers" },
+                    { to: "/admin/training", icon: "event_note", label: "Training Sessions" },
                     { to: "/classes", icon: "event", label: "Classes" },
                 ]
             },
@@ -95,6 +101,7 @@ export default function Sidebar() {
                 section: "Insights", items: [
                     { to: "/schedule", icon: "calendar_month", label: "Schedule" },
                     { to: "/analytics", icon: "analytics", label: "Analytics" },
+                    { to: "/transactions", icon: "history", label: "Transactions" },
                     { to: "/loyalty", icon: "loyalty", label: "Rewards" },
                     { to: "/announcements", icon: "campaign", label: "Broadcast" },
                 ]
@@ -112,6 +119,10 @@ export default function Sidebar() {
                     { to: "/users", icon: "admin_panel_settings", label: "Users" },
                     { to: "/audit", icon: "verified_user", label: "Audit Logs" },
                     { to: "/settings", icon: "tune", label: "Settings" },
+<<<<<<< HEAD
+=======
+                    { to: "/pos-settings", icon: "pin", label: "POS Settings" },
+>>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
                     { to: "/suppliers", icon: "local_shipping", label: "Suppliers" },
                     { to: "/expenses", icon: "monetization_on", label: "Expenses" },
                 ]
@@ -156,7 +167,7 @@ export default function Sidebar() {
                 ${isCollapsed ? 'lg:w-20' : 'lg:w-64'}
             `}>
                 {/* Header */}
-                <div className="flex items-center justify-between px-4 py-6 border-b border-white/5">
+                <div className="flex items-center justify-between px-4 py-5 border-b border-white/5">
                     <div className="flex items-center gap-3 min-w-0">
                         <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20 flex-shrink-0">
                             <span className="material-icons-round text-white text-xl">fitness_center</span>
@@ -181,7 +192,7 @@ export default function Sidebar() {
                 </div>
 
                 {/* Navigation */}
-                <nav className="flex-1 flex flex-col px-3 py-4 gap-0.5 overflow-y-auto overflow-x-hidden no-scrollbar">
+                <nav className="flex-1 flex flex-col px-3 py-4 gap-1 overflow-y-visible overflow-x-hidden no-scrollbar">
                     <NavItem to="/" icon="dashboard" label="Dashboard" />
 
                     {currentMenu.map((section, idx) => (
@@ -204,7 +215,7 @@ export default function Sidebar() {
                             </span>
                         </div>
                         <div className={`min-w-0 transition-all duration-300 ${isCollapsed ? 'lg:w-0 lg:opacity-0 lg:overflow-hidden' : 'w-auto opacity-100'}`}>
-                            <p className="text-white text-sm font-medium truncate">
+                            <p className="text-white text-sm font-semibold truncate">
                                 {user?.username || 'User'}
                             </p>
                             <p className="text-text-muted text-xs truncate capitalize">
@@ -218,10 +229,10 @@ export default function Sidebar() {
                         onClick={logout}
                         className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-text-secondary hover:bg-red-500/10 hover:text-red-400 transition-all group ${isCollapsed ? 'lg:justify-center' : ''}`}
                     >
-                        <span className="material-icons-round text-xl flex-shrink-0 group-hover:rotate-12 transition-transform">
+                        <span className="material-icons-round text-[19px] flex-shrink-0 group-hover:rotate-12 transition-transform">
                             logout
                         </span>
-                        <span className={`font-medium text-sm transition-all duration-300 ${isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'}`}>
+                        <span className={`font-semibold text-sm transition-all duration-300 ${isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'}`}>
                             Sign Out
                         </span>
                     </button>
