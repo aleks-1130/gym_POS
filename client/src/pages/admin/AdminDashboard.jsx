@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useCurrency } from '../../context/CurrencyContext';
 import { Line } from 'react-chartjs-2';
 import {
@@ -12,8 +12,6 @@ import {
     Legend,
     ArcElement,
 } from 'chart.js';
-import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
 
 ChartJS.register(
     CategoryScale,
@@ -28,39 +26,21 @@ ChartJS.register(
 
 const AdminDashboard = ({ stats }) => {
     const { formatPrice } = useCurrency();
-    const navigate = useNavigate();
-
-    // Revenue Breakdown moved to Analytics page
-
     // Fallback data if stats are missing or loading error
-<<<<<<< HEAD
-    const data = stats || {
-        activeMembers: 0,
-        revenueToday: 0,
-        salesToday: 0,
-        expensesToday: 0,
-        netProfitToday: 0,
-        expiringSoon: 0,
-        monthlyRevenue: 0,
-        totalExpenses: 0
-    };
-=======
     const data = stats || { activeMembers: 0, revenueToday: 0, expiringSoon: 0, monthlyRevenue: 0, totalExpenses: 0 };
 
     // Calculate Net Profit on Frontend: Revenue (USD) - Expenses (USD)
     const netProfit = data.monthlyRevenue - data.totalExpenses;
->>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
 
-    // Calculate Net Profit on Frontend: Revenue (USD) - Expenses (USD)
-    const netProfit = data.monthlyRevenue - data.totalExpenses;
-
-    // Use Real Chart Data from Backend (or fallback)
+    // Mock chart data for now (backend only returns total numbers, not time-series yet in the specific endpoint analyzed)
+    // To fix this properly later, backend endpoint /stats needs to return specific chart data arrays.
+    // using static dummy chart data for visual consistency.
     const revenueChartData = {
-        labels: data.chartData?.labels || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
         datasets: [
             {
-                label: 'Revenue (Last 7 Days)',
-                data: data.chartData?.data || [0, 0, 0, 0, 0, 0, 0],
+                label: 'Weekly Revenue',
+                data: [1200, 1900, 300, 500, 200, 3000, 4500],
                 borderColor: '#FF8C00',
                 backgroundColor: 'rgba(255, 140, 0, 0.2)',
                 tension: 0.4,
@@ -79,55 +59,14 @@ const AdminDashboard = ({ stats }) => {
         },
     };
 
-
-
-
     return (
         <>
             {/* ... (previous stats cards) ... */}
-<<<<<<< HEAD
-            {/* Daily Financials */}
-            <h3 className="text-lg font-bold text-white mb-4">Today's Overview</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-
-                <StatCard
-                    title="Revenue Today"
-                    value={formatPrice(data.revenueToday)}
-                    icon="payments"
-                />
-                <StatCard
-                    title="Expenses Today"
-                    value={formatPrice(data.expensesToday)}
-                    icon="receipt_long"
-                    isAlert={data.expensesToday > data.revenueToday}
-                />
-                <StatCard
-                    title="Net Profit (Today)"
-                    value={formatPrice(data.netProfitToday)}
-                    icon="monetization_on"
-                    isSuccess={data.netProfitToday >= 0}
-                    isAlert={data.netProfitToday < 0}
-                />
-            </div>
-
-            {/* Member Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                <StatCard title="Active Members" value={data.activeMembers} icon="group" />
-                <StatCard title="Expiring Soon (7 Days)" value={data.expiringSoon} icon="warning" isAlert={data.expiringSoon > 0} />
-=======
             {/* Daily Overview */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                <StatCard
-                    title="Revenue (Today)"
-                    value={formatPrice(data.revenueToday)}
-                    icon="payments"
-                    trend={12.5}
-                    onClick={() => navigate('/analytics')}
-                    isClickable
-                />
+                <StatCard title="Revenue (Today)" value={formatPrice(data.revenueToday)} icon="payments" trend={12.5} />
                 <StatCard title="Active Members" value={data.activeMembers} icon="group" trend={-2.4} />
                 <StatCard title="Expiring Soon (7 Days)" value={data.expiringSoon} icon="warning" isAlert />
->>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
             </div>
 
             {/* Monthly Financials */}
@@ -144,8 +83,6 @@ const AdminDashboard = ({ stats }) => {
                         value={formatPrice(data.totalExpenses)}
                         icon="money_off"
                         isAlert
-                        onClick={() => navigate('/expenses')}
-                        isClickable
                     />
                     <StatCard
                         title="Net Profit"
@@ -167,42 +104,26 @@ const AdminDashboard = ({ stats }) => {
 
                 <div className="bg-surface p-6 rounded-3xl border border-white/5 shadow-sm">
                     <h3 className="text-lg font-bold text-white mb-6">Recent Activity</h3>
+                    {/* Static activity for Admin Demo */}
                     <div className="space-y-1">
-                        {data.recentActivity && data.recentActivity.length > 0 ? (
-                            data.recentActivity.map((item, index) => (
-                                <ActivityItem key={index} user={item.user} action={item.action} time={item.time} />
-                            ))
-                        ) : (
-                            <p className="text-text-muted text-sm p-2">No recent activity</p>
-                        )}
+                        <ActivityItem user="Alex Trainer" action="scheduled a new class" time="2m ago" />
+                        <ActivityItem user="Sarah Connor" action="checked in" time="15m ago" />
+                        <ActivityItem user="Bruce Wayne" action="renewed membership" time="1h ago" />
                     </div>
                 </div>
             </div>
-
-
         </>
     );
 };
 
 // Internal Sub-components
-<<<<<<< HEAD
 const StatCard = ({ title, value, icon, trend, isAlert, isSuccess }) => {
-=======
-const StatCard = ({ title, value, icon, trend, isAlert, isSuccess, onClick, isClickable }) => {
->>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
     let iconClass = 'bg-primary/10 text-primary';
     if (isAlert) iconClass = 'bg-red-500/10 text-red-500';
     if (isSuccess) iconClass = 'bg-emerald-500/10 text-emerald-500';
 
     return (
-<<<<<<< HEAD
         <div className="bg-surface p-6 rounded-3xl border border-white/5 shadow-sm flex items-center justify-between hover:border-primary/20 transition-colors">
-=======
-        <div
-            onClick={onClick}
-            className={`bg-surface p-6 rounded-3xl border border-white/10 shadow-sm flex items-center justify-between transition-all ${isClickable ? 'cursor-pointer hover:border-primary/50 hover:bg-white/5 active:scale-95' : ''}`}
-        >
->>>>>>> 5d624b7d422135ad0a5d3556806a69ae2c59ae62
             <div>
                 <p className="text-text-muted text-sm font-medium mb-1">{title}</p>
                 <h3 className="text-2xl font-bold text-white">{value}</h3>
