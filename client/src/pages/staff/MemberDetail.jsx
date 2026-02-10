@@ -33,6 +33,8 @@ export default function MemberDetail() {
     const [passwordData, setPasswordData] = useState('');
     const [noteData, setNoteData] = useState('');
     const [notes, setNotes] = useState([]);
+    const [payments, setPayments] = useState([]);
+    const [loadingPayments, setLoadingPayments] = useState(false);
     // Edit Form Data
     const [editFormData, setEditFormData] = useState({});
 
@@ -50,6 +52,7 @@ export default function MemberDetail() {
         fetchMember();
         fetchPlans();
         fetchNotes();
+        fetchPayments();
     }, [id]);
 
     const fetchMember = async () => {
@@ -87,6 +90,18 @@ export default function MemberDetail() {
             setNotes(res.data);
         } catch (e) {
             console.error("Failed to fetch notes", e);
+        }
+    };
+
+    const fetchPayments = async () => {
+        setLoadingPayments(true);
+        try {
+            const res = await axios.get(`http://localhost:5000/api/members/${id}/payments`);
+            setPayments(res.data);
+        } catch (e) {
+            console.error("Failed to fetch payments", e);
+        } finally {
+            setLoadingPayments(false);
         }
     };
 

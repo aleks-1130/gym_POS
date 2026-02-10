@@ -2,14 +2,15 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useCurrency } from '../../context/CurrencyContext';
+import Receipt from '../../components/Receipt';
 
 export default function PurchaseHistory() {
     const { user } = useAuth();
     const { formatPrice } = useCurrency();
     const [payments, setPayments] = useState([]);
-    const [trainingSessions, setTrainingSessions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('all'); // all, membership, training
+    const [selectedReceipt, setSelectedReceipt] = useState(null);
 
     useEffect(() => {
         fetchPaymentHistory();
@@ -17,12 +18,13 @@ export default function PurchaseHistory() {
 
     const fetchPaymentHistory = async () => {
         try {
-            const [paymentsRes, sessionsRes] = await Promise.all([
-                axios.get('http://localhost:5000/api/payments'),
-                axios.get('http://localhost:5000/api/members/training-sessions')
-            ]);
-            setPayments(paymentsRes.data);
-            setTrainingSessions(sessionsRes.data);
+            const token = localStorage.getItem('token');
+            const res = await axios.get('http://localhost:5000/api/members/me/transactions', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            console.log('[PURCHASE HISTORY] Fetched transactions:', res.data.length);
+            console.log('[PURCHASE HISTORY] First transaction:', res.data[0]);
+            setPayments(res.data);
         } catch (error) {
             console.error("Failed to fetch payment history", error);
         } finally {
@@ -32,19 +34,16 @@ export default function PurchaseHistory() {
 
     if (loading) return <div className="text-white p-6 text-center">Loading payment history...</div>;
 
-    // Combine all transactions for filtering
-    const allTransactions = [
-        ...payments.map(p => ({ ...p, type: 'membership', category: 'Membership Payment' })),
-        ...trainingSessions.map(s => ({ ...s, type: 'training', category: 'Training Session' }))
-    ].sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt));
+    // All transactions from API
+    const allTransactions = payments.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    const filteredTransactions = activeTab === 'all' 
-        ? allTransactions 
+    const filteredTransactions = activeTab === 'all'
+        ? allTransactions
         : activeTab === 'membership'
-        ? payments
-        : trainingSessions;
+            ? allTransactions.filter(p => p.type === 'MEMBERSHIP')
+            : allTransactions.filter(p => p.type === 'TRAINING');
 
-    const totalSpent = allTransactions.reduce((sum, item) => sum + (item.amount || item.price || 0), 0);
+    const totalSpent = allTransactions.reduce((sum, item) => sum + (item.amount || 0), 0);
 
     return (
         <div className="space-y-4 sm:space-y-6">
@@ -78,11 +77,10 @@ export default function PurchaseHistory() {
                     <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
-                        className={`flex-1 py-2.5 px-3 rounded-lg font-medium text-xs sm:text-sm transition-all flex items-center justify-center gap-1 ${
-                            activeTab === tab.id
-                                ? 'bg-primary text-background'
-                                : 'text-text-muted hover:text-white'
-                        }`}
+                        className={`flex-1 py-2.5 px-3 rounded-lg font-medium text-xs sm:text-sm transition-all flex items-center justify-center gap-1 ${activeTab === tab.id
+                            ? 'bg-primary text-background'
+                            : 'text-text-muted hover:text-white'
+                            }`}
                     >
                         <span className="material-icons-round text-base hidden sm:inline">{tab.icon}</span>
                         {tab.label}
@@ -108,44 +106,60 @@ export default function PurchaseHistory() {
                                     <th className="px-4 sm:px-6 py-3">Description</th>
                                     <th className="px-4 sm:px-6 py-3">Amount</th>
                                     <th className="px-4 sm:px-6 py-3">Status</th>
+                                    <th className="px-4 sm:px-6 py-3 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-white/5">
                                 {filteredTransactions.map((item, idx) => (
                                     <tr key={`${item.type}-${item.id}-${idx}`} className="hover:bg-white/5 transition-colors">
                                         <td className="px-4 sm:px-6 py-4 text-white font-medium">
-                                            <div className="text-sm">{new Date(item.date || item.createdAt).toLocaleDateString()}</div>
-                                            <div className="text-text-muted text-xs">{new Date(item.date || item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                                            <div className="text-sm">{new Date(item.date).toLocaleDateString()}</div>
+                                            <div className="text-text-muted text-xs">{new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                                         </td>
                                         <td className="px-4 sm:px-6 py-4">
                                             <div className="flex items-center gap-2">
-                                                <span className={`material-icons-round text-base ${
-                                                    item.type === 'membership' ? 'text-blue-400' : 'text-purple-400'
-                                                }`}>
-                                                    {item.type === 'membership' ? 'card_membership' : 'person'}
+                                                <span className={`material-icons-round text-base ${item.type === 'MEMBERSHIP' ? 'text-green-400' :
+                                                    item.type === 'TRAINING' ? 'text-purple-400' :
+                                                        item.type === 'STORE_SALE' ? 'text-blue-400' :
+                                                            'text-orange-400'
+                                                    }`}>
+                                                    {item.type === 'MEMBERSHIP' ? 'card_membership' :
+                                                        item.type === 'TRAINING' ? 'person' :
+                                                            item.type === 'STORE_SALE' ? 'shopping_bag' : 'receipt'}
                                                 </span>
-                                                <span className="bg-white/10 text-text-secondary px-2.5 py-1 rounded text-xs font-bold capitalize">
+                                                <span className="bg-white/10 text-text-secondary px-2.5 py-1 rounded text-xs font-bold">
                                                     {item.type}
                                                 </span>
                                             </div>
                                         </td>
                                         <td className="px-4 sm:px-6 py-4 text-text-secondary">
-                                            {item.type === 'membership' 
-                                                ? item.method 
-                                                : `Session with ${item.trainerName || 'Trainer'}`
-                                            }
+                                            <div className="text-sm">{item.method}</div>
+                                            {item.items && item.items.length > 0 && (
+                                                <div className="text-xs text-text-muted mt-1">
+                                                    {item.items.slice(0, 2).map((i, idx) => (
+                                                        <div key={idx}>{i.quantity}x {i.name}</div>
+                                                    ))}
+                                                    {item.items.length > 2 && <div>+{item.items.length - 2} more</div>}
+                                                </div>
+                                            )}
                                         </td>
-                                        <td className="px-4 sm:px-6 py-4 text-white font-bold">{formatPrice(item.amount || item.price)}</td>
+                                        <td className="px-4 sm:px-6 py-4 text-white font-bold">{formatPrice(item.amount)}</td>
                                         <td className="px-4 sm:px-6 py-4">
-                                            <span className={`px-2.5 py-1 rounded text-xs font-bold ${
-                                                item.type === 'training' && item.status === 'completed' 
-                                                    ? 'bg-green-500/20 text-green-300'
-                                                    : item.type === 'training' && item.status === 'scheduled'
-                                                    ? 'bg-blue-500/20 text-blue-300'
-                                                    : 'bg-yellow-500/20 text-yellow-300'
-                                            }`}>
-                                                {item.type === 'training' ? item.status : 'Completed'}
+                                            <span className={`px-2.5 py-1 rounded text-xs font-bold ${item.status === 'COMPLETED' ? 'bg-green-500/20 text-green-300' :
+                                                item.status === 'PENDING' ? 'bg-yellow-500/20 text-yellow-300' :
+                                                    'bg-red-500/20 text-red-300'
+                                                }`}>
+                                                {item.status}
                                             </span>
+                                        </td>
+                                        <td className="px-4 sm:px-6 py-4 text-right">
+                                            <button
+                                                onClick={() => setSelectedReceipt(item)}
+                                                className="text-primary hover:text-orange-400 font-medium text-xs flex items-center gap-1 ml-auto transition-colors"
+                                            >
+                                                <span className="material-icons-round text-sm">receipt</span>
+                                                View
+                                            </button>
                                         </td>
                                     </tr>
                                 ))}
@@ -159,55 +173,126 @@ export default function PurchaseHistory() {
                             <div key={`${item.type}-${item.id}-${idx}`} className="bg-surface rounded-xl p-4 border border-white/5">
                                 <div className="flex justify-between items-start gap-2 mb-3">
                                     <div>
-                                        <p className="font-bold text-white text-sm">{new Date(item.date || item.createdAt).toLocaleDateString()}</p>
-                                        <p className="text-text-muted text-xs">{new Date(item.date || item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                        <p className="font-bold text-white text-sm">{new Date(item.date).toLocaleDateString()}</p>
+                                        <p className="text-text-muted text-xs">{new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <span className={`material-icons-round text-base ${
-                                            item.type === 'membership' ? 'text-blue-400' : 'text-purple-400'
-                                        }`}>
-                                            {item.type === 'membership' ? 'card_membership' : 'person'}
+                                        <span className={`material-icons-round text-base ${item.type === 'MEMBERSHIP' ? 'text-green-400' :
+                                            item.type === 'TRAINING' ? 'text-purple-400' :
+                                                item.type === 'STORE_SALE' ? 'text-blue-400' :
+                                                    'text-orange-400'
+                                            }`}>
+                                            {item.type === 'MEMBERSHIP' ? 'card_membership' :
+                                                item.type === 'TRAINING' ? 'person' :
+                                                    item.type === 'STORE_SALE' ? 'shopping_bag' : 'receipt'}
                                         </span>
-                                        <span className="bg-white/10 text-text-secondary px-2 py-1 rounded text-xs font-bold capitalize flex-shrink-0">
+                                        <span className="bg-white/10 text-text-secondary px-2 py-1 rounded text-xs font-bold flex-shrink-0">
                                             {item.type}
                                         </span>
                                     </div>
                                 </div>
-                                
+
                                 <div className="flex justify-between items-start gap-3 mb-3">
-                                    <div>
-                                        <p className="text-text-muted text-xs mb-1">Description</p>
-                                        <p className="text-white text-sm font-medium">
-                                            {item.type === 'membership' 
-                                                ? item.method 
-                                                : `Session with ${item.trainerName || 'Trainer'}`
-                                            }
-                                        </p>
+                                    <div className="flex-1">
+                                        <p className="text-text-muted text-xs mb-1">Payment Method</p>
+                                        <p className="text-white text-sm font-medium">{item.method}</p>
+                                        {item.items && item.items.length > 0 && (
+                                            <div className="mt-2 space-y-1">
+                                                {item.items.slice(0, 2).map((i, idx) => (
+                                                    <p key={idx} className="text-xs text-text-muted">{i.quantity}x {i.name}</p>
+                                                ))}
+                                                {item.items.length > 2 && <p className="text-xs text-text-muted italic">+{item.items.length - 2} more items</p>}
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="text-right">
                                         <p className="text-text-muted text-xs mb-1">Amount</p>
-                                        <p className="text-primary text-lg font-bold">{formatPrice(item.amount || item.price)}</p>
+                                        <p className="text-primary text-lg font-bold">{formatPrice(item.amount)}</p>
                                     </div>
                                 </div>
 
-                                {item.type === 'training' && (
-                                    <div className="pt-3 border-t border-white/5">
-                                        <span className={`px-2.5 py-1 rounded text-xs font-bold inline-block ${
-                                            item.status === 'completed' 
-                                                ? 'bg-green-500/20 text-green-300'
-                                                : item.status === 'scheduled'
-                                                ? 'bg-blue-500/20 text-blue-300'
-                                                : 'bg-yellow-500/20 text-yellow-300'
+                                <div className="pt-3 border-t border-white/5 flex items-center justify-between gap-2">
+                                    <span className={`px-2.5 py-1 rounded text-xs font-bold inline-block ${item.status === 'COMPLETED' ? 'bg-green-500/20 text-green-300' :
+                                        item.status === 'PENDING' ? 'bg-yellow-500/20 text-yellow-300' :
+                                            'bg-red-500/20 text-red-300'
                                         }`}>
-                                            {item.status}
-                                        </span>
-                                    </div>
-                                )}
+                                        {item.status}
+                                    </span>
+                                    <button
+                                        onClick={() => setSelectedReceipt(item)}
+                                        className="text-primary hover:text-orange-400 font-medium text-xs flex items-center gap-1 transition-colors"
+                                    >
+                                        <span className="material-icons-round text-sm">receipt</span>
+                                        View Receipt
+                                    </button>
+                                </div>
                             </div>
                         ))}
                     </div>
                 </div>
             )}
+
+            {/* Receipt Modal */}
+            {selectedReceipt && (() => {
+                console.log('[RECEIPT MODAL] Selected receipt:', selectedReceipt);
+
+                // For transactions without items (membership, training), create a synthetic item
+                let receiptItems = selectedReceipt.items || [];
+                console.log('[RECEIPT MODAL] Original items:', receiptItems);
+
+                // Map unitPrice to price for Receipt component compatibility
+                receiptItems = receiptItems.map(item => ({
+                    ...item,
+                    price: item.unitPrice || item.price || 0
+                }));
+
+                if (receiptItems.length === 0 && selectedReceipt.amount) {
+                    // Create a synthetic item based on transaction type
+                    const itemName = selectedReceipt.type === 'MEMBERSHIP'
+                        ? 'Membership Fee'
+                        : selectedReceipt.type === 'TRAINING'
+                            ? 'Training Session'
+                            : selectedReceipt.type === 'STORE_SALE'
+                                ? 'Store Purchase'
+                                : 'Payment';
+
+                    receiptItems = [{
+                        name: itemName,
+                        quantity: 1,
+                        price: selectedReceipt.amount
+                    }];
+                    console.log('[RECEIPT MODAL] Created synthetic items:', receiptItems);
+                }
+
+                console.log('[RECEIPT MODAL] Final items to pass:', receiptItems);
+
+                return (
+                    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in overflow-y-auto">
+                        <div className="relative my-8">
+                            {/* Close Button */}
+                            <button
+                                onClick={() => setSelectedReceipt(null)}
+                                className="absolute -top-4 -right-4 z-10 w-10 h-10 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg transition-colors"
+                            >
+                                <span className="material-icons-round">close</span>
+                            </button>
+
+                            {/* Receipt Component */}
+                            <Receipt
+                                transaction={selectedReceipt}
+                                items={receiptItems}
+                                member={user}
+                                cashierName={selectedReceipt.cashier?.name}
+                                paymentDetails={{
+                                    method: selectedReceipt.method,
+                                    tendered: selectedReceipt.cashTendered,
+                                    change: selectedReceipt.changeDue
+                                }}
+                            />
+                        </div>
+                    </div>
+                );
+            })()}
         </div>
     );
 }

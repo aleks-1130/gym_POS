@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
+import { useCurrency } from '../../context/CurrencyContext';
 import QRCode from 'react-qr-code';
 
 export default function Profile() {
     const { user, logout } = useAuth();
+    const { formatPrice } = useCurrency();
     const [orders, setOrders] = useState([]);
     const [showQR, setShowQR] = useState(false);
     const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -37,6 +39,8 @@ export default function Profile() {
         }
     };
 
+
+
     const handleAddCard = async (e) => {
         e.preventDefault();
         try {
@@ -67,6 +71,7 @@ export default function Profile() {
 
     return (
         <div className="space-y-4 pb-20 px-4 max-w-2xl mx-auto">
+
             {/* Header with Sign Out */}
             <div className="flex justify-between items-start gap-3 pt-4">
                 <div>
@@ -200,6 +205,8 @@ export default function Profile() {
                     </button>
                 </div>
             </div>
+
+
 
             {/* Support & Legal */}
             <div>

@@ -1013,6 +1013,25 @@ app.post('/api/members/:id/renew', authenticateToken, authorize(['ADMIN', 'STAFF
     }
 });
 
+
+// Get member payment history (Staff/Admin)
+app.get('/api/members/:id/payments', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
+    const { id } = req.params;
+    try {
+        const payments = await prisma.payment.findMany({
+            where: { memberId: Number(id) },
+            include: {
+                items: true,
+                cashier: { select: { name: true } }
+            },
+            orderBy: { date: 'desc' }
+        });
+        res.json(payments);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch payment history" });
+    }
+});
+
 app.get('/api/members/:id/notes', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
     const { id } = req.params;
     try {
@@ -2287,6 +2306,31 @@ app.post('/api/inventory/restock', authenticateToken, authorize(['OWNER', 'ADMIN
 });
 
 
+
+
+
+// --- MEMBER TRANSACTION HISTORY ---
+app.get('/api/members/me/transactions', authenticateToken, authorize(['MEMBER']), async (req, res) => {
+    try {
+        const memberId = req.user.id;
+        console.log('[TRANSACTION HISTORY] Member ID:', memberId, 'Role:', req.user.role);
+
+        const payments = await prisma.payment.findMany({
+            where: { memberId },
+            include: {
+                items: true,
+                cashier: { select: { name: true } }
+            },
+            orderBy: { date: 'desc' }
+        });
+
+        console.log('[TRANSACTION HISTORY] Found', payments.length, 'payments for member', memberId);
+        res.json(payments);
+    } catch (error) {
+        console.error('Failed to fetch transaction history:', error);
+        res.status(500).json({ error: 'Failed to fetch transactions' });
+    }
+});
 
 // --- PAYMENT METHOD ROUTES (Member Only) ---
 app.get('/api/payment-methods', authenticateToken, async (req, res) => {
