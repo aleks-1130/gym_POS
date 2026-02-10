@@ -52,6 +52,8 @@ model Member {
   freezeEndDate    DateTime?
   birthDate        DateTime?
   sex              String?
+  birthDate        DateTime?
+  sex              String?
   imageUrl         String?
   payments         Payment[]
   paymentMethods   PaymentMethod[]
@@ -59,6 +61,9 @@ model Member {
   bookings         Booking[]
   orders           Order[]
   trainingSessions TrainingSession[]
+  membershipPeriods MembershipPeriod[]
+}
+
     membershipPeriods MembershipPeriod[]
     notes            MemberNote[]
   }
@@ -71,7 +76,9 @@ model Plan {
   duration    Int      // Duration in days
   members     Member[]
   membershipPeriods MembershipPeriod[]
+  membershipPeriods MembershipPeriod[]
 }
+
 
 
 model Payment {
@@ -146,6 +153,9 @@ model Product {
   supplierId  Int?
   supplier    Supplier? @relation(fields: [supplierId], references: [id])
   supplyCost  Float    @default(0)
+  supplierId  Int?
+  supplier    Supplier? @relation(fields: [supplierId], references: [id])
+  supplyCost  Float    @default(0)
 }
 
 model Trainer {
@@ -160,6 +170,7 @@ model Trainer {
   experience       Int?              // years of experience
   rating           Float?            @default(5.0)
   sessionPrice     Float             @default(50.0)
+  sessionDurations String?           // comma-separated minutes e.g. "60,120,180"
   sessionDurations String?           // comma-separated minutes e.g. "60,120,180"
   availableSlots   Int?              @default(5)
   specialties      String?           // comma-separated list
@@ -246,6 +257,19 @@ model MembershipPeriod {
   createdAt DateTime @default(now())
 }
 
+model MembershipPeriod {
+  id        Int      @id @default(autoincrement())
+  memberId  Int
+  member    Member   @relation(fields: [memberId], references: [id])
+  planId    Int?
+  plan      Plan?    @relation(fields: [planId], references: [id])
+  startDate DateTime
+  endDate   DateTime
+  amount    Float?
+  method    String?
+  createdAt DateTime @default(now())
+}
+
 model Notification {
   id        Int      @id @default(autoincrement())
   title     String
@@ -263,6 +287,35 @@ model LoyaltyReward {
   imageUrl    String?
   category    String?  // MERCHANDISE, SUPPLEMENT, APPAREL, EXPERIENCE
   createdAt   DateTime @default(now())
+}
+
+model Expense {
+  id          Int      @id @default(autoincrement())
+  title       String
+  amount      Float
+  category    String   // SALARY, UTILITIES, SUPPLIES, MAINTENANCE, OTHER, INVENTORY
+  date        DateTime @default(now())
+  recurring   Boolean  @default(false)
+  frequency   String?  // MONTHLY, WEEKLY
+  notes       String?
+  recordedBy  String?  // User email or ID
+  supplierId  Int?
+  supplier    Supplier? @relation(fields: [supplierId], references: [id])
+  createdAt   DateTime @default(now())
+  inventoryTransactionId Int? // Link to specific inventory restock if needed
+}
+
+model Supplier {
+  id        Int       @id @default(autoincrement())
+  name      String
+  contact   String?
+  email     String?
+  address   String?
+  notes     String?
+  products  Product[]
+  expenses  Expense[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 }
 
 model Expense {

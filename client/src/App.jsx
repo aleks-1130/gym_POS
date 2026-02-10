@@ -12,6 +12,7 @@ import Login from './pages/auth/Login';
 import Dashboard from './pages/shared/Dashboard';
 import Payments from './pages/shared/Payments';
 import Access from './pages/staff/Access';
+import Access from './pages/staff/Access';
 import Loyalty from './pages/shared/Loyalty';
 
 // Owner Pages
@@ -23,6 +24,8 @@ import AuditLogs from './pages/owner/AuditLogs';
 import Analytics from './pages/admin/Analytics';
 import Expenses from './pages/admin/Expenses';
 import Suppliers from './pages/admin/Suppliers';
+import Expenses from './pages/admin/Expenses';
+import Suppliers from './pages/admin/Suppliers';
 import PosSettings from './pages/admin/PosSettings';
 import Transactions from './pages/admin/Transactions';
 
@@ -32,6 +35,8 @@ import Members from './pages/staff/Members';
 import MemberDetail from './pages/staff/MemberDetail';
 import Trainers from './pages/staff/Trainers';
 import Classes from './pages/staff/Classes';
+import AdminTrainers from './pages/admin/Trainers';
+import AdminClasses from './pages/admin/Classes';
 import TransactionDetail from './pages/staff/TransactionDetail';
 import AdminTrainers from './pages/admin/Trainers';
 import AdminClasses from './pages/admin/Classes';
@@ -47,6 +52,7 @@ import Attendance from './pages/member/Attendance';
 import PurchaseHistory from './pages/member/PurchaseHistory';
 import TrainerBooking from './pages/member/TrainerBooking';
 import Announcements from './pages/shared/Announcements';
+import GymTraffic from './pages/member/GymTraffic';
 import GymTraffic from './pages/member/GymTraffic';
 import PaymentMethods from './pages/member/PaymentMethods';
 import ShopCheckout from './pages/member/ShopCheckout';
@@ -120,6 +126,18 @@ function AppRoutes() {
     return <Classes />;
   };
 
+  const { user } = useAuth();
+
+  const TrainersRoute = () => {
+    if (user?.role === ROLES.ADMIN) return <AdminTrainers />;
+    return <Trainers />;
+  };
+
+  const ClassesRoute = () => {
+    if (user?.role === ROLES.ADMIN) return <AdminClasses />;
+    return <Classes />;
+  };
+
   return (
     <div className="flex-1 w-full bg-background overflow-auto relative">
       <Routes>
@@ -135,6 +153,7 @@ function AppRoutes() {
           }
         />
 
+        {/* Display Monitor */}
         {/* Display Monitor */}
         <Route
           path="/display-monitor"
@@ -232,6 +251,7 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
               <TrainersRoute />
+              <TrainersRoute />
             </ProtectedRoute>
           }
         />
@@ -239,6 +259,7 @@ function AppRoutes() {
           path="/classes"
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
+              <ClassesRoute />
               <ClassesRoute />
             </ProtectedRoute>
           }
@@ -292,6 +313,22 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
               <UserManagement />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/expenses"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
+              <Expenses />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/suppliers"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
+              <Suppliers />
             </ProtectedRoute>
           }
         />
@@ -391,6 +428,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
               <Announcements />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/gym-traffic"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
+              <GymTraffic />
             </ProtectedRoute>
           }
         />

@@ -16,6 +16,8 @@ export default function TrainerBooking() {
         duration: 60,
         notes: '',
         paymentMethod: 'CASH'
+        notes: '',
+        paymentMethod: 'CASH'
     });
     const [bookingLoading, setBookingLoading] = useState(false);
     const [filterView, setFilterView] = useState('all'); // all, available, top-rated
@@ -115,10 +117,12 @@ export default function TrainerBooking() {
 
             const res = await axios.post(endpoint, payload, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined
+                method: bookingData.paymentMethod
             });
             alert(res.data?.message || "Training session booked successfully!");
             setShowBookingModal(false);
             setSelectedTrainer(null);
+            setBookingData({ date: '', time: '', duration: 60, notes: '', paymentMethod: 'CASH' });
             setBookingData({ date: '', time: '', duration: 60, notes: '', paymentMethod: 'CASH' });
             fetchTrainers();
         } catch (error) {
@@ -133,6 +137,7 @@ export default function TrainerBooking() {
         setSelectedTrainer(null);
         setBookingData({ date: '', time: '', duration: 60, notes: '', paymentMethod: 'CASH' });
         setSelectedMethodId('');
+        setBookingData({ date: '', time: '', duration: 60, notes: '', paymentMethod: 'CASH' });
     }, []);
 
     const filteredTrainers = trainers.filter(trainer => {
@@ -141,6 +146,31 @@ export default function TrainerBooking() {
         return true;
     });
 
+
+    const getTrainerSpecialties = (trainer) => {
+        if (!trainer?.specialties) return [];
+        if (Array.isArray(trainer.specialties)) return trainer.specialties;
+        if (typeof trainer.specialties === 'string') {
+            return trainer.specialties.split(',').map((item) => item.trim()).filter(Boolean);
+        }
+        return [];
+    };
+    const getTrainerDurations = (trainer) => {
+        const raw = trainer?.sessionDurations || '60';
+        return raw
+            .split(',')
+            .map((item) => Number(item.trim()))
+            .filter((value) => Number.isFinite(value) && value > 0);
+    };
+    const getEndTime = (start, duration) => {
+        if (!start || !duration) return '';
+        const [hours, minutes] = start.split(':').map(Number);
+        if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return '';
+        const totalMinutes = hours * 60 + minutes + duration;
+        const endHours = Math.floor(totalMinutes / 60) % 24;
+        const endMinutes = totalMinutes % 60;
+        return `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
+    };
 
     const getTrainerSpecialties = (trainer) => {
         if (!trainer?.specialties) return [];
@@ -198,6 +228,8 @@ export default function TrainerBooking() {
                         <p className="text-text-muted text-xs sm:text-sm mb-1">Avg. Rate</p>
                         <p className="text-2xl sm:text-3xl font-bold text-emerald-400">
                             {trainers.length > 0 
+                                ? formatPrice(trainers.reduce((sum, t) => sum + (t.sessionPrice ?? 300), 0) / trainers.length, true)
+                                : formatPrice(0, true)
                                 ? formatPrice(trainers.reduce((sum, t) => sum + (t.sessionPrice ?? 300), 0) / trainers.length, true)
                                 : formatPrice(0, true)
                             }
@@ -290,12 +322,16 @@ export default function TrainerBooking() {
 
                                 {/* Specializations */}
                                 {getTrainerSpecialties(trainer).length > 0 && (
+                                {getTrainerSpecialties(trainer).length > 0 && (
                                     <div className="mb-4 flex flex-wrap gap-2">
+                                        {getTrainerSpecialties(trainer).slice(0, 3).map((specialty, idx) => (
                                         {getTrainerSpecialties(trainer).slice(0, 3).map((specialty, idx) => (
                                             <span key={idx} className="bg-white/10 text-text-secondary px-2.5 py-1 rounded-md text-xs font-medium">
                                                 {specialty}
                                             </span>
                                         ))}
+                                        {getTrainerSpecialties(trainer).length > 3 && (
+                                            <span className="text-text-muted text-xs py-1 px-1">+{getTrainerSpecialties(trainer).length - 3} more</span>
                                         {getTrainerSpecialties(trainer).length > 3 && (
                                             <span className="text-text-muted text-xs py-1 px-1">+{getTrainerSpecialties(trainer).length - 3} more</span>
                                         )}
@@ -306,6 +342,7 @@ export default function TrainerBooking() {
                                     {/* Price */}
                                     <div className="flex justify-between items-center py-2 border-t border-white/5">
                                         <span className="text-text-muted text-sm">Per Session (60 min)</span>
+                                        <span className="text-primary font-bold text-xl">{formatPrice(trainer.sessionPrice ?? 300, true)}</span>
                                         <span className="text-primary font-bold text-xl">{formatPrice(trainer.sessionPrice ?? 300, true)}</span>
                                     </div>
 
@@ -390,6 +427,7 @@ export default function TrainerBooking() {
                                         <p className="font-bold text-white text-base truncate">{selectedTrainer.name}</p>
                                         <p className="text-text-muted text-sm truncate">{selectedTrainer.specialization}</p>
                                         <p className="text-primary font-bold text-lg mt-1">{formatPrice(selectedTrainer.sessionPrice ?? 300, true)}/session</p>
+                                        <p className="text-primary font-bold text-lg mt-1">{formatPrice(selectedTrainer.sessionPrice ?? 300, true)}/session</p>
                                     </div>
                                 </div>
 
@@ -417,6 +455,9 @@ export default function TrainerBooking() {
                                         className="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-text-muted focus:outline-none focus:border-primary text-base touch-manipulation"
                                     />
                                 </div>
+                                {bookingData.time && (
+                                    <p className="text-xs text-text-muted mt-2">Ends at {getEndTime(bookingData.time, bookingData.duration)}</p>
+                                )}
                                 {bookingData.time && (
                                     <p className="text-xs text-text-muted mt-2">Ends at {getEndTime(bookingData.time, bookingData.duration)}</p>
                                 )}
@@ -539,6 +580,43 @@ export default function TrainerBooking() {
                                             ))}
                                         </div>
                                     )}
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {getTrainerDurations(selectedTrainer).map((duration) => (
+                                            <button
+                                                key={duration}
+                                                type="button"
+                                                onClick={() => setBookingData({ ...bookingData, duration })}
+                                                className={`px-3 py-2 rounded-xl text-sm font-semibold border transition-all ${
+                                                    bookingData.duration === duration
+                                                        ? 'bg-primary/15 text-primary border-primary/40'
+                                                        : 'bg-white/5 text-text-muted border-white/10 hover:text-white'
+                                                }`}
+                                            >
+                                                {duration} min
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Notes - Touch Optimized */}
+                                <div>
+                                    <label className="block text-sm font-bold text-white mb-2">Payment Method *</label>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {['CASH', 'CARD', 'GCASH'].map((method) => (
+                                            <button
+                                                key={method}
+                                                type="button"
+                                                onClick={() => setBookingData({ ...bookingData, paymentMethod: method })}
+                                                className={`px-4 py-3 rounded-xl text-sm font-semibold border transition-all ${
+                                                    bookingData.paymentMethod === method
+                                                        ? 'bg-primary/15 text-primary border-primary/40'
+                                                        : 'bg-white/5 text-text-muted border-white/10 hover:text-white'
+                                                }`}
+                                            >
+                                                {method}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
 
                                 <div>
@@ -557,6 +635,7 @@ export default function TrainerBooking() {
                                     <div className="flex justify-between items-center">
                                         <span className="text-text-muted text-sm">Total for {bookingData.duration} min</span>
                                         <span className="text-primary font-bold text-2xl">
+                                            {formatPrice(((selectedTrainer.sessionPrice ?? 300) / 60) * bookingData.duration, true)}
                                             {formatPrice(((selectedTrainer.sessionPrice ?? 300) / 60) * bookingData.duration, true)}
                                         </span>
                                     </div>

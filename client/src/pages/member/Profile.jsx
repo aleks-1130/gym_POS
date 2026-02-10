@@ -23,6 +23,7 @@ export default function Profile() {
     });
     const isMember = user?.role === ROLES.MEMBER;
     const qrValue = user?.id ? `MEMBER:${user.id}` : '';
+    const qrValue = user?.id ? `MEMBER:${user.id}` : '';
 
     useEffect(() => {
         const fetchMember = async () => {
@@ -134,6 +135,13 @@ export default function Profile() {
                         </div>
                         {showQR && (
                             <div className="bg-white p-3 rounded-xl shadow-lg">
+                                {qrValue ? (
+                                    <QRCode value={qrValue} size={100} />
+                                ) : (
+                                    <div className="w-[100px] h-[100px] bg-gray-100 text-gray-500 text-xs flex items-center justify-center rounded-lg">
+                                        QR Unavailable
+                                    </div>
+                                )}
                                 {qrValue ? (
                                     <QRCode value={qrValue} size={100} />
                                 ) : (
@@ -379,3 +387,4 @@ export default function Profile() {
         </div>
     );
 }
+
