@@ -80,7 +80,7 @@ export default function ShopCheckout() {
     };
 
     return (
-        <div className="pb-20 px-4 max-w-3xl mx-auto space-y-6">
+        <div className="pb-24 px-4 sm:px-6 max-w-3xl mx-auto space-y-6">
             <div className="pt-4">
                 <h1 className="text-xl font-bold text-white">Order Details</h1>
                 <p className="text-text-muted text-xs mt-0.5">Review your items and choose payment method</p>
@@ -187,8 +187,8 @@ export default function ShopCheckout() {
                                     </p>
                                     <p className="text-text-muted text-xs">
                                         {method.type === 'GCASH'
-                                            ? `${method.name} • ${method.phone}`
-                                            : `${method.brand || 'Card'} • **** ${method.last4} • ${method.expMonth}/${method.expYear}`}
+                                            ? `${method.name} - ${method.phone}`
+                                            : `${method.brand || 'Card'} - **** ${method.last4} - ${method.expMonth}/${method.expYear}`}
                                     </p>
                                 </div>
                             </label>

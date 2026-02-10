@@ -90,7 +90,7 @@ export default function Schedule() {
     }
 
     return (
-        <div className="pb-20 px-4 max-w-5xl mx-auto">
+        <div className="pb-24 px-4 sm:px-6 max-w-6xl mx-auto">
             {/* Header */}
             <div className="pt-4 pb-3">
                 <h1 className="text-xl font-bold text-white">Gym Class Schedule</h1>
@@ -98,7 +98,7 @@ export default function Schedule() {
             </div>
 
             {/* Filter Tabs - Sticky */}
-            <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 -mx-4 px-4 py-3 mb-2 border-b border-white/5">
+            <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 -mx-4 sm:-mx-6 px-4 sm:px-6 py-3 mb-2 border-b border-white/5">
                 <div className="flex gap-2">
                     {[
                         { value: 'all', label: 'All Classes', icon: 'grid_view' },

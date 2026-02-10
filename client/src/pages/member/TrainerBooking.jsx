@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { X } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useCurrency } from '../../context/CurrencyContext';
@@ -10,21 +11,34 @@ export default function TrainerBooking() {
     const [loading, setLoading] = useState(true);
     const [selectedTrainer, setSelectedTrainer] = useState(null);
     const [showBookingModal, setShowBookingModal] = useState(false);
+    const [bookingLoading, setBookingLoading] = useState(false);
+    const [filterView, setFilterView] = useState('all');
+    const [paymentMethods, setPaymentMethods] = useState([]);
+    const [selectedMethodId, setSelectedMethodId] = useState('');
+
     const [bookingData, setBookingData] = useState({
         date: '',
         time: '',
         duration: 60,
         notes: '',
         paymentMethod: 'CASH'
-        notes: '',
-        paymentMethod: 'CASH'
     });
-    const [bookingLoading, setBookingLoading] = useState(false);
-    const [filterView, setFilterView] = useState('all'); // all, available, top-rated
-    const [paymentMethods, setPaymentMethods] = useState([]);
-    const [selectedMethodId, setSelectedMethodId] = useState('');
 
     useEffect(() => {
+        const fetchTrainers = async () => {
+            try {
+                const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+                const res = await axios.get('http://localhost:5000/api/trainers', {
+                    headers: token ? { Authorization: `Bearer ${token}` } : undefined
+                });
+                setTrainers(res.data || []);
+            } catch (error) {
+                console.error('Failed to fetch trainers', error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
         fetchTrainers();
     }, []);
 
@@ -38,7 +52,7 @@ export default function TrainerBooking() {
                 });
                 const methods = res.data || [];
                 setPaymentMethods(methods);
-                const defaultMethod = methods.find((m) => m.isDefault);
+                const defaultMethod = methods.find((method) => method.isDefault);
                 if (defaultMethod) {
                     setSelectedMethodId(defaultMethod.id);
                     setBookingData((prev) => ({
@@ -54,11 +68,9 @@ export default function TrainerBooking() {
         fetchMethods();
     }, [user?.id]);
 
-    // Prevent body scroll when modal is open (PWA best practice)
     useEffect(() => {
         if (showBookingModal) {
             document.body.style.overflow = 'hidden';
-            // Add safe area insets for iOS
             document.body.style.position = 'fixed';
             document.body.style.width = '100%';
         } else {
@@ -73,39 +85,81 @@ export default function TrainerBooking() {
         };
     }, [showBookingModal]);
 
-    const fetchTrainers = async () => {
-        try {
-            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-            const res = await axios.get('http://localhost:5000/api/trainers', {
-                headers: token ? { Authorization: `Bearer ${token}` } : undefined
-            });
-            setTrainers(res.data);
-        } catch (error) {
-            console.error("Failed to fetch trainers");
-        } finally {
-            setLoading(false);
+    const filteredTrainers = useMemo(() => {
+        return trainers.filter((trainer) => {
+            if (filterView === 'available') return trainer.availableSlots === null || trainer.availableSlots > 0;
+            if (filterView === 'top-rated') return (trainer.rating || 0) >= 4.5;
+            return true;
+        });
+    }, [trainers, filterView]);
+
+    const getTrainerSpecialties = (trainer) => {
+        if (!trainer?.specialties) return [];
+        if (Array.isArray(trainer.specialties)) return trainer.specialties;
+        if (typeof trainer.specialties === 'string') {
+            return trainer.specialties
+                .split(',')
+                .map((item) => item.trim())
+                .filter(Boolean);
         }
+        return [];
     };
 
-    const handleBookSession = async (e) => {
-        e.preventDefault();
+    const getTrainerDurations = (trainer) => {
+        const raw = trainer?.sessionDurations || '60';
+        return raw
+            .split(',')
+            .map((item) => Number(item.trim()))
+            .filter((value) => Number.isFinite(value) && value > 0);
+    };
+
+    const getEndTime = (start, duration) => {
+        if (!start || !duration) return '';
+        const [hours, minutes] = start.split(':').map(Number);
+        if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return '';
+        const totalMinutes = hours * 60 + minutes + duration;
+        const endHours = Math.floor(totalMinutes / 60) % 24;
+        const endMinutes = totalMinutes % 60;
+        return `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
+    };
+
+    const openModal = (trainer) => {
+        setSelectedTrainer(trainer);
+        setBookingData({
+            date: '',
+            time: '',
+            duration: getTrainerDurations(trainer)[0] || 60,
+            notes: '',
+            paymentMethod: bookingData.paymentMethod || 'CASH'
+        });
+        setShowBookingModal(true);
+    };
+
+    const closeModal = () => {
+        setShowBookingModal(false);
+        setSelectedTrainer(null);
+        setBookingData({ date: '', time: '', duration: 60, notes: '', paymentMethod: 'CASH' });
+        setSelectedMethodId('');
+    };
+
+    const handleBookSession = async (event) => {
+        event.preventDefault();
         if (!selectedTrainer || !bookingData.date || !bookingData.time) {
-            alert("Please fill in all required fields");
+            alert('Please fill in all required fields');
             return;
         }
         if (!user?.id) {
-            alert("Member session not found. Please log in again.");
+            alert('Member session not found. Please log in again.');
             return;
         }
         if (!selectedMethodId && bookingData.paymentMethod !== 'CASH') {
-            alert("Please select a payment method.");
+            alert('Please select a payment method.');
             return;
         }
 
         setBookingLoading(true);
         try {
             const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-            const endpoint = 'http://localhost:5000/api/members/book-training';
             const payload = {
                 trainerId: selectedTrainer.id,
                 date: bookingData.date,
@@ -115,87 +169,22 @@ export default function TrainerBooking() {
                 method: bookingData.paymentMethod
             };
 
-            const res = await axios.post(endpoint, payload, {
+            const res = await axios.post('http://localhost:5000/api/members/book-training', payload, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined
-                method: bookingData.paymentMethod
             });
-            alert(res.data?.message || "Training session booked successfully!");
-            setShowBookingModal(false);
-            setSelectedTrainer(null);
-            setBookingData({ date: '', time: '', duration: 60, notes: '', paymentMethod: 'CASH' });
-            setBookingData({ date: '', time: '', duration: 60, notes: '', paymentMethod: 'CASH' });
-            fetchTrainers();
+            alert(res.data?.message || 'Training session booked successfully!');
+            closeModal();
         } catch (error) {
-            alert(error.response?.data?.message || "Failed to book training session");
+            alert(error.response?.data?.message || 'Failed to book training session');
         } finally {
             setBookingLoading(false);
         }
     };
 
-    const closeModal = useCallback(() => {
-        setShowBookingModal(false);
-        setSelectedTrainer(null);
-        setBookingData({ date: '', time: '', duration: 60, notes: '', paymentMethod: 'CASH' });
-        setSelectedMethodId('');
-        setBookingData({ date: '', time: '', duration: 60, notes: '', paymentMethod: 'CASH' });
-    }, []);
+    const activeDuration = Number(bookingData.duration) || 60;
+    const sessionRate = selectedTrainer?.sessionPrice ?? 300;
+    const totalAmount = (sessionRate * activeDuration) / 60;
 
-    const filteredTrainers = trainers.filter(trainer => {
-        if (filterView === 'available') return trainer.availableSlots > 0;
-        if (filterView === 'top-rated') return trainer.rating >= 4.5;
-        return true;
-    });
-
-
-    const getTrainerSpecialties = (trainer) => {
-        if (!trainer?.specialties) return [];
-        if (Array.isArray(trainer.specialties)) return trainer.specialties;
-        if (typeof trainer.specialties === 'string') {
-            return trainer.specialties.split(',').map((item) => item.trim()).filter(Boolean);
-        }
-        return [];
-    };
-    const getTrainerDurations = (trainer) => {
-        const raw = trainer?.sessionDurations || '60';
-        return raw
-            .split(',')
-            .map((item) => Number(item.trim()))
-            .filter((value) => Number.isFinite(value) && value > 0);
-    };
-    const getEndTime = (start, duration) => {
-        if (!start || !duration) return '';
-        const [hours, minutes] = start.split(':').map(Number);
-        if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return '';
-        const totalMinutes = hours * 60 + minutes + duration;
-        const endHours = Math.floor(totalMinutes / 60) % 24;
-        const endMinutes = totalMinutes % 60;
-        return `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
-    };
-
-    const getTrainerSpecialties = (trainer) => {
-        if (!trainer?.specialties) return [];
-        if (Array.isArray(trainer.specialties)) return trainer.specialties;
-        if (typeof trainer.specialties === 'string') {
-            return trainer.specialties.split(',').map((item) => item.trim()).filter(Boolean);
-        }
-        return [];
-    };
-    const getTrainerDurations = (trainer) => {
-        const raw = trainer?.sessionDurations || '60';
-        return raw
-            .split(',')
-            .map((item) => Number(item.trim()))
-            .filter((value) => Number.isFinite(value) && value > 0);
-    };
-    const getEndTime = (start, duration) => {
-        if (!start || !duration) return '';
-        const [hours, minutes] = start.split(':').map(Number);
-        if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return '';
-        const totalMinutes = hours * 60 + minutes + duration;
-        const endHours = Math.floor(totalMinutes / 60) % 24;
-        const endMinutes = totalMinutes % 60;
-        return `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
-    };
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-[60vh] px-4">
@@ -208,476 +197,290 @@ export default function TrainerBooking() {
     }
 
     return (
-        <div className="pb-20 px-4 max-w-6xl mx-auto space-y-4 sm:space-y-6">
-            {/* Header - PWA Sticky */}
-            <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 -mx-4 px-4 py-4">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-xl sm:text-2xl font-bold text-white">1-on-1 Training</h1>
-                        <p className="text-text-muted text-xs sm:text-sm mt-0.5">Book personalized sessions</p>
-                    </div>
-                </div>
+        <div className="pb-24 px-4 sm:px-6 max-w-6xl mx-auto space-y-4 sm:space-y-6">
+            <header className="pt-4">
+                <h1 className="text-xl font-bold text-white">Book a Trainer</h1>
+                <p className="text-text-muted text-xs mt-0.5">Choose a coach and lock your training slot.</p>
+            </header>
 
-                {/* Quick Stats */}
-                <div className="grid grid-cols-2 gap-3 sm:gap-4 mt-4">
-                    <div className="bg-surface rounded-xl sm:rounded-2xl p-4 sm:p-5 border border-white/5">
-                        <p className="text-text-muted text-xs sm:text-sm mb-1">Available Trainers</p>
-                        <p className="text-2xl sm:text-3xl font-bold text-primary">{trainers.length}</p>
-                    </div>
-                    <div className="bg-surface rounded-xl sm:rounded-2xl p-4 sm:p-5 border border-white/5">
-                        <p className="text-text-muted text-xs sm:text-sm mb-1">Avg. Rate</p>
-                        <p className="text-2xl sm:text-3xl font-bold text-emerald-400">
-                            {trainers.length > 0 
-                                ? formatPrice(trainers.reduce((sum, t) => sum + (t.sessionPrice ?? 300), 0) / trainers.length, true)
-                                : formatPrice(0, true)
-                                ? formatPrice(trainers.reduce((sum, t) => sum + (t.sessionPrice ?? 300), 0) / trainers.length, true)
-                                : formatPrice(0, true)
-                            }
-                        </p>
-                    </div>
-                </div>
-
-                {/* Filter Tabs */}
-                <div className="flex gap-2 mt-4">
-                    {[
-                        { value: 'all', label: 'All Trainers' },
-                        { value: 'available', label: 'Available Now' },
-                        { value: 'top-rated', label: 'Top Rated' }
-                    ].map((tab) => (
-                        <button
-                            key={tab.value}
-                            onClick={() => setFilterView(tab.value)}
-                            className={`px-3 py-2 rounded-lg font-medium text-xs sm:text-sm transition-all ${
-                                filterView === tab.value
-                                    ? 'bg-primary text-background'
-                                    : 'bg-surface text-text-muted hover:text-white border border-white/5'
-                            }`}
-                        >
-                            {tab.label}
-                        </button>
-                    ))}
-                </div>
+            <div className="flex flex-wrap gap-2">
+                {[
+                    { id: 'all', label: 'All trainers' },
+                    { id: 'available', label: 'Available now' },
+                    { id: 'top-rated', label: 'Top rated' }
+                ].map((tab) => (
+                    <button
+                        key={tab.id}
+                        className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
+                            filterView === tab.id
+                                ? 'bg-primary text-white border-primary'
+                                : 'bg-surface border-white/10 text-text-muted hover:text-white'
+                        }`}
+                        onClick={() => setFilterView(tab.id)}
+                    >
+                        {tab.label}
+                    </button>
+                ))}
             </div>
 
-            {/* Trainers Grid */}
             {filteredTrainers.length === 0 ? (
-                <div className="text-center py-12 px-4">
-                    <span className="material-icons-round text-5xl text-text-muted opacity-50 block mb-3">person_off</span>
-                    <p className="text-text-muted text-base">No trainers match your filter</p>
-                    <button 
-                        onClick={() => setFilterView('all')}
-                        className="mt-4 px-4 py-2 bg-primary text-background rounded-lg font-medium text-sm"
-                    >
-                        Show All Trainers
-                    </button>
+                <div className="bg-surface rounded-2xl border border-white/5 p-6 text-center text-text-muted text-sm">
+                    No trainers found for this filter.
                 </div>
             ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {filteredTrainers.map(trainer => (
-                        <div key={trainer.id} className="bg-surface rounded-2xl border border-white/5 overflow-hidden hover:border-primary/30 transition-all group flex flex-col">
-                            {/* Trainer Image */}
-                            <div className="aspect-[4/3] sm:aspect-square bg-white/5 overflow-hidden relative">
-                                {trainer.imageUrl ? (
-                                    <img 
-                                        src={trainer.imageUrl} 
-                                        alt={trainer.name} 
-                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                        loading="lazy"
-                                    />
-                                ) : (
-                                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-primary/5">
-                                        <span className="material-icons-round text-6xl text-primary/30">person</span>
-                                    </div>
-                                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {filteredTrainers.map((trainer) => {
+                        const specialties = getTrainerSpecialties(trainer);
+                        const durations = getTrainerDurations(trainer);
+                        const availableSlots = trainer.availableSlots === null ? 'Unlimited' : trainer.availableSlots;
 
-                                {/* Rating Badge */}
-                                {trainer.rating && (
-                                    <div className="absolute top-3 right-3 bg-black/70 backdrop-blur-md rounded-full px-3 py-1.5 flex items-center gap-1">
-                                        <span className="material-icons-round text-base text-yellow-400">star</span>
-                                        <span className="text-white font-bold text-sm">{trainer.rating}</span>
-                                    </div>
-                                )}
-
-                                {/* Experience Tag */}
-                                {trainer.experience && (
-                                    <div className="absolute bottom-3 left-3 bg-black/70 backdrop-blur-md rounded-lg px-3 py-1.5">
-                                        <span className="text-white font-medium text-xs">{trainer.experience}y exp</span>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Trainer Info */}
-                            <div className="p-4 sm:p-5 flex flex-col flex-1">
-                                <div className="mb-3">
-                                    <h3 className="font-bold text-white text-lg sm:text-xl">{trainer.name}</h3>
-                                    <p className="text-text-muted text-sm mt-0.5">{trainer.specialization || 'Personal Trainer'}</p>
-                                </div>
-
-                                {/* Bio */}
-                                {trainer.bio && (
-                                    <p className="text-text-muted text-sm mb-3 line-clamp-2 leading-relaxed">
-                                        {trainer.bio}
-                                    </p>
-                                )}
-
-                                {/* Specializations */}
-                                {getTrainerSpecialties(trainer).length > 0 && (
-                                {getTrainerSpecialties(trainer).length > 0 && (
-                                    <div className="mb-4 flex flex-wrap gap-2">
-                                        {getTrainerSpecialties(trainer).slice(0, 3).map((specialty, idx) => (
-                                        {getTrainerSpecialties(trainer).slice(0, 3).map((specialty, idx) => (
-                                            <span key={idx} className="bg-white/10 text-text-secondary px-2.5 py-1 rounded-md text-xs font-medium">
-                                                {specialty}
-                                            </span>
-                                        ))}
-                                        {getTrainerSpecialties(trainer).length > 3 && (
-                                            <span className="text-text-muted text-xs py-1 px-1">+{getTrainerSpecialties(trainer).length - 3} more</span>
-                                        {getTrainerSpecialties(trainer).length > 3 && (
-                                            <span className="text-text-muted text-xs py-1 px-1">+{getTrainerSpecialties(trainer).length - 3} more</span>
-                                        )}
-                                    </div>
-                                )}
-
-                                <div className="mt-auto space-y-3">
-                                    {/* Price */}
-                                    <div className="flex justify-between items-center py-2 border-t border-white/5">
-                                        <span className="text-text-muted text-sm">Per Session (60 min)</span>
-                                        <span className="text-primary font-bold text-xl">{formatPrice(trainer.sessionPrice ?? 300, true)}</span>
-                                        <span className="text-primary font-bold text-xl">{formatPrice(trainer.sessionPrice ?? 300, true)}</span>
-                                    </div>
-
-                                    {/* Availability */}
-                                    {trainer.availableSlots !== undefined && (
-                                        <div className="flex items-center gap-2 text-sm">
-                                            <div className={`w-2 h-2 rounded-full ${trainer.availableSlots > 0 ? 'bg-green-400' : 'bg-red-400'}`}></div>
-                                            <span className={trainer.availableSlots > 0 ? 'text-green-400' : 'text-red-400'}>
-                                                {trainer.availableSlots > 0 
-                                                    ? `${trainer.availableSlots} slots this week`
-                                                    : 'Fully booked'
-                                                }
-                                            </span>
+                        return (
+                            <div
+                                key={trainer.id}
+                                className="bg-surface rounded-2xl border border-white/5 overflow-hidden flex flex-col"
+                            >
+                                <div className="relative h-36 sm:h-40 bg-surfaceHighlight">
+                                    {trainer.imageUrl ? (
+                                        <img
+                                            src={trainer.imageUrl}
+                                            alt={trainer.name}
+                                            className="w-full h-full object-cover"
+                                        />
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-text-muted">
+                                            {trainer.name?.slice(0, 2)?.toUpperCase() || 'TR'}
                                         </div>
                                     )}
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent"></div>
+                                    <div className="absolute left-4 bottom-3 right-4">
+                                        <p className="text-white text-lg font-semibold truncate">{trainer.name}</p>
+                                        <p className="text-xs text-white/70">{trainer.experience || 'Certified trainer'}</p>
+                                    </div>
+                                    <span className="absolute top-3 right-3 text-[10px] uppercase tracking-wider text-primary font-bold bg-black/40 px-2 py-1 rounded-full">
+                                        Trainer
+                                    </span>
+                                </div>
 
-                                    {/* Book Button - Touch Optimized */}
-                                    <button
-                                        onClick={() => {
-                                            setSelectedTrainer(trainer);
-                                            setShowBookingModal(true);
-                                        }}
-                                        disabled={trainer.availableSlots === 0}
-                                        className={`w-full py-3.5 sm:py-3 rounded-xl font-bold text-sm sm:text-base transition-all active:scale-95 flex items-center justify-center gap-2 touch-manipulation ${
-                                            trainer.availableSlots === 0
-                                                ? 'bg-white/5 text-text-muted cursor-not-allowed opacity-50'
-                                                : 'bg-primary text-background hover:brightness-110 shadow-lg shadow-primary/25'
-                                        }`}
-                                    >
-                                        <span className="material-icons-round text-lg">event</span>
-                                        Book Session
-                                    </button>
+                                <div className="p-5 flex flex-col gap-4">
+
+                                {specialties.length > 0 && (
+                                    <div className="flex flex-wrap gap-2">
+                                        {specialties.map((item) => (
+                                            <span
+                                                key={item}
+                                                className="px-2 py-1 rounded-full text-[10px] bg-primary/10 text-primary font-semibold"
+                                            >
+                                                {item}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+
+                                <div className="grid grid-cols-2 gap-3 text-xs text-text-muted">
+                                    <div>
+                                        <p className="text-white font-semibold">{formatPrice(trainer.sessionPrice ?? 300, true)}</p>
+                                        <p>per hour</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-white font-semibold">{availableSlots}</p>
+                                        <p>slots left</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-white font-semibold">{trainer.rating || 0}</p>
+                                        <p>rating</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-white font-semibold">{durations.join(', ')} min</p>
+                                        <p>durations</p>
+                                    </div>
+                                </div>
+
+                                <button
+                                    className="mt-2 px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-orange-600"
+                                    onClick={() => openModal(trainer)}
+                                >
+                                    Book Session
+                                </button>
                                 </div>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
 
-            {/* Booking Modal - Mobile Optimized */}
             {showBookingModal && selectedTrainer && (
-                <div 
-                    className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center sm:justify-center"
-                    onClick={closeModal}
-                    style={{ 
-                        paddingBottom: 'env(safe-area-inset-bottom)',
-                        paddingTop: 'env(safe-area-inset-top)'
-                    }}
-                >
-                    <div 
-                        className="w-full sm:max-w-lg bg-surface rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 flex flex-col max-h-[90vh] sm:max-h-[85vh] overflow-hidden animate-slide-up sm:animate-none" 
-                        onClick={e => e.stopPropagation()}
-                    >
-                        {/* Modal Header - Sticky */}
-                        <div className="flex items-center justify-between p-5 sm:p-6 border-b border-white/10 bg-surface sticky top-0 z-10">
-                            <div className="flex-1 min-w-0 pr-4">
-                                <h2 className="text-xl sm:text-2xl font-bold text-white truncate">Book Session</h2>
-                                <p className="text-text-muted text-sm mt-0.5 truncate">with {selectedTrainer.name}</p>
+                <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+                    <div className="absolute inset-0 bg-black/70" onClick={closeModal}></div>
+                    <div className="relative bg-surface rounded-2xl border border-white/10 w-full max-w-lg p-6">
+                        <div className="flex items-start justify-between gap-3 mb-4">
+                            <div>
+                                <h2 className="text-lg font-bold text-white">Book {selectedTrainer.name}</h2>
+                                <p className="text-xs text-text-muted">Select your preferred time and payment method.</p>
                             </div>
-                            <button 
+                            <button
+                                className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/70 hover:text-white transition-all"
                                 onClick={closeModal}
-                                className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors flex-shrink-0 touch-manipulation"
-                                aria-label="Close modal"
+                                type="button"
+                                aria-label="Close"
                             >
-                                <span className="material-icons-round text-white text-2xl">close</span>
+                                <X size={18} />
                             </button>
                         </div>
 
-                        {/* Booking Form - Scrollable */}
-                        <div className="flex-1 overflow-y-auto overscroll-contain">
-                            <form onSubmit={handleBookSession} className="p-5 sm:p-6 space-y-5">
-                                {/* Trainer Info Card */}
-                                <div className="bg-white/5 rounded-xl p-4 border border-white/5 flex gap-4">
-                                    <div className="w-16 h-16 sm:w-14 sm:h-14 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                                        {selectedTrainer.imageUrl ? (
-                                            <img src={selectedTrainer.imageUrl} alt={selectedTrainer.name} className="w-full h-full object-cover" />
-                                        ) : (
-                                            <span className="material-icons-round text-text-muted text-2xl">person</span>
-                                        )}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="font-bold text-white text-base truncate">{selectedTrainer.name}</p>
-                                        <p className="text-text-muted text-sm truncate">{selectedTrainer.specialization}</p>
-                                        <p className="text-primary font-bold text-lg mt-1">{formatPrice(selectedTrainer.sessionPrice ?? 300, true)}/session</p>
-                                        <p className="text-primary font-bold text-lg mt-1">{formatPrice(selectedTrainer.sessionPrice ?? 300, true)}/session</p>
-                                    </div>
-                                </div>
-
-                                {/* Date Input - Touch Optimized */}
-                                <div>
-                                    <label className="block text-sm font-bold text-white mb-2">Session Date *</label>
+                        <form className="space-y-4" onSubmit={handleBookSession}>
+                            <div className="grid grid-cols-2 gap-3">
+                                <label className="space-y-1 text-xs text-text-muted">
+                                    Date
                                     <input
                                         type="date"
-                                        required
+                                        className="w-full rounded-xl border border-white/10 bg-surfaceHighlight px-3 py-2 text-sm text-white"
                                         value={bookingData.date}
-                                        onChange={(e) => setBookingData({ ...bookingData, date: e.target.value })}
-                                        min={new Date().toISOString().split('T')[0]}
-                                        className="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-text-muted focus:outline-none focus:border-primary text-base touch-manipulation"
+                                        onChange={(event) =>
+                                            setBookingData((prev) => ({ ...prev, date: event.target.value }))
+                                        }
+                                        required
                                     />
-                                </div>
-
-                                {/* Time Input - Touch Optimized */}
-                                <div>
-                                    <label className="block text-sm font-bold text-white mb-2">Session Time *</label>
+                                </label>
+                                <label className="space-y-1 text-xs text-text-muted">
+                                    Time
                                     <input
                                         type="time"
-                                        required
+                                        className="w-full rounded-xl border border-white/10 bg-surfaceHighlight px-3 py-2 text-sm text-white"
                                         value={bookingData.time}
-                                        onChange={(e) => setBookingData({ ...bookingData, time: e.target.value })}
-                                        className="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-text-muted focus:outline-none focus:border-primary text-base touch-manipulation"
+                                        onChange={(event) =>
+                                            setBookingData((prev) => ({ ...prev, time: event.target.value }))
+                                        }
+                                        required
                                     />
-                                </div>
-                                {bookingData.time && (
-                                    <p className="text-xs text-text-muted mt-2">Ends at {getEndTime(bookingData.time, bookingData.duration)}</p>
-                                )}
-                                {bookingData.time && (
-                                    <p className="text-xs text-text-muted mt-2">Ends at {getEndTime(bookingData.time, bookingData.duration)}</p>
-                                )}
+                                </label>
+                            </div>
 
-                                {/* Duration - Touch Optimized */}
-                                <div>
-                                    <label className="block text-sm font-bold text-white mb-2">Duration</label>
-                                    <div className="grid grid-cols-3 gap-2">
+                            <div className="grid grid-cols-2 gap-3">
+                                <label className="space-y-1 text-xs text-text-muted">
+                                    Duration
+                                    <select
+                                        className="w-full rounded-xl border border-white/10 bg-surfaceHighlight px-3 py-2 text-sm text-white"
+                                        value={bookingData.duration}
+                                        onChange={(event) =>
+                                            setBookingData((prev) => ({ ...prev, duration: Number(event.target.value) }))
+                                        }
+                                    >
                                         {getTrainerDurations(selectedTrainer).map((duration) => (
-                                            <button
-                                                key={duration}
-                                                type="button"
-                                                onClick={() => setBookingData({ ...bookingData, duration })}
-                                                className={`px-3 py-2 rounded-xl text-sm font-semibold border transition-all ${
-                                                    bookingData.duration === duration
-                                                        ? 'bg-primary/15 text-primary border-primary/40'
-                                                        : 'bg-white/5 text-text-muted border-white/10 hover:text-white'
-                                                }`}
-                                            >
-                                                {duration} min
-                                            </button>
+                                            <option key={duration} value={duration}>
+                                                {duration} minutes
+                                            </option>
                                         ))}
-                                    </div>
-                                </div>
+                                    </select>
+                                </label>
+                                <label className="space-y-1 text-xs text-text-muted">
+                                    Payment Method
+                                    <select
+                                        className="w-full rounded-xl border border-white/10 bg-surfaceHighlight px-3 py-2 text-sm text-white"
+                                        value={bookingData.paymentMethod}
+                                        onChange={(event) => {
+                                            const method = event.target.value;
+                                            setBookingData((prev) => ({ ...prev, paymentMethod: method }));
+                                            if (method === 'CASH') {
+                                                setSelectedMethodId('');
+                                            }
+                                        }}
+                                    >
+                                        <option value="CASH">Cash</option>
+                                        <option value="GCASH">GCash</option>
+                                        <option value="CARD">Card</option>
+                                    </select>
+                                </label>
+                            </div>
 
-                                {/* Payment Method - ShopCheckout style */}
-                                <div>
-                                    <div className="flex items-center justify-between mb-2">
-                                        <label className="block text-sm font-bold text-white">Payment Method *</label>
-                                        <button
-                                            type="button"
-                                            onClick={() => window.location.assign('/payment-methods')}
-                                            className="text-primary text-xs font-semibold underline"
-                                        >
-                                            Manage methods
-                                        </button>
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <label
-                                            className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
-                                                bookingData.paymentMethod === 'CASH'
-                                                    ? 'bg-primary/10 border-primary/40'
-                                                    : 'bg-white/5 border-white/10 hover:border-white/20'
-                                            }`}
-                                        >
-                                            <input
-                                                type="radio"
-                                                name="trainerPaymentMethod"
-                                                checked={bookingData.paymentMethod === 'CASH'}
-                                                onChange={() => {
-                                                    setSelectedMethodId('');
-                                                    setBookingData((prev) => ({ ...prev, paymentMethod: 'CASH' }));
-                                                }}
-                                                className="accent-orange-500"
-                                            />
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-white text-sm font-semibold truncate">Cash</p>
-                                                <p className="text-text-muted text-xs">Pay at the front desk after booking</p>
-                                            </div>
-                                        </label>
-                                        {bookingData.paymentMethod === 'CASH' && (
-                                            <div className="text-xs text-text-muted bg-white/5 border border-white/10 rounded-lg px-3 py-2">
-                                                This booking will be marked as unpaid. Please settle the amount at the front desk.
+                            {bookingData.paymentMethod !== 'CASH' && (
+                                <div className="space-y-2">
+                                    <p className="text-xs text-text-muted">Saved payment</p>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {paymentMethods
+                                            .filter((method) =>
+                                                bookingData.paymentMethod === 'GCASH'
+                                                    ? method.type === 'GCASH'
+                                                    : method.type === 'CARD'
+                                            )
+                                            .map((method) => (
+                                                <button
+                                                    type="button"
+                                                    key={method.id}
+                                                    onClick={() => setSelectedMethodId(method.id)}
+                                                    className={`text-left w-full rounded-xl border px-3 py-2 transition-all ${
+                                                        selectedMethodId === method.id
+                                                            ? 'border-primary/60 bg-primary/10'
+                                                            : 'border-white/10 bg-surfaceHighlight hover:border-white/20'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <div className="min-w-0">
+                                                            <p className="text-white text-sm font-semibold truncate">
+                                                                {method.label}
+                                                                {method.isDefault && (
+                                                                    <span className="ml-2 text-[10px] uppercase tracking-wider text-emerald-400 font-bold">
+                                                                        Default
+                                                                    </span>
+                                                                )}
+                                                            </p>
+                                                            <p className="text-xs text-text-muted">
+                                                                {method.type === 'GCASH'
+                                                                    ? `${method.name} - ${method.phone}`
+                                                                    : `${method.brand || 'Card'} - **** ${method.last4} - ${method.expMonth}/${method.expYear}`}
+                                                            </p>
+                                                        </div>
+                                                        <span className={`w-3 h-3 rounded-full border ${
+                                                            selectedMethodId === method.id
+                                                                ? 'bg-primary border-primary'
+                                                                : 'border-white/30'
+                                                        }`}></span>
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        {paymentMethods.filter((method) =>
+                                            bookingData.paymentMethod === 'GCASH'
+                                                ? method.type === 'GCASH'
+                                                : method.type === 'CARD'
+                                        ).length === 0 && (
+                                            <div className="text-xs text-text-muted bg-white/5 border border-white/10 rounded-xl p-3">
+                                                No saved {bookingData.paymentMethod === 'GCASH' ? 'GCash' : 'card'} methods.
                                             </div>
                                         )}
                                     </div>
-
-                                    {paymentMethods.length === 0 ? (
-                                        <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-text-muted">
-                                            No saved payment methods. Please add a GCash or card first.
-                                            <div className="mt-3">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => window.location.assign('/payment-methods')}
-                                                    className="px-3 py-2 rounded-lg bg-primary text-background text-xs font-bold"
-                                                >
-                                                    Add Payment Method
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-2 mt-2">
-                                            {paymentMethods.map((method) => (
-                                                <label
-                                                    key={method.id}
-                                                    className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
-                                                        selectedMethodId === method.id
-                                                            ? 'bg-primary/10 border-primary/40'
-                                                            : 'bg-white/5 border-white/10 hover:border-white/20'
-                                                    }`}
-                                                >
-                                                    <input
-                                                        type="radio"
-                                                        name="trainerPaymentMethod"
-                                                        checked={selectedMethodId === method.id}
-                                                        onChange={() => {
-                                                            setSelectedMethodId(method.id);
-                                                            setBookingData((prev) => ({
-                                                                ...prev,
-                                                                paymentMethod: method.type === 'GCASH' ? 'GCASH' : 'CARD'
-                                                            }));
-                                                        }}
-                                                        className="accent-orange-500"
-                                                    />
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-white text-sm font-semibold truncate">
-                                                            {method.label}
-                                                            {method.isDefault && (
-                                                                <span className="ml-2 text-[10px] uppercase tracking-wider text-emerald-400 font-bold">Default</span>
-                                                            )}
-                                                        </p>
-                                                        <p className="text-text-muted text-xs">
-                                                            {method.type === 'GCASH'
-                                                                ? `${method.name} • ${method.phone}`
-                                                                : `${method.brand || 'Card'} • **** ${method.last4} • ${method.expMonth}/${method.expYear}`}
-                                                        </p>
-                                                    </div>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    )}
-                                    <div className="grid grid-cols-3 gap-2">
-                                        {getTrainerDurations(selectedTrainer).map((duration) => (
-                                            <button
-                                                key={duration}
-                                                type="button"
-                                                onClick={() => setBookingData({ ...bookingData, duration })}
-                                                className={`px-3 py-2 rounded-xl text-sm font-semibold border transition-all ${
-                                                    bookingData.duration === duration
-                                                        ? 'bg-primary/15 text-primary border-primary/40'
-                                                        : 'bg-white/5 text-text-muted border-white/10 hover:text-white'
-                                                }`}
-                                            >
-                                                {duration} min
-                                            </button>
-                                        ))}
-                                    </div>
                                 </div>
+                            )}
 
-                                {/* Notes - Touch Optimized */}
-                                <div>
-                                    <label className="block text-sm font-bold text-white mb-2">Payment Method *</label>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        {['CASH', 'CARD', 'GCASH'].map((method) => (
-                                            <button
-                                                key={method}
-                                                type="button"
-                                                onClick={() => setBookingData({ ...bookingData, paymentMethod: method })}
-                                                className={`px-4 py-3 rounded-xl text-sm font-semibold border transition-all ${
-                                                    bookingData.paymentMethod === method
-                                                        ? 'bg-primary/15 text-primary border-primary/40'
-                                                        : 'bg-white/5 text-text-muted border-white/10 hover:text-white'
-                                                }`}
-                                            >
-                                                {method}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
+                            <label className="space-y-1 text-xs text-text-muted block">
+                                Notes (optional)
+                                <textarea
+                                    className="w-full rounded-xl border border-white/10 bg-surfaceHighlight px-3 py-2 text-sm text-white min-h-[90px]"
+                                    value={bookingData.notes}
+                                    onChange={(event) =>
+                                        setBookingData((prev) => ({ ...prev, notes: event.target.value }))
+                                    }
+                                />
+                            </label>
 
-                                <div>
-                                    <label className="block text-sm font-bold text-white mb-2">Notes (optional)</label>
-                                    <textarea
-                                        value={bookingData.notes}
-                                        onChange={(e) => setBookingData({ ...bookingData, notes: e.target.value })}
-                                        placeholder="Any specific goals or preferences?"
-                                        rows="4"
-                                        className="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-text-muted focus:outline-none focus:border-primary text-base resize-none touch-manipulation"
-                                    />
-                                </div>
+                            <div className="bg-surfaceHighlight rounded-xl border border-white/10 p-3 text-xs text-text-muted space-y-1">
+                                <p>
+                                    End time: <span className="text-white">{getEndTime(bookingData.time, activeDuration) || '--'}</span>
+                                </p>
+                                <p>
+                                    Total cost: <span className="text-white">{formatPrice(totalAmount, true)}</span>
+                                </p>
+                            </div>
 
-                                {/* Total Price - Highlighted */}
-                                <div className="bg-primary/10 border border-primary/30 rounded-xl p-4">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-text-muted text-sm">Total for {bookingData.duration} min</span>
-                                        <span className="text-primary font-bold text-2xl">
-                                            {formatPrice(((selectedTrainer.sessionPrice ?? 300) / 60) * bookingData.duration, true)}
-                                            {formatPrice(((selectedTrainer.sessionPrice ?? 300) / 60) * bookingData.duration, true)}
-                                        </span>
-                                    </div>
-                                </div>
-                            </form>
-                        </div>
-
-                        {/* Modal Footer - Sticky */}
-                        <div className="border-t border-white/10 p-5 sm:p-6 bg-surface sticky bottom-0 space-y-3">
                             <button
-                                onClick={handleBookSession}
-                                disabled={bookingLoading || (!selectedMethodId && bookingData.paymentMethod !== 'CASH')}
-                                className="w-full py-4 bg-primary text-background rounded-xl font-bold text-base hover:brightness-110 active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
+                                type="submit"
+                                disabled={bookingLoading}
+                                className="w-full px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-orange-600 disabled:opacity-70"
                             >
-                                <span className="material-icons-round text-xl">check_circle</span>
                                 {bookingLoading ? 'Booking...' : 'Confirm Booking'}
                             </button>
-                            <button
-                                onClick={closeModal}
-                                className="w-full py-3 bg-white/5 text-white rounded-xl font-medium text-sm hover:bg-white/10 transition-colors touch-manipulation"
-                            >
-                                Cancel
-                            </button>
-                        </div>
+                        </form>
                     </div>
                 </div>
             )}
-
-            {/* Add animation styles */}
-            <style>{`
-                @keyframes slide-up {
-                    from {
-                        transform: translateY(100%);
-                    }
-                    to {
-                        transform: translateY(0);
-                    }
-                }
-                .animate-slide-up {
-                    animation: slide-up 0.3s ease-out;
-                }
-            `}</style>
         </div>
     );
 }

@@ -178,37 +178,31 @@ app.get('/api/health-stats', async (req, res) => {
     }
 });
 
-app.get('/api/health-stats', async (req, res) => {
-    try {
-        const expenseSum = await prisma.expense.aggregate({ _sum: { amount: true } });
-        const expenseCount = await prisma.expense.count();
-        res.json({
-            message: "Direct DB Check",
-            totalAmount: expenseSum._sum.amount,
-            count: expenseCount,
-            dbUrl: process.env.DATABASE_URL
-        });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
 app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
     try {
         // If Member, return only their own stats (or simplified generic stats)
-        if (req.user.role === 'MEMBER') {
-            // Member specific dashboard logic here
-            const member = await prisma.member.findUnique({
-                where: { id: req.user.id },
-                include: { plan: true }
-            });
-            return res.json({
-                activeMembers: 0, // Not relevant for member
-                revenueToday: 0, // Not relevant
-                expiringSoon: member.expiryDate, // Show their expiry
-                memberData: member
-            });
-        }
+          if (req.user.role === 'MEMBER') {
+              // Member specific dashboard logic here
+              const member = await prisma.member.findUnique({
+                  where: { id: req.user.id },
+                  include: {
+                      plan: true,
+                      _count: { select: { accessLogs: true } }
+                  }
+              });
+              const lastCheckIn = await prisma.accessLog.findFirst({
+                  where: { memberId: req.user.id, status: 'ALLOWED' },
+                  orderBy: { checkIn: 'desc' }
+              });
+              return res.json({
+                  activeMembers: 0, // Not relevant for member
+                  revenueToday: 0, // Not relevant
+                  expiringSoon: member.expiryDate, // Show their expiry
+                  memberData: member,
+                  checkInsCount: member?._count?.accessLogs || 0,
+                  lastCheckIn
+              });
+          }
         if (req.user.role === 'TRAINER') {
             const trainerId = req.user.trainerId;
             if (!trainerId) return res.status(400).json({ error: "Trainer account is not linked" });
@@ -246,20 +240,6 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
         const totalRev = monthlyRevenue._sum.amount || 0;
         const totalExp = monthlyExpenses._sum.amount || 0;
 
-        // Calculate Net Profit (Month to Date)
-        const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-        const monthlyRevenue = await prisma.payment.aggregate({
-            _sum: { amount: true },
-            where: { date: { gte: firstDayOfMonth } }
-        });
-        const monthlyExpenses = await prisma.expense.aggregate({
-            _sum: { amount: true },
-            where: { date: { gte: firstDayOfMonth } }
-        });
-
-        const totalRev = monthlyRevenue._sum.amount || 0;
-        const totalExp = monthlyExpenses._sum.amount || 0;
-
         const expiring = await prisma.member.count({
             where: {
                 expiryDate: {
@@ -272,10 +252,6 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
         res.json({
             activeMembers: totalMembers,
             revenueToday: todayRevenue._sum.amount || 0,
-            monthlyRevenue: monthlyRevenue._sum.amount || 0,
-            expiringSoon: expiring,
-            netProfit: totalRev - totalExp,
-            totalExpenses: totalExp
             monthlyRevenue: monthlyRevenue._sum.amount || 0,
             expiringSoon: expiring,
             netProfit: totalRev - totalExp,
@@ -443,89 +419,15 @@ app.post('/api/members/book', authenticateToken, async (req, res) => {
     }
 });
 
-  // Cancel Booking
-  app.post('/api/members/cancel-booking', authenticateToken, async (req, res) => {
+// Cancel Booking
+app.post('/api/members/cancel-booking', authenticateToken, async (req, res) => {
     const { classId } = req.body;
     const memberId = req.user.id;
 
     try {
         const booking = await prisma.booking.findFirst({
             where: { memberId, classId, status: 'CONFIRMED' }
-  });
-
-  // Book a Trainer Session (Member)
-  app.post('/api/members/book-training', authenticateToken, authorize(['MEMBER']), async (req, res) => {
-      const { trainerId, date, time, duration, notes, method } = req.body;
-      const memberId = req.user.id;
-
-      if (!trainerId || !date || !time || !duration || !method) {
-          return res.status(400).json({ error: "Missing required booking details" });
-      }
-      const allowedMethods = ['CASH', 'CARD', 'GCASH'];
-      if (!allowedMethods.includes(method)) {
-          return res.status(400).json({ error: "Invalid payment method" });
-      }
-
-      try {
-          const trainer = await prisma.trainer.findUnique({ where: { id: Number(trainerId) } });
-          if (!trainer) return res.status(404).json({ error: "Trainer not found" });
-
-          if (trainer.availableSlots !== null && trainer.availableSlots <= 0) {
-              return res.status(400).json({ error: "Trainer is fully booked" });
-          }
-
-          const startDateTime = new Date(`${date}T${time}`);
-          if (isNaN(startDateTime.getTime())) {
-              return res.status(400).json({ error: "Invalid date or time" });
-          }
-
-          const allowedDurations = (trainer.sessionDurations || '60')
-              .split(',')
-              .map((value) => Number(value.trim()))
-              .filter((value) => Number.isFinite(value) && value > 0);
-          if (!allowedDurations.includes(Number(duration))) {
-              return res.status(400).json({ error: "Selected duration not available" });
-          }
-
-          const sessionRate = trainer.sessionPrice ?? 300;
-          const totalAmount = (Number(duration) / 60) * Number(sessionRate);
-
-          await prisma.$transaction(async (tx) => {
-              await tx.trainingSession.create({
-                  data: {
-                      memberId,
-                      trainerId: Number(trainerId),
-                      date: startDateTime,
-                      duration: Number(duration),
-                      price: totalAmount,
-                      status: 'SCHEDULED',
-                      notes: notes || null
-                  }
-              });
-
-              await tx.payment.create({
-                  data: {
-                      amount: totalAmount,
-                      type: 'TRAINING',
-                      method,
-                      status: 'COMPLETED',
-                      memberId
-                  }
-              });
-
-              if (trainer.availableSlots !== null) {
-                  await tx.trainer.update({
-                      where: { id: Number(trainerId) },
-                      data: { availableSlots: { decrement: 1 } }
-                  });
-              }
-          });
-
-          res.json({ message: "Training session booked and paid" });
-      } catch (e) {
-          res.status(500).json({ error: "Failed to book training session", detail: e?.message });
-      }
-  });
+        });
         if (!booking) return res.status(404).json({ error: "Booking not found" });
 
         await prisma.$transaction([
@@ -891,8 +793,12 @@ app.get('/api/members/:id', authenticateToken, async (req, res) => {
     try {
         const member = await prisma.member.findUnique({
             where: { id: Number(id) },
-            include: { plan: true, payments: { orderBy: { date: 'desc' } }, accessLogs: { orderBy: { checkIn: 'desc' }, take: 20 }, membershipPeriods: { include: { plan: true }, orderBy: { startDate: 'desc' } } }
-            include: { plan: true, payments: { orderBy: { date: 'desc' } }, accessLogs: { orderBy: { checkIn: 'desc' }, take: 20 }, membershipPeriods: { include: { plan: true }, orderBy: { startDate: 'desc' } } }
+            include: {
+                plan: true,
+                payments: { orderBy: { date: 'desc' } },
+                accessLogs: { orderBy: { checkIn: 'desc' }, take: 20 },
+                membershipPeriods: { include: { plan: true }, orderBy: { startDate: 'desc' } }
+            }
         });
         if (!member) return res.status(404).json({ error: "Member not found" });
         res.json(member);
@@ -1003,7 +909,6 @@ app.delete('/api/members/:id/payment-methods/:methodId', authenticateToken, asyn
 // Only Staff/Admin can create members
 app.post('/api/members', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
     const { firstName, lastName, email, phone, planId, imageUrl, birthDate, sex, paymentMethod, cashTendered, changeDue, gcashReference, gcashDate, gcashTime } = req.body;
-    const { firstName, lastName, email, phone, planId, imageUrl, birthDate, sex, paymentMethod } = req.body;
     try {
         // Calculate expiry based on plan
         const plan = await prisma.plan.findUnique({ where: { id: Number(planId) } });
@@ -1014,20 +919,6 @@ app.post('/api/members', authenticateToken, authorize(['ADMIN', 'STAFF']), async
         const member = await prisma.member.create({
             data: {
                 firstName, lastName, email, phone, planId: Number(planId),
-                startDate, expiryDate, imageUrl,
-                birthDate: birthDate ? new Date(birthDate) : null,
-                sex: sex || null,
-                ...(planId ? {
-                    membershipPeriods: {
-                        create: {
-                            planId: Number(planId),
-                            startDate,
-                            endDate: expiryDate,
-                            amount: plan ? plan.price : null,
-                            method: paymentMethod || null
-                        }
-                    }
-                } : {})
                 startDate, expiryDate, imageUrl,
                 birthDate: birthDate ? new Date(birthDate) : null,
                 sex: sex || null,
@@ -1106,13 +997,10 @@ app.post('/api/members', authenticateToken, authorize(['ADMIN', 'STAFF']), async
 app.post('/api/members/:id/renew', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
     const { id } = req.params;
     const { duration, amount, method, planId, cashTendered, changeDue, gcashReference, gcashDate, gcashTime } = req.body; // duration in days
-    const { duration, amount, method, planId } = req.body; // duration in days
     try {
         const member = await prisma.member.findUnique({ where: { id: Number(id) } });
         if (!member) return res.status(404).json({ error: "Member not found" });
 
-        const now = new Date();
-        const currentExpiry = member.expiryDate && new Date(member.expiryDate) > now ? new Date(member.expiryDate) : now;
         const now = new Date();
         const currentExpiry = member.expiryDate && new Date(member.expiryDate) > now ? new Date(member.expiryDate) : now;
         const newExpiry = new Date(currentExpiry);
@@ -1133,28 +1021,10 @@ app.post('/api/members/:id/renew', authenticateToken, authorize(['ADMIN', 'STAFF
             });
         }
 
-        const existingPeriods = await prisma.membershipPeriod.count({
-            where: { memberId: Number(id) }
-        });
-
-        if (existingPeriods === 0 && member.planId && member.startDate && member.expiryDate) {
-            await prisma.membershipPeriod.create({
-                data: {
-                    memberId: Number(id),
-                    planId: member.planId,
-                    startDate: member.startDate,
-                    endDate: member.expiryDate
-                }
-            });
-        }
-
         const updatedMember = await prisma.member.update({
             where: { id: Number(id) },
             data: {
                 expiryDate: newExpiry,
-                status: 'ACTIVE',
-                ...(planId ? { planId: Number(planId) } : {})
-            }
                 status: 'ACTIVE',
                 ...(planId ? { planId: Number(planId) } : {})
             }
@@ -1295,22 +1165,12 @@ app.post('/api/members/:id/status', authenticateToken, authorize(['ADMIN', 'STAF
 app.put('/api/members/:id', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBER']), async (req, res) => {
     const { id } = req.params;
     const { firstName, lastName, email, phone, imageUrl, birthDate, sex } = req.body;
-    const { firstName, lastName, email, phone, imageUrl, birthDate, sex } = req.body;
     try {
         if (req.user.role === 'MEMBER' && req.user.id !== Number(id)) {
             return res.sendStatus(403);
         }
         const member = await prisma.member.update({
             where: { id: Number(id) },
-            data: {
-                firstName,
-                lastName,
-                email,
-                phone,
-                imageUrl,
-                birthDate: birthDate ? new Date(birthDate) : null,
-                sex: sex || null
-            }
             data: {
                 firstName,
                 lastName,
@@ -1478,72 +1338,11 @@ app.get('/api/access/traffic', authenticateToken, authorize(['OWNER', 'ADMIN', '
     }
 });
 
-// Aggregate access traffic for members without exposing member details
-app.get('/api/access/traffic', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF', 'MEMBER']), async (req, res) => {
-    try {
-        const now = new Date();
-        const startParam = req.query.start ? new Date(req.query.start) : null;
-        const endParam = req.query.end ? new Date(req.query.end) : null;
-
-        const startDate = startParam && !isNaN(startParam.getTime())
-            ? startParam
-            : new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
-
-        const endDate = endParam && !isNaN(endParam.getTime())
-            ? endParam
-            : now;
-
-        const logs = await prisma.accessLog.findMany({
-            where: {
-                checkIn: {
-                    gte: startDate,
-                    lte: endDate
-                }
-            },
-            select: {
-                checkIn: true,
-                status: true
-            },
-            orderBy: { checkIn: 'desc' },
-            take: 1000
-        });
-
-        res.json({
-            range: {
-                start: startDate,
-                end: endDate
-            },
-            logs
-        });
-    } catch (e) {
-        res.status(500).json({ error: "Traffic fetch failed" });
-    }
-});
-
 app.get('/api/access/logs/:id', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
     const { id } = req.params;
     try {
         const log = await prisma.accessLog.findUnique({
             where: { id: parseInt(id) },
-            include: {
-                member: {
-                    select: {
-                        id: true,
-                        firstName: true,
-                        lastName: true,
-                        email: true,
-                        phone: true,
-                        status: true,
-                        startDate: true,
-                        createdAt: true,
-                        expiryDate: true,
-                        birthDate: true,
-                        sex: true,
-                        imageUrl: true,
-                        plan: { select: { name: true } }
-                    }
-                }
-            }
             include: {
                 member: {
                     select: {
@@ -1993,9 +1792,6 @@ app.post('/api/products', authenticateToken, authorize(['ADMIN', 'STAFF']), asyn
                 imageUrl,
                 supplyCost: parseFloat(req.body.supplyCost) || 0,
                 supplierId: req.body.supplierId ? Number(req.body.supplierId) : null
-                imageUrl,
-                supplyCost: parseFloat(req.body.supplyCost) || 0,
-                supplierId: req.body.supplierId ? Number(req.body.supplierId) : null
             }
         });
         res.json(product);
@@ -2015,9 +1811,6 @@ app.put('/api/products/:id', authenticateToken, authorize(['ADMIN', 'STAFF']), a
                 price: parseFloat(price) || 0,
                 stock: Number(stock) || 0,
                 minStock: Number(minStock) || 0,
-                imageUrl,
-                supplyCost: parseFloat(req.body.supplyCost) || 0,
-                supplierId: req.body.supplierId ? Number(req.body.supplierId) : null
                 imageUrl,
                 supplyCost: parseFloat(req.body.supplyCost) || 0,
                 supplierId: req.body.supplierId ? Number(req.body.supplierId) : null

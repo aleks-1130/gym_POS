@@ -114,9 +114,9 @@ export default function MemberShop() {
     }
 
     return (
-        <div className="pb-20 px-4 max-w-6xl mx-auto">
+        <div className="pb-24 px-4 sm:px-6 max-w-6xl mx-auto">
             {/* Header */}
-            <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 -mx-4 px-4 py-4 mb-4">
+            <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 -mx-4 sm:-mx-6 px-4 sm:px-6 py-4 mb-4">
                 <div className="flex items-center justify-between">
                     <div className="flex-1">
                         <h1 className="text-xl font-bold text-white">Products</h1>

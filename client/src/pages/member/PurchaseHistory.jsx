@@ -72,7 +72,7 @@ export default function PurchaseHistory() {
     const totalSpent = allTransactions.reduce((sum, item) => sum + (item.amount || item.price || 0), 0);
 
     return (
-        <div className="space-y-4 sm:space-y-6">
+        <div className="pb-24 px-4 sm:px-6 max-w-6xl mx-auto space-y-4 sm:space-y-6">
             {/* Header */}
             <div className="space-y-3">
                 <div>

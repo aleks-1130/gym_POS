@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Home, Calendar, ShoppingBag, User, Users, Dumbbell, CheckCircle, Menu, X, Gift, History, Megaphone, Activity, CreditCard } from 'lucide-react';
-import { Home, Calendar, ShoppingBag, User, Users, Dumbbell, CheckCircle, Menu, X, Gift, History, Megaphone, Activity } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
 
@@ -15,12 +14,10 @@ export default function BottomNav() {
     // Primary navigation items (bottom bar)
     const memberPrimaryNav = [
         { to: "/", icon: Home, label: "Home" },
-        { to: "/attendance", icon: CheckCircle, label: "Attendance" },
-        { to: "/trainer-booking", icon: Dumbbell, label: "Trainers" },
-        { to: "/gym-traffic", icon: Activity, label: "Traffic" },
         { to: "/schedule", icon: Calendar, label: "Schedule" },
+        { to: "/trainer-booking", icon: Dumbbell, label: "Trainers" },
         { to: "/shop", icon: ShoppingBag, label: "Shop" },
-        { to: "/profile", icon: User, label: "Profile" },
+        { to: "/profile", icon: User, label: "Profile" }
     ];
     const trainerPrimaryNav = [
         { to: "/", icon: Home, label: "Home" },
@@ -32,10 +29,11 @@ export default function BottomNav() {
     // Secondary navigation items (hamburger menu)
     const memberSecondaryNav = [
         { to: "/announcements", icon: Megaphone, label: "Announcements" },
+        { to: "/attendance", icon: CheckCircle, label: "Attendance" },
         { to: "/gym-traffic", icon: Activity, label: "Traffic" },
         { to: "/payment-methods", icon: CreditCard, label: "Payment Methods" },
         { to: "/loyalty", icon: Gift, label: "Rewards & Loyalty" },
-        { to: "/purchase-history", icon: History, label: "Purchase History" },
+        { to: "/purchase-history", icon: History, label: "Purchase History" }
     ];
 
     const staffPrimaryNav = [

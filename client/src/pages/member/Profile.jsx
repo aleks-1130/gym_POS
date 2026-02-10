@@ -23,7 +23,6 @@ export default function Profile() {
     });
     const isMember = user?.role === ROLES.MEMBER;
     const qrValue = user?.id ? `MEMBER:${user.id}` : '';
-    const qrValue = user?.id ? `MEMBER:${user.id}` : '';
 
     useEffect(() => {
         const fetchMember = async () => {
@@ -87,7 +86,7 @@ export default function Profile() {
     };
 
     return (
-        <div className="space-y-4 pb-20 px-4 max-w-2xl mx-auto">
+        <div className="pb-24 px-4 sm:px-6 max-w-2xl mx-auto space-y-4 sm:space-y-6">
             {/* Header with Sign Out */}
             <div className="flex justify-between items-start gap-3 pt-4">
                 <div>
@@ -135,13 +134,6 @@ export default function Profile() {
                         </div>
                         {showQR && (
                             <div className="bg-white p-3 rounded-xl shadow-lg">
-                                {qrValue ? (
-                                    <QRCode value={qrValue} size={100} />
-                                ) : (
-                                    <div className="w-[100px] h-[100px] bg-gray-100 text-gray-500 text-xs flex items-center justify-center rounded-lg">
-                                        QR Unavailable
-                                    </div>
-                                )}
                                 {qrValue ? (
                                     <QRCode value={qrValue} size={100} />
                                 ) : (
@@ -241,8 +233,6 @@ export default function Profile() {
                     </button>
                 </div>
             </div>
-            )}
-
             {/* Support & Legal */}
             <div>
                 <h3 className="text-sm font-bold text-white mb-3 px-1">Support & Legal</h3>
