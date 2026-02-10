@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Calendar, Users, Clock, X, User, CheckCircle2, AlertCircle, Plus, Pencil, Trash2 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { ROLES } from '../../constants/roles';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 export default function Classes() {
+    const { user } = useAuth();
+    const isAdmin = user?.role === ROLES.ADMIN;
     const [classes, setClasses] = useState([]);
     const [loading, setLoading] = useState(true);
     const [activeDay, setActiveDay] = useState(DAYS[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1]);
@@ -161,13 +165,15 @@ export default function Classes() {
                     <div className="px-4 py-2 rounded-xl bg-surfaceHighlight border border-white/10 text-sm text-text-secondary">
                         <span className="text-white font-semibold">{totalCapacity}</span> Capacity
                     </div>
-                    <button
-                        onClick={openCreateForm}
-                        className="px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium hover:bg-orange-600 transition-colors shadow-lg shadow-primary/20 flex items-center gap-2"
-                    >
-                        <Plus size={16} />
-                        Add Class
-                    </button>
+                    {isAdmin && (
+                        <button
+                            onClick={openCreateForm}
+                            className="px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium hover:bg-orange-600 transition-colors shadow-lg shadow-primary/20 flex items-center gap-2"
+                        >
+                            <Plus size={16} />
+                            Add Class
+                        </button>
+                    )}
                 </div>
             </header>
 
@@ -178,8 +184,8 @@ export default function Classes() {
                         key={day}
                         onClick={() => setActiveDay(day)}
                         className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${activeDay === day
-                                ? 'bg-primary text-white shadow-lg shadow-primary/20'
-                                : 'bg-surface text-text-muted border border-white/5 hover:text-white hover:border-white/10'
+                            ? 'bg-primary text-white shadow-lg shadow-primary/20'
+                            : 'bg-surface text-text-muted border border-white/5 hover:text-white hover:border-white/10'
                             }`}
                     >
                         {day}
@@ -197,20 +203,24 @@ export default function Classes() {
                                 <div className="absolute top-0 right-0 w-28 h-28 bg-primary/5 rounded-full -mr-16 -mt-16 blur-3xl"></div>
 
                                 <div className="absolute top-4 right-4 flex gap-2 z-10">
-                                    <button
-                                        onClick={() => openEditForm(cls)}
-                                        className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-text-muted hover:text-white transition-all"
-                                        title="Edit class"
-                                    >
-                                        <Pencil size={16} />
-                                    </button>
-                                    <button
-                                        onClick={() => handleDeleteClass(cls)}
-                                        className="w-9 h-9 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400 transition-all"
-                                        title="Delete class"
-                                    >
-                                        <Trash2 size={16} />
-                                    </button>
+                                    {isAdmin && (
+                                        <>
+                                            <button
+                                                onClick={() => openEditForm(cls)}
+                                                className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-text-muted hover:text-white transition-all"
+                                                title="Edit class"
+                                            >
+                                                <Pencil size={16} />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDeleteClass(cls)}
+                                                className="w-9 h-9 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400 transition-all"
+                                                title="Delete class"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </>
+                                    )}
                                 </div>
 
                                 <div className="flex items-center justify-between mb-4">
@@ -278,90 +288,90 @@ export default function Classes() {
                     <div className="absolute inset-0 bg-background/80 backdrop-blur-md" onClick={() => setSelectedClass(null)}></div>
                     <div className="relative min-h-full w-full flex items-center justify-center p-4 sm:p-6">
                         <div className="bg-surface w-full max-w-2xl max-h-[88vh] rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col">
-                        {/* Header */}
-                        <div className="sticky top-0 z-10 p-6 border-b border-white/10 bg-surface/95 backdrop-blur flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center border border-primary/20">
-                                    <Users className="text-primary" size={22} />
+                            {/* Header */}
+                            <div className="sticky top-0 z-10 p-6 border-b border-white/10 bg-surface/95 backdrop-blur flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center border border-primary/20">
+                                        <Users className="text-primary" size={22} />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-lg font-semibold text-white leading-none">{selectedClass.name}</h3>
+                                        <p className="text-text-muted text-sm mt-1">Participants ? {activeDay}</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <h3 className="text-lg font-semibold text-white leading-none">{selectedClass.name}</h3>
-                                    <p className="text-text-muted text-sm mt-1">Participants ? {activeDay}</p>
-                                </div>
+                                <button
+                                    onClick={() => setSelectedClass(null)}
+                                    className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center text-white transition-all"
+                                >
+                                    <X size={18} />
+                                </button>
                             </div>
-                            <button
-                                onClick={() => setSelectedClass(null)}
-                                className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center text-white transition-all"
-                            >
-                                <X size={18} />
-                            </button>
-                        </div>
 
-                        {/* List */}
-                        <div className="flex-1 overflow-y-auto no-scrollbar p-6">
-                            {participantsLoading ? (
-                                <div className="flex flex-col items-center justify-center py-16">
-                                    <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
-                                    <p className="text-text-muted text-xs font-semibold">Syncing attendance...</p>
-                                </div>
-                            ) : participants.length > 0 ? (
-                                <div className="space-y-4">
-                                    {participants.map((booking) => (
-                                        <div key={booking.id} className="flex items-center justify-between p-4 bg-white/[0.03] border border-white/5 rounded-2xl group hover:border-primary/30 transition-all hover:bg-primary/5">
-                                            <div className="flex items-center gap-5">
-                                                <div className="w-10 h-10 rounded-xl bg-surfaceHighlight flex items-center justify-center border border-white/10 group-hover:border-primary/20">
-                                                    {booking.member?.imageUrl ? (
-                                                        <img src={booking.member.imageUrl} className="w-full h-full object-cover rounded-xl" alt="" />
+                            {/* List */}
+                            <div className="flex-1 overflow-y-auto no-scrollbar p-6">
+                                {participantsLoading ? (
+                                    <div className="flex flex-col items-center justify-center py-16">
+                                        <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
+                                        <p className="text-text-muted text-xs font-semibold">Syncing attendance...</p>
+                                    </div>
+                                ) : participants.length > 0 ? (
+                                    <div className="space-y-4">
+                                        {participants.map((booking) => (
+                                            <div key={booking.id} className="flex items-center justify-between p-4 bg-white/[0.03] border border-white/5 rounded-2xl group hover:border-primary/30 transition-all hover:bg-primary/5">
+                                                <div className="flex items-center gap-5">
+                                                    <div className="w-10 h-10 rounded-xl bg-surfaceHighlight flex items-center justify-center border border-white/10 group-hover:border-primary/20">
+                                                        {booking.member?.imageUrl ? (
+                                                            <img src={booking.member.imageUrl} className="w-full h-full object-cover rounded-xl" alt="" />
+                                                        ) : (
+                                                            <User size={20} className="text-text-muted" />
+                                                        )}
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-white font-semibold text-sm">{booking.member?.firstName} {booking.member?.lastName}</p>
+                                                        <p className="text-xs text-text-muted">Member ID: #{booking.memberId}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    {booking.status === 'ATTENDED' ? (
+                                                        <span className="flex items-center gap-1.5 text-emerald-400 text-xs font-semibold px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+                                                            <CheckCircle2 size={12} />
+                                                            Attended
+                                                        </span>
                                                     ) : (
-                                                        <User size={20} className="text-text-muted" />
+                                                        <span className="flex items-center gap-1.5 text-primary text-xs font-semibold px-3 py-1 bg-primary/10 border border-primary/20 rounded-lg">
+                                                            <Clock size={12} />
+                                                            Booked
+                                                        </span>
                                                     )}
                                                 </div>
-                                                <div>
-                                                    <p className="text-white font-semibold text-sm">{booking.member?.firstName} {booking.member?.lastName}</p>
-                                                    <p className="text-xs text-text-muted">Member ID: #{booking.memberId}</p>
-                                                </div>
                                             </div>
-                                            <div className="flex items-center gap-3">
-                                                {booking.status === 'ATTENDED' ? (
-                                                    <span className="flex items-center gap-1.5 text-emerald-400 text-xs font-semibold px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
-                                                        <CheckCircle2 size={12} />
-                                                        Attended
-                                                    </span>
-                                                ) : (
-                                                    <span className="flex items-center gap-1.5 text-primary text-xs font-semibold px-3 py-1 bg-primary/10 border border-primary/20 rounded-lg">
-                                                        <Clock size={12} />
-                                                        Booked
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <div className="text-center py-16 bg-white/[0.01] rounded-2xl border border-white/5 border-dashed">
-                                    <AlertCircle size={40} className="text-text-muted/20 mx-auto mb-4" />
-                                    <h4 className="text-lg font-bold text-white/30">No Participants Yet</h4>
-                                    <p className="text-text-muted/20 text-xs font-semibold mt-2">Registration for this session is currently open</p>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Footer Statistics */}
-                        <div className="sticky bottom-0 p-6 border-t border-white/10 bg-surface/95 backdrop-blur flex items-center justify-between">
-                            <div className="flex gap-6">
-                                <div>
-                                    <p className="text-xs text-text-muted mb-1">Booked</p>
-                                    <p className="text-white font-semibold text-lg">{participants.length}</p>
-                                </div>
-                                <div>
-                                    <p className="text-xs text-text-muted mb-1">Capacity Left</p>
-                                    <p className="text-white font-semibold text-lg">{selectedClass.capacity - participants.length}</p>
-                                </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-16 bg-white/[0.01] rounded-2xl border border-white/5 border-dashed">
+                                        <AlertCircle size={40} className="text-text-muted/20 mx-auto mb-4" />
+                                        <h4 className="text-lg font-bold text-white/30">No Participants Yet</h4>
+                                        <p className="text-text-muted/20 text-xs font-semibold mt-2">Registration for this session is currently open</p>
+                                    </div>
+                                )}
                             </div>
-                            <button className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-xl text-sm font-medium transition-all">
-                                Export List
-                            </button>
-                        </div>
+
+                            {/* Footer Statistics */}
+                            <div className="sticky bottom-0 p-6 border-t border-white/10 bg-surface/95 backdrop-blur flex items-center justify-between">
+                                <div className="flex gap-6">
+                                    <div>
+                                        <p className="text-xs text-text-muted mb-1">Booked</p>
+                                        <p className="text-white font-semibold text-lg">{participants.length}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-text-muted mb-1">Capacity Left</p>
+                                        <p className="text-white font-semibold text-lg">{selectedClass.capacity - participants.length}</p>
+                                    </div>
+                                </div>
+                                <button className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-xl text-sm font-medium transition-all">
+                                    Export List
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -375,112 +385,112 @@ export default function Classes() {
                             onSubmit={handleSaveClass}
                             className="bg-surface w-full max-w-5xl h-[calc(100vh-3rem)] rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col"
                         >
-                        <div className="sticky top-0 z-10 p-6 border-b border-white/10 bg-surface/95 backdrop-blur flex items-center justify-between">
-                            <div>
-                                <h2 className="text-xl font-semibold text-white">
-                                    {formMode === 'create' ? 'Add Class' : 'Edit Class'}
-                                </h2>
-                                <p className="text-text-muted text-sm mt-1">
-                                    Manage weekly training sessions
-                                </p>
+                            <div className="sticky top-0 z-10 p-6 border-b border-white/10 bg-surface/95 backdrop-blur flex items-center justify-between">
+                                <div>
+                                    <h2 className="text-xl font-semibold text-white">
+                                        {formMode === 'create' ? 'Add Class' : 'Edit Class'}
+                                    </h2>
+                                    <p className="text-text-muted text-sm mt-1">
+                                        Manage weekly training sessions
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => { setShowForm(false); setEditingClass(null); }}
+                                    className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center text-white transition-all"
+                                >
+                                    <X size={18} />
+                                </button>
                             </div>
-                            <button
-                                type="button"
-                                onClick={() => { setShowForm(false); setEditingClass(null); }}
-                                className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center text-white transition-all"
-                            >
-                                <X size={18} />
-                            </button>
-                        </div>
 
-                        <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-6">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div>
-                                    <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Class Name</label>
-                                    <input
-                                        value={formData.name}
-                                        onChange={(e) => handleFormChange('name', e.target.value)}
-                                        className="mt-2 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
-                                        placeholder="Morning HIIT"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Trainer</label>
-                                    <select
-                                        value={formData.trainerId}
-                                        onChange={(e) => handleFormChange('trainerId', e.target.value)}
-                                        className="mt-2 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
-                                    >
-                                        <option value="">Select trainer</option>
-                                        {trainers.map((trainer) => (
-                                            <option key={trainer.id} value={trainer.id} className="text-black">
-                                                {trainer.name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Day</label>
-                                    <select
-                                        value={formData.dayOfWeek}
-                                        onChange={(e) => handleFormChange('dayOfWeek', e.target.value)}
-                                        className="mt-2 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
-                                    >
-                                        {DAYS.map((day) => (
-                                            <option key={day} value={day} className="text-black">
-                                                {day}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Start Time</label>
-                                    <input
-                                        value={formData.time}
-                                        onChange={(e) => handleFormChange('time', e.target.value)}
-                                        className="mt-2 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
-                                        placeholder="10:00 AM"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Duration (min)</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={formData.duration}
-                                        onChange={(e) => handleFormChange('duration', e.target.value)}
-                                        className="mt-2 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Capacity</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={formData.capacity}
-                                        onChange={(e) => handleFormChange('capacity', e.target.value)}
-                                        className="mt-2 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
-                                    />
+                            <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-6">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div>
+                                        <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Class Name</label>
+                                        <input
+                                            value={formData.name}
+                                            onChange={(e) => handleFormChange('name', e.target.value)}
+                                            className="mt-2 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
+                                            placeholder="Morning HIIT"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Trainer</label>
+                                        <select
+                                            value={formData.trainerId}
+                                            onChange={(e) => handleFormChange('trainerId', e.target.value)}
+                                            className="mt-2 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
+                                        >
+                                            <option value="">Select trainer</option>
+                                            {trainers.map((trainer) => (
+                                                <option key={trainer.id} value={trainer.id} className="text-black">
+                                                    {trainer.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Day</label>
+                                        <select
+                                            value={formData.dayOfWeek}
+                                            onChange={(e) => handleFormChange('dayOfWeek', e.target.value)}
+                                            className="mt-2 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
+                                        >
+                                            {DAYS.map((day) => (
+                                                <option key={day} value={day} className="text-black">
+                                                    {day}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Start Time</label>
+                                        <input
+                                            value={formData.time}
+                                            onChange={(e) => handleFormChange('time', e.target.value)}
+                                            className="mt-2 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
+                                            placeholder="10:00 AM"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Duration (min)</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={formData.duration}
+                                            onChange={(e) => handleFormChange('duration', e.target.value)}
+                                            className="mt-2 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Capacity</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={formData.capacity}
+                                            onChange={(e) => handleFormChange('capacity', e.target.value)}
+                                            className="mt-2 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
+                                        />
+                                    </div>
                                 </div>
                             </div>
-                        </div>
 
-                        <div className="sticky bottom-0 p-6 border-t border-white/10 bg-surface/95 backdrop-blur flex items-center justify-end gap-3">
-                            <button
-                                type="button"
-                                onClick={() => { setShowForm(false); setEditingClass(null); }}
-                                className="px-4 py-2 rounded-xl bg-surfaceHighlight border border-white/10 text-white text-sm font-medium hover:bg-white/10 transition-colors"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                type="submit"
-                                disabled={saving}
-                                className="px-4 py-2 rounded-xl bg-primary hover:bg-orange-600 text-white text-sm font-medium shadow-lg shadow-primary/20 disabled:opacity-70 transition-colors"
-                            >
-                                {saving ? 'Saving...' : 'Save Class'}
-                            </button>
-                        </div>
+                            <div className="sticky bottom-0 p-6 border-t border-white/10 bg-surface/95 backdrop-blur flex items-center justify-end gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => { setShowForm(false); setEditingClass(null); }}
+                                    className="px-4 py-2 rounded-xl bg-surfaceHighlight border border-white/10 text-white text-sm font-medium hover:bg-white/10 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={saving}
+                                    className="px-4 py-2 rounded-xl bg-primary hover:bg-orange-600 text-white text-sm font-medium shadow-lg shadow-primary/20 disabled:opacity-70 transition-colors"
+                                >
+                                    {saving ? 'Saving...' : 'Save Class'}
+                                </button>
+                            </div>
                         </form>
                     </div>
                 </div>

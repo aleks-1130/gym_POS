@@ -19,10 +19,38 @@ export default function TrainerBooking() {
     });
     const [bookingLoading, setBookingLoading] = useState(false);
     const [filterView, setFilterView] = useState('all'); // all, available, top-rated
+    const [paymentMethods, setPaymentMethods] = useState([]);
+    const [selectedMethodId, setSelectedMethodId] = useState('');
 
     useEffect(() => {
         fetchTrainers();
     }, []);
+
+    useEffect(() => {
+        const fetchMethods = async () => {
+            if (!user?.id) return;
+            try {
+                const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+                const res = await axios.get(`http://localhost:5000/api/members/${user.id}/payment-methods`, {
+                    headers: token ? { Authorization: `Bearer ${token}` } : undefined
+                });
+                const methods = res.data || [];
+                setPaymentMethods(methods);
+                const defaultMethod = methods.find((m) => m.isDefault);
+                if (defaultMethod) {
+                    setSelectedMethodId(defaultMethod.id);
+                    setBookingData((prev) => ({
+                        ...prev,
+                        paymentMethod: defaultMethod.type === 'GCASH' ? 'GCASH' : 'CARD'
+                    }));
+                }
+            } catch (error) {
+                console.error('Failed to fetch payment methods', error);
+            }
+        };
+
+        fetchMethods();
+    }, [user?.id]);
 
     // Prevent body scroll when modal is open (PWA best practice)
     useEffect(() => {
@@ -45,14 +73,11 @@ export default function TrainerBooking() {
 
     const fetchTrainers = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/trainers');
-            if (Array.isArray(res.data)) {
-                const validTrainers = res.data.filter(t => t && typeof t === 'object');
-                setTrainers(validTrainers);
-            } else {
-                console.error("Trainers response is not an array", res.data);
-                setTrainers([]);
-            }
+            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+            const res = await axios.get('http://localhost:5000/api/trainers', {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined
+            });
+            setTrainers(res.data);
         } catch (error) {
             console.error("Failed to fetch trainers");
         } finally {
@@ -66,18 +91,32 @@ export default function TrainerBooking() {
             alert("Please fill in all required fields");
             return;
         }
+        if (!user?.id) {
+            alert("Member session not found. Please log in again.");
+            return;
+        }
+        if (!selectedMethodId && bookingData.paymentMethod !== 'CASH') {
+            alert("Please select a payment method.");
+            return;
+        }
 
         setBookingLoading(true);
         try {
-            await axios.post('http://localhost:5000/api/members/book-training', {
+            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+            const endpoint = 'http://localhost:5000/api/members/book-training';
+            const payload = {
                 trainerId: selectedTrainer.id,
                 date: bookingData.date,
                 time: bookingData.time,
                 duration: bookingData.duration,
                 notes: bookingData.notes,
                 method: bookingData.paymentMethod
+            };
+
+            const res = await axios.post(endpoint, payload, {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined
             });
-            alert("Training session booked successfully!");
+            alert(res.data?.message || "Training session booked successfully!");
             setShowBookingModal(false);
             setSelectedTrainer(null);
             setBookingData({ date: '', time: '', duration: 60, notes: '', paymentMethod: 'CASH' });
@@ -93,6 +132,7 @@ export default function TrainerBooking() {
         setShowBookingModal(false);
         setSelectedTrainer(null);
         setBookingData({ date: '', time: '', duration: 60, notes: '', paymentMethod: 'CASH' });
+        setSelectedMethodId('');
     }, []);
 
     const filteredTrainers = trainers.filter(trainer => {
@@ -126,6 +166,8 @@ export default function TrainerBooking() {
         const endMinutes = totalMinutes % 60;
         return `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
     };
+
+
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-[60vh] px-4">
@@ -138,62 +180,49 @@ export default function TrainerBooking() {
     }
 
     return (
-        <div className="space-y-4 sm:space-y-6 pb-20 sm:pb-6">
-            {/* Header */}
-            <div className="space-y-3 sm:space-y-4">
-                <div className="px-4 sm:px-0">
-                    <h1 className="text-2xl sm:text-3xl font-bold text-white">1-on-1 Training</h1>
-                    <p className="text-text-muted text-sm sm:text-base mt-1">Book personalized training sessions</p>
+        <div className="pb-20 px-4 max-w-6xl mx-auto space-y-4 sm:space-y-6">
+            {/* Header - PWA Sticky */}
+            <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 -mx-4 px-4 py-4">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h1 className="text-xl sm:text-2xl font-bold text-white">1-on-1 Training</h1>
+                        <p className="text-text-muted text-xs sm:text-sm mt-0.5">Book personalized sessions</p>
+                    </div>
                 </div>
 
                 {/* Quick Stats */}
-                <div className="grid grid-cols-2 gap-3 sm:gap-4 px-4 sm:px-0">
+                <div className="grid grid-cols-2 gap-3 sm:gap-4 mt-4">
                     <div className="bg-surface rounded-xl sm:rounded-2xl p-4 sm:p-5 border border-white/5">
                         <p className="text-text-muted text-xs sm:text-sm mb-1">Available Trainers</p>
                         <p className="text-2xl sm:text-3xl font-bold text-primary">{trainers.length}</p>
                     </div>
                     <div className="bg-surface rounded-xl sm:rounded-2xl p-4 sm:p-5 border border-white/5">
                         <p className="text-text-muted text-xs sm:text-sm mb-1">Avg. Rate</p>
-                        <p className="text-2xl sm:text-3xl font-bold text-emerald-400">
-                            {trainers.length > 0
-                                ? formatPrice(trainers.reduce((sum, t) => sum + (t.sessionPrice ?? 300), 0) / trainers.length, true)
-                                : formatPrice(0, true)
-                            }
-                        </p>
+                        {trainers.length > 0
+                            ? formatPrice(trainers.reduce((sum, t) => sum + (t.sessionPrice ?? 300), 0) / trainers.length)
+                            : formatPrice(0)
+                        }
                     </div>
                 </div>
 
-                {/* Filter Tabs - Mobile Optimized */}
-                <div className="overflow-x-auto px-4 sm:px-0 -mx-4 sm:mx-0">
-                    <div className="flex gap-2 min-w-max px-4 sm:px-0">
+                {/* Filter Tabs */}
+                <div className="flex gap-2 mt-4">
+                    {[
+                        { value: 'all', label: 'All Trainers' },
+                        { value: 'available', label: 'Available Now' },
+                        { value: 'top-rated', label: 'Top Rated' }
+                    ].map((tab) => (
                         <button
-                            onClick={() => setFilterView('all')}
-                            className={`px-4 py-2 rounded-lg font-medium text-sm transition-all whitespace-nowrap ${filterView === 'all'
+                            key={tab.value}
+                            onClick={() => setFilterView(tab.value)}
+                            className={`px-3 py-2 rounded-lg font-medium text-xs sm:text-sm transition-all ${filterView === tab.value
                                 ? 'bg-primary text-background'
-                                : 'bg-white/5 text-text-muted hover:bg-white/10'
+                                : 'bg-surface text-text-muted hover:text-white border border-white/5'
                                 }`}
                         >
-                            All Trainers
+                            {tab.label}
                         </button>
-                        <button
-                            onClick={() => setFilterView('available')}
-                            className={`px-4 py-2 rounded-lg font-medium text-sm transition-all whitespace-nowrap ${filterView === 'available'
-                                ? 'bg-primary text-background'
-                                : 'bg-white/5 text-text-muted hover:bg-white/10'
-                                }`}
-                        >
-                            Available Now
-                        </button>
-                        <button
-                            onClick={() => setFilterView('top-rated')}
-                            className={`px-4 py-2 rounded-lg font-medium text-sm transition-all whitespace-nowrap ${filterView === 'top-rated'
-                                ? 'bg-primary text-background'
-                                : 'bg-white/5 text-text-muted hover:bg-white/10'
-                                }`}
-                        >
-                            Top Rated
-                        </button>
-                    </div>
+                    ))}
                 </div>
             </div>
 
@@ -210,7 +239,7 @@ export default function TrainerBooking() {
                     </button>
                 </div>
             ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 px-4 sm:px-0">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {filteredTrainers.map(trainer => (
                         <div key={trainer.id} className="bg-surface rounded-2xl border border-white/5 overflow-hidden hover:border-primary/30 transition-all group flex flex-col">
                             {/* Trainer Image */}
@@ -272,11 +301,11 @@ export default function TrainerBooking() {
                                     </div>
                                 )}
 
-                                <div className="mt-auto space-y-3">
+                                < div className="mt-auto space-y-3">
                                     {/* Price */}
                                     <div className="flex justify-between items-center py-2 border-t border-white/5">
                                         <span className="text-text-muted text-sm">Per Session (60 min)</span>
-                                        <span className="text-primary font-bold text-xl">{formatPrice(trainer.sessionPrice ?? 300, true)}</span>
+                                        <span className="text-primary font-bold text-xl">{formatPrice(trainer.sessionPrice ?? 300)}</span>
                                     </div>
 
                                     {/* Availability */}
@@ -312,170 +341,285 @@ export default function TrainerBooking() {
                         </div>
                     ))}
                 </div>
-            )}
+            )
+            }
 
             {/* Booking Modal - Mobile Optimized */}
-            {showBookingModal && selectedTrainer && (
-                <div
-                    className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center sm:justify-center"
-                    onClick={closeModal}
-                    style={{
-                        paddingBottom: 'env(safe-area-inset-bottom)',
-                        paddingTop: 'env(safe-area-inset-top)'
-                    }}
-                >
+            {
+                showBookingModal && selectedTrainer && (
                     <div
-                        className="w-full sm:max-w-lg bg-surface rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 flex flex-col max-h-[90vh] sm:max-h-[85vh] overflow-hidden animate-slide-up sm:animate-none"
-                        onClick={e => e.stopPropagation()}
+                        className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center sm:justify-center"
+                        onClick={closeModal}
+                        style={{
+                            paddingBottom: 'env(safe-area-inset-bottom)',
+                            paddingTop: 'env(safe-area-inset-top)'
+                        }}
                     >
-                        {/* Modal Header - Sticky */}
-                        <div className="flex items-center justify-between p-5 sm:p-6 border-b border-white/10 bg-surface sticky top-0 z-10">
-                            <div className="flex-1 min-w-0 pr-4">
-                                <h2 className="text-xl sm:text-2xl font-bold text-white truncate">Book Session</h2>
-                                <p className="text-text-muted text-sm mt-0.5 truncate">with {selectedTrainer.name}</p>
+                        <div
+                            className="w-full sm:max-w-lg bg-surface rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 flex flex-col max-h-[90vh] sm:max-h-[85vh] overflow-hidden animate-slide-up sm:animate-none"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            {/* Modal Header - Sticky */}
+                            <div className="flex items-center justify-between p-5 sm:p-6 border-b border-white/10 bg-surface sticky top-0 z-10">
+                                <div className="flex-1 min-w-0 pr-4">
+                                    <h2 className="text-xl sm:text-2xl font-bold text-white truncate">Book Session</h2>
+                                    <p className="text-text-muted text-sm mt-0.5 truncate">with {selectedTrainer.name}</p>
+                                </div>
+                                <button
+                                    onClick={closeModal}
+                                    className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors flex-shrink-0 touch-manipulation"
+                                    aria-label="Close modal"
+                                >
+                                    <span className="material-icons-round text-white text-2xl">close</span>
+                                </button>
                             </div>
-                            <button
-                                onClick={closeModal}
-                                className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors flex-shrink-0 touch-manipulation"
-                                aria-label="Close modal"
-                            >
-                                <span className="material-icons-round text-white text-2xl">close</span>
-                            </button>
-                        </div>
 
-                        {/* Booking Form - Scrollable */}
-                        <div className="flex-1 overflow-y-auto overscroll-contain">
-                            <form onSubmit={handleBookSession} className="p-5 sm:p-6 space-y-5">
-                                {/* Trainer Info Card */}
-                                <div className="bg-white/5 rounded-xl p-4 border border-white/5 flex gap-4">
-                                    <div className="w-16 h-16 sm:w-14 sm:h-14 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                                        {selectedTrainer.imageUrl ? (
-                                            <img src={selectedTrainer.imageUrl} alt={selectedTrainer.name} className="w-full h-full object-cover" />
+                            {/* Booking Form - Scrollable */}
+                            <div className="flex-1 overflow-y-auto overscroll-contain">
+                                <form onSubmit={handleBookSession} className="p-5 sm:p-6 space-y-5">
+                                    {/* Trainer Info Card */}
+                                    <div className="bg-white/5 rounded-xl p-4 border border-white/5 flex gap-4">
+                                        <div className="w-16 h-16 sm:w-14 sm:h-14 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                            {selectedTrainer.imageUrl ? (
+                                                <img src={selectedTrainer.imageUrl} alt={selectedTrainer.name} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <span className="material-icons-round text-text-muted text-2xl">person</span>
+                                            )}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-bold text-white text-base truncate">{selectedTrainer.name}</p>
+                                            <p className="text-text-muted text-sm truncate">{selectedTrainer.specialization}</p>
+                                            <p className="text-primary font-bold text-lg mt-1">{formatPrice(selectedTrainer.sessionPrice ?? 300)}/session</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Date Input - Touch Optimized */}
+                                    <div>
+                                        <label className="block text-sm font-bold text-white mb-2">Session Date *</label>
+                                        <input
+                                            type="date"
+                                            required
+                                            value={bookingData.date}
+                                            onChange={(e) => setBookingData({ ...bookingData, date: e.target.value })}
+                                            min={new Date().toISOString().split('T')[0]}
+                                            className="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-text-muted focus:outline-none focus:border-primary text-base touch-manipulation"
+                                        />
+                                    </div>
+
+                                    {/* Time Input - Touch Optimized */}
+                                    <div>
+                                        <label className="block text-sm font-bold text-white mb-2">Session Time *</label>
+                                        <input
+                                            type="time"
+                                            required
+                                            value={bookingData.time}
+                                            onChange={(e) => setBookingData({ ...bookingData, time: e.target.value })}
+                                            className="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-text-muted focus:outline-none focus:border-primary text-base touch-manipulation"
+                                        />
+                                    </div>
+                                    {bookingData.time && (
+                                        <p className="text-xs text-text-muted mt-2">Ends at {getEndTime(bookingData.time, bookingData.duration)}</p>
+                                    )}
+
+                                    {/* Duration - Touch Optimized */}
+                                    <div>
+                                        <label className="block text-sm font-bold text-white mb-2">Duration</label>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {getTrainerDurations(selectedTrainer).map((duration) => (
+                                                <button
+                                                    key={duration}
+                                                    type="button"
+                                                    onClick={() => setBookingData({ ...bookingData, duration })}
+                                                    className={`px-3 py-2 rounded-xl text-sm font-semibold border transition-all ${bookingData.duration === duration
+                                                        ? 'bg-primary/15 text-primary border-primary/40'
+                                                        : 'bg-white/5 text-text-muted border-white/10 hover:text-white'
+                                                        }`}
+                                                >
+                                                    {duration} min
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Payment Method - ShopCheckout style */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <label className="block text-sm font-bold text-white">Payment Method *</label>
+                                            <button
+                                                type="button"
+                                                onClick={() => window.location.assign('/payment-methods')}
+                                                className="text-primary text-xs font-semibold underline"
+                                            >
+                                                Manage methods
+                                            </button>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <label
+                                                className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${bookingData.paymentMethod === 'CASH'
+                                                    ? 'bg-primary/10 border-primary/40'
+                                                    : 'bg-white/5 border-white/10 hover:border-white/20'
+                                                    }`}
+                                            >
+                                                <input
+                                                    type="radio"
+                                                    name="trainerPaymentMethod"
+                                                    checked={bookingData.paymentMethod === 'CASH'}
+                                                    onChange={() => {
+                                                        setSelectedMethodId('');
+                                                        setBookingData((prev) => ({ ...prev, paymentMethod: 'CASH' }));
+                                                    }}
+                                                    className="accent-orange-500"
+                                                />
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-white text-sm font-semibold truncate">Cash</p>
+                                                    <p className="text-text-muted text-xs">Pay at the front desk after booking</p>
+                                                </div>
+                                            </label>
+                                            {bookingData.paymentMethod === 'CASH' && (
+                                                <div className="text-xs text-text-muted bg-white/5 border border-white/10 rounded-lg px-3 py-2">
+                                                    This booking will be marked as unpaid. Please settle the amount at the front desk.
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {paymentMethods.length === 0 ? (
+                                            <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-text-muted">
+                                                No saved payment methods. Please add a GCash or card first.
+                                                <div className="mt-3">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => window.location.assign('/payment-methods')}
+                                                        className="px-3 py-2 rounded-lg bg-primary text-background text-xs font-bold"
+                                                    >
+                                                        Add Payment Method
+                                                    </button>
+                                                </div>
+                                            </div>
                                         ) : (
-                                            <span className="material-icons-round text-text-muted text-2xl">person</span>
+                                            <div className="space-y-2 mt-2">
+                                                {paymentMethods.map((method) => (
+                                                    <label
+                                                        key={method.id}
+                                                        className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${selectedMethodId === method.id
+                                                            ? 'bg-primary/10 border-primary/40'
+                                                            : 'bg-white/5 border-white/10 hover:border-white/20'
+                                                            }`}
+                                                    >
+                                                        <input
+                                                            type="radio"
+                                                            name="trainerPaymentMethod"
+                                                            checked={selectedMethodId === method.id}
+                                                            onChange={() => {
+                                                                setSelectedMethodId(method.id);
+                                                                setBookingData((prev) => ({
+                                                                    ...prev,
+                                                                    paymentMethod: method.type === 'GCASH' ? 'GCASH' : 'CARD'
+                                                                }));
+                                                            }}
+                                                            className="accent-orange-500"
+                                                        />
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-white text-sm font-semibold truncate">
+                                                                {method.label}
+                                                                {method.isDefault && (
+                                                                    <span className="ml-2 text-[10px] uppercase tracking-wider text-emerald-400 font-bold">Default</span>
+                                                                )}
+                                                            </p>
+                                                            <p className="text-text-muted text-xs">
+                                                                {method.type === 'GCASH'
+                                                                    ? `${method.name} • ${method.phone}`
+                                                                    : `${method.brand || 'Card'} • **** ${method.last4} • ${method.expMonth}/${method.expYear}`}
+                                                            </p>
+                                                        </div>
+                                                    </label>
+                                                ))}
+                                            </div>
                                         )}
+                                        <div className="grid grid-cols-3 gap-2">
+                                            {getTrainerDurations(selectedTrainer).map((duration) => (
+                                                <button
+                                                    key={duration}
+                                                    type="button"
+                                                    onClick={() => setBookingData({ ...bookingData, duration })}
+                                                    className={`px-3 py-2 rounded-xl text-sm font-semibold border transition-all ${bookingData.duration === duration
+                                                        ? 'bg-primary/15 text-primary border-primary/40'
+                                                        : 'bg-white/5 text-text-muted border-white/10 hover:text-white'
+                                                        }`}
+                                                >
+                                                    {duration} min
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="font-bold text-white text-base truncate">{selectedTrainer.name}</p>
-                                        <p className="text-text-muted text-sm truncate">{selectedTrainer.specialization}</p>
-                                        <p className="text-primary font-bold text-lg mt-1">{formatPrice(selectedTrainer.sessionPrice ?? 300, true)}/session</p>
+
+                                    {/* Notes - Touch Optimized */}
+                                    <div>
+                                        <label className="block text-sm font-bold text-white mb-2">Payment Method *</label>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {['CASH', 'CARD', 'GCASH'].map((method) => (
+                                                <button
+                                                    key={method}
+                                                    type="button"
+                                                    onClick={() => setBookingData({ ...bookingData, paymentMethod: method })}
+                                                    className={`px-4 py-3 rounded-xl text-sm font-semibold border transition-all ${bookingData.paymentMethod === method
+                                                        ? 'bg-primary/15 text-primary border-primary/40'
+                                                        : 'bg-white/5 text-text-muted border-white/10 hover:text-white'
+                                                        }`}
+                                                >
+                                                    {method}
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
-                                </div>
 
-                                {/* Date Input - Touch Optimized */}
-                                <div>
-                                    <label className="block text-sm font-bold text-white mb-2">Session Date *</label>
-                                    <input
-                                        type="date"
-                                        required
-                                        value={bookingData.date}
-                                        onChange={(e) => setBookingData({ ...bookingData, date: e.target.value })}
-                                        min={new Date().toISOString().split('T')[0]}
-                                        className="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-text-muted focus:outline-none focus:border-primary text-base touch-manipulation"
-                                    />
-                                </div>
-
-                                {/* Time Input - Touch Optimized */}
-                                <div>
-                                    <label className="block text-sm font-bold text-white mb-2">Session Time *</label>
-                                    <input
-                                        type="time"
-                                        required
-                                        value={bookingData.time}
-                                        onChange={(e) => setBookingData({ ...bookingData, time: e.target.value })}
-                                        className="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-text-muted focus:outline-none focus:border-primary text-base touch-manipulation"
-                                    />
-                                </div>
-                                {bookingData.time && (
-                                    <p className="text-xs text-text-muted mt-2">Ends at {getEndTime(bookingData.time, bookingData.duration)}</p>
-                                )}
-
-                                {/* Duration - Touch Optimized */}
-                                <div>
-                                    <label className="block text-sm font-bold text-white mb-2">Duration</label>
-                                    <div className="grid grid-cols-3 gap-2">
-                                        {getTrainerDurations(selectedTrainer).map((duration) => (
-                                            <button
-                                                key={duration}
-                                                type="button"
-                                                onClick={() => setBookingData({ ...bookingData, duration })}
-                                                className={`px-3 py-2 rounded-xl text-sm font-semibold border transition-all ${bookingData.duration === duration
-                                                    ? 'bg-primary/15 text-primary border-primary/40'
-                                                    : 'bg-white/5 text-text-muted border-white/10 hover:text-white'
-                                                    }`}
-                                            >
-                                                {duration} min
-                                            </button>
-                                        ))}
+                                    <div>
+                                        <label className="block text-sm font-bold text-white mb-2">Notes (optional)</label>
+                                        <textarea
+                                            value={bookingData.notes}
+                                            onChange={(e) => setBookingData({ ...bookingData, notes: e.target.value })}
+                                            placeholder="Any specific goals or preferences?"
+                                            rows="4"
+                                            className="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-text-muted focus:outline-none focus:border-primary text-base resize-none touch-manipulation"
+                                        />
                                     </div>
-                                </div>
 
-                                {/* Notes - Touch Optimized */}
-                                <div>
-                                    <label className="block text-sm font-bold text-white mb-2">Payment Method *</label>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        {['CASH', 'CARD', 'GCASH'].map((method) => (
-                                            <button
-                                                key={method}
-                                                type="button"
-                                                onClick={() => setBookingData({ ...bookingData, paymentMethod: method })}
-                                                className={`px-4 py-3 rounded-xl text-sm font-semibold border transition-all ${bookingData.paymentMethod === method
-                                                    ? 'bg-primary/15 text-primary border-primary/40'
-                                                    : 'bg-white/5 text-text-muted border-white/10 hover:text-white'
-                                                    }`}
-                                            >
-                                                {method}
-                                            </button>
-                                        ))}
+                                    {/* Total Price - Highlighted */}
+                                    <div className="bg-primary/10 border border-primary/30 rounded-xl p-4">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-text-muted text-sm">Total for {bookingData.duration} min</span>
+                                            <span className="text-primary font-bold text-2xl">
+                                                {formatPrice(((selectedTrainer.sessionPrice ?? 300) / 60) * bookingData.duration)}
+                                            </span>
+                                        </div>
                                     </div>
-                                </div>
+                                </form>
+                            </div>
 
-                                <div>
-                                    <label className="block text-sm font-bold text-white mb-2">Notes (optional)</label>
-                                    <textarea
-                                        value={bookingData.notes}
-                                        onChange={(e) => setBookingData({ ...bookingData, notes: e.target.value })}
-                                        placeholder="Any specific goals or preferences?"
-                                        rows="4"
-                                        className="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-text-muted focus:outline-none focus:border-primary text-base resize-none touch-manipulation"
-                                    />
-                                </div>
-
-                                {/* Total Price - Highlighted */}
-                                <div className="bg-primary/10 border border-primary/30 rounded-xl p-4">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-text-muted text-sm">Total for {bookingData.duration} min</span>
-                                        <span className="text-primary font-bold text-2xl">
-                                            {formatPrice(((selectedTrainer.sessionPrice ?? 300) / 60) * bookingData.duration, true)}
-                                        </span>
-                                    </div>
-                                </div>
-                            </form>
-                        </div>
-
-                        {/* Modal Footer - Sticky */}
-                        <div className="border-t border-white/10 p-5 sm:p-6 bg-surface sticky bottom-0 space-y-3">
-                            <button
-                                onClick={handleBookSession}
-                                disabled={bookingLoading}
-                                className="w-full py-4 bg-primary text-background rounded-xl font-bold text-base hover:brightness-110 active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
-                            >
-                                <span className="material-icons-round text-xl">check_circle</span>
-                                {bookingLoading ? 'Booking...' : 'Confirm Booking'}
-                            </button>
-                            <button
-                                onClick={closeModal}
-                                className="w-full py-3 bg-white/5 text-white rounded-xl font-medium text-sm hover:bg-white/10 transition-colors touch-manipulation"
-                            >
-                                Cancel
-                            </button>
+                            {/* Modal Footer - Sticky */}
+                            <div className="border-t border-white/10 p-5 sm:p-6 bg-surface sticky bottom-0 space-y-3">
+                                <button
+                                    onClick={handleBookSession}
+                                    disabled={bookingLoading || (!selectedMethodId && bookingData.paymentMethod !== 'CASH')}
+                                    className="w-full py-4 bg-primary text-background rounded-xl font-bold text-base hover:brightness-110 active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
+                                >
+                                    <span className="material-icons-round text-xl">check_circle</span>
+                                    {bookingLoading ? 'Booking...' : 'Confirm Booking'}
+                                </button>
+                                <button
+                                    onClick={closeModal}
+                                    className="w-full py-3 bg-white/5 text-white rounded-xl font-medium text-sm hover:bg-white/10 transition-colors touch-manipulation"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Add animation styles */}
-            <style jsx>{`
+            <style>{`
                 @keyframes slide-up {
                     from {
                         transform: translateY(100%);
@@ -488,6 +632,6 @@ export default function TrainerBooking() {
                     animation: slide-up 0.3s ease-out;
                 }
             `}</style>
-        </div>
+        </div >
     );
 }

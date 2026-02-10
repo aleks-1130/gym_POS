@@ -26,7 +26,13 @@ const StaffDashboard = ({ stats }) => {
     const [data, setData] = useState(() => buildInitialState(stats));
 
     useEffect(() => {
-        if (stats) setData(buildInitialState(stats));
+        if (stats) {
+            setData(prev => {
+                const newState = buildInitialState(stats);
+                if (JSON.stringify(prev) === JSON.stringify(newState)) return prev;
+                return newState;
+            });
+        }
     }, [stats]);
 
     useEffect(() => {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Calendar, ShoppingBag, User, Users, Dumbbell, CheckCircle, Menu, X, Gift, History, Megaphone, Activity } from 'lucide-react';
+import { Home, Calendar, ShoppingBag, User, Users, Dumbbell, CheckCircle, Menu, X, Gift, History, Megaphone, Activity, CreditCard } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
 
@@ -15,16 +15,24 @@ export default function BottomNav() {
     const memberPrimaryNav = [
         { to: "/", icon: Home, label: "Home" },
         { to: "/attendance", icon: CheckCircle, label: "Attendance" },
+        { to: "/trainer-booking", icon: Dumbbell, label: "Trainers" },
         { to: "/gym-traffic", icon: Activity, label: "Traffic" },
         { to: "/schedule", icon: Calendar, label: "Schedule" },
         { to: "/shop", icon: ShoppingBag, label: "Shop" },
         { to: "/profile", icon: User, label: "Profile" },
     ];
+    const trainerPrimaryNav = [
+        { to: "/", icon: Home, label: "Home" },
+        { to: "/trainer/sessions", icon: Dumbbell, label: "Sessions" },
+        { to: "/trainer/classes", icon: Calendar, label: "Classes" },
+        { to: "/trainer/profile", icon: User, label: "Profile" },
+    ];
 
     // Secondary navigation items (hamburger menu)
     const memberSecondaryNav = [
         { to: "/announcements", icon: Megaphone, label: "Announcements" },
-        { to: "/trainer-booking", icon: Dumbbell, label: "Trainer Booking" },
+        { to: "/gym-traffic", icon: Activity, label: "Traffic" },
+        { to: "/payment-methods", icon: CreditCard, label: "Payment Methods" },
         { to: "/loyalty", icon: Gift, label: "Rewards & Loyalty" },
         { to: "/purchase-history", icon: History, label: "Purchase History" },
     ];
@@ -37,9 +45,14 @@ export default function BottomNav() {
         { to: "/profile", icon: User, label: "Profile" },
     ];
 
-    const primaryNavItems = user?.role === ROLES.MEMBER ? memberPrimaryNav : staffPrimaryNav;
+    const primaryNavItems = user?.role === ROLES.MEMBER
+        ? memberPrimaryNav
+        : user?.role === ROLES.TRAINER
+            ? trainerPrimaryNav
+            : staffPrimaryNav;
     const secondaryNavItems = user?.role === ROLES.MEMBER ? memberSecondaryNav : [];
     const isMember = user?.role === ROLES.MEMBER;
+    const isTrainer = user?.role === ROLES.TRAINER;
 
     // Update active index based on current location
     useEffect(() => {
@@ -73,11 +86,11 @@ export default function BottomNav() {
         <>
             {/* Hamburger Menu Overlay */}
             {showMenu && isMember && (
-                <div 
+                <div
                     className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 animate-fade-in"
                     onClick={() => setShowMenu(false)}
                 >
-                    <div 
+                    <div
                         className="absolute bottom-16 left-0 right-0 bg-surface border-t border-white/10 animate-slide-up"
                         onClick={(e) => e.stopPropagation()}
                     >
@@ -100,21 +113,21 @@ export default function BottomNav() {
                             {secondaryNavItems.map((item) => {
                                 const IconComponent = item.icon;
                                 const isActive = location.pathname === item.to;
-                                
+
                                 return (
                                     <button
                                         key={item.to}
                                         onClick={() => handleSecondaryNavClick(item.to)}
                                         className={`
                                             w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all
-                                            ${isActive 
-                                                ? 'bg-primary/10 border border-primary/30' 
+                                            ${isActive
+                                                ? 'bg-primary/10 border border-primary/30'
                                                 : 'hover:bg-white/5'
                                             }
                                         `}
                                     >
-                                        <IconComponent 
-                                            size={20} 
+                                        <IconComponent
+                                            size={20}
                                             className={isActive ? 'text-primary' : 'text-text-muted'}
                                             strokeWidth={2}
                                         />
@@ -133,14 +146,14 @@ export default function BottomNav() {
             )}
 
             {/* Bottom Navigation Bar */}
-            <nav className={`fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur-md z-40 border-t border-white/5 ${!isMember && 'lg:hidden'}`}>
+            <nav className={`fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur-md z-40 border-t border-white/5 ${(!isMember && !isTrainer) && 'lg:hidden'}`}>
                 <div className="relative max-w-full mx-auto">
                     <div className="relative h-16 bg-surface/50">
                         {/* This container prevents overflow */}
                         <div className="absolute inset-0 overflow-hidden">
                             {/* Animated highlight indicator - only show if activeIndex is valid */}
                             {activeIndex >= 0 && (
-                                <div 
+                                <div
                                     className="absolute bottom-0 h-0.5 bg-gradient-to-r from-primary to-orange-500 transition-all duration-300 ease-out rounded-full"
                                     style={{
                                         left: `${activeIndex * itemWidthPercent}%`,
@@ -151,7 +164,7 @@ export default function BottomNav() {
 
                             {/* Active background glow - only show if activeIndex is valid */}
                             {activeIndex >= 0 && (
-                                <div 
+                                <div
                                     className="absolute inset-y-0 bg-gradient-to-t from-primary/10 to-transparent transition-all duration-300 ease-out pointer-events-none"
                                     style={{
                                         left: `${activeIndex * itemWidthPercent}%`,
@@ -165,7 +178,7 @@ export default function BottomNav() {
                         <div className="absolute inset-0 flex items-center justify-center">
                             {primaryNavItems.map((item, index) => {
                                 const isActive = activeIndex === index;
-                                
+
                                 return (
                                     <NavLink
                                         key={item.to}
@@ -186,14 +199,14 @@ export default function BottomNav() {
                                                         {isActive && (
                                                             <div className="absolute inset-0 bg-primary/20 blur-[2px] rounded-full scale-75" />
                                                         )}
-                                                        
+
                                                         {/* Icon */}
                                                         <IconComponent
                                                             size={22}
                                                             className={`
                                                                 transition-all duration-200 relative z-10
-                                                                ${isActive 
-                                                                    ? 'text-primary' 
+                                                                ${isActive
+                                                                    ? 'text-primary'
                                                                     : 'text-text-muted group-hover:text-white'
                                                                 }
                                                             `}
@@ -204,8 +217,8 @@ export default function BottomNav() {
                                                     {/* Label */}
                                                     <span className={`
                                                         text-[10px] font-medium tracking-tight transition-all duration-200
-                                                        ${isActive 
-                                                            ? 'text-primary opacity-100' 
+                                                        ${isActive
+                                                            ? 'text-primary opacity-100'
                                                             : 'text-text-muted opacity-70 group-hover:opacity-100 group-hover:text-white'
                                                         }
                                                     `}>
@@ -217,7 +230,7 @@ export default function BottomNav() {
                                     </NavLink>
                                 );
                             })}
-                            
+
                             {/* Hamburger Menu Button (Members only) */}
                             {isMember && (
                                 <button
@@ -235,13 +248,13 @@ export default function BottomNav() {
                                             {showMenu && (
                                                 <div className="absolute inset-0 bg-primary/20 blur-[2px] rounded-full scale-75" />
                                             )}
-                                            
+
                                             <Menu
                                                 size={22}
                                                 className={`
                                                     transition-all duration-200 relative z-10
-                                                    ${showMenu 
-                                                        ? 'text-primary' 
+                                                    ${showMenu
+                                                        ? 'text-primary'
                                                         : 'text-text-muted group-hover:text-white'
                                                     }
                                                 `}
@@ -251,8 +264,8 @@ export default function BottomNav() {
 
                                         <span className={`
                                             text-[10px] font-medium tracking-tight transition-all duration-200
-                                            ${showMenu 
-                                                ? 'text-primary opacity-100' 
+                                            ${showMenu
+                                                ? 'text-primary opacity-100'
                                                 : 'text-text-muted opacity-70 group-hover:opacity-100 group-hover:text-white'
                                             }
                                         `}>
@@ -266,7 +279,7 @@ export default function BottomNav() {
                 </div>
             </nav>
 
-            <style jsx>{`
+            <style>{`
                 @keyframes fade-in {
                     from {
                         opacity: 0;
@@ -296,3 +309,4 @@ export default function BottomNav() {
         </>
     );
 }
+

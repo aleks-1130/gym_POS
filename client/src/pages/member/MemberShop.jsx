@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
+import { useNavigate } from 'react-router-dom';
 
 export default function MemberShop() {
     const { formatPrice } = useCurrency();
+    const navigate = useNavigate();
     const [products, setProducts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [cart, setCart] = useState([]);
@@ -119,6 +121,7 @@ export default function MemberShop() {
         return cart.reduce((sum, item) => sum + item.quantity, 0);
     };
 
+
     const handleCheckoutInit = () => {
         setShowCartModal(false);
         setShowPaymentModal(true);
@@ -167,6 +170,7 @@ export default function MemberShop() {
         } finally {
             setIsCheckingOut(false);
         }
+
     };
 
     if (loading) {

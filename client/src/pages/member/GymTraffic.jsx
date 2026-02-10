@@ -9,6 +9,12 @@ const addDays = (date, days) => new Date(date.getFullYear(), date.getMonth(), da
 const formatDateShort = (date) =>
     date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
+const formatHour12 = (hour) => {
+    const suffix = hour >= 12 ? 'PM' : 'AM';
+    const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+    return `${hour12} ${suffix}`;
+};
+
 export default function GymTraffic() {
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -129,7 +135,7 @@ export default function GymTraffic() {
                 <div className="bg-surface rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-white/5 col-span-2 sm:col-span-1">
                     <p className="text-text-muted text-xs sm:text-sm mb-1">Busiest Hour</p>
                     <p className="text-sm sm:text-base font-bold text-yellow-400">
-                        {busiestHour.hour.toString().padStart(2, '0')}:00 • {busiestHour.count} visits
+                        {formatHour12(busiestHour.hour)} • {busiestHour.count} visits
                     </p>
                 </div>
             </div>
@@ -139,19 +145,19 @@ export default function GymTraffic() {
                     <h2 className="text-white font-semibold text-base sm:text-lg">Week Overview</h2>
                     <span className="text-text-muted text-xs">Total check-ins per day</span>
                 </div>
-                <div className="space-y-3">
+                <div className="grid grid-cols-7 gap-2 items-end">
                     {countsByDay.map(({ day, count }) => (
-                        <div key={day.toISOString()} className="flex items-center gap-3">
-                            <div className="w-14 text-xs text-text-muted font-medium">
-                                {dayLabels[day.getDay()]}
-                            </div>
-                            <div className="flex-1 h-2 rounded-full bg-white/5 overflow-hidden">
+                        <div key={day.toISOString()} className="flex flex-col items-center gap-2">
+                            <div className="w-full h-24 sm:h-28 bg-white/5 rounded-lg flex items-end overflow-hidden">
                                 <div
-                                    className="h-full bg-gradient-to-r from-primary to-orange-500"
-                                    style={{ width: `${(count / maxDayCount) * 100}%` }}
+                                    className="w-full bg-gradient-to-t from-primary to-orange-500"
+                                    style={{ height: `${(count / maxDayCount) * 100}%` }}
                                 />
                             </div>
-                            <div className="w-10 text-right text-xs text-white font-semibold">{count}</div>
+                            <span className="text-[10px] text-text-muted font-medium">
+                                {dayLabels[day.getDay()]}
+                            </span>
+                            <span className="text-[10px] text-white font-semibold">{count}</span>
                         </div>
                     ))}
                 </div>
@@ -170,11 +176,10 @@ export default function GymTraffic() {
                                 <button
                                     key={day.toISOString()}
                                     onClick={() => setSelectedDay(startOfDay(day))}
-                                    className={`px-3 py-1 rounded-full text-xs font-semibold border transition-all ${
-                                        isActive
-                                            ? 'bg-primary/15 border-primary/40 text-primary'
-                                            : 'bg-white/5 border-white/10 text-text-muted hover:text-white'
-                                    }`}
+                                    className={`px-3 py-1 rounded-full text-xs font-semibold border transition-all ${isActive
+                                        ? 'bg-primary/15 border-primary/40 text-primary'
+                                        : 'bg-white/5 border-white/10 text-text-muted hover:text-white'
+                                        }`}
                                 >
                                     {dayLabels[day.getDay()]} {formatDateShort(day)}
                                 </button>
@@ -193,7 +198,7 @@ export default function GymTraffic() {
                                 />
                             </div>
                             <span className="text-[10px] text-text-muted font-medium">
-                                {hour.toString().padStart(2, '0')}
+                                {formatHour12(hour)}
                             </span>
                             <span className="text-[10px] text-white font-semibold">{count}</span>
                         </div>

@@ -31,6 +31,22 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
+const authenticateTokenOptional = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) {
+        req.user = null;
+        return next();
+    }
+
+    jwt.verify(token, SECRET, (err, user) => {
+        if (!err) {
+            req.user = user;
+        }
+        next();
+    });
+};
+
 // Middleware for Role Checking
 // Middleware for Role Checking (Strict)
 const authorize = (roles = []) => {
@@ -105,14 +121,14 @@ app.post('/api/auth/register', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body;
     try {
-        // 1. Try finding in USER table (Admin/Staff)
+        // 1. Try finding in USER table (Owner/Admin/Staff/Trainer)
         const user = await prisma.user.findUnique({ where: { email } });
         if (user) {
             if (await bcrypt.compare(password, user.password)) {
                 // Ensure role is sent
-                const token = jwt.sign({ id: user.id, role: user.role, type: 'USER' }, SECRET);
+                const token = jwt.sign({ id: user.id, role: user.role, type: 'USER', trainerId: user.trainerId || null }, SECRET);
                 // Log login? maybe too noisy.
-                return res.json({ token, user: { id: user.id, name: user.name, role: user.role } });
+                return res.json({ token, user: { id: user.id, name: user.name, role: user.role, trainerId: user.trainerId || null } });
             }
         }
 
@@ -182,8 +198,24 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
                 memberData: member
             });
         }
+        if (req.user.role === 'TRAINER') {
+            const trainerId = req.user.trainerId;
+            if (!trainerId) return res.status(400).json({ error: "Trainer account is not linked" });
+            const upcomingSessions = await prisma.trainingSession.count({
+                where: { trainerId: Number(trainerId), date: { gte: new Date() } }
+            });
+            const totalClasses = await prisma.class.count({ where: { trainerId: Number(trainerId) } });
+            return res.json({
+                upcomingSessions,
+                totalClasses
+            });
+        }
 
         // ADMIN/STAFF stats
+        const today = new Date();
+        const startOfToday = new Date(today);
+        startOfToday.setHours(0, 0, 0, 0);
+
         const totalMembers = await prisma.member.count({ where: { status: 'ACTIVE' } });
 
         // Date Logic - Dynamic Range
@@ -206,23 +238,41 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
         const periodExpenses = periodExpensesAgg._sum.amount || 0;
 
         // 2. Revenue Trend (Daily for the selected period)
-        const revenueTrendRaw = await prisma.payment.groupBy({
-            by: ['date'],
-            _sum: { amount: true },
+        const revenueTrendRaw = await prisma.payment.findMany({
             where: { date: { gte: queryStart, lte: queryEnd } },
-            orderBy: { date: 'asc' }
+            select: { date: true, amount: true }
         });
 
         const trendMap = {};
+        const dailyRevenue = {}; // For weekly distribution Mon-Sun
         revenueTrendRaw.forEach(item => {
             const dayStr = item.date.toISOString().split('T')[0];
-            trendMap[dayStr] = (trendMap[dayStr] || 0) + (item._sum.amount || 0);
+            trendMap[dayStr] = (trendMap[dayStr] || 0) + item.amount;
+
+            const weekday = item.date.toLocaleDateString('en-US', { weekday: 'short' });
+            dailyRevenue[weekday] = (dailyRevenue[weekday] || 0) + item.amount;
         });
+
+        const weeklyRevenue = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => dailyRevenue[day] || 0);
 
         const revenueTrend = Object.keys(trendMap).map(date => ({
             date,
             amount: trendMap[date]
         }));
+
+        // Calculate Net Profit (Month to Date)
+        const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        const monthlyRevenue = await prisma.payment.aggregate({
+            _sum: { amount: true },
+            where: { date: { gte: firstDayOfMonth } }
+        });
+        const monthlyExpenses = await prisma.expense.aggregate({
+            _sum: { amount: true },
+            where: { date: { gte: firstDayOfMonth } }
+        });
+
+        const totalRev = monthlyRevenue._sum.amount || 0;
+        const totalExp = monthlyExpenses._sum.amount || 0;
 
         const expiring = await prisma.member.count({
             where: {
@@ -249,61 +299,37 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
         }));
 
         // 3. Legacy/Dashboard Specific Stats (for AdminDashboard.jsx)
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
         const todayRevenueAgg = await prisma.payment.aggregate({
             _sum: { amount: true },
-            where: { date: { gte: today } }
+            where: { date: { gte: startOfToday } }
         });
 
-        // 4. Detailed Revenue Breakdown (New)
-        // 4. Detailed Revenue Breakdown (New)
-        // Store Sales (Online/App)
+        // Detailed Revenue Breakdown
         const storeRevenueAgg = await prisma.payment.aggregate({
             _sum: { amount: true },
-            where: {
-                date: { gte: queryStart, lte: queryEnd },
-                type: 'STORE_SALE'
-            }
+            where: { date: { gte: queryStart, lte: queryEnd }, type: 'STORE_SALE' }
         });
-
-        // POS Sales (Counter)
         const posRevenueAgg = await prisma.payment.aggregate({
             _sum: { amount: true },
-            where: {
-                date: { gte: queryStart, lte: queryEnd },
-                type: 'POS_SALE'
-            }
+            where: { date: { gte: queryStart, lte: queryEnd }, type: 'POS_SALE' }
         });
-
-        // Training Revenue (Gross)
         const trainingRevenueAgg = await prisma.payment.aggregate({
             _sum: { amount: true },
-            where: {
-                date: { gte: queryStart, lte: queryEnd },
-                type: { in: ['TRAINING', 'SERVICE'] }
-            }
+            where: { date: { gte: queryStart, lte: queryEnd }, type: { in: ['TRAINING', 'SERVICE'] } }
         });
-
         const trainingExpensesAgg = await prisma.expense.aggregate({
             _sum: { amount: true },
             where: {
                 date: { gte: queryStart, lte: queryEnd },
                 OR: [
                     { title: { startsWith: 'Commission:' } },
-                    { title: { startsWith: 'Session Material' } },
-                    { title: { startsWith: 'Materials: Session' } }
+                    { title: { startsWith: 'Session Material' } }
                 ]
             }
         });
-
-        // Membership Revenue
         const membershipRevenueAgg = await prisma.payment.aggregate({
             _sum: { amount: true },
-            where: {
-                date: { gte: queryStart, lte: queryEnd },
-                type: 'MEMBERSHIP'
-            }
+            where: { date: { gte: queryStart, lte: queryEnd }, type: 'MEMBERSHIP' }
         });
 
         const storeRevenue = storeRevenueAgg._sum.amount || 0;
@@ -321,27 +347,23 @@ app.get('/api/dashboard/stats', authenticateToken, async (req, res) => {
             { label: 'POS (Counter)', value: posRevenue, color: '#8B5CF6' }
         ];
 
-
-
-
         res.json({
             activeMembers: totalMembers,
+            revenueToday: todayRevenueAgg._sum.amount || 0,
+            expiringSoon: expiring,
+            monthlyRevenue: totalRev,
+            totalExpenses: totalExp,
             periodRevenue,
             periodExpenses,
             netProfit: periodRevenue - periodExpenses,
-            expiringSoon: expiring,
             revenueTrend,
+            weeklyRevenue,
             membershipDistribution,
             revenueDistribution,
-            // Legacy Fields for AdminDashboard
-            revenueToday: todayRevenueAgg._sum.amount || 0,
-            monthlyRevenue: periodRevenue,
-            totalExpenses: periodExpenses,
-            // New Breakdown
             breakdown: {
-                shopRevenue, // Combined for backward compat
-                storeRevenue, // Specific for breakdown
-                posRevenue, // Specific for breakdown
+                shopRevenue,
+                storeRevenue,
+                posRevenue,
                 trainingRevenue,
                 trainingExpenses,
                 trainingNet
@@ -528,6 +550,7 @@ app.post('/api/members/cancel-booking', authenticateToken, async (req, res) => {
                 data: { enrolled: { decrement: 1 } }
             })
         ]);
+
         res.json({ message: "Booking cancelled" });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -579,7 +602,141 @@ app.post('/api/members/book-training', authenticateToken, authorize(['MEMBER']),
                     date: startDateTime,
                     duration: Number(duration),
                     price: totalAmount,
-                    status: 'SCHEDULED', // Payments are immediate, so scheduled is fine.
+                    status: 'SCHEDULED',
+                    paymentStatus: method === 'CASH' ? 'UNPAID' : 'PAID',
+                    paymentMethod: method,
+                    paidAt: method === 'CASH' ? null : new Date(),
+                    notes: notes || null
+                }
+            });
+
+            if (method !== 'CASH') {
+                await tx.payment.create({
+                    data: {
+                        amount: totalAmount,
+                        type: 'TRAINING',
+                        method,
+                        status: 'COMPLETED',
+                        memberId
+                    }
+                });
+            }
+
+            if (trainer.availableSlots !== null) {
+                await tx.trainer.update({
+                    where: { id: Number(trainerId) },
+                    data: { availableSlots: { decrement: 1 } }
+                });
+            }
+        });
+
+        res.json({ message: method === 'CASH' ? "Training session booked. Pay at the front desk." : "Training session booked and paid" });
+    } catch (e) {
+        res.status(500).json({ error: "Failed to book training session", detail: e?.message });
+    }
+});
+
+// Book a Trainer Session (Cash, Unpaid) - Authenticated members only
+app.post('/api/members/book-training-cash', authenticateToken, authorize(['MEMBER']), async (req, res) => {
+    const { trainerId, date, time, duration, notes } = req.body;
+    const resolvedMemberId = req.user.id;
+
+    if (!trainerId || !date || !time || !duration) {
+        return res.status(400).json({ error: "Missing required booking details" });
+    }
+
+    try {
+        const trainer = await prisma.trainer.findUnique({ where: { id: Number(trainerId) } });
+        if (!trainer) return res.status(404).json({ error: "Trainer not found" });
+
+        if (trainer.availableSlots !== null && trainer.availableSlots <= 0) {
+            return res.status(400).json({ error: "Trainer is fully booked" });
+        }
+
+        const startDateTime = new Date(`${date}T${time}`);
+        if (isNaN(startDateTime.getTime())) {
+            return res.status(400).json({ error: "Invalid date or time" });
+        }
+
+        const allowedDurations = (trainer.sessionDurations || '60')
+            .split(',')
+            .map((value) => Number(value.trim()))
+            .filter((value) => Number.isFinite(value) && value > 0);
+        if (!allowedDurations.includes(Number(duration))) {
+            return res.status(400).json({ error: "Selected duration not available" });
+        }
+
+        const sessionRate = trainer.sessionPrice ?? 300;
+        const totalAmount = (Number(duration) / 60) * Number(sessionRate);
+
+        await prisma.$transaction(async (tx) => {
+            await tx.trainingSession.create({
+                data: {
+                    memberId: resolvedMemberId,
+                    trainerId: Number(trainerId),
+                    date: startDateTime,
+                    duration: Number(duration),
+                    price: totalAmount,
+                    status: 'SCHEDULED',
+                    paymentStatus: 'UNPAID',
+                    paymentMethod: 'CASH',
+                    paidAt: null,
+                    notes: notes || null
+                }
+            });
+
+            if (trainer.availableSlots !== null) {
+                await tx.trainer.update({
+                    where: { id: Number(trainerId) },
+                    data: { availableSlots: { decrement: 1 } }
+                });
+            }
+        });
+
+        res.json({ message: "Training session booked. Pay at the front desk." });
+    } catch (e) {
+        res.status(500).json({ error: "Failed to book training session", detail: e?.message });
+    }
+});
+
+// Staff/Admin book a trainer session for a member
+app.post('/api/staff/book-training', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    const { memberId, trainerId, date, time, duration, notes, method } = req.body;
+    if (!memberId || !trainerId || !date || !time || !duration || !method) {
+        return res.status(400).json({ error: "Missing required booking details" });
+    }
+    const allowedMethods = ['CASH', 'CARD', 'GCASH'];
+    if (!allowedMethods.includes(method)) {
+        return res.status(400).json({ error: "Invalid payment method" });
+    }
+
+    try {
+        const trainer = await prisma.trainer.findUnique({ where: { id: Number(trainerId) } });
+        if (!trainer) return res.status(404).json({ error: "Trainer not found" });
+
+        if (trainer.availableSlots !== null && trainer.availableSlots <= 0) {
+            return res.status(400).json({ error: "Trainer is fully booked" });
+        }
+
+        const startDateTime = new Date(`${date}T${time}`);
+        if (isNaN(startDateTime.getTime())) {
+            return res.status(400).json({ error: "Invalid date or time" });
+        }
+
+        const totalAmount = ((trainer.sessionPrice || 0) / 60) * Number(duration);
+
+        await prisma.$transaction(async (tx) => {
+            await tx.trainingSession.create({
+                data: {
+                    memberId: Number(memberId),
+                    trainerId: Number(trainerId),
+                    date: startDateTime,
+                    duration: Number(duration),
+                    price: totalAmount,
+                    status: 'SCHEDULED',
+                    paymentStatus: 'PAID',
+                    paymentMethod: method,
+                    paidAt: new Date(),
                     notes: notes || null
                 }
             });
@@ -590,7 +747,8 @@ app.post('/api/members/book-training', authenticateToken, authorize(['MEMBER']),
                     type: 'TRAINING',
                     method,
                     status: 'COMPLETED',
-                    memberId
+                    memberId: Number(memberId),
+                    cashierId: req.user.id
                 }
             });
 
@@ -607,6 +765,76 @@ app.post('/api/members/book-training', authenticateToken, authorize(['MEMBER']),
         res.status(500).json({ error: "Failed to book training session", detail: e?.message });
     }
 });
+
+// Staff view trainer bookings (e.g., unpaid)
+app.get('/api/staff/training-sessions', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    const { status } = req.query; // paymentStatus filter: UNPAID/PAID
+    try {
+        const where = status ? { paymentStatus: String(status).toUpperCase() } : {};
+        const sessions = await prisma.trainingSession.findMany({
+            where,
+            include: { member: true, trainer: true },
+            orderBy: { date: 'asc' }
+        });
+        res.json(sessions);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Staff collect payment for an unpaid trainer booking
+app.post('/api/staff/training-sessions/:id/collect', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
+    const sessionId = Number(req.params.id);
+    const { method = 'CASH', cashTendered } = req.body;
+    const allowedMethods = ['CASH', 'CARD', 'GCASH'];
+    if (!allowedMethods.includes(method)) {
+        return res.status(400).json({ error: "Invalid payment method" });
+    }
+
+    try {
+        const session = await prisma.trainingSession.findUnique({
+            where: { id: sessionId },
+            include: { member: true }
+        });
+        if (!session) return res.status(404).json({ error: "Training session not found" });
+        if (session.paymentStatus === 'PAID') return res.status(400).json({ error: "Session already paid" });
+
+        const amount = session.price;
+        const tendered = method === 'CASH' && cashTendered !== undefined ? Number(cashTendered) : null;
+        const changeDue = method === 'CASH' && tendered !== null ? Math.max(0, tendered - amount) : null;
+
+        const payment = await prisma.$transaction(async (tx) => {
+            const updated = await tx.trainingSession.update({
+                where: { id: sessionId },
+                data: {
+                    paymentStatus: 'PAID',
+                    paymentMethod: method,
+                    paidAt: new Date()
+                }
+            });
+
+            const payment = await tx.payment.create({
+                data: {
+                    amount,
+                    type: 'TRAINING',
+                    method,
+                    status: 'COMPLETED',
+                    memberId: session.memberId,
+                    cashierId: req.user.id,
+                    cashTendered: method === 'CASH' ? tendered : null,
+                    changeDue: method === 'CASH' ? changeDue : null
+                }
+            });
+
+            return { updated, payment };
+        });
+
+        res.json(payment);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to collect payment", detail: e?.message });
+    }
+});
+
 
 // Shop Checkout (Simple)
 // Shop Checkout (Simple)
@@ -843,6 +1071,105 @@ app.get('/api/members/:id', authenticateToken, async (req, res) => {
     }
 });
 
+// Member Payment Methods
+app.get('/api/members/:id/payment-methods', authenticateToken, async (req, res) => {
+    const memberId = Number(req.params.id);
+    if (req.user.role === 'MEMBER' && req.user.id !== memberId) return res.sendStatus(403);
+
+    try {
+        const methods = await prisma.paymentMethod.findMany({
+            where: { memberId },
+            orderBy: { createdAt: 'desc' }
+        });
+        res.json(methods);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/members/:id/payment-methods', authenticateToken, async (req, res) => {
+    const memberId = Number(req.params.id);
+    if (req.user.role === 'MEMBER' && req.user.id !== memberId) return res.sendStatus(403);
+
+    const { type, label, name, phone, brand, last4, expMonth, expYear, isDefault } = req.body;
+    if (!type || !label) return res.status(400).json({ error: "Type and label are required" });
+    if (!['GCASH', 'CARD'].includes(type)) return res.status(400).json({ error: "Invalid payment method type" });
+
+    try {
+        const existingCount = await prisma.paymentMethod.count({ where: { memberId } });
+        const makeDefault = isDefault || existingCount === 0;
+
+        const [method] = await prisma.$transaction([
+            ...(makeDefault
+                ? [prisma.paymentMethod.updateMany({ where: { memberId }, data: { isDefault: false } })]
+                : []),
+            prisma.paymentMethod.create({
+                data: {
+                    memberId,
+                    type,
+                    label,
+                    name: name || null,
+                    phone: phone || null,
+                    brand: brand || null,
+                    last4: last4 || null,
+                    expMonth: expMonth || null,
+                    expYear: expYear || null,
+                    isDefault: makeDefault
+                }
+            })
+        ]);
+
+        res.json(method);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.patch('/api/members/:id/payment-methods/:methodId', authenticateToken, async (req, res) => {
+    const memberId = Number(req.params.id);
+    const methodId = Number(req.params.methodId);
+    if (req.user.role === 'MEMBER' && req.user.id !== memberId) return res.sendStatus(403);
+
+    const { isDefault, label } = req.body;
+    try {
+        const method = await prisma.paymentMethod.findUnique({ where: { id: methodId } });
+        if (!method || method.memberId !== memberId) return res.status(404).json({ error: "Payment method not found" });
+
+        if (isDefault) {
+            await prisma.$transaction([
+                prisma.paymentMethod.updateMany({ where: { memberId }, data: { isDefault: false } }),
+                prisma.paymentMethod.update({ where: { id: methodId }, data: { isDefault: true } })
+            ]);
+            const updated = await prisma.paymentMethod.findUnique({ where: { id: methodId } });
+            return res.json(updated);
+        }
+
+        const updated = await prisma.paymentMethod.update({
+            where: { id: methodId },
+            data: { label: label || method.label }
+        });
+        res.json(updated);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/members/:id/payment-methods/:methodId', authenticateToken, async (req, res) => {
+    const memberId = Number(req.params.id);
+    const methodId = Number(req.params.methodId);
+    if (req.user.role === 'MEMBER' && req.user.id !== memberId) return res.sendStatus(403);
+
+    try {
+        const method = await prisma.paymentMethod.findUnique({ where: { id: methodId } });
+        if (!method || method.memberId !== memberId) return res.status(404).json({ error: "Payment method not found" });
+
+        await prisma.paymentMethod.delete({ where: { id: methodId } });
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // Only Staff/Admin can create members
 app.post('/api/members', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
     const { firstName, lastName, email, phone, planId, imageUrl, birthDate, sex, paymentMethod, cashTendered, changeDue, gcashReference, gcashDate, gcashTime } = req.body;
@@ -856,20 +1183,6 @@ app.post('/api/members', authenticateToken, authorize(['ADMIN', 'STAFF']), async
         const member = await prisma.member.create({
             data: {
                 firstName, lastName, email, phone, planId: Number(planId),
-                startDate, expiryDate, imageUrl,
-                birthDate: birthDate ? new Date(birthDate) : null,
-                sex: sex || null,
-                ...(planId ? {
-                    membershipPeriods: {
-                        create: {
-                            planId: Number(planId),
-                            startDate,
-                            endDate: expiryDate,
-                            amount: plan ? plan.price : null,
-                            method: paymentMethod || null
-                        }
-                    }
-                } : {})
             }
         });
 
@@ -1075,10 +1388,13 @@ app.post('/api/members/:id/status', authenticateToken, authorize(['ADMIN', 'STAF
 });
 
 // Update member details (General)
-app.put('/api/members/:id', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
+app.put('/api/members/:id', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBER']), async (req, res) => {
     const { id } = req.params;
     const { firstName, lastName, email, phone, imageUrl, birthDate, sex, expiryDate, startDate } = req.body;
     try {
+        if (req.user.role === 'MEMBER' && req.user.id !== Number(id)) {
+            return res.sendStatus(403);
+        }
         const member = await prisma.member.update({
             where: { id: Number(id) },
             data: {
@@ -1094,6 +1410,32 @@ app.put('/api/members/:id', authenticateToken, authorize(['OWNER', 'ADMIN', 'STA
             }
         });
         res.json(member);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/members/:id/change-password', authenticateToken, authorize(['MEMBER']), async (req, res) => {
+    const { id } = req.params;
+    const { currentPassword, newPassword } = req.body;
+    if (req.user.id !== Number(id)) return res.sendStatus(403);
+    if (!currentPassword || !newPassword) {
+        return res.status(400).json({ error: "Current and new password are required" });
+    }
+    try {
+        const member = await prisma.member.findUnique({ where: { id: Number(id) } });
+        if (!member || !member.password) {
+            return res.status(400).json({ error: "Password is not set for this account" });
+        }
+        const ok = await bcrypt.compare(currentPassword, member.password);
+        if (!ok) return res.status(400).json({ error: "Current password is incorrect" });
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await prisma.member.update({
+            where: { id: Number(id) },
+            data: { password: hashedPassword }
+        });
+        res.json({ message: "Password updated" });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -1273,18 +1615,16 @@ app.post('/api/access/simulate', authenticateToken, authorize(['OWNER', 'ADMIN',
 // Payment creation - Members might pay online later, but for POS it's staff
 app.post('/api/payments', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBER']), async (req, res) => {
     const { amount, type, method, memberId, items, discount, cashTendered, changeDue, externalRef, externalDate } = req.body;
-
-    // If Member, reinforce memberId to own ID
-    if (req.user.role === 'MEMBER') {
-        if (memberId && Number(memberId) !== req.user.id) return res.sendStatus(403);
-    }
+    const resolvedMemberId = req.user.role === 'MEMBER'
+        ? req.user.id
+        : (memberId ? Number(memberId) : null);
 
     console.log("PAYMENT REQUEST:", JSON.stringify(req.body, null, 2));
     console.log("User:", req.user);
 
     try {
         const parsedAmount = parseFloat(amount);
-        const pointsAwarded = memberId ? Math.floor((parsedAmount * 58) / 100) : 0;
+        const pointsAwarded = resolvedMemberId ? Math.floor(parsedAmount / 100) : 0;
         const cashierId = req.user.role === 'MEMBER' ? null : req.user.id;
 
         // 1. Create Payment Record
@@ -1293,7 +1633,7 @@ app.post('/api/payments', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBE
                 amount: parsedAmount,
                 type,
                 method,
-                memberId: memberId ? Number(memberId) : null,
+                memberId: resolvedMemberId,
                 cashierId,
                 pointsAwarded,
                 cashTendered: method === 'CASH' ? (cashTendered !== undefined ? Number(cashTendered) : null) : null,
@@ -1320,9 +1660,9 @@ app.post('/api/payments', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBE
             for (const item of items) {
                 // A. Membership Plan Update
                 if (item.type === 'PLAN') {
-                    if (!memberId) throw new Error("Member ID required for plan purchase");
+                    if (!resolvedMemberId) throw new Error("Member ID required for plan purchase");
 
-                    const member = await prisma.member.findUnique({ where: { id: Number(memberId) } });
+                    const member = await prisma.member.findUnique({ where: { id: Number(resolvedMemberId) } });
                     if (!member) throw new Error("Member not found");
 
                     // Fetch authoritative plan details (Duration, etc)
@@ -1337,7 +1677,7 @@ app.post('/api/payments', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBE
                     newExpiry.setDate(newExpiry.getDate() + (plan.duration));
 
                     await prisma.member.update({
-                        where: { id: Number(memberId) },
+                        where: { id: Number(resolvedMemberId) },
                         data: {
                             expiryDate: newExpiry,
                             status: 'ACTIVE',
@@ -1363,7 +1703,7 @@ app.post('/api/payments', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBE
             }
         }
 
-        // 3. Award Loyalty Points (1 point per 100 PHP spent, Rate: 58)
+        // 3. Award Loyalty Points (1 point per 100 PHP spent)
         if (memberId) {
             // Amount is in USD (e.g. 2.50). Convert to PHP (145) then divide by 100 => 1.45 => 1 pt.
             if (pointsAwarded > 0) {
@@ -1393,7 +1733,12 @@ app.get('/api/payments', authenticateToken, async (req, res) => {
 
     if (req.user.role === 'STAFF') {
         const payments = await prisma.payment.findMany({
-            where: { cashierId: req.user.id },
+            where: {
+                OR: [
+                    { cashierId: req.user.id },
+                    { type: 'IN_APP_PURCHASE' }
+                ]
+            },
             take: 50,
             orderBy: { date: 'desc' },
             include: { member: true, cashier: true }
@@ -1422,26 +1767,17 @@ app.get('/api/payments', authenticateToken, async (req, res) => {
 
 app.get('/api/payments/:id', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
     const paymentId = Number(req.params.id);
-    console.log(`[DEBUG] Fetching Payment Details for ID: ${paymentId}`);
     try {
         const payment = await prisma.payment.findUnique({
             where: { id: paymentId },
             include: { member: true, items: true, cashier: true }
         });
-        if (!payment) {
-            console.log(`[DEBUG] Payment ${paymentId} NOT FOUND`);
-            return res.status(404).json({ error: "Payment not found" });
-        }
-
-        console.log(`[DEBUG] Payment ${paymentId} Found. Items: ${payment.items.length}`);
-
-        if (req.user.role === 'STAFF' && payment.cashierId !== req.user.id) {
-            console.log(`[DEBUG] Access Denied for Staff ${req.user.id} vs Cashier ${payment.cashierId}`);
+        if (!payment) return res.status(404).json({ error: "Payment not found" });
+        if (req.user.role === 'STAFF' && payment.cashierId !== req.user.id && payment.type !== 'IN_APP_PURCHASE') {
             return res.status(403).json({ error: "Access denied" });
         }
         res.json(payment);
     } catch (e) {
-        console.error(`[DEBUG] Error fetching payment:`, e);
         res.status(500).json({ error: "Failed to fetch payment" });
     }
 });
@@ -1660,7 +1996,10 @@ app.get('/api/plans', async (req, res) => {
 // --- INVENTORY ROUTES ---
 // Members can View products (e.g. shop)
 app.get('/api/products', authenticateToken, async (req, res) => {
-    const products = await prisma.product.findMany({ orderBy: { name: 'asc' } });
+    const products = await prisma.product.findMany({
+        orderBy: { name: 'asc' },
+        include: { supplier: true }
+    });
     res.json(products);
 });
 
@@ -1724,87 +2063,20 @@ app.delete('/api/products/:id', authenticateToken, authorize(['OWNER', 'ADMIN'])
 
 // --- TRAINER ROUTES ---
 app.get('/api/trainers', authenticateToken, async (req, res) => {
-    const trainers = await prisma.trainer.findMany({ include: { classes: true } });
-    res.json(trainers);
-});
-
-app.post('/api/trainers', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
-    const {
-        name,
-        specialty,
-        specialization,
-        email,
-        phone,
-        bio,
-        imageUrl,
-        experience,
-        rating,
-        sessionPrice,
-        sessionDurations,
-        availableSlots,
-        specialties
-    } = req.body;
-    const trainer = await prisma.trainer.create({
-        data: {
-            name,
-            specialty,
-            specialization,
-            email,
-            phone,
-            bio,
-            imageUrl,
-            experience: experience !== undefined && experience !== '' ? Number(experience) : undefined,
-            rating: rating !== undefined && rating !== '' ? Number(rating) : undefined,
-            sessionPrice: sessionPrice !== undefined && sessionPrice !== '' ? Number(sessionPrice) : undefined,
-            sessionDurations,
-            availableSlots: availableSlots !== undefined && availableSlots !== '' ? Number(availableSlots) : undefined,
-            specialties
-        }
-    });
-    res.json(trainer);
-});
-
-
-
-app.delete('/api/trainers/:id', authenticateToken, authorize(['ADMIN', 'STAFF']), async (req, res) => {
-    const trainerId = Number(req.params.id);
-    try {
-        const classes = await prisma.class.findMany({
-            where: { trainerId },
-            select: { id: true }
-        });
-        const classIds = classes.map((cls) => cls.id);
-
-        await prisma.$transaction(async (tx) => {
-            if (classIds.length > 0) {
-                await tx.booking.deleteMany({ where: { classId: { in: classIds } } });
-                await tx.class.deleteMany({ where: { id: { in: classIds } } });
-            }
-
-            await tx.trainingSession.deleteMany({ where: { trainerId } });
-            await tx.trainer.delete({ where: { id: trainerId } });
-        });
-        res.json({ success: true });
-    } catch (e) {
-        res.status(500).json({ error: "Failed to delete trainer", detail: e?.message });
-    }
-});
-
-app.get('/api/trainers', async (req, res) => {
     try {
         const trainers = await prisma.trainer.findMany({
-            include: { user: true } // Include user details if needed
+            include: {
+                classes: true,
+                user: true
+            },
+            orderBy: { name: 'asc' }
         });
-        // Transform if necessary to match frontend expectation (e.g. flatten user name)
-        // But for now just return as is or map
-        // The frontend expects: { id, name, specialty, rating, experience, imageUrl, sessionPrice, availableSlots, sessionDurations }
-        // We might need to map DB fields to these if they differ.
-        // Assuming DB has these fields or we just send raw.
         res.json(trainers);
     } catch (e) {
         res.status(500).json({ error: "Failed to fetch trainers" });
     }
 });
+
 
 app.get('/api/trainers/:id', authenticateToken, async (req, res) => {
     try {
@@ -1968,37 +2240,164 @@ app.post('/api/training-sessions/:id/complete', authenticateToken, authorize(['A
     }
 });
 
-app.get('/api/training-sessions', authenticateToken, async (req, res) => {
+
+
+// --- TRAINER SELF-SERVICE ROUTES ---
+app.get('/api/trainer/me', authenticateToken, authorize(['TRAINER']), async (req, res) => {
     try {
-        const sessions = await prisma.trainingSession.findMany({
-            include: { member: true, trainer: true, materials: true },
-            orderBy: { date: 'desc' },
-            take: 100
+        const trainerId = req.user.trainerId;
+        if (!trainerId) return res.status(400).json({ error: "Trainer account is not linked" });
+        const trainer = await prisma.trainer.findUnique({
+            where: { id: Number(trainerId) },
+            include: { classes: true }
         });
-        console.log("API Fetched sessions count:", sessions.length);
-        if (sessions.length > 0) console.log("First session materials:", sessions[0].materials);
-        res.json(sessions);
+        if (!trainer) return res.status(404).json({ error: "Trainer not found" });
+        res.json(trainer);
     } catch (e) {
-        res.status(500).json({ error: "Failed to fetch sessions" });
+        res.status(500).json({ error: "Failed to fetch trainer profile" });
     }
 });
 
-app.get('/api/training-sessions/:id', authenticateToken, async (req, res) => {
+app.get('/api/trainer/me/sessions', authenticateToken, authorize(['TRAINER']), async (req, res) => {
     try {
-        const session = await prisma.trainingSession.findUnique({
-            where: { id: Number(req.params.id) },
-            include: { member: true, trainer: true, materials: true }
+        const trainerId = req.user.trainerId;
+        if (!trainerId) return res.status(400).json({ error: "Trainer account is not linked" });
+        const sessions = await prisma.trainingSession.findMany({
+            where: { trainerId: Number(trainerId) },
+            include: { member: true },
+            orderBy: { date: 'asc' }
         });
-        if (!session) return res.status(404).json({ error: "Session not found" });
-        res.json(session);
+        res.json(sessions);
     } catch (e) {
-        res.status(500).json({ error: "Failed to fetch session details" });
+        res.status(500).json({ error: "Failed to fetch training sessions" });
+    }
+});
+
+app.post('/api/trainer/me/sessions/:id/complete', authenticateToken, authorize(['TRAINER']), async (req, res) => {
+    try {
+        const trainerId = req.user.trainerId;
+        if (!trainerId) return res.status(400).json({ error: "Trainer account is not linked" });
+        const sessionId = Number(req.params.id);
+        const session = await prisma.trainingSession.findUnique({ where: { id: sessionId } });
+        if (!session || session.trainerId !== Number(trainerId)) {
+            return res.status(403).json({ error: "Access denied" });
+        }
+        const updated = await prisma.trainingSession.update({
+            where: { id: sessionId },
+            data: { status: 'COMPLETED' }
+        });
+        res.json(updated);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to complete session", detail: e?.message });
+    }
+});
+
+app.patch('/api/trainer/me/sessions/:id', authenticateToken, authorize(['TRAINER']), async (req, res) => {
+    try {
+        const trainerId = req.user.trainerId;
+        if (!trainerId) return res.status(400).json({ error: "Trainer account is not linked" });
+        const sessionId = Number(req.params.id);
+        const { date, time, duration, notes } = req.body;
+
+        const session = await prisma.trainingSession.findUnique({ where: { id: sessionId } });
+        if (!session || session.trainerId !== Number(trainerId)) {
+            return res.status(403).json({ error: "Access denied" });
+        }
+
+        let nextDateTime = session.date;
+        if (date || time) {
+            const current = new Date(session.date);
+            const yyyyMmDd = date || current.toISOString().split('T')[0];
+            const hhmm = time || `${String(current.getHours()).padStart(2, '0')}:${String(current.getMinutes()).padStart(2, '0')}`;
+            const composed = new Date(`${yyyyMmDd}T${hhmm}`);
+            if (isNaN(composed.getTime())) {
+                return res.status(400).json({ error: "Invalid date or time" });
+            }
+            nextDateTime = composed;
+        }
+
+        let nextDuration = session.duration;
+        if (duration !== undefined && duration !== null && duration !== '') {
+            const numeric = Number(duration);
+            if (!Number.isFinite(numeric) || numeric <= 0 || numeric > 480) {
+                return res.status(400).json({ error: "Invalid duration" });
+            }
+            nextDuration = Math.round(numeric);
+        }
+
+        const updated = await prisma.trainingSession.update({
+            where: { id: sessionId },
+            data: {
+                date: nextDateTime,
+                duration: nextDuration,
+                notes: notes !== undefined ? (notes || null) : session.notes
+            }
+        });
+        res.json(updated);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to update session", detail: e?.message });
+    }
+});
+
+app.get('/api/trainer/me/classes', authenticateToken, authorize(['TRAINER']), async (req, res) => {
+    try {
+        const trainerId = req.user.trainerId;
+        if (!trainerId) return res.status(400).json({ error: "Trainer account is not linked" });
+        const classes = await prisma.class.findMany({
+            where: { trainerId: Number(trainerId) },
+            include: {
+                trainer: true,
+                bookings: {
+                    include: { member: true },
+                    orderBy: { createdAt: 'desc' }
+                }
+            },
+            orderBy: { dayOfWeek: 'asc' }
+        });
+        res.json(classes);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch classes" });
+    }
+});
+
+app.patch('/api/trainer/me/classes/:classId/attendees/:bookingId', authenticateToken, authorize(['TRAINER']), async (req, res) => {
+    try {
+        const trainerId = req.user.trainerId;
+        if (!trainerId) return res.status(400).json({ error: "Trainer account is not linked" });
+        const classId = Number(req.params.classId);
+        const bookingId = Number(req.params.bookingId);
+        const { status } = req.body;
+        const allowed = ['CONFIRMED', 'ATTENDED', 'CANCELLED'];
+        if (!allowed.includes(String(status).toUpperCase())) {
+            return res.status(400).json({ error: "Invalid status" });
+        }
+
+        const cls = await prisma.class.findUnique({ where: { id: classId } });
+        if (!cls || cls.trainerId !== Number(trainerId)) {
+            return res.status(403).json({ error: "Access denied" });
+        }
+
+        const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+        if (!booking || booking.classId !== classId) {
+            return res.status(404).json({ error: "Booking not found" });
+        }
+
+        const updated = await prisma.booking.update({
+            where: { id: bookingId },
+            data: { status: String(status).toUpperCase() }
+        });
+        res.json(updated);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to update attendee status", detail: e?.message });
+
     }
 });
 
 // --- CLASS ROUTES ---
 app.get('/api/classes', authenticateToken, async (req, res) => {
+    const where = req.user.role === 'TRAINER' ? { trainerId: Number(req.user.trainerId) } : {};
     const classes = await prisma.class.findMany({
+        where,
         include: {
             trainer: true,
             bookings: {
@@ -2012,6 +2411,12 @@ app.get('/api/classes', authenticateToken, async (req, res) => {
 
 app.get('/api/classes/:id/participants', authenticateToken, async (req, res) => {
     try {
+        if (req.user.role === 'TRAINER') {
+            const cls = await prisma.class.findUnique({ where: { id: Number(req.params.id) } });
+            if (!cls || cls.trainerId !== Number(req.user.trainerId)) {
+                return res.status(403).json({ error: "Access denied" });
+            }
+        }
         const participants = await prisma.booking.findMany({
             where: { classId: Number(req.params.id) },
             include: { member: true },
@@ -2025,12 +2430,14 @@ app.get('/api/classes/:id/participants', authenticateToken, async (req, res) => 
 
 app.post('/api/classes', authenticateToken, authorize(['ADMIN', 'STAFF', 'TRAINER']), async (req, res) => {
     const { name, trainerId, dayOfWeek, time, duration, capacity } = req.body;
+    const resolvedTrainerId = req.user.role === 'TRAINER' ? Number(req.user.trainerId) : Number(trainerId);
+    if (!resolvedTrainerId) return res.status(400).json({ error: "Trainer is required" });
     const gymClass = await prisma.class.create({
         data: {
             name, dayOfWeek, time,
             duration: Number(duration),
             capacity: Number(capacity),
-            trainerId: Number(trainerId)
+            trainerId: resolvedTrainerId
         }
     });
     res.json(gymClass);
@@ -2040,6 +2447,15 @@ app.put('/api/classes/:id', authenticateToken, authorize(['ADMIN', 'STAFF', 'TRA
     const classId = Number(req.params.id);
     const { name, trainerId, dayOfWeek, time, duration, capacity } = req.body;
     try {
+        if (req.user.role === 'TRAINER') {
+            const existing = await prisma.class.findUnique({ where: { id: classId } });
+            if (!existing || existing.trainerId !== Number(req.user.trainerId)) {
+                return res.status(403).json({ error: "Access denied" });
+            }
+        }
+        const resolvedTrainerId = req.user.role === 'TRAINER'
+            ? Number(req.user.trainerId)
+            : (trainerId !== undefined && trainerId !== '' ? Number(trainerId) : undefined);
         const gymClass = await prisma.class.update({
             where: { id: classId },
             data: {
@@ -2048,7 +2464,7 @@ app.put('/api/classes/:id', authenticateToken, authorize(['ADMIN', 'STAFF', 'TRA
                 time,
                 duration: duration !== undefined && duration !== '' ? Number(duration) : undefined,
                 capacity: capacity !== undefined && capacity !== '' ? Number(capacity) : undefined,
-                trainerId: trainerId !== undefined && trainerId !== '' ? Number(trainerId) : undefined
+                trainerId: resolvedTrainerId
             }
         });
         res.json(gymClass);
@@ -2060,6 +2476,12 @@ app.put('/api/classes/:id', authenticateToken, authorize(['ADMIN', 'STAFF', 'TRA
 app.delete('/api/classes/:id', authenticateToken, authorize(['ADMIN', 'STAFF', 'TRAINER']), async (req, res) => {
     const classId = Number(req.params.id);
     try {
+        if (req.user.role === 'TRAINER') {
+            const existing = await prisma.class.findUnique({ where: { id: classId } });
+            if (!existing || existing.trainerId !== Number(req.user.trainerId)) {
+                return res.status(403).json({ error: "Access denied" });
+            }
+        }
         await prisma.$transaction(async (tx) => {
             await tx.booking.deleteMany({ where: { classId } });
             await tx.class.delete({ where: { id: classId } });
@@ -2069,6 +2491,9 @@ app.delete('/api/classes/:id', authenticateToken, authorize(['ADMIN', 'STAFF', '
         res.status(500).json({ error: "Failed to delete class", detail: e?.message });
     }
 });
+
+
+
 
 // --- LOYALTY ROUTES ---
 app.get('/api/loyalty/rewards', authenticateToken, async (req, res) => {
@@ -2222,6 +2647,55 @@ app.delete('/api/suppliers/:id', authenticateToken, authorize(['OWNER', 'ADMIN']
 });
 
 
+// --- EXPENSE ROUTES ---
+
+// Get All Expenses
+app.get('/api/expenses', authenticateToken, async (req, res) => {
+    try {
+        const expenses = await prisma.expense.findMany({
+            orderBy: { date: 'desc' }
+        });
+        res.json(expenses);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch expenses" });
+    }
+});
+
+// Create Expense
+app.post('/api/expenses', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
+    const { title, amount, category, date, notes } = req.body;
+    try {
+        const expense = await prisma.expense.create({
+            data: {
+                title,
+                amount: parseFloat(amount),
+                category,
+                date: date ? new Date(date) : new Date(),
+                notes,
+                recordedBy: req.user.id.toString()
+            }
+        });
+        await logAudit("CREATE_EXPENSE", req.user.id.toString(), `Expense: ${expense.title}`, `Recorded ${expense.amount} in ${expense.category}`);
+        res.json(expense);
+    } catch (e) {
+        console.error("Create Expense Error:", e);
+        res.status(500).json({ error: "Failed to create expense" });
+    }
+});
+
+// Delete Expense
+app.delete('/api/expenses/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
+    const { id } = req.params;
+    try {
+        await prisma.expense.delete({ where: { id: Number(id) } });
+        await logAudit("DELETE_EXPENSE", req.user.id.toString(), `Expense ID: ${id}`, "Deleted expense record");
+        res.json({ message: "Expense deleted" });
+    } catch (e) {
+        res.status(500).json({ error: "Failed to delete expense" });
+    }
+});
+
+
 // --- INVENTORY RESTOCK ROUTE ---
 app.post('/api/inventory/restock', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
     const { productId, quantity, notes } = req.body;
@@ -2240,7 +2714,7 @@ app.post('/api/inventory/restock', authenticateToken, authorize(['OWNER', 'ADMIN
             return res.status(400).json({ error: "Product has no assigned supplier. Please link a supplier first." });
         }
 
-        // Use the product's fixed USD supply cost directly. 
+        // Use the product's fixed USD supply cost directly.
         // Frontend will handle display conversion.
         const costPerUnit = product.supplyCost || 0;
         const totalCost = Number(quantity) * costPerUnit;
@@ -2352,7 +2826,7 @@ app.delete('/api/payment-methods/:id', authenticateToken, async (req, res) => {
         if (req.user.role === 'MEMBER' && method.memberId !== req.user.id) {
             return res.status(403).json({ error: "Unauthorized" });
         }
-        // If Admin/Staff, they can delete? Logic says MEMBER ONLY feature for now, 
+        // If Admin/Staff, they can delete? Logic says MEMBER ONLY feature for now,
         // but if Admin needs to clean up, let them.
         if (req.user.role !== 'MEMBER' && req.user.role !== 'ADMIN') {
             // Block others if needed
@@ -2365,219 +2839,12 @@ app.delete('/api/payment-methods/:id', authenticateToken, async (req, res) => {
     }
 });
 
-// --- EXPENSE ROUTES ---
-app.get('/api/expenses', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
-    try {
-        const { start, end, category } = req.query;
-        const where = {};
-        if (start && end) {
-            where.date = {
-                gte: new Date(start),
-                lte: new Date(end)
-            };
-        }
-        if (category) where.category = category;
-
-        const expenses = await prisma.expense.findMany({
-            where,
-            orderBy: { date: 'desc' }
-        });
-        res.json(expenses);
-    } catch (e) {
-        res.status(500).json({ error: "Failed to fetch expenses" });
-    }
-});
-
-app.post('/api/expenses', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
-    try {
-        const { title, amount, category, date, recurring, frequency, notes } = req.body;
-        const expense = await prisma.expense.create({
-            data: {
-                title,
-                amount: parseFloat(amount),
-                category,
-                date: new Date(date),
-                recurring: recurring || false,
-                frequency,
-                notes,
-                recordedBy: req.user.email
-            }
-        });
-        res.json(expense);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.delete('/api/expenses/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
-    try {
-        await prisma.expense.delete({ where: { id: Number(req.params.id) } });
-        res.json({ message: "Expense deleted" });
-    } catch (e) {
-        res.status(500).json({ error: "Failed to delete expense" });
-    }
-});
-
-// --- SUPPLIER ROUTES ---
-app.get('/api/suppliers', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
-    try {
-        const suppliers = await prisma.supplier.findMany({ orderBy: { name: 'asc' } });
-        res.json(suppliers);
-    } catch (e) {
-        res.status(500).json({ error: "Failed to fetch suppliers" });
-    }
-});
-
-app.post('/api/suppliers', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
-    try {
-        const { name, contact, email, address, notes } = req.body;
-        const supplier = await prisma.supplier.create({
-            data: { name, contact, email, address, notes }
-        });
-        res.json(supplier);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.put('/api/suppliers/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { name, contact, email, address, notes } = req.body;
-        const supplier = await prisma.supplier.update({
-            where: { id: Number(id) },
-            data: { name, contact, email, address, notes }
-        });
-        res.json(supplier);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.delete('/api/suppliers/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
-    try {
-        await prisma.supplier.delete({ where: { id: Number(req.params.id) } });
-        res.json({ message: "Supplier deleted" });
-    } catch (e) {
-        res.status(500).json({ error: "Failed to delete supplier" });
-    }
-});
-
-// --- INVENTORY RESTOCK ROUTE ---
-app.post('/api/inventory/restock', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
-    const { productId, supplierId, quantity, costPerUnit, notes } = req.body;
-
-    // Validation
-    if (!productId || !quantity || !costPerUnit) {
-        return res.status(400).json({ error: "Missing required fields" });
-    }
-
-    try {
-        const totalCost = parseFloat(quantity) * parseFloat(costPerUnit);
-        const product = await prisma.product.findUnique({ where: { id: Number(productId) } });
-
-        if (!product) return res.status(404).json({ error: "Product not found" });
-
-        // Transaction: Update Stock + Create Expense
-        await prisma.$transaction([
-            prisma.product.update({
-                where: { id: Number(productId) },
-                data: { stock: { increment: Number(quantity) } }
-            }),
-            prisma.expense.create({
-                data: {
-                    title: `Restock: ${product.name} (x${quantity})`,
-                    amount: totalCost,
-                    category: 'INVENTORY',
-                    date: new Date(),
-                    recurring: false,
-                    notes: notes || `Restocked ${quantity} units @ ${costPerUnit}/unit`,
-                    recordedBy: req.user.email,
-                    supplierId: supplierId ? Number(supplierId) : null
-                }
-            })
-        ]);
-
-        res.json({ message: "Stock updated and expense recorded successfully" });
-    } catch (e) {
-        console.error("Restock Error:", e);
-        res.status(500).json({ error: "Restock failed: " + e.message });
-    }
-});
-
-app.post('/api/notifications', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
-    const { title, message, type } = req.body;
-    try {
-        const notif = await prisma.notification.create({
-            data: {
-                title,
-                message,
-                type: type || 'INFO',
-                date: new Date()
-            }
-        });
-        res.json(notif);
-    } catch (e) {
-        res.status(500).json({ error: "Failed to create announcement" });
-    }
-});
 
 
-// --- ANALYTICS ROUTES ---
-// ADMIN or OWNER (Strict operational data)
-app.get('/api/analytics', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
-    try {
-        // 1. Weekly Revenue (Last 7 days)
-        const today = new Date();
-        const lastWeek = new Date(today);
-        lastWeek.setDate(today.getDate() - 7);
 
-        const payments = await prisma.payment.findMany({
-            where: { date: { gte: lastWeek } }
-        });
 
-        const revenueByDay = {}; // { 'Mon': 120, 'Tue': 300 }
-        payments.forEach(p => {
-            const day = new Date(p.date).toLocaleDateString('en-US', { weekday: 'short' });
-            revenueByDay[day] = (revenueByDay[day] || 0) + p.amount;
-        });
 
-        // 2. Member Distribution
-        const members = await prisma.member.findMany({ include: { plan: true } });
-        const planDist = {};
-        members.forEach(m => {
-            const planName = m.plan?.name || 'Unknown';
-            planDist[planName] = (planDist[planName] || 0) + 1;
-        });
 
-        // 3. Peak Hours (from Access Logs)
-        const logs = await prisma.accessLog.findMany();
-        const hoursDist = new Array(24).fill(0);
-        logs.forEach(l => {
-            const hour = new Date(l.checkIn).getHours(); // Fixed typo checkInTime -> checkIn
-            hoursDist[hour]++;
-        });
-
-        // Simplify hours for chart (every 3 hours)
-        const simpleHours = [
-            hoursDist[6] + hoursDist[7] + hoursDist[8], // 6AM-9AM
-            hoursDist[9] + hoursDist[10] + hoursDist[11], // 9AM-12PM
-            hoursDist[12] + hoursDist[13] + hoursDist[14], // 12PM-3PM
-            hoursDist[15] + hoursDist[16] + hoursDist[17], // 3PM-6PM
-            hoursDist[18] + hoursDist[19] + hoursDist[20], // 6PM-9PM
-            hoursDist[21] + hoursDist[22] + hoursDist[23]  // 9PM-12AM
-        ];
-
-        res.json({
-            revenue: revenueByDay,
-            plans: planDist,
-            peakHours: simpleHours
-        });
-    } catch (e) {
-        console.error(e);
-        res.status(500).json({ error: e.message });
-    }
-});
 
 // Seed Initial Data Route (Dev only)
 app.post('/api/seed', async (req, res) => {
@@ -2719,227 +2986,175 @@ app.post('/api/seed', async (req, res) => {
     }
 });
 
-// --- TRAINER & SESSION ROUTES ---
 
-// Admin: Create Trainer
-app.post('/api/trainers', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
+
+
+// --- ANALYTICS API ---
+app.get('/api/analytics', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
     try {
-        const { name, specialty, specialties, email, phone, experience, rating, sessionPrice, sessionDurations, availableSlots, commissionRate, baseSalary, bio, imageUrl } = req.body;
-        const trainer = await prisma.trainer.create({
-            data: {
-                name,
-                specialty,
-                specialties,
-                email,
-                phone,
-                experience: Number(experience) || 0,
-                rating: Number(rating) || 5.0,
-                sessionPrice: Number(sessionPrice) || 50.0,
-                sessionDurations,
-                availableSlots: Number(availableSlots) || 0,
-                commissionRate: Number(commissionRate) || 0,
-                baseSalary: Number(baseSalary) || 0,
-                bio,
-                imageUrl
-            }
-        });
-        res.json(trainer);
-    } catch (e) {
-        console.error(e);
-        res.status(500).json({ error: "Failed to create trainer" });
-    }
-});
+        const { startDate, endDate } = req.query;
 
-// Admin: Update Trainer
-app.put('/api/trainers/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
-    const { id } = req.params;
-    console.log(`[UPDATE TRAINER] ID: ${id}`, req.body); // DEBUG
-    try {
-        const { name, specialty, specialties, email, phone, experience, rating, sessionPrice, sessionDurations, availableSlots, commissionRate, baseSalary, bio, imageUrl } = req.body;
+        const start = startDate ? new Date(startDate) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        start.setHours(0, 0, 0, 0);
+        const end = endDate ? new Date(endDate) : new Date();
+        end.setHours(23, 59, 59, 999);
 
-        console.log(`[UPDATE VALUES] Rate: ${commissionRate}, Salary: ${baseSalary}`); // DEBUG
-
-        const trainer = await prisma.trainer.update({
-            where: { id: Number(id) },
-            data: {
-                name,
-                specialty,
-                specialties,
-                email,
-                phone,
-                experience: Number(experience) || 0,
-                rating: Number(rating) || 5.0,
-                sessionPrice: Number(sessionPrice) || 50.0,
-                sessionDurations,
-                availableSlots: Number(availableSlots) || 0,
-                commissionRate: Number(commissionRate) || 0,
-                baseSalary: Number(baseSalary) || 0,
-                bio,
-                imageUrl
-            }
-        });
-        res.json(trainer);
-    } catch (e) {
-        console.error(e);
-        res.status(500).json({ error: "Failed to update trainer" });
-    }
-});
-
-// Admin: Delete Trainer
-app.delete('/api/trainers/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), async (req, res) => {
-    const { id } = req.params;
-    try {
-        await prisma.trainer.delete({ where: { id: Number(id) } });
-        res.json({ message: "Trainer deleted" });
-    } catch (e) {
-        res.status(500).json({ error: "Failed to delete trainer" });
-    }
-});
-
-// Public/Member: Get details of a specific trainer + sessions
-app.get('/api/trainers/:id/sessions', async (req, res) => {
-    try {
-        const sessions = await prisma.trainingSession.findMany({
-            where: { trainerId: Number(req.params.id) },
-            include: { member: true },
-            orderBy: { date: 'desc' },
-            take: 20
-        });
-        res.json(sessions);
-    } catch (e) {
-        res.status(500).json({ error: "Failed to fetch sessions" });
-    }
-});
-
-app.get('/api/trainers', async (req, res) => {
-    try {
-        const trainers = await prisma.trainer.findMany({
-            where: { availableSlots: { gt: 0 } },
-            orderBy: { rating: 'desc' }
-        });
-        res.json(trainers);
-    } catch (e) {
-        res.status(500).json({ error: "Failed to fetch trainers" });
-    }
-});
-
-app.post('/api/members/book-training', authenticateToken, async (req, res) => {
-    const { trainerId, date, time, duration, notes, method } = req.body;
-    const memberId = req.user.id;
-
-    if (!trainerId || !date || !time) return res.status(400).json({ error: "Missing fields" });
-
-    try {
-        const trainer = await prisma.trainer.findUnique({ where: { id: Number(trainerId) } });
-        if (!trainer) return res.status(404).json({ error: "Trainer not found" });
-
-        // Calculate Price (Prorated based on 60min rate)
-        // Default 60min price = sessionPrice.
-        const price = (trainer.sessionPrice / 60) * (duration || 60);
-
-        // Combine Date + Time
-        const dateTime = new Date(`${date}T${time}`);
-
-        const session = await prisma.trainingSession.create({
-            data: {
-                memberId: Number(memberId),
-                trainerId: Number(trainerId),
-                date: dateTime,
-                duration: Number(duration) || 60,
-                price,
-                status: 'SCHEDULED',
-                notes: notes,
-                commissionPaid: false,
-                materialsCost: 0
-            }
-        });
-
-        // Decrement Slots
-        await prisma.trainer.update({
-            where: { id: Number(trainerId) },
-            data: { availableSlots: { decrement: 1 } }
-        });
-
-        res.json(session);
-    } catch (e) {
-        console.error(e);
-        res.status(500).json({ error: "Booking failed" });
-    }
-});
-
-// Admin: View All Sessions
-app.get('/api/training-sessions', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
-    try {
-        const sessions = await prisma.trainingSession.findMany({
-            include: { member: true, trainer: true },
-            orderBy: { date: 'desc' },
-            take: 100
-        });
-        res.json(sessions);
-    } catch (e) {
-        res.status(500).json({ error: "Failed to fetch sessions" });
-    }
-});
-
-// Admin: Mark Complete & Calculate Commission
-app.post('/api/training-sessions/:id/complete', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), async (req, res) => {
-    const { id } = req.params;
-    const { materialsCost, notes } = req.body;
-
-    try {
-        const session = await prisma.trainingSession.findUnique({
-            where: { id: Number(id) },
-            include: { trainer: true }
-        });
-
-        if (!session) return res.status(404).json({ error: "Session not found" });
-        if (session.status === 'COMPLETED') return res.status(400).json({ error: "Session already completed" });
-
-        // Logic: Commission = Price * Rate
-        const commissionAmount = session.price * (session.trainer.commissionRate || 0);
-
-        // Transaction: Update Session + Create Expenses
-        const [updatedSession] = await prisma.$transaction([
-            prisma.trainingSession.update({
-                where: { id: session.id },
-                data: {
-                    status: 'COMPLETED',
-                    commissionPaid: true,
-                    materialsCost: Number(materialsCost) || 0,
-                    notes: notes || session.notes
-                }
-            }),
-            // Commission Expense
-            prisma.expense.create({
-                data: {
-                    title: `Commission: ${session.trainer.name}`,
-                    amount: commissionAmount,
-                    category: 'SALARY',
-                    date: new Date(),
-                    notes: `Session #${session.id} - ${session.trainer.commissionRate * 100}% of ${session.price}`
-                }
-            }),
-            // Materials Expense (if any)
-            ...(Number(materialsCost) > 0 ? [
-                prisma.expense.create({
-                    data: {
-                        title: `Materials: Session #${session.id}`,
-                        amount: Number(materialsCost),
-                        category: 'SUPPLIES',
-                        date: new Date()
+        // Get all payments in date range
+        const payments = await prisma.payment.findMany({
+            where: {
+                date: { gte: start, lte: end }
+            },
+            include: {
+                member: true,
+                cashier: true,
+                items: {
+                    include: {
+                        product: true
                     }
-                })
-            ] : [])
-        ]);
+                }
+            },
+            orderBy: { date: 'desc' }
+        });
+
+        // Get all expenses in date range
+        const expenses = await prisma.expense.findMany({
+            where: {
+                date: { gte: start, lte: end }
+            }
+        });
+
+        // Get training sessions
+        const trainingSessions = await prisma.trainingSession.findMany({
+            where: {
+                date: { gte: start, lte: end }
+            },
+            include: {
+                member: true,
+                trainer: true
+            }
+        });
+
+        // Get access logs for peak hours
+        const accessLogs = await prisma.accessLog.findMany({
+            where: {
+                checkIn: { gte: start, lte: end }
+            }
+        });
+
+        // Calculate totals
+        const totalRevenue = payments.reduce((sum, p) => sum + p.amount, 0);
+        const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+        const netProfit = totalRevenue - totalExpenses;
+
+        // Shop sales (POS_SALE + STORE_SALE)
+        const shopSales = payments
+            .filter(p => p.type === 'POS_SALE' || p.type === 'STORE_SALE')
+            .reduce((sum, p) => sum + p.amount, 0);
+
+        // Training earnings
+        const trainingRevenue = trainingSessions.reduce((sum, s) => sum + (s.price || 0), 0);
+        const trainingCosts = trainingSessions.reduce((sum, s) => sum + (s.materialsCost || 0), 0);
+        const trainingEarnings = trainingRevenue - trainingCosts;
+
+        // Revenue by source
+        const membershipRevenue = payments.filter(p => p.type === 'MEMBERSHIP').reduce((sum, p) => sum + p.amount, 0);
+        const posRevenue = payments.filter(p => p.type === 'POS_SALE').reduce((sum, p) => sum + p.amount, 0);
+        const storeRevenue = payments.filter(p => p.type === 'STORE_SALE').reduce((sum, p) => sum + p.amount, 0);
+
+        // Revenue Trends (by weekday)
+        const dailyRevenue = {};
+        payments.forEach(p => {
+            const day = new Date(p.date).toLocaleDateString('en-US', { weekday: 'short' });
+            dailyRevenue[day] = (dailyRevenue[day] || 0) + p.amount;
+        });
+        const revenueTrends = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => dailyRevenue[day] || 0);
+
+        // Peak Hours Analysis (by 3-hour blocks)
+        const hourlyActivity = new Array(24).fill(0);
+        accessLogs.forEach(log => {
+            const hour = new Date(log.checkIn).getHours();
+            hourlyActivity[hour]++;
+        });
+        const peakHours = [
+            hourlyActivity.slice(6, 9).reduce((a, b) => a + b, 0),
+            hourlyActivity.slice(9, 12).reduce((a, b) => a + b, 0),
+            hourlyActivity.slice(12, 15).reduce((a, b) => a + b, 0),
+            hourlyActivity.slice(15, 18).reduce((a, b) => a + b, 0),
+            hourlyActivity.slice(18, 21).reduce((a, b) => a + b, 0),
+            hourlyActivity.slice(21, 24).reduce((a, b) => a + b, 0)
+        ];
+
+        // Top products
+        const productSales = {};
+        payments.forEach(payment => {
+            payment.items.forEach(item => {
+                if (item.product) {
+                    if (!productSales[item.product.id]) {
+                        productSales[item.product.id] = {
+                            ...item.product,
+                            totalSales: 0,
+                            quantity: 0
+                        };
+                    }
+                    productSales[item.product.id].totalSales += item.unitPrice * item.quantity;
+                    productSales[item.product.id].quantity += item.quantity;
+                }
+            });
+        });
+
+        const topProducts = Object.values(productSales)
+            .sort((a, b) => b.totalSales - a.totalSales)
+            .slice(0, 10);
+
+        // Get membership distribution
+        const members = await prisma.member.findMany({
+            include: { plan: true }
+        });
+
+        const membershipDist = {};
+        members.forEach(m => {
+            if (m.plan) {
+                membershipDist[m.plan.name] = (membershipDist[m.plan.name] || 0) + 1;
+            }
+        });
+
+        // Format transactions for modal
+        const transactions = payments.map(p => ({
+            id: p.id,
+            date: p.date,
+            type: p.type,
+            member: p.member ? `${p.member.firstName} ${p.member.lastName}` : 'Guest',
+            staff: p.cashier ? p.cashier.name : 'Unknown',
+            method: p.method,
+            amount: p.amount
+        }));
 
         res.json({
-            success: true,
-            session: updatedSession,
-            commission: commissionAmount
+            summary: {
+                revenue: totalRevenue,
+                expenses: totalExpenses,
+                netProfit: netProfit,
+                shopSales: shopSales,
+                trainingEarnings: trainingEarnings,
+                transactionCount: payments.length
+            },
+            revenueBySource: {
+                membership: membershipRevenue,
+                training: trainingRevenue,
+                store: storeRevenue,
+                pos: posRevenue
+            },
+            revenueTrends,
+            peakHours,
+            topProducts,
+            membershipDistribution: membershipDist,
+            transactions,
+            dateRange: { start, end }
         });
-    } catch (e) {
-        console.error("Completion Error:", e);
-        res.status(500).json({ error: e.message });
+
+    } catch (error) {
+        console.error('Analytics error:', error);
+        res.status(500).json({ error: 'Failed to fetch analytics data' });
     }
 });
 

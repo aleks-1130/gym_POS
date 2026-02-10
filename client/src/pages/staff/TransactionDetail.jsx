@@ -121,7 +121,6 @@ export default function TransactionDetail() {
             setActionLoading(false);
         }
     };
-
     if (loading) {
         return <div className="text-white p-8">Loading transaction...</div>;
     }

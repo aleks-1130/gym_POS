@@ -29,7 +29,7 @@ const AdminDashboard = ({ stats }) => {
     // Fallback data if stats are missing or loading error
     const data = stats || { activeMembers: 0, revenueToday: 0, expiringSoon: 0, monthlyRevenue: 0, totalExpenses: 0 };
 
-    // Calculate Net Profit on Frontend: Revenue (USD) - Expenses (USD)
+    // Calculate Net Profit on Frontend: Revenue (PHP) - Expenses (PHP)
     const netProfit = data.monthlyRevenue - data.totalExpenses;
 
     // Mock chart data for now (backend only returns total numbers, not time-series yet in the specific endpoint analyzed)
@@ -40,7 +40,7 @@ const AdminDashboard = ({ stats }) => {
         datasets: [
             {
                 label: 'Weekly Revenue',
-                data: [1200, 1900, 300, 500, 200, 3000, 4500],
+                data: data.weeklyRevenue || [0, 0, 0, 0, 0, 0, 0],
                 borderColor: '#FF8C00',
                 backgroundColor: 'rgba(255, 140, 0, 0.2)',
                 tension: 0.4,
