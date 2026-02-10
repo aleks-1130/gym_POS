@@ -36,6 +36,9 @@ import TransactionDetail from './pages/staff/TransactionDetail';
 import AdminTrainers from './pages/admin/Trainers';
 import AdminClasses from './pages/admin/Classes';
 import TrainingManager from './pages/admin/TrainingManager';
+import TrainerSessions from './pages/trainer/TrainerSessions';
+import TrainerClasses from './pages/trainer/TrainerClasses';
+import TrainerProfile from './pages/trainer/TrainerProfile';
 
 // Member Pages
 import Schedule from './pages/member/Schedule';
@@ -46,6 +49,8 @@ import PurchaseHistory from './pages/member/PurchaseHistory';
 import TrainerBooking from './pages/member/TrainerBooking';
 import Announcements from './pages/shared/Announcements';
 import GymTraffic from './pages/member/GymTraffic';
+import PaymentMethods from './pages/member/PaymentMethods';
+import ShopCheckout from './pages/member/ShopCheckout';
 
 
 // Common
@@ -80,8 +85,8 @@ const ProtectedRoute = ({ children, allowedRoles, fullScreen }) => {
     );
   }
 
-  // Members use bottom nav only (no sidebar)
-  if (user.role === ROLES.MEMBER) {
+  // Members and Trainers use bottom nav only (no sidebar)
+  if (user.role === ROLES.MEMBER || user.role === ROLES.TRAINER) {
     return (
       <div className="flex flex-col bg-background min-h-screen overflow-x-hidden">
         <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6 pb-24 overflow-y-auto transition-all duration-300">
@@ -131,6 +136,7 @@ function AppRoutes() {
           }
         />
 
+        {/* Display Monitor */}
         {/* Display Monitor */}
         <Route
           path="/display-monitor"
@@ -223,11 +229,12 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+        {/* TODO: You are creating nested routes inside either declare protected route with the trainer route or classes route to fix this, youre basically nesting the route which is not allowed not sure of the api logic for this you guys can fix this */}
         <Route
           path="/trainers"
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              <TrainersRoute />
+              {/* <TrainersRoute /> */}
             </ProtectedRoute>
           }
         />
@@ -235,15 +242,38 @@ function AppRoutes() {
           path="/classes"
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              <ClassesRoute />
+              {/* <ClassesRoute /> */}
             </ProtectedRoute>
           }
         />
+        // TODO:  why are these routes nested? within the same protected route component? you can just declare them separately and not nest them, this can have issues later on, you are basically nesting the route within the same component not sure of the api logic for this you guys can fix this
         <Route
           path="/admin/training"
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
               <TrainingManager />
+              path="/trainer/sessions"
+              element={
+                <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+                  <TrainerSessions />
+                </ProtectedRoute>
+              }
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trainer/classes"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+              <TrainerClasses />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trainer/profile"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+              <TrainerProfile />
             </ProtectedRoute>
           }
         />
@@ -272,6 +302,22 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
               <UserManagement />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/expenses"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
+              <Expenses />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/suppliers"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
+              <Suppliers />
             </ProtectedRoute>
           }
         />
@@ -379,6 +425,30 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
               <GymTraffic />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/gym-traffic"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
+              <GymTraffic />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/payment-methods"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
+              <PaymentMethods />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/shop-checkout"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
+              <ShopCheckout />
             </ProtectedRoute>
           }
         />

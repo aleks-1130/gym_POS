@@ -44,6 +44,51 @@ export default function Classes() {
         fetchParticipants(cls.id);
     };
 
+    const downloadCsv = (filename, rows) => {
+        const escapeValue = (value) => {
+            if (value === null || value === undefined) return '';
+            const str = String(value);
+            if (/[",\n]/.test(str)) {
+                return `"${str.replace(/"/g, '""')}"`;
+            }
+            return str;
+        };
+        const csv = rows.map((row) => row.map(escapeValue).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
+    const handleExportParticipants = () => {
+        if (!selectedClass) return;
+        const rows = [
+            ['Class', 'Date', 'Member ID', 'Member Name', 'Status', 'Booked At']
+        ];
+        participants.forEach((booking) => {
+            const name = `${booking.member?.firstName || ''} ${booking.member?.lastName || ''}`.trim();
+            rows.push([
+                selectedClass.name || '',
+                `${selectedClass.dayOfWeek || ''} ${selectedClass.time || ''}`.trim(),
+                booking.memberId || '',
+                name,
+                booking.status || '',
+                booking.createdAt ? new Date(booking.createdAt).toLocaleString() : ''
+            ]);
+        });
+        const safeName = (selectedClass.name || 'class')
+            .toLowerCase()
+            .replace(/\s+/g, '-')
+            .replace(/[^a-z0-9-]/g, '');
+        const filename = `${safeName}-participants.csv`;
+        downloadCsv(filename, rows);
+    };
+
     const filteredClasses = classes.filter(cls => cls.dayOfWeek === activeDay);
 
     if (loading) {
@@ -238,7 +283,11 @@ export default function Classes() {
                                         <p className="text-white font-semibold text-lg">{selectedClass.capacity - participants.length}</p>
                                     </div>
                                 </div>
-                                <button className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-xl text-sm font-medium transition-all">
+                                <button
+                                    onClick={handleExportParticipants}
+                                    disabled={participantsLoading || participants.length === 0}
+                                    className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-xl text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
                                     Export List
                                 </button>
                             </div>

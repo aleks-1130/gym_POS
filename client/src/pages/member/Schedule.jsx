@@ -7,7 +7,7 @@ export default function Schedule() {
     const [classes, setClasses] = useState([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState('all'); // all, booked, available
-    const [selectedDay, setSelectedDay] = useState('all'); // all, Mon, Tue, Wed, Thu, Fri, Sat, Sun
+    const [selectedDay, setSelectedDay] = useState(null); // null, Mon, Tue, Wed, Thu, Fri, Sat, Sun
 
     useEffect(() => {
         fetchClasses();
@@ -51,7 +51,7 @@ export default function Schedule() {
         if (filter === 'available' && (cls.isBooked || cls.enrolled >= cls.capacity)) return false;
         
         // Filter by day of week
-        if (selectedDay !== 'all') {
+        if (selectedDay) {
             const dayMapping = {
                 'M': ['Mon', 'Monday'],
                 'T': ['Tue', 'Tuesday'],
@@ -69,7 +69,6 @@ export default function Schedule() {
     });
 
     const dayButtons = [
-        { value: 'all', label: 'All' },
         { value: 'M', label: 'M' },
         { value: 'T', label: 'T' },
         { value: 'W', label: 'W' },
@@ -91,7 +90,7 @@ export default function Schedule() {
     }
 
     return (
-        <div className="pb-20 px-4 max-w-5xl mx-auto">
+        <div className="pb-24 px-4 sm:px-6 max-w-6xl mx-auto">
             {/* Header */}
             <div className="pt-4 pb-3">
                 <h1 className="text-xl font-bold text-white">Gym Class Schedule</h1>
@@ -99,7 +98,7 @@ export default function Schedule() {
             </div>
 
             {/* Filter Tabs - Sticky */}
-            <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 -mx-4 px-4 py-3 mb-2 border-b border-white/5">
+            <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 -mx-4 sm:-mx-6 px-4 sm:px-6 py-3 mb-2 border-b border-white/5">
                 <div className="flex gap-2">
                     {[
                         { value: 'all', label: 'All Classes', icon: 'grid_view' },
@@ -125,12 +124,12 @@ export default function Schedule() {
 
             {/* Day Filter */}
             <div className="mb-4 px-1">
-                <div className="flex items-center gap-2 overflow-x-auto pb-2 hide-scrollbar">
+                <div className="grid grid-cols-7 gap-2">
                     {dayButtons.map(day => (
                         <button
                             key={day.value}
-                            onClick={() => setSelectedDay(day.value)}
-                            className={`flex-shrink-0 min-w-[44px] h-11 rounded-lg font-bold text-xs transition-all active:scale-95 ${
+                            onClick={() => setSelectedDay(selectedDay === day.value ? null : day.value)}
+                            className={`w-full h-9 rounded-lg font-bold text-[10px] sm:text-xs transition-all active:scale-95 ${
                                 selectedDay === day.value
                                     ? 'bg-primary text-background shadow-lg'
                                     : 'bg-surface text-text-muted hover:text-white border border-white/5'
@@ -150,11 +149,11 @@ export default function Schedule() {
                             <span className="material-icons-round text-3xl text-text-muted">event_busy</span>
                         </div>
                         <p className="text-text-muted text-sm">No classes found</p>
-                        {(filter !== 'all' || selectedDay !== 'all') && (
+                        {(filter !== 'all' || selectedDay) && (
                             <button
                                 onClick={() => {
                                     setFilter('all');
-                                    setSelectedDay('all');
+                                    setSelectedDay(null);
                                 }}
                                 className="mt-3 text-primary text-sm font-medium underline"
                             >
