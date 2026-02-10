@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
+import { ROLES } from '../../constants/roles';
 import QRCode from 'react-qr-code';
 
 export default function Profile() {
@@ -20,6 +21,7 @@ export default function Profile() {
         currentPassword: '',
         newPassword: ''
     });
+    const isMember = user?.role === ROLES.MEMBER;
     const qrValue = user?.id ? `MEMBER:${user.id}` : '';
 
     useEffect(() => {
@@ -42,9 +44,11 @@ export default function Profile() {
             }
         };
 
-        fetchMember();
+        if (isMember) {
+            fetchMember();
+        }
         // Fetch bookings/orders if needed
-    }, [user?.id]);
+    }, [user?.id, isMember]);
 
     const memberSince = member?.startDate || member?.createdAt || user?.createdAt;
     const memberSinceLabel = memberSince
@@ -53,7 +57,7 @@ export default function Profile() {
 
     const handleSaveProfile = async (e) => {
         e.preventDefault();
-        if (!user?.id) return;
+        if (!user?.id || !isMember) return;
         try {
             const token = sessionStorage.getItem('token') || localStorage.getItem('token');
             const res = await axios.put(`http://localhost:5000/api/members/${user.id}`, editForm, {
@@ -68,7 +72,7 @@ export default function Profile() {
 
     const handleChangePassword = async (e) => {
         e.preventDefault();
-        if (!user?.id) return;
+        if (!user?.id || !isMember) return;
         try {
             const token = sessionStorage.getItem('token') || localStorage.getItem('token');
             await axios.post(`http://localhost:5000/api/members/${user.id}/change-password`, passwordForm, {
@@ -98,6 +102,7 @@ export default function Profile() {
             </div>
 
             {/* Digital Member Card - Prominent */}
+            {isMember && (
             <div className="bg-gradient-to-br from-primary via-primary to-orange-600 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
                 {/* Decorative elements */}
                 <div className="absolute -bottom-8 -right-8 w-32 h-32 bg-white/20 rounded-full blur-2xl"></div>
@@ -141,6 +146,7 @@ export default function Profile() {
                     </div>
                 </div>
             </div>
+            )}
 
             {/* Account Details Grid */}
             <div>
@@ -210,16 +216,24 @@ export default function Profile() {
                         <span className="material-icons-round text-primary text-xl block mb-1">lock</span>
                         <span className="text-xs font-medium text-white block">Password</span>
                     </button>
-                    <a href="/payment-methods" className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center">
-                        <span className="material-icons-round text-primary text-xl block mb-1">credit_card</span>
-                        <span className="text-xs font-medium text-white block">Payment Methods</span>
-                    </a>
+                    {isMember ? (
+                        <a href="/payment-methods" className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center">
+                            <span className="material-icons-round text-primary text-xl block mb-1">credit_card</span>
+                            <span className="text-xs font-medium text-white block">Payment Methods</span>
+                        </a>
+                    ) : (
+                        <div className="bg-surface p-4 rounded-xl border border-white/5 transition-all text-center">
+                            <span className="material-icons-round text-primary text-xl block mb-1">person</span>
+                            <span className="text-xs font-medium text-white block">Trainer Account</span>
+                        </div>
+                    )}
                     <button className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center">
                         <span className="material-icons-round text-primary text-xl block mb-1">notifications</span>
                         <span className="text-xs font-medium text-white block">Notifications</span>
                     </button>
                 </div>
             </div>
+            )}
 
             {/* Support & Legal */}
             <div>
@@ -254,7 +268,7 @@ export default function Profile() {
                 <p className="text-text-muted text-xs">FitOS v1.0.0</p>
             </div>
 
-            {showEditModal && (
+            {showEditModal && isMember && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                     <div className="bg-surface border border-white/10 rounded-2xl w-full max-w-md p-5">
                         <div className="flex items-center justify-between mb-4">
@@ -314,7 +328,7 @@ export default function Profile() {
                 </div>
             )}
 
-            {showPasswordModal && (
+            {showPasswordModal && isMember && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                     <div className="bg-surface border border-white/10 rounded-2xl w-full max-w-md p-5">
                         <div className="flex items-center justify-between mb-4">

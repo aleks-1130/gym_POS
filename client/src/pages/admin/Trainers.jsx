@@ -12,6 +12,11 @@ export default function Trainers() {
     const [showForm, setShowForm] = useState(false);
     const [formMode, setFormMode] = useState('create'); // create | edit
     const [saving, setSaving] = useState(false);
+    const [showLoginModal, setShowLoginModal] = useState(false);
+    const [loginTrainer, setLoginTrainer] = useState(null);
+    const [loginEmail, setLoginEmail] = useState('');
+    const [loginPassword, setLoginPassword] = useState('');
+    const [loginSaving, setLoginSaving] = useState(false);
     const [formData, setFormData] = useState({
         name: '',
         specialty: '',
@@ -24,7 +29,10 @@ export default function Trainers() {
         sessionDurations: ['60'],
         availableSlots: '',
         bio: '',
-        imageUrl: ''
+        imageUrl: '',
+        createLogin: false,
+        loginEmail: '',
+        loginPassword: ''
     });
     const totalTrainers = trainers.length;
     const avgRating = totalTrainers
@@ -84,7 +92,10 @@ export default function Trainers() {
             sessionDurations: ['60'],
             availableSlots: '',
             bio: '',
-            imageUrl: ''
+            imageUrl: '',
+            createLogin: false,
+            loginEmail: '',
+            loginPassword: ''
         });
         setShowForm(true);
         // Scroll modal to top when opened
@@ -110,7 +121,10 @@ export default function Trainers() {
                 : ['60'],
             availableSlots: trainer.availableSlots ?? '',
             bio: trainer.bio || '',
-            imageUrl: trainer.imageUrl || ''
+            imageUrl: trainer.imageUrl || '',
+            createLogin: false,
+            loginEmail: '',
+            loginPassword: ''
         });
         setSelectedTrainer(trainer);
         setShowForm(true);
@@ -128,6 +142,11 @@ export default function Trainers() {
     const handleSaveTrainer = async (e) => {
         e.preventDefault();
         if (!formData.name.trim()) return alert('Trainer name is required.');
+        if (formMode === 'create' && formData.createLogin) {
+            if (!formData.loginEmail || !formData.loginPassword) {
+                return alert('Login email and password are required to create trainer access.');
+            }
+        }
         setSaving(true);
         try {
             if (formMode === 'create') {
@@ -158,6 +177,34 @@ export default function Trainers() {
             await fetchTrainers();
         } catch (error) {
             alert(error?.response?.data?.error || 'Failed to delete trainer.');
+        }
+    };
+
+    const openLoginModal = (trainer) => {
+        setLoginTrainer(trainer);
+        setLoginEmail(trainer.email || '');
+        setLoginPassword('');
+        setShowLoginModal(true);
+    };
+
+    const handleCreateLogin = async (e) => {
+        e.preventDefault();
+        if (!loginTrainer) return;
+        if (!loginEmail || !loginPassword) {
+            return alert('Login email and password are required.');
+        }
+        setLoginSaving(true);
+        try {
+            await axios.post(`http://localhost:5000/api/trainers/${loginTrainer.id}/create-login`, {
+                loginEmail,
+                loginPassword
+            });
+            setShowLoginModal(false);
+            setLoginTrainer(null);
+        } catch (error) {
+            alert(error?.response?.data?.error || 'Failed to create trainer login.');
+        } finally {
+            setLoginSaving(false);
         }
     };
 
@@ -209,6 +256,13 @@ export default function Trainers() {
                                 title="Edit trainer"
                             >
                                 <Pencil size={16} />
+                            </button>
+                            <button
+                                onClick={() => openLoginModal(trainer)}
+                                className="w-9 h-9 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 transition-all"
+                                title="Create trainer login"
+                            >
+                                <User size={16} />
                             </button>
                             <button
                                 onClick={() => handleDeleteTrainer(trainer)}
@@ -573,6 +627,55 @@ export default function Trainers() {
                                         placeholder="(000) 000-0000"
                                     />
                                 </div>
+                                {formMode === 'create' && (
+                                    <div className="md:col-span-2 bg-white/[0.03] border border-white/10 rounded-2xl p-4">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <p className="text-sm font-semibold text-white">Create Trainer Login</p>
+                                                <p className="text-xs text-text-muted">Allows trainer to access their own dashboard</p>
+                                            </div>
+                                            <input
+                                                type="checkbox"
+                                                checked={formData.createLogin}
+                                                onChange={(e) => {
+                                                    const checked = e.target.checked;
+                                                    setFormData((prev) => ({
+                                                        ...prev,
+                                                        createLogin: checked,
+                                                        loginEmail: checked ? (prev.loginEmail || prev.email || '') : '',
+                                                        loginPassword: checked ? prev.loginPassword : ''
+                                                    }));
+                                                }}
+                                                className="accent-orange-500 w-4 h-4"
+                                            />
+                                        </div>
+
+                                        {formData.createLogin && (
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                                <div>
+                                                    <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Login Email</label>
+                                                    <input
+                                                        type="email"
+                                                        value={formData.loginEmail}
+                                                        onChange={(e) => handleFormChange('loginEmail', e.target.value)}
+                                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                                        placeholder="trainer@login.com"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Temporary Password</label>
+                                                    <input
+                                                        type="password"
+                                                        value={formData.loginPassword}
+                                                        onChange={(e) => handleFormChange('loginPassword', e.target.value)}
+                                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                                        placeholder="Set a temp password"
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                                 <div>
                                     <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Rating</label>
                                     <input
@@ -624,6 +727,70 @@ export default function Trainers() {
                                 {saving ? 'Saving...' : 'Save Trainer'}
                             </button>
                         </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {showLoginModal && loginTrainer && (
+                <div className="fixed inset-0 z-[120] overflow-y-auto">
+                    <div className="absolute inset-0 bg-background/80 backdrop-blur-md" onClick={() => setShowLoginModal(false)}></div>
+                    <div className="relative min-h-full w-full flex items-center justify-center p-4 sm:p-6">
+                        <form
+                            onSubmit={handleCreateLogin}
+                            className="bg-[#1a1d24] w-full max-w-lg rounded-2xl border border-white/10 shadow-2xl overflow-hidden"
+                        >
+                            <div className="p-5 border-b border-white/10 flex items-center justify-between">
+                                <div>
+                                    <h2 className="text-xl font-semibold text-white">Create Trainer Login</h2>
+                                    <p className="text-text-muted text-sm mt-1">{loginTrainer.name}</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowLoginModal(false)}
+                                    className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center text-white transition-all"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+                            <div className="p-5 space-y-4 bg-[#13151a]">
+                                <div>
+                                    <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Login Email</label>
+                                    <input
+                                        type="email"
+                                        value={loginEmail}
+                                        onChange={(e) => setLoginEmail(e.target.value)}
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                        placeholder="trainer@login.com"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Temporary Password</label>
+                                    <input
+                                        type="password"
+                                        value={loginPassword}
+                                        onChange={(e) => setLoginPassword(e.target.value)}
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                        placeholder="Set a temp password"
+                                    />
+                                </div>
+                            </div>
+                            <div className="p-5 border-t border-white/10 flex items-center justify-end gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowLoginModal(false)}
+                                    className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm font-medium hover:bg-white/10 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={loginSaving}
+                                    className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium shadow-lg shadow-emerald-500/20 disabled:opacity-70 transition-colors"
+                                >
+                                    {loginSaving ? 'Creating...' : 'Create Login'}
+                                </button>
+                            </div>
                         </form>
                     </div>
                 </div>

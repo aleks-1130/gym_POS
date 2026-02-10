@@ -91,7 +91,7 @@ export default function TrainerBooking() {
             alert("Please fill in all required fields");
             return;
         }
-        if (bookingData.paymentMethod === 'CASH' && !user?.id) {
+        if (!user?.id) {
             alert("Member session not found. Please log in again.");
             return;
         }
@@ -103,28 +103,15 @@ export default function TrainerBooking() {
         setBookingLoading(true);
         try {
             const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-            const isCash = bookingData.paymentMethod === 'CASH';
-            const endpoint = isCash
-                ? 'http://localhost:5000/api/members/book-training-cash'
-                : 'http://localhost:5000/api/members/book-training';
-
-            const payload = isCash
-                ? {
-                    trainerId: selectedTrainer.id,
-                    date: bookingData.date,
-                    time: bookingData.time,
-                    duration: bookingData.duration,
-                    notes: bookingData.notes,
-                    memberId: user?.id
-                }
-                : {
-                    trainerId: selectedTrainer.id,
-                    date: bookingData.date,
-                    time: bookingData.time,
-                    duration: bookingData.duration,
-                    notes: bookingData.notes,
-                    method: bookingData.paymentMethod
-                };
+            const endpoint = 'http://localhost:5000/api/members/book-training';
+            const payload = {
+                trainerId: selectedTrainer.id,
+                date: bookingData.date,
+                time: bookingData.time,
+                duration: bookingData.duration,
+                notes: bookingData.notes,
+                method: bookingData.paymentMethod
+            };
 
             const res = await axios.post(endpoint, payload, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined

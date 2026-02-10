@@ -35,6 +35,9 @@ import Classes from './pages/staff/Classes';
 import TransactionDetail from './pages/staff/TransactionDetail';
 import AdminTrainers from './pages/admin/Trainers';
 import AdminClasses from './pages/admin/Classes';
+import TrainerSessions from './pages/trainer/TrainerSessions';
+import TrainerClasses from './pages/trainer/TrainerClasses';
+import TrainerProfile from './pages/trainer/TrainerProfile';
 
 // Member Pages
 import Schedule from './pages/member/Schedule';
@@ -81,8 +84,8 @@ const ProtectedRoute = ({ children, allowedRoles, fullScreen }) => {
     );
   }
 
-  // Members use bottom nav only (no sidebar)
-  if (user.role === ROLES.MEMBER) {
+  // Members and Trainers use bottom nav only (no sidebar)
+  if (user.role === ROLES.MEMBER || user.role === ROLES.TRAINER) {
     return (
       <div className="flex flex-col bg-background min-h-screen overflow-x-hidden">
         <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6 pb-24 overflow-y-auto transition-all duration-300">
@@ -237,6 +240,30 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
               <ClassesRoute />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trainer/sessions"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+              <TrainerSessions />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trainer/classes"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+              <TrainerClasses />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trainer/profile"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+              <TrainerProfile />
             </ProtectedRoute>
           }
         />

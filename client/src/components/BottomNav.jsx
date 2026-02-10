@@ -20,6 +20,12 @@ export default function BottomNav() {
         { to: "/shop", icon: ShoppingBag, label: "Shop" },
         { to: "/profile", icon: User, label: "Profile" },
     ];
+    const trainerPrimaryNav = [
+        { to: "/", icon: Home, label: "Home" },
+        { to: "/trainer/sessions", icon: Dumbbell, label: "Sessions" },
+        { to: "/trainer/classes", icon: Calendar, label: "Classes" },
+        { to: "/trainer/profile", icon: User, label: "Profile" },
+    ];
 
     // Secondary navigation items (hamburger menu)
     const memberSecondaryNav = [
@@ -38,9 +44,14 @@ export default function BottomNav() {
         { to: "/profile", icon: User, label: "Profile" },
     ];
 
-    const primaryNavItems = user?.role === ROLES.MEMBER ? memberPrimaryNav : staffPrimaryNav;
+    const primaryNavItems = user?.role === ROLES.MEMBER
+        ? memberPrimaryNav
+        : user?.role === ROLES.TRAINER
+            ? trainerPrimaryNav
+            : staffPrimaryNav;
     const secondaryNavItems = user?.role === ROLES.MEMBER ? memberSecondaryNav : [];
     const isMember = user?.role === ROLES.MEMBER;
+    const isTrainer = user?.role === ROLES.TRAINER;
 
     // Update active index based on current location
     useEffect(() => {
@@ -134,7 +145,7 @@ export default function BottomNav() {
             )}
 
             {/* Bottom Navigation Bar */}
-            <nav className={`fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur-md z-40 border-t border-white/5 ${!isMember && 'lg:hidden'}`}>
+            <nav className={`fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur-md z-40 border-t border-white/5 ${(!isMember && !isTrainer) && 'lg:hidden'}`}>
                 <div className="relative max-w-full mx-auto">
                     <div className="relative h-16 bg-surface/50">
                         {/* This container prevents overflow */}

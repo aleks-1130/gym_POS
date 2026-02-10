@@ -15,7 +15,9 @@ model User {
     email     String   @unique
     password  String
     name      String?
-    role      String   @default("STAFF") // OWNER, ADMIN, STAFF
+    role      String   @default("STAFF") // OWNER, ADMIN, STAFF, TRAINER
+    trainerId Int?   @unique
+    trainer   Trainer? @relation("TrainerUser", fields: [trainerId], references: [id])
     createdAt DateTime @default(now())
     payments  Payment[] @relation("PaymentCashier")
     notes     MemberNote[]
@@ -165,6 +167,7 @@ model Trainer {
   updatedAt        DateTime          @updatedAt
   classes          Class[]
   trainingSessions TrainingSession[]
+  user             User?             @relation("TrainerUser")
 }
 
 model TrainingSession {

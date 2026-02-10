@@ -126,6 +126,14 @@ export default function Sidebar() {
                     { to: "/shop", icon: "shopping_bag", label: "Shop" },
                 ]
             }
+        ],
+        [ROLES.TRAINER]: [
+            {
+                section: "Trainer", items: [
+                    { to: "/trainer/sessions", icon: "event_note", label: "Sessions" },
+                    { to: "/trainer/classes", icon: "event", label: "Classes" }
+                ]
+            }
         ]
     };
 
