@@ -1,14 +1,18 @@
 import React from 'react';
+import QRCode from 'react-qr-code';
 
 const MemberDashboard = ({ stats, user }) => {
     // stats.memberData contains the full member record including plan
     const member = stats?.memberData || {};
+    const checkIns = stats?.checkInsCount ?? member?._count?.accessLogs ?? member?.checkIns ?? 0;
     const planName = member.plan?.name || "No Active Plan";
     const expiryDate = member.expiryDate ? new Date(member.expiryDate).toLocaleDateString() : "N/A";
     const isExpired = member.expiryDate && new Date(member.expiryDate) < new Date();
+    const memberId = member.id || user?.id;
+    const qrValue = memberId ? `MEMBER:${memberId}` : '';
 
     return (
-        <div className="space-y-4 pb-20 px-4 max-w-2xl mx-auto">
+        <div className="pb-24 px-4 sm:px-6 max-w-3xl mx-auto space-y-4 sm:space-y-6">
           
 
             {/* Digital Member Pass - Priority Position */}
@@ -19,14 +23,17 @@ const MemberDashboard = ({ stats, user }) => {
                         <h3 className="text-base font-bold text-white">Digital Member Pass</h3>
                     </div>
                     <div className="bg-white p-4 rounded-xl inline-block shadow-md mb-3">
-                        {/* Placeholder QR - replace with actual QR component */}
-                        <div className="w-48 h-48 bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-sm text-gray-600 rounded-lg font-medium">
-                            QR Code
-                        </div>
+                        {qrValue ? (
+                            <QRCode value={qrValue} size={192} />
+                        ) : (
+                            <div className="w-48 h-48 bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-sm text-gray-600 rounded-lg font-medium">
+                                QR Code Unavailable
+                            </div>
+                        )}
                     </div>
                     <p className="text-text-muted text-xs">Scan at front desk to check in</p>
                     <div className="mt-3 pt-3 border-t border-white/10">
-                        <p className="text-xs text-text-muted">Member ID: <span className="text-white font-mono">{member.id || 'N/A'}</span></p>
+                        <p className="text-xs text-text-muted">Member ID: <span className="text-white font-mono">{memberId || 'N/A'}</span></p>
                     </div>
                 </div>
             </div>
@@ -76,7 +83,7 @@ const MemberDashboard = ({ stats, user }) => {
                     <div className="flex flex-col h-full">
                         <span className="material-icons-round text-primary text-2xl mb-2">how_to_reg</span>
                         <p className="text-text-muted text-xs font-medium mb-1">Check-ins</p>
-                        <h3 className="text-2xl font-bold text-white">{member.checkIns || 0}</h3>
+                        <h3 className="text-2xl font-bold text-white">{checkIns}</h3>
                     </div>
                 </div>
             </div>

@@ -1,39 +1,51 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-async function main() {
-    console.log("🛠 Fixing duplicate products...");
-    const products = await prisma.product.findMany({
-        orderBy: { id: 'asc' } // Keep the oldest/first one
+async function fix() {
+    console.log("=== Removing Duplicate Commissions ===");
+
+    // Target Date
+    const start = new Date('2026-02-06T00:00:00.000Z');
+    const end = new Date('2026-02-06T23:59:59.999Z');
+
+    // Find James Wilson Commissions
+    const commissions = await prisma.expense.findMany({
+        where: {
+            date: { gte: start, lte: end },
+            title: "Commission: James Wilson"
+        },
+        orderBy: { id: 'asc' }
     });
 
-    const seenNames = new Set();
-    const toDelete = [];
+    console.log(`Found ${commissions.length} 'Commission: James Wilson' expenses.`);
 
-    for (const p of products) {
-        if (seenNames.has(p.name)) {
-            toDelete.push(p.id);
-        } else {
-            seenNames.add(p.name);
+    if (commissions.length > 1) {
+        // Keep the first one, delete the rest
+        const toDelete = commissions.slice(1);
+        for (const c of toDelete) {
+            await prisma.expense.delete({ where: { id: c.id } });
+            console.log(`Deleted duplicate expense ID: ${c.id} (Amt: ${c.amount})`);
         }
+    } else {
+        console.log("No duplicates found for James Wilson.");
     }
 
-    console.log(`Found ${toDelete.length} duplicate products to remove.`);
+    // Verify Remaining
+    const expenses = await prisma.expense.findMany({
+        where: { date: { gte: start, lte: end } }
+    });
 
-    for (const id of toDelete) {
-        try {
-            await prisma.product.delete({
-                where: { id: id }
-            });
-            console.log(`✅ Deleted Product ID: ${id}`);
-        } catch (e) {
-            console.error(`❌ Failed to delete Product ID: ${id}. It might be used in Orders. Error: ${e.message.split('\n')[0]}`);
-        }
-    }
+    const totalExp = expenses
+        .filter(e =>
+            e.title.startsWith('Commission:') ||
+            e.title.startsWith('Materials: Session') ||
+            e.title.startsWith('Session Material')
+        )
+        .reduce((sum, e) => sum + e.amount, 0);
+
+    console.log(`\nNew Training Expenses Total: ${totalExp} (Target: 88)`);
 }
 
-main()
-    .catch(e => console.error(e))
-    .finally(async () => {
-        await prisma.$disconnect();
-    });
+fix()
+    .catch(console.error)
+    .finally(() => prisma.$disconnect());
