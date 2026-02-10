@@ -7,10 +7,19 @@ async function main() {
     console.log("🌱 Starting Database Seeding...");
 
     // 1. CLEAR EXISTING DATA (Optional, but good for clean slate if needed. Commented out to be safe, or just use upsert)
-    // await prisma.accessLog.deleteMany();
-    // await prisma.payment.deleteMany();
-    // await prisma.member.deleteMany();
-    // await prisma.product.deleteMany();
+    // 1. CLEAR EXISTING DATA 
+    // START FRESH to remove bad test data
+    try {
+        await prisma.paymentItem.deleteMany(); // Delete items first
+        await prisma.payment.deleteMany();
+        await prisma.accessLog.deleteMany();
+        // await prisma.member.deleteMany(); // Keep members if you want, or wipe them too? 
+        // Let's wipe seeded members to avoid duplicates if loop logic isn't perfect
+        // But the script checks checks checks. 
+        // For now, wiping Payments is crucial.
+    } catch (e) {
+        console.log("Cleanup warning:", e.message);
+    }
     // 0. SEED USERS (Staff/Admin/Owner)
     const userPassword = await bcrypt.hash('password123', 10);
     const users = [
@@ -35,10 +44,11 @@ async function main() {
 
     // 2. SEED PLANS
     const plans = [
-        { name: 'Yearly Pro', price: 20, duration: 365 },
-        { name: 'Monthly Standard', price: 10, duration: 30 },
-        { name: 'Student Monthly', price: 8, duration: 30 },
-        { name: 'Day Pass', price: 5.00, duration: 1 }
+        { name: 'Annual Power', price: 9000, duration: 365 },
+        { name: 'Half-Year Hustle', price: 5400, duration: 180 },
+        { name: 'Quarter Crush', price: 3600, duration: 90 },
+        { name: 'Monthly Fit', price: 2800, duration: 30 },
+        { name: 'Drop-In', price: 100, duration: 1 }
     ];
 
     for (const p of plans) {
@@ -55,15 +65,15 @@ async function main() {
 
     // 3. SEED PRODUCTS
     const products = [
-        { name: 'Whey Protein (Chocolate)', category: 'SUPPLEMENT', price: 49.99, stock: 20, minStock: 5, imageUrl: '/products/whey_protein_chocolate.png' },
-        { name: 'Pre-Workout (Fruit Punch)', category: 'SUPPLEMENT', price: 34.99, stock: 15, minStock: 5, imageUrl: '/products/pre_workout_fruit.png' },
-        { name: 'Energy Drink', category: 'DRINK', price: 3.50, stock: 100, minStock: 20, imageUrl: '/products/energy_drink.png' },
-        { name: 'Protein Bar', category: 'SUPPLEMENT', price: 2.50, stock: 50, minStock: 10, imageUrl: '/products/protein_bar.png' },
-        { name: 'Gym T-Shirt', category: 'MERCH', price: 19.99, stock: 30, minStock: 5, imageUrl: '/products/gym_tshirt.png' },
-        { name: 'Lifting Straps', category: 'EQUIPMENT', price: 14.99, stock: 10, minStock: 2, imageUrl: '/products/lifting_straps.png' },
-        { name: 'Energy Drink - Zero Sugar', category: 'DRINK', price: 3.50, stock: 50, minStock: 10, imageUrl: '/products/energy_drink_zero.png' },
-        { name: 'Gym Shark Water Bottle', category: 'EQUIPMENT', price: 25.00, stock: 15, minStock: 5, imageUrl: '/products/gym_shark_bottle.png' },
-        { name: 'Pre-Workout - Blue Raz', category: 'SUPPLEMENT', price: 34.99, stock: 20, minStock: 5, imageUrl: '/products/pre_workout_blue.png' }
+        { name: 'Whey Protein (Chocolate)', category: 'SUPPLEMENT', price: 2900, stock: 20, minStock: 5, imageUrl: '/products/whey_protein_chocolate.png' },
+        { name: 'Pre-Workout (Fruit Punch)', category: 'SUPPLEMENT', price: 2500, stock: 15, minStock: 5, imageUrl: '/products/pre_workout_fruit.png' },
+        { name: 'Energy Drink', category: 'DRINK', price: 65, stock: 100, minStock: 20, imageUrl: '/products/energy_drink.png' },
+        { name: 'Protein Bar', category: 'SUPPLEMENT', price: 145, stock: 50, minStock: 10, imageUrl: '/products/protein_bar.png' },
+        { name: 'Gym T-Shirt', category: 'MERCH', price: 500, stock: 30, minStock: 5, imageUrl: '/products/gym_tshirt.png' },
+        { name: 'Lifting Straps', category: 'EQUIPMENT', price: 750, stock: 10, minStock: 2, imageUrl: '/products/lifting_straps.png' },
+        { name: 'Energy Drink - Zero Sugar', category: 'DRINK', price: 200, stock: 50, minStock: 10, imageUrl: '/products/energy_drink_zero.png' },
+        { name: 'Gym Shark Water Bottle', category: 'EQUIPMENT', price: 1450, stock: 15, minStock: 5, imageUrl: '/products/gym_shark_bottle.png' },
+        { name: 'Pre-Workout - Blue Raz', category: 'SUPPLEMENT', price: 2030, stock: 20, minStock: 5, imageUrl: '/products/pre_workout_blue.png' }
     ];
 
     for (const p of products) {
@@ -75,8 +85,12 @@ async function main() {
             await prisma.product.create({ data: p });
             // console.log(`Created ${p.name}`);
         } else {
-            // Optional: Update stock or price? For now, skip to preserve data.
-            // console.log(`Skipped ${p.name} (Exists)`);
+            // Update prices if changed
+            await prisma.product.update({
+                where: { id: existing.id },
+                data: { price: p.price }
+            });
+            console.log(`Updated Price for ${p.name}`);
         }
     }
     console.log("✅ Products seeded");
@@ -95,8 +109,11 @@ async function main() {
     for (const m of memberData) {
         // Assign random plan
         const plan = await prisma.plan.findFirst();
-        const member = await prisma.member.create({
-            data: {
+
+        const member = await prisma.member.upsert({
+            where: { email: m.email },
+            update: {},
+            create: {
                 ...m,
                 password,
                 planId: plan.id,
@@ -110,15 +127,32 @@ async function main() {
     // 5. SEED PAYMENTS (Revenue Data)
     for (const member of dbMembers) {
         // Create 3-5 random payments for each
+        // Create 3-5 random payments for each
         const count = Math.floor(Math.random() * 3) + 1;
+        const owner = await prisma.user.findFirst({ where: { role: 'OWNER' } });
+
         for (let i = 0; i < count; i++) {
-            await prisma.payment.create({
+            const amount = (Math.random() * 500) + 100; // 100-600 PHP
+            const payment = await prisma.payment.create({
                 data: {
-                    amount: (Math.random() * 100).toFixed(2) * 1,
-                    type: 'POS',
-                    method: 'CARD',
+                    amount: Math.floor(amount),
+                    type: 'POS_SALE',
+                    method: ['CASH', 'CARD', 'GCASH'][Math.floor(Math.random() * 3)],
                     memberId: member.id,
-                    date: new Date(Date.now() - Math.floor(Math.random() * 7 * 24 * 60 * 60 * 1000)) // Random time in last 7 days
+                    cashierId: owner ? owner.id : null,
+                    date: new Date(Date.now() - Math.floor(Math.random() * 7 * 24 * 60 * 60 * 1000))
+                }
+            });
+
+            // Add Items
+            await prisma.paymentItem.create({
+                data: {
+                    paymentId: payment.id,
+                    productId: products[0].id, // Just pick first product for demo
+                    name: products[0].name,
+                    type: 'PRODUCT',
+                    quantity: 1,
+                    unitPrice: products[0].price
                 }
             });
         }
@@ -322,6 +356,49 @@ async function main() {
         await prisma.loyaltyReward.create({ data: reward });
     }
     console.log("✅ Loyalty Rewards seeded");
+
+    // 10. SEED SUPPLIERS
+    const suppliers = [
+        { name: 'Gym Pro Supplies', contact: 'John Sales', email: 'sales@gympro.com', address: '123 Warehouse Dr', notes: 'Main equipment supplier' },
+        { name: 'NutriWhole Wholesale', contact: 'Alice Nutrition', email: 'alice@nutriwhole.com', address: '456 Wellness Blvd', notes: 'Supplements' },
+        { name: 'CleanTech Solutions', contact: 'Bob Cleaner', email: 'bob@cleantech.com', address: '789 San Ildefonso', notes: 'Cleaning supplies' }
+    ];
+
+    for (const s of suppliers) {
+        // Upsert assumes a unique field, but name isn't unique in schema.
+        // So we verify existence first.
+        const existing = await prisma.supplier.findFirst({ where: { name: s.name } });
+        if (!existing) {
+            await prisma.supplier.create({ data: s });
+        }
+    }
+    console.log("✅ Suppliers seeded");
+
+    // 11. SEED EXPENSES
+    const expenses = [
+        { title: 'Electricity Bill', amount: 15000.00, category: 'UTILITIES', date: new Date(), notes: 'Current Bill' },
+        { title: 'Water Bill', amount: 3000.00, category: 'UTILITIES', date: new Date(), notes: 'Current Bill' },
+        { title: 'Staff Salary', amount: 45000.00, category: 'SALARY', date: new Date(), notes: 'Monthly Payroll' },
+        { title: 'Cleaning Supplies', amount: 2500.00, category: 'SUPPLIES', date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), notes: 'Detergents and sanitizers' },
+        { title: 'Gym Equipment Maintenance', amount: 5000.00, category: 'MAINTENANCE', date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), notes: 'Treadmill repair' },
+        { title: 'Internet Bill', amount: 2000.00, category: 'UTILITIES', date: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000), notes: 'Fiber connection' }
+    ];
+
+    for (const e of expenses) {
+        // Check for duplicates based on title and amount (date is approximate in check)
+        // Since we use dynamic dates for seed, we'll check title/amount.
+        const existing = await prisma.expense.findFirst({
+            where: {
+                title: e.title,
+                amount: e.amount
+            }
+        });
+
+        if (!existing) {
+            await prisma.expense.create({ data: e });
+        }
+    }
+    console.log("✅ Expenses seeded");
 
     console.log("🚀 Database successfully populated!");
 }

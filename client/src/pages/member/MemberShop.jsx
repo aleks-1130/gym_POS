@@ -10,10 +10,35 @@ export default function MemberShop() {
     const [addingToCart, setAddingToCart] = useState({});
     const [showCartModal, setShowCartModal] = useState(false);
 
+    // Payment State
+    const [showPaymentModal, setShowPaymentModal] = useState(false);
+    const [paymentMethods, setPaymentMethods] = useState([]);
+    const [selectedMethodId, setSelectedMethodId] = useState(null);
+    const [selectedPaymentType, setSelectedPaymentType] = useState('CARD'); // 'CARD' or 'GCASH'
+    const [gcashDetails, setGcashDetails] = useState({ reference: '', date: '', time: '' });
+    const [isCheckingOut, setIsCheckingOut] = useState(false);
+
     useEffect(() => {
         fetchProducts();
         loadCart();
+        fetchPaymentMethods();
     }, []);
+
+    const fetchPaymentMethods = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            if (token) {
+                const res = await axios.get('http://localhost:5000/api/payment-methods', {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                setPaymentMethods(res.data);
+                // Default to first card if exists
+                if (res.data.length > 0) setSelectedMethodId(res.data[0].id);
+            }
+        } catch (error) {
+            console.error("Failed to fetch payment methods");
+        }
+    };
 
     const fetchProducts = async () => {
         try {
@@ -40,7 +65,7 @@ export default function MemberShop() {
 
     const addToCart = (product) => {
         setAddingToCart(prev => ({ ...prev, [product.id]: true }));
-        
+
         setTimeout(() => {
             const existingItem = cart.find(item => item.id === product.id);
             let updatedCart;
@@ -94,10 +119,54 @@ export default function MemberShop() {
         return cart.reduce((sum, item) => sum + item.quantity, 0);
     };
 
-    const handleCheckout = () => {
-        // Implement your checkout logic here
-        alert(`Proceeding to checkout with ${getTotalItems()} items. Total: ${formatPrice(getCartTotal())}`);
-        // You can navigate to checkout page or open payment modal
+    const handleCheckoutInit = () => {
+        setShowCartModal(false);
+        setShowPaymentModal(true);
+    };
+
+    const handleConfirmCheckout = async () => {
+        if (selectedPaymentType === 'CARD' && !selectedMethodId && paymentMethods.length > 0) {
+            alert("Please select a card");
+            return;
+        }
+
+        if (selectedPaymentType === 'GCASH' && (!gcashDetails.reference || !gcashDetails.date || !gcashDetails.time)) {
+            alert("Please enter GCash details");
+            return;
+        }
+
+        setIsCheckingOut(true);
+        try {
+            const token = localStorage.getItem('token');
+            const payload = {
+                items: cart.map(i => ({ productId: i.id, quantity: i.quantity, price: i.price, name: i.name })),
+                total: getCartTotal(),
+                paymentType: selectedPaymentType === 'CASH' ? 'CASH_PENDING' : selectedPaymentType,
+                paymentMethodId: selectedPaymentType === 'CARD' ? selectedMethodId : null,
+                gcashReference: selectedPaymentType === 'GCASH' ? gcashDetails.reference : null,
+                gcashDate: selectedPaymentType === 'GCASH' ? `${gcashDetails.date}T${gcashDetails.time}` : null
+            };
+
+            await axios.post('http://localhost:5000/api/members/checkout', payload, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            // Success
+            setCart([]);
+            saveCart([]);
+            setShowPaymentModal(false);
+
+            if (selectedPaymentType === 'CASH') {
+                alert("Order Placed! Please proceed to the cash register to complete your payment.");
+            } else {
+                alert("Payment Successful! Order placed.");
+            }
+        } catch (error) {
+            console.error(error);
+            alert("Checkout Failed: " + (error.response?.data?.error || error.message));
+        } finally {
+            setIsCheckingOut(false);
+        }
     };
 
     if (loading) {
@@ -120,7 +189,7 @@ export default function MemberShop() {
                         <h1 className="text-xl font-bold text-white">Products</h1>
                         <p className="text-text-muted text-xs mt-0.5">Gym inventory & available items</p>
                     </div>
-                    
+
                     {/* Cart Button */}
                     <button
                         onClick={() => setShowCartModal(true)}
@@ -153,32 +222,30 @@ export default function MemberShop() {
                         const isSoldOut = !p.stock || p.stock === 0;
                         const cartQuantity = getCartItemQuantity(p.id);
                         const isAdding = addingToCart[p.id];
-                        
+
                         return (
-                            <div 
-                                key={p.id} 
-                                className={`rounded-xl border border-white/5 overflow-hidden flex flex-col transition-all group  ${
-                                    isSoldOut 
-                                        ? 'bg-black/40 opacity-60 border-white/5' 
-                                        : 'bg-surface hover:border-primary/30'
-                                }`}
+                            <div
+                                key={p.id}
+                                className={`rounded-xl border border-white/5 overflow-hidden flex flex-col transition-all group  ${isSoldOut
+                                    ? 'bg-black/40 opacity-60 border-white/5'
+                                    : 'bg-surface hover:border-primary/30'
+                                    }`}
                             >
                                 {/* Product Image */}
                                 <div className="aspect-square bg-white/5 overflow-hidden relative">
                                     {p.imageUrl ? (
-                                        <img 
-                                            src={p.imageUrl} 
-                                            alt={p.name} 
-                                            className={`w-full h-full object-cover ${
-                                                !isSoldOut && 'group-hover:scale-105 transition-transform duration-300'
-                                            }`}
+                                        <img
+                                            src={p.imageUrl}
+                                            alt={p.name}
+                                            className={`w-full h-full object-cover ${!isSoldOut && 'group-hover:scale-105 transition-transform duration-300'
+                                                }`}
                                         />
                                     ) : (
                                         <div className="w-full h-full flex items-center justify-center">
                                             <span className="material-icons-round text-5xl text-white/10">shopping_bag</span>
                                         </div>
                                     )}
-                                    
+
                                     {/* Sold Out Overlay */}
                                     {isSoldOut && (
                                         <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
@@ -207,29 +274,28 @@ export default function MemberShop() {
                                 {/* Product Info */}
                                 <div className="p-3 flex flex-col flex-1">
                                     <h3 className="font-bold text-white text-sm line-clamp-2 mb-2 min-h-[2.5rem]">{p.name}</h3>
-                                    
+
                                     {/* Description */}
                                     <p className="text-text-muted text-xs line-clamp-2 mb-3 flex-1">
                                         {p.description || 'No description available'}
                                     </p>
-                                    
+
                                     <div className="space-y-2">
                                         {/* Price */}
                                         <div className="text-primary font-bold text-base">{formatPrice(p.price)}</div>
-                                        
+
                                         {/* Stock Status */}
-                                        <div className={`text-xs font-medium ${
-                                            isSoldOut 
-                                                ? 'text-red-400/70' 
-                                                : p.stock <= 5 
-                                                ? 'text-yellow-400' 
+                                        <div className={`text-xs font-medium ${isSoldOut
+                                            ? 'text-red-400/70'
+                                            : p.stock <= 5
+                                                ? 'text-yellow-400'
                                                 : 'text-green-400'
-                                        }`}>
-                                            {isSoldOut 
-                                                ? 'Out of Stock' 
-                                                : p.stock <= 5 
-                                                ? `Only ${p.stock} left` 
-                                                : `${p.stock} in stock`
+                                            }`}>
+                                            {isSoldOut
+                                                ? 'Out of Stock'
+                                                : p.stock <= 5
+                                                    ? `Only ${p.stock} left`
+                                                    : `${p.stock} in stock`
                                             }
                                         </div>
 
@@ -264,7 +330,7 @@ export default function MemberShop() {
             {/* Cart Modal */}
             {showCartModal && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
-                    <div 
+                    <div
                         className="bg-surface border border-white/10 rounded-t-2xl sm:rounded-2xl w-full max-w-2xl max-h-[85vh] sm:max-h-[80vh] flex flex-col shadow-2xl animate-slide-up"
                         onClick={(e) => e.stopPropagation()}
                     >
@@ -302,9 +368,9 @@ export default function MemberShop() {
                                             {/* Product Image */}
                                             <div className="w-20 h-20 bg-white/5 rounded-lg overflow-hidden flex-shrink-0">
                                                 {item.imageUrl ? (
-                                                    <img 
-                                                        src={item.imageUrl} 
-                                                        alt={item.name} 
+                                                    <img
+                                                        src={item.imageUrl}
+                                                        alt={item.name}
                                                         className="w-full h-full object-cover"
                                                     />
                                                 ) : (
@@ -318,7 +384,7 @@ export default function MemberShop() {
                                             <div className="flex-1 min-w-0">
                                                 <h3 className="font-semibold text-white text-sm mb-1 line-clamp-1">{item.name}</h3>
                                                 <p className="text-primary font-bold text-sm mb-2">{formatPrice(item.price)}</p>
-                                                
+
                                                 {/* Quantity Controls */}
                                                 <div className="flex items-center gap-2">
                                                     <button
@@ -364,7 +430,7 @@ export default function MemberShop() {
 
                                 {/* Checkout Button */}
                                 <button
-                                    onClick={handleCheckout}
+                                    onClick={handleCheckoutInit}
                                     className="w-full bg-primary hover:bg-primary-hover active:scale-95 text-white rounded-xl py-3.5 px-4 font-bold text-base transition-all flex items-center justify-center gap-2"
                                 >
                                     <span className="material-icons-round">shopping_bag</span>
@@ -372,6 +438,161 @@ export default function MemberShop() {
                                 </button>
                             </div>
                         )}
+                    </div>
+                </div>
+            )}
+            {/* Payment Selection Modal */}
+            {showPaymentModal && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                    <div className="bg-surface border border-white/10 rounded-2xl w-full max-w-md p-6 space-y-6">
+                        <div className="flex justify-between items-center">
+                            <h2 className="text-xl font-bold text-white">Select Payment</h2>
+                            <button onClick={() => setShowPaymentModal(false)} className="text-text-muted hover:text-white">
+                                <span className="material-icons-round">close</span>
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="bg-primary/10 rounded-xl p-4 border border-primary/20">
+                                <div className="flex justify-between items-end mb-1">
+                                    <span className="text-text-muted text-sm">Total Amount</span>
+                                    <span className="text-primary font-bold text-2xl">{formatPrice(getCartTotal())}</span>
+                                </div>
+                            </div>
+
+                            <h3 className="text-xs font-bold text-text-muted uppercase">Payment Method</h3>
+
+                            <div className="flex gap-2 mb-4">
+                                <button
+                                    onClick={() => setSelectedPaymentType('CARD')}
+                                    className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-all ${selectedPaymentType === 'CARD'
+                                        ? 'bg-primary text-white border-primary'
+                                        : 'bg-white/5 text-text-muted border-white/10 hover:bg-white/10'
+                                        }`}
+                                >
+                                    Saved Cards
+                                </button>
+                                <button
+                                    onClick={() => setSelectedPaymentType('GCASH')}
+                                    className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-all ${selectedPaymentType === 'GCASH'
+                                        ? 'bg-primary text-white border-primary'
+                                        : 'bg-white/5 text-text-muted border-white/10 hover:bg-white/10'
+                                        }`}
+                                >
+                                    GCash
+                                </button>
+                                <button
+                                    onClick={() => setSelectedPaymentType('CASH')}
+                                    className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-all ${selectedPaymentType === 'CASH'
+                                        ? 'bg-primary text-white border-primary'
+                                        : 'bg-white/5 text-text-muted border-white/10 hover:bg-white/10'
+                                        }`}
+                                >
+                                    Cash
+                                </button>
+                            </div>
+
+                            {selectedPaymentType === 'CASH' && (
+                                <div className="text-center py-6 border border-white/10 rounded-xl border-dashed bg-white/5">
+                                    <span className="material-icons-round text-4xl text-white mb-2">storefront</span>
+                                    <p className="text-white text-sm font-bold mb-1">Pay at Counter</p>
+                                    <p className="text-text-muted text-xs px-4">
+                                        Your order will be saved as PENDING. Please proceed to the cash register to complete your payment.
+                                    </p>
+                                </div>
+                            )}
+
+                            {selectedPaymentType === 'CARD' && (
+                                paymentMethods.length === 0 ? (
+                                    <div className="text-center py-6 border border-white/10 rounded-xl border-dashed bg-white/5">
+                                        <p className="text-white text-sm mb-2">No linked cards found</p>
+                                        <p className="text-text-muted text-xs">Please go to Profile to add a card.</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {paymentMethods.map(method => (
+                                            <label
+                                                key={method.id}
+                                                className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${selectedMethodId === method.id
+                                                    ? 'bg-primary/20 border-primary'
+                                                    : 'bg-white/5 border-white/10 hover:border-white/20'
+                                                    }`}
+                                            >
+                                                <input
+                                                    type="radio"
+                                                    name="paymentMethod"
+                                                    className="hidden"
+                                                    checked={selectedMethodId === method.id}
+                                                    onChange={() => setSelectedMethodId(method.id)}
+                                                />
+                                                <div className={`w-5 h-5 rounded-full border flex items-center justify-center ${selectedMethodId === method.id ? 'border-primary' : 'border-white/30'
+                                                    }`}>
+                                                    {selectedMethodId === method.id && <div className="w-2.5 h-2.5 bg-primary rounded-full" />}
+                                                </div>
+
+                                                <div className="flex-1">
+                                                    <span className="font-bold text-white text-sm mr-2">{method.brand}</span>
+                                                    <span className="text-text-muted text-sm">•••• {method.last4}</span>
+                                                </div>
+
+                                                {method.isDefault && <span className="text-[10px] bg-white/10 px-2 py-0.5 rounded text-white/70">Default</span>}
+                                            </label>
+                                        ))}
+                                    </div>
+                                )
+                            )}
+
+                            {selectedPaymentType === 'GCASH' && (
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="block text w-full text-text-muted text-xs font-medium mb-1">GCash Reference No.</label>
+                                        <input
+                                            type="text"
+                                            className="w-full bg-black/20 border border-white/10 rounded-xl p-3 text-white text-sm focus:border-primary outline-none"
+                                            placeholder="Enter Transaction Ref No."
+                                            value={gcashDetails.reference}
+                                            onChange={e => setGcashDetails({ ...gcashDetails, reference: e.target.value })}
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-text-muted text-xs font-medium mb-1">Date</label>
+                                            <input
+                                                type="date"
+                                                className="w-full bg-black/20 border border-white/10 rounded-xl p-3 text-white text-sm focus:border-primary outline-none"
+                                                value={gcashDetails.date}
+                                                onChange={e => setGcashDetails({ ...gcashDetails, date: e.target.value })}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-text-muted text-xs font-medium mb-1">Time</label>
+                                            <input
+                                                type="time"
+                                                className="w-full bg-black/20 border border-white/10 rounded-xl p-3 text-white text-sm focus:border-primary outline-none"
+                                                value={gcashDetails.time}
+                                                onChange={e => setGcashDetails({ ...gcashDetails, time: e.target.value })}
+                                            />
+                                        </div>
+                                    </div>
+                                    <p className="text-[10px] text-text-muted bg-white/5 p-2 rounded-lg">
+                                        <span className="material-icons-round text-xs align-middle mr-1">info</span>
+                                        Please ensure details match your GCash receipt SMS/App.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+
+                        <button
+                            onClick={handleConfirmCheckout}
+                            disabled={
+                                isCheckingOut ||
+                                (selectedPaymentType === 'CARD' && paymentMethods.length > 0 && !selectedMethodId) ||
+                                (selectedPaymentType === 'GCASH' && (!gcashDetails.reference || !gcashDetails.date || !gcashDetails.time))
+                            }
+                            className="w-full bg-primary hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-orange-500/20 active:scale-95 flex items-center justify-center gap-2"
+                        >
+                            {isCheckingOut ? 'Processing...' : (selectedPaymentType === 'CASH' ? 'Place Order (Pay at Counter)' : `Pay ${formatPrice(getCartTotal())}`)}
+                        </button>
                     </div>
                 </div>
             )}

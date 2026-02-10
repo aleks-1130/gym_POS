@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import QRCode from 'react-qr-code';
 
@@ -6,10 +7,63 @@ export default function Profile() {
     const { user, logout } = useAuth();
     const [orders, setOrders] = useState([]);
     const [showQR, setShowQR] = useState(false);
+    const [showPaymentModal, setShowPaymentModal] = useState(false);
+    const [paymentMethods, setPaymentMethods] = useState([]);
+    const [loadingMethods, setLoadingMethods] = useState(false);
+
+    // Add Card Form State
+    const [newCard, setNewCard] = useState({ cardNumber: '', expiry: '', cvv: '', brand: 'Visa' });
+
+    const qrValue = user?.id ? `MEMBER:${user.id}` : '';
 
     useEffect(() => {
-        // Fetch bookings/orders if needed
-    }, []);
+        if (showPaymentModal) {
+            fetchPaymentMethods();
+        }
+    }, [showPaymentModal]);
+
+    const fetchPaymentMethods = async () => {
+        setLoadingMethods(true);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await axios.get('http://localhost:5000/api/payment-methods', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setPaymentMethods(res.data);
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setLoadingMethods(false);
+        }
+    };
+
+    const handleAddCard = async (e) => {
+        e.preventDefault();
+        try {
+            const token = localStorage.getItem('token');
+            await axios.post('http://localhost:5000/api/payment-methods', newCard, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setNewCard({ cardNumber: '', expiry: '', cvv: '', brand: 'Visa' });
+            fetchPaymentMethods();
+            alert("Card added successfully!");
+        } catch (error) {
+            alert("Failed to add card");
+        }
+    };
+
+    const handleDeleteCard = async (id) => {
+        if (!window.confirm("Remove this card?")) return;
+        try {
+            const token = localStorage.getItem('token');
+            await axios.delete(`http://localhost:5000/api/payment-methods/${id}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            fetchPaymentMethods();
+        } catch (error) {
+            alert("Failed to remove card");
+        }
+    };
 
     return (
         <div className="space-y-4 pb-20 px-4 max-w-2xl mx-auto">
@@ -59,7 +113,13 @@ export default function Profile() {
                         </div>
                         {showQR && (
                             <div className="bg-white p-3 rounded-xl shadow-lg">
-                                <QRCode value={`MEMBER:${user?.id}`} size={100} />
+                                {qrValue ? (
+                                    <QRCode value={qrValue} size={100} />
+                                ) : (
+                                    <div className="w-[100px] h-[100px] bg-gray-100 text-gray-500 text-xs flex items-center justify-center rounded-lg">
+                                        QR Unavailable
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -128,7 +188,9 @@ export default function Profile() {
                         <span className="material-icons-round text-primary text-xl block mb-1">lock</span>
                         <span className="text-xs font-medium text-white block">Password</span>
                     </button>
-                    <button className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center">
+                    <button
+                        onClick={() => setShowPaymentModal(true)}
+                        className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center">
                         <span className="material-icons-round text-primary text-xl block mb-1">payment</span>
                         <span className="text-xs font-medium text-white block">Payment</span>
                     </button>
@@ -171,6 +233,103 @@ export default function Profile() {
             <div className="text-center py-4">
                 <p className="text-text-muted text-xs">FitOS v1.0.0</p>
             </div>
+
+            {/* Payment Methods Modal */}
+            {showPaymentModal && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowPaymentModal(false)}>
+                    <div className="bg-surface rounded-2xl border border-white/10 w-full max-w-md p-6 space-y-6" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center">
+                            <h2 className="text-xl font-bold text-white">Payment Methods</h2>
+                            <button onClick={() => setShowPaymentModal(false)} className="text-text-muted hover:text-white">
+                                <span className="material-icons-round">close</span>
+                            </button>
+                        </div>
+
+                        {/* Existing Cards */}
+                        <div className="space-y-3">
+                            <h3 className="text-xs font-bold text-text-muted uppercase">Linked Cards</h3>
+                            {loadingMethods ? (
+                                <div className="text-center text-white/50 text-sm py-2">Loading...</div>
+                            ) : paymentMethods.length === 0 ? (
+                                <div className="text-center text-white/50 text-sm py-2 bg-white/5 rounded-lg border border-white/5 border-dashed">
+                                    No cards linked yet
+                                </div>
+                            ) : (
+                                paymentMethods.map(method => (
+                                    <div key={method.id} className="flex items-center justify-between bg-white/5 p-3 rounded-lg border border-white/10">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-6 bg-white/10 rounded border border-white/10 flex items-center justify-center">
+                                                <span className="text-[10px] font-bold text-white">{method.brand?.slice(0, 4) || 'CARD'}</span>
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-bold text-white">•••• {method.last4}</p>
+                                                <p className="text-xs text-text-muted">Expires {method.expiry || 'N/A'}</p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => handleDeleteCard(method.id)}
+                                            className="text-red-400 hover:text-red-300 p-2"
+                                        >
+                                            <span className="material-icons-round text-lg">delete</span>
+                                        </button>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
+                        {/* Add New Card Form */}
+                        <div className="pt-4 border-t border-white/10">
+                            <h3 className="text-xs font-bold text-text-muted uppercase mb-3">Add New Card</h3>
+                            <form onSubmit={handleAddCard} className="space-y-3">
+                                <div>
+                                    <label className="block text-xs text-text-muted mb-1">Card Number</label>
+                                    <input
+                                        type="text"
+                                        placeholder="0000 0000 0000 0000"
+                                        className="w-full bg-black/20 border border-white/10 rounded-lg p-2.5 text-white text-sm focus:border-primary focus:outline-none"
+                                        value={newCard.cardNumber}
+                                        onChange={e => setNewCard({ ...newCard, cardNumber: e.target.value })}
+                                        required
+                                        minLength={12}
+                                    />
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs text-text-muted mb-1">Expiry (MM/YY)</label>
+                                        <input
+                                            type="text"
+                                            placeholder="MM/YY"
+                                            className="w-full bg-black/20 border border-white/10 rounded-lg p-2.5 text-white text-sm focus:border-primary focus:outline-none"
+                                            value={newCard.expiry}
+                                            onChange={e => setNewCard({ ...newCard, expiry: e.target.value })}
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-text-muted mb-1">CVV</label>
+                                        <input
+                                            type="password"
+                                            placeholder="123"
+                                            className="w-full bg-black/20 border border-white/10 rounded-lg p-2.5 text-white text-sm focus:border-primary focus:outline-none"
+                                            value={newCard.cvv}
+                                            onChange={e => setNewCard({ ...newCard, cvv: e.target.value })}
+                                            required
+                                            maxLength={4}
+                                        />
+                                    </div>
+                                </div>
+                                <button type="submit" className="w-full bg-primary hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-orange-500/20 active:scale-95 mt-2">
+                                    Save Payment Information
+                                </button>
+                                <p className="text-[10px] text-text-muted text-center mt-2">
+                                    <span className="material-icons-round text-xs align-middle mr-1">lock</span>
+                                    Your payment info is securely stored via tokenization.
+                                </p>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

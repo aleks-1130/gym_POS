@@ -154,92 +154,94 @@ export default function Classes() {
 
             {/* Participants Modal */}
             {selectedClass && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-background/80 backdrop-blur-xl" onClick={() => setSelectedClass(null)}></div>
-                    <div className="bg-surface w-full max-w-2xl max-h-[85vh] rounded-[3rem] border border-white/10 shadow-2xl relative z-10 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-300">
-                        {/* Header */}
-                        <div className="p-8 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
-                            <div className="flex items-center gap-4">
-                                <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center border border-primary/20">
-                                    <Users className="text-primary" size={28} />
+                <div className="fixed inset-0 z-[100] overflow-y-auto">
+                    <div className="absolute inset-0 bg-background/80 backdrop-blur-md" onClick={() => setSelectedClass(null)}></div>
+                    <div className="relative min-h-full w-full flex items-center justify-center p-4 sm:p-6">
+                        <div className="bg-surface w-full max-w-2xl max-h-[88vh] rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col">
+                            {/* Header */}
+                            <div className="sticky top-0 z-10 p-6 border-b border-white/10 bg-surface/95 backdrop-blur flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center border border-primary/20">
+                                        <Users className="text-primary" size={22} />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-lg font-semibold text-white leading-none">{selectedClass.name}</h3>
+                                        <p className="text-text-muted text-sm mt-1">Participants - {activeDay}</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <h3 className="text-2xl font-black text-white uppercase italic tracking-tighter leading-none">{selectedClass.name}</h3>
-                                    <p className="text-text-muted font-bold text-[10px] uppercase tracking-[0.2em] mt-1">Participants List • {activeDay}</p>
-                                </div>
+                                <button
+                                    onClick={() => setSelectedClass(null)}
+                                    className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center text-white transition-all"
+                                >
+                                    <X size={18} />
+                                </button>
                             </div>
-                            <button
-                                onClick={() => setSelectedClass(null)}
-                                className="w-12 h-12 bg-white/5 hover:bg-white/10 rounded-2xl flex items-center justify-center text-white transition-all"
-                            >
-                                <X size={24} />
-                            </button>
-                        </div>
 
-                        {/* List */}
-                        <div className="flex-1 overflow-y-auto no-scrollbar p-8">
-                            {participantsLoading ? (
-                                <div className="flex flex-col items-center justify-center py-20">
-                                    <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
-                                    <p className="text-text-muted font-black uppercase tracking-widest text-[10px]">Syncing attendance...</p>
-                                </div>
-                            ) : participants.length > 0 ? (
-                                <div className="space-y-4">
-                                    {participants.map((booking) => (
-                                        <div key={booking.id} className="flex items-center justify-between p-5 bg-white/[0.03] border border-white/5 rounded-3xl group hover:border-primary/30 transition-all hover:bg-primary/5">
-                                            <div className="flex items-center gap-5">
-                                                <div className="w-12 h-12 rounded-2xl bg-surfaceHighlight flex items-center justify-center border border-white/10 group-hover:border-primary/20">
-                                                    {booking.member?.imageUrl ? (
-                                                        <img src={booking.member.imageUrl} className="w-full h-full object-cover rounded-2xl" alt="" />
+                            {/* List */}
+                            <div className="flex-1 overflow-y-auto no-scrollbar p-6">
+                                {participantsLoading ? (
+                                    <div className="flex flex-col items-center justify-center py-16">
+                                        <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
+                                        <p className="text-text-muted text-xs font-semibold">Syncing attendance...</p>
+                                    </div>
+                                ) : participants.length > 0 ? (
+                                    <div className="space-y-4">
+                                        {participants.map((booking) => (
+                                            <div key={booking.id} className="flex items-center justify-between p-4 bg-white/[0.03] border border-white/5 rounded-2xl group hover:border-primary/30 transition-all hover:bg-primary/5">
+                                                <div className="flex items-center gap-5">
+                                                    <div className="w-10 h-10 rounded-xl bg-surfaceHighlight flex items-center justify-center border border-white/10 group-hover:border-primary/20">
+                                                        {booking.member?.imageUrl ? (
+                                                            <img src={booking.member.imageUrl} className="w-full h-full object-cover rounded-xl" alt="" />
+                                                        ) : (
+                                                            <User size={20} className="text-text-muted" />
+                                                        )}
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-white font-semibold text-sm">{booking.member?.firstName} {booking.member?.lastName}</p>
+                                                        <p className="text-xs text-text-muted">Member ID: #{booking.memberId}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    {booking.status === 'ATTENDED' ? (
+                                                        <span className="flex items-center gap-1.5 text-emerald-400 text-xs font-semibold px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+                                                            <CheckCircle2 size={12} />
+                                                            Attended
+                                                        </span>
                                                     ) : (
-                                                        <User size={20} className="text-text-muted" />
+                                                        <span className="flex items-center gap-1.5 text-primary text-xs font-semibold px-3 py-1 bg-primary/10 border border-primary/20 rounded-lg">
+                                                            <Clock size={12} />
+                                                            Booked
+                                                        </span>
                                                     )}
                                                 </div>
-                                                <div>
-                                                    <p className="text-white font-black uppercase text-sm tracking-tight">{booking.member?.firstName} {booking.member?.lastName}</p>
-                                                    <p className="text-[10px] text-text-muted font-bold tracking-widest uppercase italic">Member ID: #{booking.memberId}</p>
-                                                </div>
                                             </div>
-                                            <div className="flex items-center gap-3">
-                                                {booking.status === 'ATTENDED' ? (
-                                                    <span className="flex items-center gap-1.5 text-emerald-400 font-black uppercase text-[10px] tracking-widest px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
-                                                        <CheckCircle2 size={12} />
-                                                        Attended
-                                                    </span>
-                                                ) : (
-                                                    <span className="flex items-center gap-1.5 text-primary font-black uppercase text-[10px] tracking-widest px-3 py-1 bg-primary/10 border border-primary/20 rounded-lg">
-                                                        <Clock size={12} />
-                                                        Booked
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <div className="text-center py-20 bg-white/[0.01] rounded-3xl border border-white/5 border-dashed">
-                                    <AlertCircle size={40} className="text-text-muted/20 mx-auto mb-4" />
-                                    <h4 className="text-xl font-black text-white/10 uppercase tracking-tighter italic">No Participants Yet</h4>
-                                    <p className="text-text-muted/20 text-[10px] font-black uppercase tracking-widest mt-2">Registration for this session is currently open</p>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Footer Statistics */}
-                        <div className="p-8 border-t border-white/5 bg-white/[0.01] flex items-center justify-between">
-                            <div className="flex gap-6">
-                                <div>
-                                    <p className="text-[9px] text-text-muted font-black uppercase tracking-widest mb-1">Booked</p>
-                                    <p className="text-white font-black text-xl">{participants.length}</p>
-                                </div>
-                                <div>
-                                    <p className="text-[9px] text-text-muted font-black uppercase tracking-widest mb-1">Capactiy Left</p>
-                                    <p className="text-white font-black text-xl">{selectedClass.capacity - participants.length}</p>
-                                </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-16 bg-white/[0.01] rounded-2xl border border-white/5 border-dashed">
+                                        <AlertCircle size={40} className="text-text-muted/20 mx-auto mb-4" />
+                                        <h4 className="text-lg font-bold text-white/30">No Participants Yet</h4>
+                                        <p className="text-text-muted/20 text-xs font-semibold mt-2">Registration for this session is currently open</p>
+                                    </div>
+                                )}
                             </div>
-                            <button className="px-8 py-3 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all">
-                                Export List
-                            </button>
+
+                            {/* Footer Statistics */}
+                            <div className="sticky bottom-0 p-6 border-t border-white/10 bg-surface/95 backdrop-blur flex items-center justify-between">
+                                <div className="flex gap-6">
+                                    <div>
+                                        <p className="text-xs text-text-muted mb-1">Booked</p>
+                                        <p className="text-white font-semibold text-lg">{participants.length}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-text-muted mb-1">Capacity Left</p>
+                                        <p className="text-white font-semibold text-lg">{selectedClass.capacity - participants.length}</p>
+                                    </div>
+                                </div>
+                                <button className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-xl text-sm font-medium transition-all">
+                                    Export List
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
