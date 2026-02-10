@@ -229,12 +229,11 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
-        {/* TODO: You are creating nested routes inside either declare protected route with the trainer route or classes route to fix this, youre basically nesting the route which is not allowed not sure of the api logic for this you guys can fix this */}
         <Route
           path="/trainers"
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              {/* <TrainersRoute /> */}
+              <TrainersRoute />
             </ProtectedRoute>
           }
         />
@@ -242,22 +241,23 @@ function AppRoutes() {
           path="/classes"
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              {/* <ClassesRoute /> */}
+              <ClassesRoute />
             </ProtectedRoute>
           }
         />
-        // TODO:  why are these routes nested? within the same protected route component? you can just declare them separately and not nest them, this can have issues later on, you are basically nesting the route within the same component not sure of the api logic for this you guys can fix this
         <Route
           path="/admin/training"
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
               <TrainingManager />
-              path="/trainer/sessions"
-              element={
-                <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
-                  <TrainerSessions />
-                </ProtectedRoute>
-              }
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trainer/sessions"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+              <TrainerSessions />
             </ProtectedRoute>
           }
         />
@@ -302,22 +302,6 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
               <UserManagement />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/expenses"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
-              <Expenses />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/suppliers"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
-              <Suppliers />
             </ProtectedRoute>
           }
         />
@@ -417,14 +401,6 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
               <Announcements />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/gym-traffic"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              <GymTraffic />
             </ProtectedRoute>
           }
         />
