@@ -1,4 +1,70 @@
 const prisma = require('../config/prisma');
+const { isTimeAllowedForTrainer } = require('../services/trainerAvailabilityService');
+
+const createPaymentCompat = async (tx, data) => {
+    const paymentData = { ...data };
+    const removableOptionalFields = new Set(['discount', 'cashTendered', 'changeDue', 'externalRef', 'externalDate']);
+    const originalMemberId = paymentData.memberId;
+    const originalCashierId = paymentData.cashierId;
+
+    if (paymentData.memberId !== undefined) {
+        const memberId = paymentData.memberId;
+        delete paymentData.memberId;
+        if (memberId !== null) {
+            paymentData.member = { connect: { id: Number(memberId) } };
+        }
+    }
+    if (paymentData.cashierId !== undefined) {
+        const cashierId = paymentData.cashierId;
+        delete paymentData.cashierId;
+        if (cashierId !== null) {
+            paymentData.cashier = { connect: { id: Number(cashierId) } };
+        }
+    }
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+        try {
+            return await tx.payment.create({ data: paymentData });
+        } catch (err) {
+            const unknownArg = /Unknown argument `([^`]+)`/.exec(err?.message || '')?.[1];
+            if (!unknownArg) {
+                throw err;
+            }
+
+            if (unknownArg === 'member' && originalMemberId !== undefined) {
+                delete paymentData.member;
+                paymentData.memberId = originalMemberId;
+                continue;
+            }
+            if (unknownArg === 'cashier' && originalCashierId !== undefined) {
+                delete paymentData.cashier;
+                paymentData.cashierId = originalCashierId;
+                continue;
+            }
+            if (unknownArg === 'memberId' && originalMemberId !== undefined) {
+                delete paymentData.memberId;
+                if (originalMemberId !== null) {
+                    paymentData.member = { connect: { id: Number(originalMemberId) } };
+                }
+                continue;
+            }
+            if (unknownArg === 'cashierId' && originalCashierId !== undefined) {
+                delete paymentData.cashierId;
+                if (originalCashierId !== null) {
+                    paymentData.cashier = { connect: { id: Number(originalCashierId) } };
+                }
+                continue;
+            }
+            if (removableOptionalFields.has(unknownArg) && (unknownArg in paymentData)) {
+                delete paymentData[unknownArg];
+                continue;
+            }
+
+            throw err;
+        }
+    }
+};
 
 // Staff/Admin book a trainer session for a member
 const bookTraining = async (req, res) => {
@@ -15,13 +81,12 @@ const bookTraining = async (req, res) => {
         const trainer = await prisma.trainer.findUnique({ where: { id: Number(trainerId) } });
         if (!trainer) return res.status(404).json({ error: "Trainer not found" });
 
-        if (trainer.availableSlots !== null && trainer.availableSlots <= 0) {
-            return res.status(400).json({ error: "Trainer is fully booked" });
-        }
-
         const startDateTime = new Date(`${date}T${time}`);
         if (isNaN(startDateTime.getTime())) {
             return res.status(400).json({ error: "Invalid date or time" });
+        }
+        if (!isTimeAllowedForTrainer({ trainerId: Number(trainerId), date, time, duration: Number(duration) })) {
+            return res.status(400).json({ error: "Selected schedule is outside trainer availability" });
         }
 
         const totalAmount = ((trainer.sessionPrice || 0) / 60) * Number(duration);
@@ -42,23 +107,15 @@ const bookTraining = async (req, res) => {
                 }
             });
 
-            await tx.payment.create({
-                data: {
-                    amount: totalAmount,
-                    type: 'TRAINING',
-                    method,
-                    status: 'COMPLETED',
-                    memberId: Number(memberId),
-                    cashierId: req.user.id
-                }
+            await createPaymentCompat(tx, {
+                amount: totalAmount,
+                type: 'TRAINING',
+                method,
+                status: 'COMPLETED',
+                memberId: Number(memberId),
+                cashierId: req.user.id
             });
 
-            if (trainer.availableSlots !== null) {
-                await tx.trainer.update({
-                    where: { id: Number(trainerId) },
-                    data: { availableSlots: { decrement: 1 } }
-                });
-            }
         });
 
         res.json({ message: "Training session booked and paid" });
@@ -114,17 +171,15 @@ const collectSessionPayment = async (req, res) => {
                 }
             });
 
-            const payment = await tx.payment.create({
-                data: {
-                    amount,
-                    type: 'TRAINING',
-                    method,
-                    status: 'COMPLETED',
-                    memberId: session.memberId,
-                    cashierId: req.user.id,
-                    cashTendered: method === 'CASH' ? tendered : null,
-                    changeDue: method === 'CASH' ? changeDue : null
-                }
+            const payment = await createPaymentCompat(tx, {
+                amount,
+                type: 'TRAINING',
+                method,
+                status: 'COMPLETED',
+                memberId: session.memberId,
+                cashierId: req.user.id,
+                cashTendered: method === 'CASH' ? tendered : null,
+                changeDue: method === 'CASH' ? changeDue : null
             });
 
             return { updated, payment };

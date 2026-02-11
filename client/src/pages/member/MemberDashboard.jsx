@@ -2,13 +2,20 @@ import React from 'react';
 import QRCode from 'react-qr-code';
 
 const MemberDashboard = ({ stats, user }) => {
-    // stats.memberData contains the full member record including plan
     const member = stats?.memberData || {};
-    const planName = member.plan?.name || "No Active Plan";
+    const now = new Date();
+    const activePeriod = (member.membershipPeriods || []).find((period) => new Date(period.endDate) >= now);
+    const planName =
+        stats?.currentPlanName ||
+        activePeriod?.plan?.name ||
+        member.plan?.name ||
+        "No Active Plan";
     const expiryDate = member.expiryDate ? new Date(member.expiryDate).toLocaleDateString() : "N/A";
     const isExpired = member.expiryDate && new Date(member.expiryDate) < new Date();
     const memberId = member.id || user?.id;
     const qrValue = memberId ? `MEMBER:${memberId}` : '';
+    const loyaltyPoints = stats?.loyaltyPoints ?? member.points ?? 0;
+    const checkIns = stats?.checkIns ?? (member.accessLogs?.filter((log) => log.status !== 'DENIED').length || 0);
 
     return (
         <div className="space-y-4 pb-20 px-4 max-w-2xl mx-auto">
@@ -45,7 +52,7 @@ const MemberDashboard = ({ stats, user }) => {
                         <h3 className="text-lg font-bold text-white mb-2 truncate">{planName}</h3>
                         <div className="flex items-center gap-2 flex-wrap">
                             <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${isExpired ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
-                                <span className="w-1.5 h-1.5 rounded-full ${isExpired ? 'bg-red-400' : 'bg-emerald-400'}"></span>
+                                <span className={`w-1.5 h-1.5 rounded-full ${isExpired ? 'bg-red-400' : 'bg-emerald-400'}`}></span>
                                 {isExpired ? 'Expired' : 'Active'}
                             </span>
                             <span className="text-xs text-text-muted">
@@ -73,7 +80,7 @@ const MemberDashboard = ({ stats, user }) => {
                     <div className="flex flex-col h-full">
                         <span className="material-icons-round text-yellow-500 text-2xl mb-2">stars</span>
                         <p className="text-text-muted text-xs font-medium mb-1">Loyalty Points</p>
-                        <h3 className="text-2xl font-bold text-white">{member.points || 0}</h3>
+                        <h3 className="text-2xl font-bold text-white">{loyaltyPoints}</h3>
                     </div>
                 </div>
 
@@ -82,7 +89,7 @@ const MemberDashboard = ({ stats, user }) => {
                     <div className="flex flex-col h-full">
                         <span className="material-icons-round text-primary text-2xl mb-2">how_to_reg</span>
                         <p className="text-text-muted text-xs font-medium mb-1">Check-ins</p>
-                        <h3 className="text-2xl font-bold text-white">{member.checkIns || 0}</h3>
+                        <h3 className="text-2xl font-bold text-white">{checkIns}</h3>
                     </div>
                 </div>
             </div>

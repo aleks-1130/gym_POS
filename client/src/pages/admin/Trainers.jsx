@@ -5,6 +5,16 @@ import { useAuth } from '../../context/AuthContext';
 import { ROLES } from '../../constants/roles';
 import DataTable from '../../components/common/DataTable';
 
+const WEEKDAY_OPTIONS = [
+    { label: 'Sun', value: 0 },
+    { label: 'Mon', value: 1 },
+    { label: 'Tue', value: 2 },
+    { label: 'Wed', value: 3 },
+    { label: 'Thu', value: 4 },
+    { label: 'Fri', value: 5 },
+    { label: 'Sat', value: 6 }
+];
+
 export default function Trainers() {
     const { user } = useAuth();
     const isAdmin = user?.role === ROLES.ADMIN;
@@ -32,7 +42,8 @@ export default function Trainers() {
         rating: '',
         sessionPrice: '',
         sessionDurations: ['60'],
-        availableSlots: '',
+        availabilityByDay: {},
+        availabilityIntervalMinutes: 30,
         bio: '',
         imageUrl: '',
         createLogin: false,
@@ -95,7 +106,8 @@ export default function Trainers() {
             rating: '',
             sessionPrice: '',
             sessionDurations: ['60'],
-            availableSlots: '',
+            availabilityByDay: {},
+            availabilityIntervalMinutes: 30,
             bio: '',
             imageUrl: '',
             createLogin: false,
@@ -124,7 +136,18 @@ export default function Trainers() {
             sessionDurations: trainer.sessionDurations
                 ? trainer.sessionDurations.split(',').map((value) => value.trim()).filter(Boolean)
                 : ['60'],
-            availableSlots: trainer.availableSlots ?? '',
+            availabilityByDay: trainer.availabilityByDay && typeof trainer.availabilityByDay === 'object'
+                ? trainer.availabilityByDay
+                : (Array.isArray(trainer.availabilityDays)
+                    ? trainer.availabilityDays.reduce((acc, day) => {
+                        acc[String(day)] = {
+                            start: trainer.availabilityStart || '09:00',
+                            end: trainer.availabilityEnd || '18:00'
+                        };
+                        return acc;
+                    }, {})
+                    : {}),
+            availabilityIntervalMinutes: trainer.availabilityIntervalMinutes || 30,
             bio: trainer.bio || '',
             imageUrl: trainer.imageUrl || '',
             createLogin: false,
@@ -313,6 +336,29 @@ export default function Trainers() {
                                 </div>
                             </div>
                         </div>
+
+                        {(trainer.availabilityByDay && Object.keys(trainer.availabilityByDay).length > 0) && (
+                            <div className="mb-5 bg-white/[0.03] rounded-xl p-3 border border-white/5">
+                                <p className="text-[11px] text-text-muted uppercase tracking-wide mb-1">Availability</p>
+                                <div className="space-y-1">
+                                    {Object.keys(trainer.availabilityByDay)
+                                        .map(Number)
+                                        .sort((a, b) => a - b)
+                                        .map((day) => {
+                                            const config = trainer.availabilityByDay[String(day)];
+                                            const label = WEEKDAY_OPTIONS.find((w) => w.value === day)?.label || day;
+                                            return (
+                                                <p key={day} className="text-xs text-white">
+                                                    <span className="font-semibold">{label}</span>: {config?.start || '--:--'} - {config?.end || '--:--'}
+                                                </p>
+                                            );
+                                        })}
+                                </div>
+                                <p className="text-xs text-text-muted mt-2">
+                                    Interval: {trainer.availabilityIntervalMinutes || 30} min
+                                </p>
+                            </div>
+                        )}
 
                         <div className="flex gap-3 relative z-10">
                             <button
@@ -605,15 +651,100 @@ export default function Trainers() {
                                             })}
                                         </div>
                                     </div>
-                                    <div>
-                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Available Slots</label>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            value={formData.availableSlots}
-                                            onChange={(e) => handleFormChange('availableSlots', e.target.value)}
-                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
-                                        />
+                                    <div className="md:col-span-2 bg-white/[0.03] border border-white/10 rounded-2xl p-4">
+                                        <p className="text-sm font-semibold text-white mb-3">Trainer Availability</p>
+                                        <p className="text-xs text-text-muted mb-3">Members can only book slots inside this schedule.</p>
+                                        <div className="mb-4">
+                                            <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Available Days</label>
+                                            <div className="grid grid-cols-7 gap-2">
+                                                {WEEKDAY_OPTIONS.map((day) => {
+                                                    const active = Boolean(formData.availabilityByDay?.[String(day.value)]);
+                                                    return (
+                                                        <button
+                                                            key={day.value}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setFormData((prev) => {
+                                                                    const key = String(day.value);
+                                                                    const nextByDay = { ...(prev.availabilityByDay || {}) };
+                                                                    if (nextByDay[key]) {
+                                                                        delete nextByDay[key];
+                                                                    } else {
+                                                                        nextByDay[key] = { start: '09:00', end: '18:00' };
+                                                                    }
+                                                                    return { ...prev, availabilityByDay: nextByDay };
+                                                                });
+                                                            }}
+                                                            className={`px-2 py-2 rounded-lg text-xs font-semibold border transition-all ${active
+                                                                ? 'bg-orange-500/15 text-orange-500 border-orange-500/40'
+                                                                : 'bg-white/5 text-gray-400 border-white/10 hover:text-white'
+                                                                }`}
+                                                        >
+                                                            {day.label}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                        {Object.keys(formData.availabilityByDay || {}).length > 0 ? (
+                                            <div className="space-y-3">
+                                                {Object.keys(formData.availabilityByDay)
+                                                    .map(Number)
+                                                    .sort((a, b) => a - b)
+                                                    .map((dayValue) => {
+                                                        const key = String(dayValue);
+                                                        const dayConfig = formData.availabilityByDay[key] || { start: '09:00', end: '18:00' };
+                                                        const label = WEEKDAY_OPTIONS.find((d) => d.value === dayValue)?.label || key;
+                                                        return (
+                                                            <div key={key} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end bg-white/5 rounded-xl p-3 border border-white/10">
+                                                                <p className="text-sm font-semibold text-white">{label}</p>
+                                                                <div>
+                                                                    <label className="block text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-2">Start Time</label>
+                                                                    <input
+                                                                        type="time"
+                                                                        value={dayConfig.start || '09:00'}
+                                                                        onChange={(e) => {
+                                                                            const next = { ...(formData.availabilityByDay || {}) };
+                                                                            next[key] = { ...next[key], start: e.target.value };
+                                                                            setFormData((prev) => ({ ...prev, availabilityByDay: next }));
+                                                                        }}
+                                                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                                                    />
+                                                                </div>
+                                                                <div>
+                                                                    <label className="block text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-2">End Time</label>
+                                                                    <input
+                                                                        type="time"
+                                                                        value={dayConfig.end || '18:00'}
+                                                                        onChange={(e) => {
+                                                                            const next = { ...(formData.availabilityByDay || {}) };
+                                                                            next[key] = { ...next[key], end: e.target.value };
+                                                                            setFormData((prev) => ({ ...prev, availabilityByDay: next }));
+                                                                        }}
+                                                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                            </div>
+                                        ) : (
+                                            <p className="text-xs text-text-muted">Select one or more days to configure schedule.</p>
+                                        )}
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                                            <div>
+                                                <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Slot Interval</label>
+                                                <select
+                                                    value={formData.availabilityIntervalMinutes}
+                                                    onChange={(e) => handleFormChange('availabilityIntervalMinutes', Number(e.target.value))}
+                                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                                >
+                                                    {[15, 30, 45, 60].map((v) => (
+                                                        <option key={v} value={v} className="bg-[#1a1d24]">{v} minutes</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
                                     </div>
                                     <div>
                                         <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Email</label>

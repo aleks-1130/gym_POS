@@ -4,6 +4,7 @@ import { CurrencyProvider } from './context/CurrencyContext';
 import { ROLES } from './constants/roles';
 import Sidebar from './components/Sidebar';
 import BottomNav from './components/BottomNav';
+import PWAInstallPrompt from './components/PWAInstallPrompt';
 
 // Auth
 import Login from './pages/auth/Login';
@@ -111,6 +112,7 @@ function AppRoutes() {
 
   return (
     <div className="flex-1 w-full bg-background overflow-auto relative">
+      <PWAInstallPrompt isAuthenticated={Boolean(user)} />
       <Routes>
         <Route path="/login" element={<Login />} />
 

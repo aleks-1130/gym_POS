@@ -2,9 +2,20 @@ import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 
 const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const mondayFirstDayIndexes = [1, 2, 3, 4, 5, 6, 0];
 
 const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
 const addDays = (date, days) => new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+const getStartOfWeekMonday = (date) => {
+    const day = date.getDay(); // 0..6 (Sun..Sat)
+    const mondayOffset = day === 0 ? -6 : 1 - day;
+    return startOfDay(addDays(date, mondayOffset));
+};
+const getEndOfWeekSunday = (date) => {
+    const monday = getStartOfWeekMonday(date);
+    const sunday = addDays(monday, 6);
+    return new Date(sunday.getFullYear(), sunday.getMonth(), sunday.getDate(), 23, 59, 59, 999);
+};
 
 const formatDateShort = (date) =>
     date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -18,28 +29,29 @@ const formatHour12 = (hour) => {
 export default function GymTraffic() {
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [rangeStart, setRangeStart] = useState(startOfDay(addDays(new Date(), -6)));
-    const [rangeEnd, setRangeEnd] = useState(new Date());
+    const [rangeStart, setRangeStart] = useState(getStartOfWeekMonday(new Date()));
+    const [rangeEnd, setRangeEnd] = useState(getEndOfWeekSunday(new Date()));
     const [selectedDay, setSelectedDay] = useState(startOfDay(new Date()));
 
     useEffect(() => {
         const fetchTraffic = async () => {
             try {
+                const token = sessionStorage.getItem('token') || localStorage.getItem('token');
                 const now = new Date();
-                const start = startOfDay(addDays(now, -6));
+                const start = getStartOfWeekMonday(now);
+                const end = getEndOfWeekSunday(now);
                 const res = await axios.get('http://localhost:5000/api/access/traffic', {
                     params: {
                         start: start.toISOString(),
-                        end: now.toISOString()
-                    }
+                        end: end.toISOString()
+                    },
+                    headers: token ? { Authorization: `Bearer ${token}` } : undefined
                 });
                 const payloadLogs = res.data?.logs || [];
-                const payloadStart = res.data?.range?.start ? new Date(res.data.range.start) : start;
-                const payloadEnd = res.data?.range?.end ? new Date(res.data.range.end) : now;
 
                 setLogs(payloadLogs);
-                setRangeStart(startOfDay(payloadStart));
-                setRangeEnd(payloadEnd);
+                setRangeStart(start);
+                setRangeEnd(end);
                 setSelectedDay(startOfDay(now));
             } catch (e) {
                 console.error('Failed to fetch traffic data', e);
@@ -146,42 +158,55 @@ export default function GymTraffic() {
                     <span className="text-text-muted text-xs">Total check-ins per day</span>
                 </div>
                 <div className="grid grid-cols-7 gap-2 items-end">
-                    {countsByDay.map(({ day, count }) => (
-                        <div key={day.toISOString()} className="flex flex-col items-center gap-2">
-                            <div className="w-full h-24 sm:h-28 bg-white/5 rounded-lg flex items-end overflow-hidden">
-                                <div
-                                    className="w-full bg-gradient-to-t from-primary to-orange-500"
-                                    style={{ height: `${(count / maxDayCount) * 100}%` }}
-                                />
+                    {mondayFirstDayIndexes.map((dayIndex) => {
+                        const entry = countsByDay.find(({ day }) => day.getDay() === dayIndex);
+                        const day = entry?.day;
+                        const count = entry?.count ?? 0;
+                        if (!day) return null;
+
+                        return (
+                            <div key={day.toISOString()} className="flex flex-col items-center gap-2">
+                                <div className="w-full h-24 sm:h-28 bg-white/5 rounded-lg flex items-end overflow-hidden">
+                                    <div
+                                        className="w-full bg-gradient-to-t from-primary to-orange-500"
+                                        style={{ height: `${(count / maxDayCount) * 100}%` }}
+                                    />
+                                </div>
+                                <span className="text-[10px] text-text-muted font-medium">
+                                    {dayLabels[day.getDay()]}
+                                </span>
+                                <span className="text-[10px] text-white font-semibold">{count}</span>
                             </div>
-                            <span className="text-[10px] text-text-muted font-medium">
-                                {dayLabels[day.getDay()]}
-                            </span>
-                            <span className="text-[10px] text-white font-semibold">{count}</span>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
 
             <div className="bg-surface rounded-2xl border border-white/5 p-4 sm:p-6 space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="space-y-3">
                     <div>
                         <h2 className="text-white font-semibold text-base sm:text-lg">Day & Hour Detail</h2>
                         <p className="text-text-muted text-xs">Select a day to see hourly check-ins</p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                        {weekDays.map((day) => {
+                    <div className="w-full grid grid-cols-7 gap-1 sm:gap-2">
+                        {mondayFirstDayIndexes.map((dayIndex) => {
+                            const day = weekDays.find((d) => d.getDay() === dayIndex);
+                            if (!day) return null;
+
                             const isActive = startOfDay(day).getTime() === selectedDay.getTime();
+                            const dayName = dayLabels[day.getDay()];
+                            const dayDate = day.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
                             return (
                                 <button
                                     key={day.toISOString()}
                                     onClick={() => setSelectedDay(startOfDay(day))}
-                                    className={`px-3 py-1 rounded-full text-xs font-semibold border transition-all ${isActive
+                                    className={`w-full min-w-0 px-1.5 py-1.5 rounded-lg text-[10px] sm:text-xs font-semibold border transition-all leading-tight ${isActive
                                         ? 'bg-primary/15 border-primary/40 text-primary'
                                         : 'bg-white/5 border-white/10 text-text-muted hover:text-white'
                                         }`}
                                 >
-                                    {dayLabels[day.getDay()]} {formatDateShort(day)}
+                                    <span className="block truncate">{dayName}</span>
+                                    <span className="block truncate">{dayDate}</span>
                                 </button>
                             );
                         })}

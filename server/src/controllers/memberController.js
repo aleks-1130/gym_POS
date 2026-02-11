@@ -1,4 +1,71 @@
 const prisma = require('../config/prisma');
+const { isTimeAllowedForTrainer } = require('../services/trainerAvailabilityService');
+
+const createPaymentCompat = async (tx, data) => {
+    const paymentData = { ...data };
+    const removableOptionalFields = new Set(['discount', 'cashTendered', 'changeDue', 'externalRef', 'externalDate']);
+    const originalMemberId = paymentData.memberId;
+    const originalCashierId = paymentData.cashierId;
+
+    // Use relation connect to avoid schema/client drift around scalar FK fields.
+    if (paymentData.memberId !== undefined) {
+        const memberId = paymentData.memberId;
+        delete paymentData.memberId;
+        if (memberId !== null) {
+            paymentData.member = { connect: { id: Number(memberId) } };
+        }
+    }
+    if (paymentData.cashierId !== undefined) {
+        const cashierId = paymentData.cashierId;
+        delete paymentData.cashierId;
+        if (cashierId !== null) {
+            paymentData.cashier = { connect: { id: Number(cashierId) } };
+        }
+    }
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+        try {
+            return await tx.payment.create({ data: paymentData });
+        } catch (err) {
+            const unknownArg = /Unknown argument `([^`]+)`/.exec(err?.message || '')?.[1];
+            if (!unknownArg) {
+                throw err;
+            }
+
+            if (unknownArg === 'member' && originalMemberId !== undefined) {
+                delete paymentData.member;
+                paymentData.memberId = originalMemberId;
+                continue;
+            }
+            if (unknownArg === 'cashier' && originalCashierId !== undefined) {
+                delete paymentData.cashier;
+                paymentData.cashierId = originalCashierId;
+                continue;
+            }
+            if (unknownArg === 'memberId' && originalMemberId !== undefined) {
+                delete paymentData.memberId;
+                if (originalMemberId !== null) {
+                    paymentData.member = { connect: { id: Number(originalMemberId) } };
+                }
+                continue;
+            }
+            if (unknownArg === 'cashierId' && originalCashierId !== undefined) {
+                delete paymentData.cashierId;
+                if (originalCashierId !== null) {
+                    paymentData.cashier = { connect: { id: Number(originalCashierId) } };
+                }
+                continue;
+            }
+            if (removableOptionalFields.has(unknownArg) && (unknownArg in paymentData)) {
+                delete paymentData[unknownArg];
+                continue;
+            }
+
+            throw err;
+        }
+    }
+};
 
 // Only Staff/Admin can list all members
 const getMembers = async (req, res) => {
@@ -102,6 +169,10 @@ const bookTraining = async (req, res) => {
     const { trainerId, date, time, duration, notes, method } = req.body;
     const memberId = req.user.id;
 
+    if (req.user.type !== 'MEMBER') {
+        return res.status(403).json({ error: "Only member accounts can book trainer sessions from this endpoint" });
+    }
+
     if (!trainerId || !date || !time || !duration || !method) {
         return res.status(400).json({ error: "Missing required booking details" });
     }
@@ -111,16 +182,20 @@ const bookTraining = async (req, res) => {
     }
 
     try {
+        const member = await prisma.member.findUnique({ where: { id: Number(memberId) } });
+        if (!member) {
+            return res.status(404).json({ error: "Member profile not found. Please log in again as a member." });
+        }
+
         const trainer = await prisma.trainer.findUnique({ where: { id: Number(trainerId) } });
         if (!trainer) return res.status(404).json({ error: "Trainer not found" });
-
-        if (trainer.availableSlots !== null && trainer.availableSlots <= 0) {
-            return res.status(400).json({ error: "Trainer is fully booked" });
-        }
 
         const startDateTime = new Date(`${date}T${time}`);
         if (isNaN(startDateTime.getTime())) {
             return res.status(400).json({ error: "Invalid date or time" });
+        }
+        if (!isTimeAllowedForTrainer({ trainerId: Number(trainerId), date, time, duration: Number(duration) })) {
+            return res.status(400).json({ error: "Selected schedule is outside trainer availability" });
         }
 
         const allowedDurations = (trainer.sessionDurations || '60')
@@ -151,23 +226,15 @@ const bookTraining = async (req, res) => {
             });
 
             if (method !== 'CASH') {
-                await tx.payment.create({
-                    data: {
-                        amount: totalAmount,
-                        type: 'TRAINING',
-                        method,
-                        status: 'COMPLETED',
-                        memberId
-                    }
+                await createPaymentCompat(tx, {
+                    amount: totalAmount,
+                    type: 'TRAINING',
+                    method,
+                    status: 'COMPLETED',
+                    memberId
                 });
             }
 
-            if (trainer.availableSlots !== null) {
-                await tx.trainer.update({
-                    where: { id: Number(trainerId) },
-                    data: { availableSlots: { decrement: 1 } }
-                });
-            }
         });
 
         res.json({ message: method === 'CASH' ? "Training session booked. Pay at the front desk." : "Training session booked and paid" });
@@ -181,21 +248,29 @@ const bookTrainingCash = async (req, res) => {
     const { trainerId, date, time, duration, notes } = req.body;
     const resolvedMemberId = req.user.id;
 
+    if (req.user.type !== 'MEMBER') {
+        return res.status(403).json({ error: "Only member accounts can book trainer sessions from this endpoint" });
+    }
+
     if (!trainerId || !date || !time || !duration) {
         return res.status(400).json({ error: "Missing required booking details" });
     }
 
     try {
+        const member = await prisma.member.findUnique({ where: { id: Number(resolvedMemberId) } });
+        if (!member) {
+            return res.status(404).json({ error: "Member profile not found. Please log in again as a member." });
+        }
+
         const trainer = await prisma.trainer.findUnique({ where: { id: Number(trainerId) } });
         if (!trainer) return res.status(404).json({ error: "Trainer not found" });
-
-        if (trainer.availableSlots !== null && trainer.availableSlots <= 0) {
-            return res.status(400).json({ error: "Trainer is fully booked" });
-        }
 
         const startDateTime = new Date(`${date}T${time}`);
         if (isNaN(startDateTime.getTime())) {
             return res.status(400).json({ error: "Invalid date or time" });
+        }
+        if (!isTimeAllowedForTrainer({ trainerId: Number(trainerId), date, time, duration: Number(duration) })) {
+            return res.status(400).json({ error: "Selected schedule is outside trainer availability" });
         }
 
         const allowedDurations = (trainer.sessionDurations || '60')
@@ -225,12 +300,6 @@ const bookTrainingCash = async (req, res) => {
                 }
             });
 
-            if (trainer.availableSlots !== null) {
-                await tx.trainer.update({
-                    where: { id: Number(trainerId) },
-                    data: { availableSlots: { decrement: 1 } }
-                });
-            }
         });
 
         res.json({ message: "Training session booked. Pay at the front desk." });
@@ -257,6 +326,32 @@ const getMemberProfile = async (req, res) => {
         res.json(member);
     } catch (e) {
         res.status(500).json({ error: e.message });
+    }
+};
+
+const getMyTrainingSessions = async (req, res) => {
+    if (req.user.type !== 'MEMBER') {
+        return res.status(403).json({ error: "Only member accounts can access this endpoint" });
+    }
+
+    try {
+        const sessions = await prisma.trainingSession.findMany({
+            where: { memberId: Number(req.user.id) },
+            include: {
+                trainer: {
+                    select: {
+                        id: true,
+                        name: true,
+                        specialization: true,
+                        imageUrl: true
+                    }
+                }
+            },
+            orderBy: { date: 'desc' }
+        });
+        res.json(sessions);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch training sessions", detail: e?.message });
     }
 };
 
@@ -662,6 +757,7 @@ module.exports = {
     bookTraining,
     bookTrainingCash,
     getMemberProfile,
+    getMyTrainingSessions,
     getPaymentMethods,
     addPaymentMethod,
     updatePaymentMethod,

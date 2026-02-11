@@ -24,6 +24,11 @@ const getAccessLogs = async (req, res) => {
     try {
         const { date } = req.query;
         let where = {};
+
+        if (req.user?.role === 'MEMBER') {
+            where.memberId = Number(req.user.id);
+        }
+
         if (date) {
             const start = new Date(date);
             start.setHours(0, 0, 0, 0);
@@ -36,7 +41,7 @@ const getAccessLogs = async (req, res) => {
             where,
             include: { member: true },
             orderBy: { checkIn: 'desc' },
-            take: 100
+            take: req.user?.role === 'MEMBER' ? 1000 : 100
         });
         res.json(logs);
     } catch (e) {
@@ -46,11 +51,25 @@ const getAccessLogs = async (req, res) => {
 
 const getTrafficStats = async (req, res) => {
     try {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const now = new Date();
+        const defaultStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const requestedStart = req.query?.start ? new Date(req.query.start) : defaultStart;
+        const requestedEnd = req.query?.end ? new Date(req.query.end) : now;
+
+        if (Number.isNaN(requestedStart.getTime()) || Number.isNaN(requestedEnd.getTime())) {
+            return res.status(400).json({ error: "Invalid date range" });
+        }
+
+        const where = {
+            checkIn: {
+                gte: requestedStart,
+                lte: requestedEnd
+            }
+        };
 
         const logs = await prisma.accessLog.findMany({
-            where: { checkIn: { gte: today } }
+            where,
+            orderBy: { checkIn: 'asc' }
         });
 
         const hourly = new Array(24).fill(0);
@@ -60,6 +79,11 @@ const getTrafficStats = async (req, res) => {
         });
 
         res.json({
+            logs,
+            range: {
+                start: requestedStart.toISOString(),
+                end: requestedEnd.toISOString()
+            },
             todayTotal: logs.length,
             hourly
         });

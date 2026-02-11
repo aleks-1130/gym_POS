@@ -63,21 +63,5 @@
       ]
     }
   ],
-  "categories": ["fitness", "health", "productivity"],
-  "screenshots": [
-    {
-      "src": "/screenshot-1.png",
-      "sizes": "540x720",
-      "type": "image/png",
-      "form_factor": "narrow",
-      "label": "FitOS Dashboard"
-    },
-    {
-      "src": "/screenshot-2.png",
-      "sizes": "1280x720",
-      "type": "image/png",
-      "form_factor": "wide",
-      "label": "FitOS Dashboard Wide"
-    }
-  ]
+  "categories": ["fitness", "health", "productivity"]
 }

@@ -5,11 +5,6 @@ const trainingSessionController = require('../controllers/trainingSessionControl
 const classController = require('../controllers/classController');
 const { authenticateToken, authorize } = require('../middleware/authMiddleware');
 
-// Public / Member Views
-router.get('/', authenticateToken, trainerController.getAllTrainers);
-router.get('/:id', authenticateToken, trainerController.getTrainerById);
-router.get('/:id/sessions', authenticateToken, trainingSessionController.getTrainerSessions);
-
 // Trainer Self-Service
 router.get('/me', authenticateToken, authorize(['TRAINER']), trainerController.getMe);
 router.get('/me/sessions', authenticateToken, authorize(['TRAINER']), trainingSessionController.getMySessions);
@@ -18,5 +13,16 @@ router.patch('/me/sessions/:id', authenticateToken, authorize(['TRAINER']), trai
 
 router.get('/me/classes', authenticateToken, authorize(['TRAINER']), classController.getAllClasses);
 router.patch('/me/classes/:classId/attendees/:bookingId', authenticateToken, authorize(['TRAINER']), classController.updateAttendeeStatus);
+
+// Public / Member Views
+router.get('/', authenticateToken, trainerController.getAllTrainers);
+router.get('/:id', authenticateToken, trainerController.getTrainerById);
+router.get('/:id/sessions', authenticateToken, trainingSessionController.getTrainerSessions);
+
+// Admin CRUD
+router.post('/', authenticateToken, authorize(['OWNER', 'ADMIN']), trainerController.createTrainer);
+router.put('/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), trainerController.updateTrainer);
+router.delete('/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), trainerController.deleteTrainer);
+router.post('/:id/create-login', authenticateToken, authorize(['OWNER', 'ADMIN']), trainerController.createTrainerLogin);
 
 module.exports = router;

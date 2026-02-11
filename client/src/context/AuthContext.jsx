@@ -5,7 +5,7 @@ const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
-    const [token, setToken] = useState(localStorage.getItem('token'));
+    const [token, setToken] = useState(localStorage.getItem('token') || sessionStorage.getItem('token'));
     const [loading, setLoading] = useState(true);
 
     // Configure axios defaults
@@ -40,11 +40,22 @@ export const AuthProvider = ({ children }) => {
             setToken(token);
             setUser(user);
             localStorage.setItem('token', token);
+            sessionStorage.setItem('token', token);
             localStorage.setItem('user', JSON.stringify(user));
+            sessionStorage.setItem('user', JSON.stringify(user));
+            localStorage.removeItem('pwa_install_dismissed');
             axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
             return true;
         } catch (e) {
             console.error(e);
+            // Prevent stale sessions after failed login attempts.
+            setToken(null);
+            setUser(null);
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            sessionStorage.removeItem('token');
+            sessionStorage.removeItem('user');
+            delete axios.defaults.headers.common['Authorization'];
             return false;
         }
     };
@@ -54,6 +65,8 @@ export const AuthProvider = ({ children }) => {
         setToken(null);
         localStorage.removeItem('token');
         localStorage.removeItem('user');
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('user');
         delete axios.defaults.headers.common['Authorization'];
     };
 

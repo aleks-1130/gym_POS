@@ -106,7 +106,9 @@ export default function POS() {
 
     const fetchHistory = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/payments');
+            const res = await axios.get('http://localhost:5000/api/payments', {
+                headers: authHeaders()
+            });
             setHistory(res.data);
         } catch (error) {
             console.error("Failed to fetch history");
@@ -228,9 +230,13 @@ export default function POS() {
     const processPayment = async (method) => {
         setLoading(true);
         try {
-            const hasTrainingInContext = cart.some(item => item.type === 'TRAINING');
-            const tendered = method === 'CASH' ? parseFloat(amountTendered) : null;
-            const change = method === 'CASH' ? (parseFloat(amountTendered) - cartTotal) : null;
+            const parsedTendered = method === 'CASH' ? Number(amountTendered) : null;
+            if (method === 'CASH' && (!Number.isFinite(parsedTendered) || parsedTendered < cartTotal)) {
+                throw new Error("Cash tendered must be a valid amount and at least equal to the total.");
+            }
+
+            const tendered = method === 'CASH' ? parsedTendered : null;
+            const change = method === 'CASH' ? Number((parsedTendered - cartTotal).toFixed(2)) : null;
 
             if (hasTraining) {
                 const memberId = selectedMemberId ? Number(selectedMemberId) : null;
@@ -282,6 +288,8 @@ export default function POS() {
                 changeDue: change,
                 externalRef: method === 'GCASH' ? gcashReference : null,
                 externalDate: method === 'GCASH' ? externalDate : null
+            }, {
+                headers: authHeaders()
             });
 
             // Prepare Reciept Data

@@ -12,9 +12,9 @@ router.get('/classes', authenticateToken, memberController.getAvailableClasses);
 router.post('/book', authenticateToken, memberController.bookClass); // Member type check inside controller
 router.post('/cancel-booking', authenticateToken, memberController.cancelBooking);
 router.post('/book-training', authenticateToken, authorize(['MEMBER']), memberController.bookTraining);
-router.post('/book-training', authenticateToken, authorize(['MEMBER']), memberController.bookTraining);
 router.post('/book-training-cash', authenticateToken, authorize(['MEMBER']), memberController.bookTrainingCash);
 router.get('/me/transactions', authenticateToken, authorize(['MEMBER']), paymentController.getMyTransactions);
+router.get('/me/training-sessions', authenticateToken, authorize(['MEMBER']), memberController.getMyTrainingSessions);
 
 // Member Profile & Payment Methods
 router.get('/:id', authenticateToken, memberController.getMemberProfile);

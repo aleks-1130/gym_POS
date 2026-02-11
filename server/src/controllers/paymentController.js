@@ -48,34 +48,97 @@ const createPayment = async (req, res) => {
     console.log("User:", req.user);
 
     try {
+        const badRequest = (message) => {
+            const err = new Error(message);
+            err.status = 400;
+            throw err;
+        };
+
         const parsedAmount = parseFloat(amount);
+        if (!Number.isFinite(parsedAmount) || parsedAmount < 0) {
+            badRequest("Invalid payment amount");
+        }
+
+        const allowedMethods = ['CASH', 'CARD', 'GCASH'];
+        if (!allowedMethods.includes(method)) {
+            badRequest("Invalid payment method");
+        }
+
+        const normalizedDiscount = discount !== undefined ? Number(discount) : 0;
+        if (!Number.isFinite(normalizedDiscount) || normalizedDiscount < 0) {
+            badRequest("Invalid discount value");
+        }
+
+        const normalizedCashTendered = method === 'CASH'
+            ? (cashTendered !== undefined && cashTendered !== null && cashTendered !== '' ? Number(cashTendered) : null)
+            : null;
+        if (method === 'CASH' && (!Number.isFinite(normalizedCashTendered) || normalizedCashTendered < parsedAmount)) {
+            badRequest("Cash tendered is invalid or less than amount");
+        }
+
+        const normalizedChangeDue = method === 'CASH'
+            ? (changeDue !== undefined && changeDue !== null && changeDue !== '' ? Number(changeDue) : (normalizedCashTendered - parsedAmount))
+            : null;
+        if (method === 'CASH' && !Number.isFinite(normalizedChangeDue)) {
+            badRequest("Invalid change due");
+        }
+
+        let normalizedExternalDate = null;
+        if (method === 'GCASH' && externalDate) {
+            const parsedExternalDate = new Date(externalDate);
+            if (Number.isNaN(parsedExternalDate.getTime())) {
+                badRequest("Invalid external payment date");
+            }
+            normalizedExternalDate = parsedExternalDate;
+        }
+
         const pointsAwarded = resolvedMemberId ? Math.floor(parsedAmount / 100) : 0;
-        const cashierId = req.user.role === 'MEMBER' ? null : req.user.id;
+        const resolvedCashierId = req.user.role === 'MEMBER' ? null : req.user.id;
 
         // 1. Create Payment Record
-        const payment = await prisma.payment.create({
-            data: {
-                amount: parsedAmount,
-                type,
-                method,
-                memberId: resolvedMemberId,
-                cashierId,
-                pointsAwarded,
-                cashTendered: method === 'CASH' ? (cashTendered !== undefined ? Number(cashTendered) : null) : null,
-                changeDue: method === 'CASH' ? (changeDue !== undefined ? Number(changeDue) : null) : null,
-                externalRef: method === 'GCASH' ? (externalRef || null) : null,
-                externalDate: method === 'GCASH' && externalDate ? new Date(externalDate) : null,
-                discount: req.body.discount ? Number(req.body.discount) : 0
+        // Handle mixed Prisma client/schema versions by stripping unknown optional fields.
+        const paymentCreateData = {
+            amount: parsedAmount,
+            type,
+            method,
+            ...(resolvedMemberId ? { member: { connect: { id: Number(resolvedMemberId) } } } : {}),
+            ...(resolvedCashierId ? { cashier: { connect: { id: Number(resolvedCashierId) } } } : {}),
+            pointsAwarded,
+            cashTendered: normalizedCashTendered,
+            changeDue: normalizedChangeDue,
+            externalRef: method === 'GCASH' ? (externalRef || null) : null,
+            externalDate: normalizedExternalDate,
+            discount: normalizedDiscount
+        };
+
+        const removableOptionalFields = new Set(['discount', 'cashTendered', 'changeDue', 'externalRef', 'externalDate']);
+        let payment;
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+            try {
+                payment = await prisma.payment.create({ data: paymentCreateData });
+                break;
+            } catch (err) {
+                const unknownArg = /Unknown argument `([^`]+)`/.exec(err?.message || '')?.[1];
+                if (!unknownArg || !removableOptionalFields.has(unknownArg) || !(unknownArg in paymentCreateData)) {
+                    throw err;
+                }
+                console.warn(`payment.create: stripping unsupported field '${unknownArg}' for current Prisma client`);
+                delete paymentCreateData[unknownArg];
             }
-        });
+        }
 
         // 2. Process Items (Stock Deduction & Membership Updates)
         if (items && items.length > 0) {
+            if (!Array.isArray(items)) {
+                badRequest("Items must be an array");
+            }
+
             const paymentItems = items.map((item) => ({
-                paymentId: payment.id,
-                productId: item.type === 'PRODUCT' && item.id ? Number(item.id) : null,
-                name: item.name || 'Item',
                 type: item.type || 'PRODUCT',
+                paymentId: payment.id,
+                productId: (item.type === 'PRODUCT' && item.id) ? Number(item.id) : null,
+                name: item.name || 'Item',
                 quantity: Number(item.quantity) || 1,
                 unitPrice: parseFloat(item.price) || 0
             }));
@@ -106,7 +169,7 @@ const createPayment = async (req, res) => {
                         data: {
                             expiryDate: newExpiry,
                             status: 'ACTIVE',
-                            planId: item.id // Update their plan to the new one
+                            planId: Number(item.id) // Update their plan to the new one
                         }
                     });
                 }
@@ -129,10 +192,10 @@ const createPayment = async (req, res) => {
         }
 
         // 3. Award Loyalty Points (1 point per 100 PHP spent)
-        if (memberId) {
+        if (resolvedMemberId) {
             if (pointsAwarded > 0) {
                 await prisma.member.update({
-                    where: { id: Number(memberId) },
+                    where: { id: Number(resolvedMemberId) },
                     data: { points: { increment: pointsAwarded } }
                 });
             }
@@ -141,7 +204,7 @@ const createPayment = async (req, res) => {
         res.json(payment);
     } catch (e) {
         console.error(e);
-        res.status(500).json({ error: e.message });
+        res.status(e.status || 500).json({ error: e.message });
     }
 };
 
@@ -161,7 +224,8 @@ const getAllPayments = async (req, res) => {
             where: {
                 OR: [
                     { cashierId: req.user.id },
-                    { type: 'IN_APP_PURCHASE' }
+                    { type: 'IN_APP_PURCHASE' },
+                    { type: 'TRAINING' }
                 ]
             },
             take: 50,

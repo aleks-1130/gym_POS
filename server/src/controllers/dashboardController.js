@@ -19,16 +19,37 @@ const getDashboardStats = async (req, res) => {
     try {
         // If Member, return only their own stats (or simplified generic stats)
         if (req.user.role === 'MEMBER') {
-            // Member specific dashboard logic here
+            const now = new Date();
             const member = await prisma.member.findUnique({
                 where: { id: req.user.id },
-                include: { plan: true }
+                include: {
+                    plan: true,
+                    accessLogs: {
+                        where: { status: 'ALLOWED' },
+                        select: { id: true, checkIn: true },
+                        orderBy: { checkIn: 'desc' }
+                    },
+                    membershipPeriods: {
+                        include: { plan: true },
+                        orderBy: { endDate: 'desc' }
+                    }
+                }
             });
+            if (!member) return res.status(404).json({ error: "Member not found" });
+
+            const activePeriod = member?.membershipPeriods?.find((period) => new Date(period.endDate) >= now) || null;
+            const currentPlanName = activePeriod?.plan?.name || member?.plan?.name || 'No Active Plan';
+            const checkIns = member?.accessLogs?.length || 0;
+            const loyaltyPoints = member?.points || 0;
+
             return res.json({
                 activeMembers: 0, // Not relevant for member
                 revenueToday: 0, // Not relevant
                 expiringSoon: member.expiryDate, // Show their expiry
-                memberData: member
+                memberData: member,
+                currentPlanName,
+                checkIns,
+                loyaltyPoints
             });
         }
         if (req.user.role === 'TRAINER') {
