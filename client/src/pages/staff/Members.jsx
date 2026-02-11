@@ -4,10 +4,12 @@ import { useNavigate } from 'react-router-dom';
 import { useReactToPrint } from 'react-to-print';
 import QRCode from 'react-qr-code';
 import { useCurrency } from '../../context/CurrencyContext';
+import DataTable from '../../components/common/DataTable';
+
 
 export default function Members() {
     const navigate = useNavigate();
-    const { formatPrice, rate } = useCurrency();
+    const { formatPrice } = useCurrency();
     const [members, setMembers] = useState([]);
     const [plans, setPlans] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -27,6 +29,7 @@ export default function Members() {
     const [showTransactionModal, setShowTransactionModal] = useState(false);
     const [transactionInfo, setTransactionInfo] = useState(null);
 
+
     const [formData, setFormData] = useState({
         firstName: '',
         lastName: '',
@@ -36,6 +39,7 @@ export default function Members() {
         paymentMethod: 'CASH',
         birthDate: '',
         sex: '',
+
         imageUrl: '',
         agreedToTC: false
     });
@@ -116,6 +120,7 @@ export default function Members() {
         setSubmitting(true);
         try {
             const payload = {
+
                 ...formData,
                 planId: formData.planId ? Number(formData.planId) : null,
                 paymentMethod: formData.paymentMethod,
@@ -129,6 +134,7 @@ export default function Members() {
             setNewMember(member);
             setIsModalOpen(false);
             setFormData({ firstName: '', lastName: '', email: '', phone: '', planId: '', birthDate: '', sex: '', imageUrl: '', agreedToTC: false });
+
             fetchData(); // Refresh list
             if (payment) {
                 setTransactionInfo(payment);
@@ -170,8 +176,8 @@ export default function Members() {
     const selectedPlan = plans.find(plan => plan.id === Number(formData.planId));
     const planPrice = selectedPlan ? selectedPlan.price : 0;
     const cashTenderedValue = parseFloat(amountTendered) || 0;
-    const amountDueLocal = planPrice * rate;
-    const changeDue = Math.max(0, (cashTenderedValue / rate) - planPrice);
+    const amountDueLocal = planPrice;
+    const changeDue = Math.max(0, cashTenderedValue - planPrice);
 
     const getStatusColor = (status) => {
         switch (status) {
@@ -182,6 +188,7 @@ export default function Members() {
         }
     };
     const getQrValue = (memberId) => (memberId ? `MEMBER:${memberId}` : '');
+
 
     return (
         <div className="space-y-6">
@@ -233,80 +240,65 @@ export default function Members() {
             {/* Content Area */}
             {viewMode === 'list' ? (
                 // LIST VIEW
-                <div className="bg-surface rounded-3xl border border-white/5 overflow-hidden shadow-sm animate-fade-in">
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse">
-                            <thead>
-                                <tr className="border-b border-white/5 text-text-muted text-sm bg-white/5">
-                                    <th className="p-6 font-medium">Member</th>
-                                    <th className="p-6 font-medium">Plan</th>
-                                    <th className="p-6 font-medium">Status</th>
-                                    <th className="p-6 font-medium">Join Date</th>
-                                    <th className="p-6 font-medium text-right">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-white/5">
-                                {filteredMembers.map(member => (
-                                    <tr
-                                        key={member.id}
-                                        onClick={() => navigate(`/members/${member.id}`)}
-                                        className="hover:bg-white/5 transition-colors cursor-pointer group"
-                                    >
-                                        <td className="p-6">
-                                            <div className="flex items-center gap-4">
-                                                {member.imageUrl ? (
-                                                    <img src={member.imageUrl} className="w-10 h-10 rounded-full object-cover border border-primary/20" alt="" />
-                                                ) : (
-                                                    <div className="w-10 h-10 bg-gradient-to-br from-primary/20 to-primary/5 text-primary rounded-full flex items-center justify-center font-bold text-sm border border-primary/20 backdrop-blur-sm shadow-inner">
-                                                        {member.firstName[0]}{member.lastName[0]}
-                                                    </div>
-                                                )}
-                                                <div>
-                                                    <p className="font-bold text-white group-hover:text-primary transition-colors">{member.firstName} {member.lastName}</p>
-                                                    <p className="text-xs text-text-muted">{member.email}</p>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="p-6 text-text-secondary font-medium">
-                                            {member.plan?.name || "None"}
-                                        </td>
-                                        <td className="p-6">
-                                            <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(member.status)}`}>
-                                                {member.status}
-                                            </span>
-                                        </td>
-                                        <td className="p-6 text-text-secondary text-sm">
-                                            {new Date(member.startDate).toLocaleDateString()}
-                                        </td>
-                                        <td className="p-6 text-right">
-                                            <div className="flex items-center justify-end gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setQrMember(member);
-                                                    }}
-                                                    className="w-9 h-9 rounded-lg border border-white/10 bg-white/5 text-text-muted hover:text-white hover:border-primary/30 transition-all flex items-center justify-center"
-                                                    title="View QR Code"
-                                                >
-                                                    <span className="material-icons-round text-[18px]">qr_code_2</span>
-                                                </button>
-                                                <span className="material-icons-round text-text-muted group-hover:text-primary transition-colors">chevron_right</span>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                                {filteredMembers.length === 0 && !loading && (
-                                    <tr>
-                                        <td colSpan="5" className="p-12 text-center text-text-muted">
-                                            No members found.
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                // LIST VIEW
+                <DataTable
+                    columns={[
+                        {
+                            header: 'Member',
+                            accessor: (member) => (
+                                <div className="flex items-center gap-4">
+                                    {member.imageUrl ? (
+                                        <img src={member.imageUrl} className="w-10 h-10 rounded-full object-cover border border-primary/20" alt="" />
+                                    ) : (
+                                        <div className="w-10 h-10 bg-gradient-to-br from-primary/20 to-primary/5 text-primary rounded-full flex items-center justify-center font-bold text-sm border border-primary/20 backdrop-blur-sm shadow-inner">
+                                            {member.firstName[0]}{member.lastName[0]}
+                                        </div>
+                                    )}
+                                    <div>
+                                        <p className="font-bold text-white group-hover:text-primary transition-colors">{member.firstName} {member.lastName}</p>
+                                        <p className="text-xs text-text-muted">{member.email}</p>
+                                    </div>
+                                </div>
+                            )
+                        },
+                        {
+                            header: 'Plan',
+                            accessor: (member) => <span className="text-text-secondary font-medium">{member.plan?.name || "None"}</span>
+                        },
+                        {
+                            header: 'Status',
+                            accessor: (member) => (
+                                <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(member.status)}`}>
+                                    {member.status}
+                                </span>
+                            )
+                        },
+                        {
+                            header: 'Join Date',
+                            accessor: (member) => <span className="text-text-secondary text-sm">{new Date(member.startDate).toLocaleDateString()}</span>
+                        }
+                    ]}
+                    data={filteredMembers}
+                    onRowClick={(member) => navigate(`/members/${member.id}`)}
+                    actions={(member) => (
+                        <div className="flex items-center justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setQrMember(member);
+                                }}
+                                className="w-9 h-9 rounded-lg border border-white/10 bg-white/5 text-text-muted hover:text-white hover:border-primary/30 transition-all flex items-center justify-center"
+                                title="View QR Code"
+                            >
+                                <span className="material-icons-round text-[18px]">qr_code_2</span>
+                            </button>
+                            <span className="material-icons-round text-text-muted group-hover:text-primary transition-colors">chevron_right</span>
+                        </div>
+                    )}
+                    isLoading={loading}
+                    emptyMessage="No members found."
+                />
             ) : (
                 // GRID VIEW
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
@@ -502,6 +494,8 @@ export default function Members() {
                                 </div>
                             </div>
 
+
+
                             <div>
                                 <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Membership Plan</label>
                                 <div className="relative">
@@ -514,7 +508,7 @@ export default function Members() {
                                         <option value="" disabled>Select a plan</option>
                                         {plans.map(plan => (
                                             <option key={plan.id} value={plan.id} className="bg-surface text-white">
-                                                {plan.name} - ${plan.price} ({plan.duration} days)
+                                                {plan.name} - ₱{plan.price} ({plan.duration} days)
                                             </option>
                                         ))}
                                     </select>
@@ -627,11 +621,11 @@ export default function Members() {
                                 </button>
                                 <button
                                     onClick={() => {
-                                        const tenderedUsd = cashTenderedValue / rate;
+                                        const tenderedAmount = cashTenderedValue;
                                         if (cashTenderedValue < amountDueLocal) return;
                                         setShowPaymentModal(false);
                                         submitRegistration({
-                                            cashTendered: tenderedUsd,
+                                            cashTendered: tenderedAmount,
                                             changeDue: changeDue
                                         });
                                     }}
@@ -795,6 +789,16 @@ export default function Members() {
                                     <QRCode value={getQrValue(newMember.id)} size={96} />
                                 </div>
                             </div>
+                            <div className="border border-black p-3 rounded mb-8 text-sm flex items-center justify-between gap-6">
+                                <div>
+                                    <p className="font-bold border-b border-black mb-1">MEMBER QR CODE</p>
+                                    <p><strong>ID:</strong> {newMember.id}</p>
+                                    <p><strong>Code:</strong> MEMBER:{newMember.id}</p>
+                                </div>
+                                <div className="bg-white p-2 border border-black">
+                                    <QRCode value={getQrValue(newMember.id)} size={96} />
+                                </div>
+                            </div>
 
                             <div className="space-y-4 text-xs leading-relaxed">
                                 <section>
@@ -871,6 +875,34 @@ export default function Members() {
                     </div>
                 </div>
             )}
+
+            {/* QR Code Modal */}
+            {qrMember && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[70] animate-fade-in">
+                    <div className="bg-surface rounded-3xl border border-white/10 w-full max-w-sm shadow-2xl overflow-hidden">
+                        <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
+                            <div>
+                                <h2 className="text-lg font-bold text-white">Member QR Code</h2>
+                                <p className="text-xs text-text-muted">{qrMember.firstName} {qrMember.lastName}</p>
+                            </div>
+                            <button onClick={() => setQrMember(null)} className="text-text-muted hover:text-white transition-colors">
+                                <span className="material-icons-round">close</span>
+                            </button>
+                        </div>
+
+                        <div className="p-6 flex flex-col items-center gap-4">
+                            <div className="bg-white p-4 rounded-2xl shadow-lg">
+                                <QRCode value={getQrValue(qrMember.id)} size={180} />
+                            </div>
+                            <div className="text-center">
+                                <p className="text-xs text-text-muted">Member ID</p>
+                                <p className="text-white font-mono text-sm">MEMBER:{qrMember.id}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
+

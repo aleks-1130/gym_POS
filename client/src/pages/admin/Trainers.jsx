@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { User, Star, History, X, Info, Pencil, Trash2, Plus } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { ROLES } from '../../constants/roles';
+import DataTable from '../../components/common/DataTable';
 
 export default function Trainers() {
+    const { user } = useAuth();
+    const isAdmin = user?.role === ROLES.ADMIN;
     const [trainers, setTrainers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedTrainer, setSelectedTrainer] = useState(null);
@@ -12,6 +17,11 @@ export default function Trainers() {
     const [showForm, setShowForm] = useState(false);
     const [formMode, setFormMode] = useState('create'); // create | edit
     const [saving, setSaving] = useState(false);
+    const [showLoginModal, setShowLoginModal] = useState(false);
+    const [loginTrainer, setLoginTrainer] = useState(null);
+    const [loginEmail, setLoginEmail] = useState('');
+    const [loginPassword, setLoginPassword] = useState('');
+    const [loginSaving, setLoginSaving] = useState(false);
     const [formData, setFormData] = useState({
         name: '',
         specialty: '',
@@ -23,10 +33,11 @@ export default function Trainers() {
         sessionPrice: '',
         sessionDurations: ['60'],
         availableSlots: '',
-        commissionRate: '',
-        baseSalary: '',
         bio: '',
-        imageUrl: ''
+        imageUrl: '',
+        createLogin: false,
+        loginEmail: '',
+        loginPassword: ''
     });
     const totalTrainers = trainers.length;
     const avgRating = totalTrainers
@@ -85,10 +96,11 @@ export default function Trainers() {
             sessionPrice: '',
             sessionDurations: ['60'],
             availableSlots: '',
-            commissionRate: '',
-            baseSalary: '',
             bio: '',
-            imageUrl: ''
+            imageUrl: '',
+            createLogin: false,
+            loginEmail: '',
+            loginPassword: ''
         });
         setShowForm(true);
         // Scroll modal to top when opened
@@ -113,10 +125,11 @@ export default function Trainers() {
                 ? trainer.sessionDurations.split(',').map((value) => value.trim()).filter(Boolean)
                 : ['60'],
             availableSlots: trainer.availableSlots ?? '',
-            commissionRate: trainer.commissionRate ? (trainer.commissionRate * 100).toFixed(0) : '',
-            baseSalary: trainer.baseSalary ?? '',
             bio: trainer.bio || '',
-            imageUrl: trainer.imageUrl || ''
+            imageUrl: trainer.imageUrl || '',
+            createLogin: false,
+            loginEmail: '',
+            loginPassword: ''
         });
         setSelectedTrainer(trainer);
         setShowForm(true);
@@ -134,37 +147,27 @@ export default function Trainers() {
     const handleSaveTrainer = async (e) => {
         e.preventDefault();
         if (!formData.name.trim()) return alert('Trainer name is required.');
+        if (formMode === 'create' && formData.createLogin) {
+            if (!formData.loginEmail || !formData.loginPassword) {
+                return alert('Login email and password are required to create trainer access.');
+            }
+        }
         setSaving(true);
         try {
-            const token = localStorage.getItem('token');
-            const config = { headers: { Authorization: `Bearer ${token}` } };
-
             if (formMode === 'create') {
                 await axios.post('http://localhost:5000/api/trainers', {
                     ...formData,
-                    commissionRate: formData.commissionRate ? parseFloat(formData.commissionRate) / 100 : 0,
-                    baseSalary: parseFloat(formData.baseSalary) || 0,
                     sessionDurations: formData.sessionDurations.join(',')
-                }, config);
-            } else {
-                if (!selectedTrainer) {
-                    setSaving(false);
-                    return;
-                }
-
-                const payload = {
+                });
+            } else if (selectedTrainer) {
+                await axios.put(`http://localhost:5000/api/trainers/${selectedTrainer.id}`, {
                     ...formData,
-                    commissionRate: formData.commissionRate ? parseFloat(formData.commissionRate) / 100 : 0,
-                    baseSalary: parseFloat(formData.baseSalary) || 0,
                     sessionDurations: formData.sessionDurations.join(',')
-                };
-
-                await axios.put(`http://localhost:5000/api/trainers/${selectedTrainer.id}`, payload, config);
+                });
             }
             setShowForm(false);
             await fetchTrainers();
         } catch (error) {
-            console.error(error);
             alert(error?.response?.data?.error || 'Failed to save trainer.');
         } finally {
             setSaving(false);
@@ -175,13 +178,38 @@ export default function Trainers() {
         const confirmed = confirm(`Delete trainer ${trainer.name}?`);
         if (!confirmed) return;
         try {
-            const token = localStorage.getItem('token');
-            await axios.delete(`http://localhost:5000/api/trainers/${trainer.id}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await axios.delete(`http://localhost:5000/api/trainers/${trainer.id}`);
             await fetchTrainers();
         } catch (error) {
             alert(error?.response?.data?.error || 'Failed to delete trainer.');
+        }
+    };
+
+    const openLoginModal = (trainer) => {
+        setLoginTrainer(trainer);
+        setLoginEmail(trainer.email || '');
+        setLoginPassword('');
+        setShowLoginModal(true);
+    };
+
+    const handleCreateLogin = async (e) => {
+        e.preventDefault();
+        if (!loginTrainer) return;
+        if (!loginEmail || !loginPassword) {
+            return alert('Login email and password are required.');
+        }
+        setLoginSaving(true);
+        try {
+            await axios.post(`http://localhost:5000/api/trainers/${loginTrainer.id}/create-login`, {
+                loginEmail,
+                loginPassword
+            });
+            setShowLoginModal(false);
+            setLoginTrainer(null);
+        } catch (error) {
+            alert(error?.response?.data?.error || 'Failed to create trainer login.');
+        } finally {
+            setLoginSaving(false);
         }
     };
 
@@ -211,13 +239,15 @@ export default function Trainers() {
                         <Star size={14} className="text-amber-400" />
                         <span className="text-white font-semibold">{avgRating}</span>
                     </div>
-                    <button
-                        onClick={openCreateForm}
-                        className="px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium hover:bg-orange-600 transition-colors shadow-lg shadow-primary/20 flex items-center gap-2"
-                    >
-                        <Plus size={16} />
-                        Add Trainer
-                    </button>
+                    {isAdmin && (
+                        <button
+                            onClick={openCreateForm}
+                            className="px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium hover:bg-orange-600 transition-colors shadow-lg shadow-primary/20 flex items-center gap-2"
+                        >
+                            <Plus size={16} />
+                            Add Trainer
+                        </button>
+                    )}
                 </div>
             </header>
 
@@ -227,20 +257,31 @@ export default function Trainers() {
                         <div className="absolute top-0 right-0 w-28 h-28 bg-primary/5 rounded-full -mr-16 -mt-16 blur-3xl pointer-events-none"></div>
 
                         <div className="absolute top-4 right-4 flex gap-2 z-20 pointer-events-auto">
-                            <button
-                                onClick={() => openEditForm(trainer)}
-                                className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-text-muted hover:text-white transition-all"
-                                title="Edit trainer"
-                            >
-                                <Pencil size={16} />
-                            </button>
-                            <button
-                                onClick={() => handleDeleteTrainer(trainer)}
-                                className="w-9 h-9 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400 transition-all"
-                                title="Delete trainer"
-                            >
-                                <Trash2 size={16} />
-                            </button>
+                            {isAdmin && (
+                                <>
+                                    <button
+                                        onClick={() => openEditForm(trainer)}
+                                        className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-text-muted hover:text-white transition-all"
+                                        title="Edit trainer"
+                                    >
+                                        <Pencil size={16} />
+                                    </button>
+                                    <button
+                                        onClick={() => openLoginModal(trainer)}
+                                        className="w-9 h-9 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 transition-all"
+                                        title="Create trainer login"
+                                    >
+                                        <User size={16} />
+                                    </button>
+                                    <button
+                                        onClick={() => handleDeleteTrainer(trainer)}
+                                        className="w-9 h-9 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400 transition-all"
+                                        title="Delete trainer"
+                                    >
+                                        <Trash2 size={16} />
+                                    </button>
+                                </>
+                            )}
                         </div>
 
                         <div className="flex items-center gap-4 mb-5 relative z-10">
@@ -313,12 +354,7 @@ export default function Trainers() {
                                     </div>
                                     <div>
                                         <h2 className="text-xl font-semibold text-white leading-none">{selectedTrainer.name}</h2>
-                                        <p className="text-sm text-gray-500">{selectedTrainer.specialty || 'General Trainer'}</p>
-
-                                        {/* DIAGNOSTIC: Show raw values */}
-                                        <div className="mt-1 text-xs text-blue-600 bg-blue-50 p-1 rounded border border-blue-100">
-                                            Rate: {selectedTrainer.commissionRate} | Salary: {selectedTrainer.baseSalary}
-                                        </div>
+                                        <p className="text-text-muted text-sm mt-1">{selectedTrainer.specialty || 'Elite Coach'}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -397,56 +433,55 @@ export default function Trainers() {
                                                 <p className="text-text-muted font-bold uppercase tracking-widest text-xs">Fetching sessions...</p>
                                             </div>
                                         ) : sessions.length > 0 ? (
-                                            <div className="overflow-x-auto">
-                                                <table className="w-full text-left border-separate border-spacing-y-4 -mt-4">
-                                                    <thead>
-                                                        <tr className="text-text-muted text-[10px] font-black uppercase tracking-[0.2em]">
-                                                            <th className="px-6 py-2">Member</th>
-                                                            <th className="px-6 py-2">Date & Time</th>
-                                                            <th className="px-6 py-2">Duration</th>
-                                                            <th className="px-6 py-2">Status</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {sessions.map((session) => (
-                                                            <tr key={session.id} className="bg-white/[0.03] hover:bg-white/[0.06] transition-all group rounded-3xl">
-                                                                <td className="px-6 py-5 first:rounded-l-3xl">
-                                                                    <div className="flex items-center gap-4">
-                                                                        <div className="w-10 h-10 rounded-full bg-surfaceHighlight flex items-center justify-center font-black text-xs text-text-muted">
-                                                                            {session.member?.firstName?.[0]}
-                                                                        </div>
-                                                                        <div>
-                                                                            <p className="text-white font-black text-sm">{session.member?.firstName} {session.member?.lastName}</p>
-                                                                            <p className="text-[10px] text-text-muted font-bold tracking-widest uppercase italic">Member #{session.memberId}</p>
-                                                                        </div>
-                                                                    </div>
-                                                                </td>
-                                                                <td className="px-6 py-5">
-                                                                    <div className="flex flex-col">
-                                                                        <span className="text-white font-bold text-sm">
-                                                                            {new Date(session.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                                                                        </span>
-                                                                        <span className="text-text-muted text-[10px] font-black uppercase">
-                                                                            {new Date(session.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                                        </span>
-                                                                    </div>
-                                                                </td>
-                                                                <td className="px-6 py-5 font-bold text-white text-sm">
-                                                                    {session.duration} min
-                                                                </td>
-                                                                <td className="px-6 py-5 last:rounded-r-3xl">
-                                                                    <span className={`px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${session.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                                                                        session.status === 'SCHEDULED' ? 'bg-primary/10 text-primary border-primary/20' :
-                                                                            'bg-red-500/10 text-red-500 border-red-500/20'
-                                                                        }`}>
-                                                                        {session.status}
-                                                                    </span>
-                                                                </td>
-                                                            </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            </div>
+                                            <DataTable
+                                                columns={[
+                                                    {
+                                                        header: 'Member',
+                                                        accessor: (session) => (
+                                                            <div className="flex items-center gap-4">
+                                                                <div className="w-10 h-10 rounded-full bg-surfaceHighlight flex items-center justify-center font-black text-xs text-text-muted">
+                                                                    {session.member?.firstName?.[0]}
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-white font-black text-sm">{session.member?.firstName} {session.member?.lastName}</p>
+                                                                    <p className="text-[10px] text-text-muted font-bold tracking-widest uppercase italic">Member #{session.memberId}</p>
+                                                                </div>
+                                                            </div>
+                                                        )
+                                                    },
+                                                    {
+                                                        header: 'Date & Time',
+                                                        accessor: (session) => (
+                                                            <div className="flex flex-col">
+                                                                <span className="text-white font-bold text-sm">
+                                                                    {new Date(session.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                                </span>
+                                                                <span className="text-text-muted text-[10px] font-black uppercase">
+                                                                    {new Date(session.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                                </span>
+                                                            </div>
+                                                        )
+                                                    },
+                                                    {
+                                                        header: 'Duration',
+                                                        accessor: (session) => <span className="font-bold text-white text-sm">{session.duration} min</span>
+                                                    },
+                                                    {
+                                                        header: 'Status',
+                                                        accessor: (session) => (
+                                                            <span className={`px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${session.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                                                                session.status === 'SCHEDULED' ? 'bg-primary/10 text-primary border-primary/20' :
+                                                                    'bg-red-500/10 text-red-500 border-red-500/20'
+                                                                }`}>
+                                                                {session.status}
+                                                            </span>
+                                                        )
+                                                    }
+                                                ]}
+                                                data={sessions}
+                                                isLoading={sessionsLoading}
+                                                emptyMessage="No Session History"
+                                            />
                                         ) : (
                                             <div className="text-center py-20 bg-white/[0.01] rounded-[2rem] border border-white/5 border-dashed">
                                                 <History size={48} className="text-text-muted/20 mx-auto mb-4" />
@@ -599,6 +634,55 @@ export default function Trainers() {
                                             placeholder="(000) 000-0000"
                                         />
                                     </div>
+                                    {formMode === 'create' && (
+                                        <div className="md:col-span-2 bg-white/[0.03] border border-white/10 rounded-2xl p-4">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <p className="text-sm font-semibold text-white">Create Trainer Login</p>
+                                                    <p className="text-xs text-text-muted">Allows trainer to access their own dashboard</p>
+                                                </div>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={formData.createLogin}
+                                                    onChange={(e) => {
+                                                        const checked = e.target.checked;
+                                                        setFormData((prev) => ({
+                                                            ...prev,
+                                                            createLogin: checked,
+                                                            loginEmail: checked ? (prev.loginEmail || prev.email || '') : '',
+                                                            loginPassword: checked ? prev.loginPassword : ''
+                                                        }));
+                                                    }}
+                                                    className="accent-orange-500 w-4 h-4"
+                                                />
+                                            </div>
+
+                                            {formData.createLogin && (
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                                    <div>
+                                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Login Email</label>
+                                                        <input
+                                                            type="email"
+                                                            value={formData.loginEmail}
+                                                            onChange={(e) => handleFormChange('loginEmail', e.target.value)}
+                                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                                            placeholder="trainer@login.com"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Temporary Password</label>
+                                                        <input
+                                                            type="password"
+                                                            value={formData.loginPassword}
+                                                            onChange={(e) => handleFormChange('loginPassword', e.target.value)}
+                                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                                            placeholder="Set a temp password"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                     <div>
                                         <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Rating</label>
                                         <input
@@ -609,30 +693,6 @@ export default function Trainers() {
                                             value={formData.rating}
                                             onChange={(e) => handleFormChange('rating', e.target.value)}
                                             className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Commission Rate (%)</label>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            max="100"
-                                            value={formData.commissionRate}
-                                            onChange={(e) => handleFormChange('commissionRate', e.target.value)}
-                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
-                                            placeholder="e.g. 30"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Base Salary ($)</label>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            value={formData.baseSalary}
-                                            onChange={(e) => handleFormChange('baseSalary', e.target.value)}
-                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
-                                            placeholder="e.g. 2000"
                                         />
                                     </div>
                                     <div>
@@ -667,10 +727,8 @@ export default function Trainers() {
                                     Cancel
                                 </button>
                                 <button
-                                    type="button"
-                                    onClick={handleSaveTrainer}
+                                    type="submit"
                                     disabled={saving}
-                                    style={{ position: 'relative', zIndex: 50 }}
                                     className="px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium shadow-lg shadow-orange-500/20 disabled:opacity-70 transition-colors"
                                 >
                                     {saving ? 'Saving...' : 'Save Trainer'}
@@ -678,15 +736,78 @@ export default function Trainers() {
                             </div>
                         </form>
                     </div>
-                </div >
-            )
-            }
+                </div>
+            )}
+
+            {showLoginModal && loginTrainer && (
+                <div className="fixed inset-0 z-[120] overflow-y-auto">
+                    <div className="absolute inset-0 bg-background/80 backdrop-blur-md" onClick={() => setShowLoginModal(false)}></div>
+                    <div className="relative min-h-full w-full flex items-center justify-center p-4 sm:p-6">
+                        <form
+                            onSubmit={handleCreateLogin}
+                            className="bg-[#1a1d24] w-full max-w-lg rounded-2xl border border-white/10 shadow-2xl overflow-hidden"
+                        >
+                            <div className="p-5 border-b border-white/10 flex items-center justify-between">
+                                <div>
+                                    <h2 className="text-xl font-semibold text-white">Create Trainer Login</h2>
+                                    <p className="text-text-muted text-sm mt-1">{loginTrainer.name}</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowLoginModal(false)}
+                                    className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center text-white transition-all"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+                            <div className="p-5 space-y-4 bg-[#13151a]">
+                                <div>
+                                    <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Login Email</label>
+                                    <input
+                                        type="email"
+                                        value={loginEmail}
+                                        onChange={(e) => setLoginEmail(e.target.value)}
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                        placeholder="trainer@login.com"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Temporary Password</label>
+                                    <input
+                                        type="password"
+                                        value={loginPassword}
+                                        onChange={(e) => setLoginPassword(e.target.value)}
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                        placeholder="Set a temp password"
+                                    />
+                                </div>
+                            </div>
+                            <div className="p-5 border-t border-white/10 flex items-center justify-end gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowLoginModal(false)}
+                                    className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm font-medium hover:bg-white/10 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={loginSaving}
+                                    className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium shadow-lg shadow-emerald-500/20 disabled:opacity-70 transition-colors"
+                                >
+                                    {loginSaving ? 'Creating...' : 'Create Login'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             <style>{`
                 @keyframes fade-in { 0% { opacity: 0; transform: translateY(10px); } 100% { opacity: 1; transform: translateY(0); } }
                 .animate-fade-in { animation: fade-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
                 .no-scrollbar::-webkit-scrollbar { display: none; }
             `}</style>
-        </div >
+        </div>
     );
 }

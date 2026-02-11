@@ -51,106 +51,105 @@ export default function PurchaseHistory() {
             <div className="space-y-3">
                 <div>
                     <h1 className="text-2xl sm:text-3xl font-bold text-white">Payment History</h1>
-                    <p className="text-text-muted text-xs sm:text-sm mt-1">Membership & training session invoices</p>
+                    <p className="text-text-muted text-xs sm:text-sm mt-1">View all your transactions and receipts</p>
                 </div>
 
-                {/* Summary Stats */}
-                <div className="grid grid-cols-2 gap-3 sm:gap-4">
-                    <div className="bg-surface rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-white/5">
-                        <p className="text-text-muted text-xs sm:text-sm mb-1">Total Spent</p>
-                        <p className="text-lg sm:text-2xl font-bold text-primary">{formatPrice(totalSpent)}</p>
+                {/* Summary Cards */}
+                <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-surface rounded-xl p-3 sm:p-4 border border-white/5">
+                        <p className="text-text-muted text-[10px] sm:text-xs mb-1">Total Spent</p>
+                        <p className="text-primary text-lg sm:text-2xl font-bold">{formatPrice(totalSpent)}</p>
                     </div>
-                    <div className="bg-surface rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-white/5">
-                        <p className="text-text-muted text-xs sm:text-sm mb-1">Transactions</p>
-                        <p className="text-lg sm:text-2xl font-bold text-emerald-400">{filteredTransactions.length}</p>
+                    <div className="bg-surface rounded-xl p-3 sm:p-4 border border-white/5">
+                        <p className="text-text-muted text-[10px] sm:text-xs mb-1">Transactions</p>
+                        <p className="text-white text-lg sm:text-2xl font-bold">{allTransactions.length}</p>
                     </div>
                 </div>
             </div>
 
-            {/* Tab Navigation */}
-            <div className="flex gap-2 bg-surface rounded-xl p-1 border border-white/5">
-                {[
-                    { id: 'all', label: 'All', icon: 'receipt_long' },
-                    { id: 'membership', label: 'Membership', icon: 'card_membership' },
-                    { id: 'training', label: 'Training', icon: 'person' }
-                ].map(tab => (
+            {/* Filter Tabs */}
+            <div className="flex gap-2 overflow-x-auto pb-1">
+                {['all', 'membership', 'training'].map(tab => (
                     <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id)}
-                        className={`flex-1 py-2.5 px-3 rounded-lg font-medium text-xs sm:text-sm transition-all flex items-center justify-center gap-1 ${activeTab === tab.id
+                        key={tab}
+                        onClick={() => setActiveTab(tab)}
+                        className={`px-4 py-2 rounded-lg font-medium text-xs sm:text-sm whitespace-nowrap transition-all ${activeTab === tab
                             ? 'bg-primary text-background'
-                            : 'text-text-muted hover:text-white'
+                            : 'bg-surface text-text-muted hover:text-white border border-white/5'
                             }`}
                     >
-                        <span className="material-icons-round text-base hidden sm:inline">{tab.icon}</span>
-                        {tab.label}
+                        {tab.charAt(0).toUpperCase() + tab.slice(1)}
                     </button>
                 ))}
             </div>
 
             {/* Transactions List */}
             {filteredTransactions.length === 0 ? (
-                <div className="text-center py-12">
-                    <span className="material-icons-round text-4xl text-text-muted opacity-50 block mb-2">receipt_long</span>
-                    <p className="text-text-muted">No transactions found</p>
+                <div className="bg-surface rounded-xl p-8 text-center border border-white/5">
+                    <span className="material-icons-round text-text-muted text-4xl mb-2">receipt_long</span>
+                    <p className="text-text-muted text-sm">No transactions found</p>
                 </div>
             ) : (
-                <div className="space-y-2 sm:space-y-3">
-                    {/* Desktop Table */}
-                    <div className="hidden sm:block bg-surface rounded-2xl border border-white/5 overflow-hidden">
-                        <table className="w-full text-left text-sm text-text-secondary">
-                            <thead className="bg-white/5 text-text-muted uppercase text-xs font-bold tracking-wider">
-                                <tr>
-                                    <th className="px-4 sm:px-6 py-3">Date</th>
-                                    <th className="px-4 sm:px-6 py-3">Type</th>
-                                    <th className="px-4 sm:px-6 py-3">Description</th>
-                                    <th className="px-4 sm:px-6 py-3">Amount</th>
-                                    <th className="px-4 sm:px-6 py-3">Status</th>
-                                    <th className="px-4 sm:px-6 py-3 text-right">Actions</th>
+                <div className="space-y-3">
+                    {/* Desktop Table View */}
+                    <div className="hidden sm:block bg-surface rounded-xl border border-white/5 overflow-hidden">
+                        <table className="w-full">
+                            <thead className="bg-white/5 border-b border-white/5">
+                                <tr className="text-left">
+                                    <th className="px-4 sm:px-6 py-3 text-text-muted text-xs font-bold uppercase">Date</th>
+                                    <th className="px-4 sm:px-6 py-3 text-text-muted text-xs font-bold uppercase">Type</th>
+                                    <th className="px-4 sm:px-6 py-3 text-text-muted text-xs font-bold uppercase">Items</th>
+                                    <th className="px-4 sm:px-6 py-3 text-text-muted text-xs font-bold uppercase">Method</th>
+                                    <th className="px-4 sm:px-6 py-3 text-text-muted text-xs font-bold uppercase text-right">Amount</th>
+                                    <th className="px-4 sm:px-6 py-3 text-text-muted text-xs font-bold uppercase text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-white/5">
-                                {filteredTransactions.map((item, idx) => (
-                                    <tr key={`${item.type}-${item.id}-${idx}`} className="hover:bg-white/5 transition-colors">
-                                        <td className="px-4 sm:px-6 py-4 text-white font-medium">
-                                            <div className="text-sm">{new Date(item.date).toLocaleDateString()}</div>
-                                            <div className="text-text-muted text-xs">{new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                                        </td>
+                                {filteredTransactions.map((item) => (
+                                    <tr key={item.id} className="hover:bg-white/5 transition-colors">
                                         <td className="px-4 sm:px-6 py-4">
-                                            <div className="flex items-center gap-2">
-                                                <span className={`material-icons-round text-base ${item.type === 'MEMBERSHIP' ? 'text-green-400' :
-                                                    item.type === 'TRAINING' ? 'text-purple-400' :
-                                                        item.type === 'STORE_SALE' ? 'text-blue-400' :
-                                                            'text-orange-400'
-                                                    }`}>
-                                                    {item.type === 'MEMBERSHIP' ? 'card_membership' :
-                                                        item.type === 'TRAINING' ? 'person' :
-                                                            item.type === 'STORE_SALE' ? 'shopping_bag' : 'receipt'}
-                                                </span>
-                                                <span className="bg-white/10 text-text-secondary px-2.5 py-1 rounded text-xs font-bold">
-                                                    {item.type}
-                                                </span>
+                                            <div className="text-white text-sm font-medium">
+                                                {new Date(item.date).toLocaleDateString()}
+                                            </div>
+                                            <div className="text-text-muted text-xs">
+                                                {new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                             </div>
                                         </td>
-                                        <td className="px-4 sm:px-6 py-4 text-text-secondary">
-                                            <div className="text-sm">{item.method}</div>
-                                            {item.items && item.items.length > 0 && (
-                                                <div className="text-xs text-text-muted mt-1">
+                                        <td className="px-4 sm:px-6 py-4">
+                                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-bold ${item.type === 'MEMBERSHIP' ? 'bg-blue-500/20 text-blue-300' :
+                                                item.type === 'TRAINING' ? 'bg-green-500/20 text-green-300' :
+                                                    item.type === 'STORE_SALE' ? 'bg-purple-500/20 text-purple-300' :
+                                                        'bg-orange-500/20 text-orange-300'
+                                                }`}>
+                                                <span className="material-icons-round text-xs">
+                                                    {item.type === 'MEMBERSHIP' ? 'card_membership' :
+                                                        item.type === 'TRAINING' ? 'fitness_center' :
+                                                            item.type === 'STORE_SALE' ? 'shopping_bag' : 'payment'}
+                                                </span>
+                                                {item.type}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 sm:px-6 py-4">
+                                            {item.items && item.items.length > 0 ? (
+                                                <div className="text-white text-sm">
                                                     {item.items.slice(0, 2).map((i, idx) => (
-                                                        <div key={idx}>{i.quantity}x {i.name}</div>
+                                                        <div key={idx} className="text-xs">
+                                                            {i.quantity}x {i.name}
+                                                        </div>
                                                     ))}
-                                                    {item.items.length > 2 && <div>+{item.items.length - 2} more</div>}
+                                                    {item.items.length > 2 && (
+                                                        <div className="text-text-muted text-xs">+{item.items.length - 2} more</div>
+                                                    )}
                                                 </div>
+                                            ) : (
+                                                <span className="text-text-muted text-xs">—</span>
                                             )}
                                         </td>
-                                        <td className="px-4 sm:px-6 py-4 text-white font-bold">{formatPrice(item.amount)}</td>
                                         <td className="px-4 sm:px-6 py-4">
-                                            <span className={`px-2.5 py-1 rounded text-xs font-bold ${item.status === 'COMPLETED' ? 'bg-green-500/20 text-green-300' :
-                                                item.status === 'PENDING' ? 'bg-yellow-500/20 text-yellow-300' :
-                                                    'bg-red-500/20 text-red-300'
-                                                }`}>
-                                                {item.status}
-                                            </span>
+                                            <span className="text-white text-sm">{item.method}</span>
+                                        </td>
+                                        <td className="px-4 sm:px-6 py-4 text-right">
+                                            <span className="text-primary font-bold text-sm">{formatPrice(item.amount)}</span>
                                         </td>
                                         <td className="px-4 sm:px-6 py-4 text-right">
                                             <button
@@ -167,57 +166,51 @@ export default function PurchaseHistory() {
                         </table>
                     </div>
 
-                    {/* Mobile Cards */}
+                    {/* Mobile Card View */}
                     <div className="sm:hidden space-y-3">
-                        {filteredTransactions.map((item, idx) => (
-                            <div key={`${item.type}-${item.id}-${idx}`} className="bg-surface rounded-xl p-4 border border-white/5">
-                                <div className="flex justify-between items-start gap-2 mb-3">
-                                    <div>
-                                        <p className="font-bold text-white text-sm">{new Date(item.date).toLocaleDateString()}</p>
-                                        <p className="text-text-muted text-xs">{new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <span className={`material-icons-round text-base ${item.type === 'MEMBERSHIP' ? 'text-green-400' :
-                                            item.type === 'TRAINING' ? 'text-purple-400' :
-                                                item.type === 'STORE_SALE' ? 'text-blue-400' :
-                                                    'text-orange-400'
-                                            }`}>
-                                            {item.type === 'MEMBERSHIP' ? 'card_membership' :
-                                                item.type === 'TRAINING' ? 'person' :
-                                                    item.type === 'STORE_SALE' ? 'shopping_bag' : 'receipt'}
-                                        </span>
-                                        <span className="bg-white/10 text-text-secondary px-2 py-1 rounded text-xs font-bold flex-shrink-0">
-                                            {item.type}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <div className="flex justify-between items-start gap-3 mb-3">
+                        {filteredTransactions.map((item) => (
+                            <div key={item.id} className="bg-surface rounded-xl p-4 border border-white/5 space-y-3">
+                                <div className="flex items-start justify-between">
                                     <div className="flex-1">
-                                        <p className="text-text-muted text-xs mb-1">Payment Method</p>
-                                        <p className="text-white text-sm font-medium">{item.method}</p>
-                                        {item.items && item.items.length > 0 && (
-                                            <div className="mt-2 space-y-1">
-                                                {item.items.slice(0, 2).map((i, idx) => (
-                                                    <p key={idx} className="text-xs text-text-muted">{i.quantity}x {i.name}</p>
-                                                ))}
-                                                {item.items.length > 2 && <p className="text-xs text-text-muted italic">+{item.items.length - 2} more items</p>}
-                                            </div>
-                                        )}
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-bold ${item.type === 'MEMBERSHIP' ? 'bg-blue-500/20 text-blue-300' :
+                                                item.type === 'TRAINING' ? 'bg-green-500/20 text-green-300' :
+                                                    item.type === 'STORE_SALE' ? 'bg-purple-500/20 text-purple-300' :
+                                                        'bg-orange-500/20 text-orange-300'
+                                                }`}>
+                                                <span className="material-icons-round text-xs">
+                                                    {item.type === 'MEMBERSHIP' ? 'card_membership' :
+                                                        item.type === 'TRAINING' ? 'fitness_center' :
+                                                            item.type === 'STORE_SALE' ? 'shopping_bag' : 'payment'}
+                                                </span>
+                                                {item.type}
+                                            </span>
+                                        </div>
+                                        <div className="text-text-muted text-xs">
+                                            {new Date(item.date).toLocaleDateString()} • {new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </div>
                                     </div>
                                     <div className="text-right">
-                                        <p className="text-text-muted text-xs mb-1">Amount</p>
-                                        <p className="text-primary text-lg font-bold">{formatPrice(item.amount)}</p>
+                                        <div className="text-primary font-bold text-lg">{formatPrice(item.amount)}</div>
+                                        <div className="text-text-muted text-xs">{item.method}</div>
                                     </div>
                                 </div>
 
-                                <div className="pt-3 border-t border-white/5 flex items-center justify-between gap-2">
-                                    <span className={`px-2.5 py-1 rounded text-xs font-bold inline-block ${item.status === 'COMPLETED' ? 'bg-green-500/20 text-green-300' :
-                                        item.status === 'PENDING' ? 'bg-yellow-500/20 text-yellow-300' :
-                                            'bg-red-500/20 text-red-300'
-                                        }`}>
-                                        {item.status}
-                                    </span>
+                                {item.items && item.items.length > 0 && (
+                                    <div className="pt-2 border-t border-white/5">
+                                        <p className="text-text-muted text-xs mb-1">Items:</p>
+                                        {item.items.slice(0, 2).map((i, idx) => (
+                                            <div key={idx} className="text-white text-xs">
+                                                {i.quantity}x {i.name}
+                                            </div>
+                                        ))}
+                                        {item.items.length > 2 && (
+                                            <div className="text-text-muted text-xs">+{item.items.length - 2} more</div>
+                                        )}
+                                    </div>
+                                )}
+
+                                <div className="pt-2 border-t border-white/5">
                                     <button
                                         onClick={() => setSelectedReceipt(item)}
                                         className="text-primary hover:text-orange-400 font-medium text-xs flex items-center gap-1 transition-colors"

@@ -19,6 +19,12 @@ logs
 *.db
 *.sqlite
 *.sqlite3
+*.dev.db
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
 # Prisma
 prisma/migrations/

@@ -15,10 +15,12 @@ model User {
     email     String   @unique
     password  String
     name      String?
-    role      String   @default("STAFF") // OWNER, ADMIN, STAFF
+    role      String   @default("STAFF") // OWNER, ADMIN, STAFF, TRAINER
+    trainerId Int?   @unique
+    trainer   Trainer? @relation("TrainerUser", fields: [trainerId], references: [id])
     createdAt DateTime @default(now())
     payments  Payment[] @relation("PaymentCashier")
-    notes     MemberNote[]
+    memberNotes MemberNote[]
   }
 
 model AuditLog {
@@ -52,13 +54,13 @@ model Member {
   sex              String?
   imageUrl         String?
   payments         Payment[]
+  paymentMethods   PaymentMethod[]
   accessLogs       AccessLog[]
   bookings         Booking[]
   orders           Order[]
   trainingSessions TrainingSession[]
-    membershipPeriods MembershipPeriod[]
-    paymentMethods   PaymentMethod[]
-    notes            MemberNote[]
+  membershipPeriods MembershipPeriod[]
+  notes             MemberNote[]
   }
 
 model PaymentMethod {
@@ -74,7 +76,6 @@ model PaymentMethod {
   createdAt DateTime @default(now())
 }
 
-
 model Plan {
   id          Int      @id @default(autoincrement())
   name        String
@@ -83,6 +84,7 @@ model Plan {
   members     Member[]
   membershipPeriods MembershipPeriod[]
 }
+
 
 
 model Payment {
@@ -112,6 +114,7 @@ model PaymentItem {
     paymentId        Int
     payment          Payment  @relation(fields: [paymentId], references: [id])
     productId        Int?
+    product          Product? @relation(fields: [productId], references: [id])
     name             String
     type             String   // PRODUCT, PLAN, OTHER
     quantity         Int
@@ -125,6 +128,19 @@ model AccessLog {
   member    Member   @relation(fields: [memberId], references: [id])
   checkIn   DateTime @default(now())
   status    String   @default("ALLOWED") // ALLOWED, DENIED
+}
+
+model Supplier {
+  id        Int       @id @default(autoincrement())
+  name      String
+  contact   String?
+  email     String?
+  address   String?
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+  expenses  Expense[]
 }
 
 model Product {
@@ -143,6 +159,7 @@ model Product {
   supplier    Supplier? @relation(fields: [supplierId], references: [id])
   supplyCost  Float    @default(0)
   sessionMaterials SessionMaterial[]
+  paymentItems PaymentItem[]
 }
 
 model Trainer {
@@ -166,6 +183,7 @@ model Trainer {
   updatedAt        DateTime          @updatedAt
   classes          Class[]
   trainingSessions TrainingSession[]
+  user             User?             @relation("TrainerUser")
 }
 
 model TrainingSession {
@@ -181,6 +199,9 @@ model TrainingSession {
   commissionPaid Boolean @default(false)
   materialsCost Float    @default(0.0)
   materials     SessionMaterial[]
+  paymentStatus String @default("PAID") // PAID, UNPAID
+  paymentMethod String? // CASH, CARD, GCASH
+  paidAt     DateTime?
   notes     String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -258,67 +279,55 @@ model MembershipPeriod {
   createdAt DateTime @default(now())
 }
 
-model Notification {
-  id        Int      @id @default(autoincrement())
-  title     String
-  message   String
-  type      String   // ALERT, INFO, PROMO
-  date      DateTime @default(now())
-  read      Boolean  @default(false)
+model Expense {
+    id                     Int       @id @default(autoincrement())
+    title                  String
+    amount                 Float
+    category               String
+    date                   DateTime  @default(now())
+    recurring              Boolean   @default(false)
+    frequency              String?
+    notes                  String?
+    recordedBy             String?
+    supplierId             Int?
+    supplier               Supplier? @relation(fields: [supplierId], references: [id])
+    createdAt              DateTime  @default(now())
+    inventoryTransactionId Int?
 }
 
 model LoyaltyReward {
-  id          Int      @id @default(autoincrement())
-  name        String
-  cost        Int      // points needed
-  description String?
-  imageUrl    String?
-  category    String?  // MERCHANDISE, SUPPLEMENT, APPAREL, EXPERIENCE
-  createdAt   DateTime @default(now())
-}
-
-model Expense {
-  id          Int      @id @default(autoincrement())
-  title       String
-  amount      Float
-  category    String   // SALARY, UTILITIES, SUPPLIES, MAINTENANCE, OTHER, INVENTORY
-  date        DateTime @default(now())
-  recurring   Boolean  @default(false)
-  frequency   String?  // MONTHLY, WEEKLY
-  notes       String?
-  recordedBy  String?  // User email or ID
-  supplierId  Int?
-  supplier    Supplier? @relation(fields: [supplierId], references: [id])
-  createdAt   DateTime @default(now())
-  inventoryTransactionId Int? // Link to specific inventory restock if needed
+    id          Int      @id @default(autoincrement())
+    name        String
+    cost        Int
+    description String?
+    imageUrl    String?
+    category    String?
+    createdAt   DateTime @default(now())
 }
 
 model PosConfig {
-  id           Int      @id @default(autoincrement())
-  voidPinHash  String?
-  returnPinHash String?
-  updatedAt    DateTime @updatedAt
+    id            Int      @id @default(autoincrement())
+    voidPinHash   String?
+    returnPinHash String?
+    updatedAt     DateTime @updatedAt
+}
+
+model Notification {
+    id        Int      @id @default(autoincrement())
+    title     String
+    message   String
+    type      String
+    date      DateTime @default(now())
+    read      Boolean  @default(false)
 }
 
 model MemberNote {
-  id        Int      @id @default(autoincrement())
-  memberId  Int
-  member    Member   @relation(fields: [memberId], references: [id])
-  content   String
-  createdAt DateTime @default(now())
-  createdBy Int?
-  author    User?    @relation(fields: [createdBy], references: [id])
+    id        Int      @id @default(autoincrement())
+    memberId  Int
+    member    Member   @relation(fields: [memberId], references: [id])
+    content   String
+    createdAt DateTime @default(now())
+    createdBy Int?
+    user      User?    @relation(fields: [createdBy], references: [id])
 }
 
-model Supplier {
-  id        Int       @id @default(autoincrement())
-  name      String
-  contact   String?
-  email     String?
-  address   String?
-  notes     String?
-  products  Product[]
-  expenses  Expense[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-}

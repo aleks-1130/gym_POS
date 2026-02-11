@@ -3,8 +3,9 @@ import { useCurrency } from '../context/CurrencyContext';
 
 // This component can be used in a modal or hidden iframe for printing
 export const Receipt = React.forwardRef(({ transaction, items, member, cashierName, discount = 0, paymentDetails }, ref) => {
-    const { formatPrice, rate } = useCurrency();
+    const { formatPrice } = useCurrency();
     const transactionDate = transaction?.date ? new Date(transaction.date) : new Date();
+
 
     // Gym Info (Hardcoded for now, ideal if from config)
     const gymInfo = {
@@ -18,9 +19,8 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
     const subtotal = items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
     const total = Math.max(0, subtotal - discount);
 
-    // Points Calculation (1 pt per 100 Local Currency Units)
-    const conversionRate = rate || 58;
-    const pointsEarned = Math.floor((total * conversionRate) / 100);
+    // Points Calculation (1 pt per 100 PHP)
+    const pointsEarned = Math.floor(total / 100);
 
     // VAT Calculation (Philippines: 12% existing in price usually, but let's assume price is VAT inclusive)
     // VATable Sales = Total / 1.12
@@ -75,8 +75,8 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
                             <tr key={idx}>
                                 <td className="align-top">{item.quantity}</td>
                                 <td className="align-top pr-2">{item.name}</td>
-                                <td className="text-right align-top">{formatPrice(item.price).replace('$', '')}</td>
-                                <td className="text-right align-top">{formatPrice(item.price * item.quantity).replace('$', '')}</td>
+                                <td className="text-right align-top">{formatPrice(item.price)}</td>
+                                <td className="text-right align-top">{formatPrice(item.price * item.quantity)}</td>
                             </tr>
                         ))}
                     </tbody>
@@ -87,12 +87,12 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
             <div className="space-y-1 mb-6">
                 <div className="flex justify-between">
                     <span>Subtotal:</span>
-                    <span>{formatPrice(subtotal).replace('$', '')}</span>
+                    <span>{formatPrice(subtotal)}</span>
                 </div>
                 {discount > 0 && (
                     <div className="flex justify-between text-red-600 print:text-black">
                         <span>Discount:</span>
-                        <span>-{formatPrice(discount).replace('$', '')}</span>
+                        <span>-{formatPrice(discount)}</span>
                     </div>
                 )}
                 <div className="flex justify-between font-bold text-lg mt-2 border-t border-dashed border-black pt-2">
@@ -117,11 +117,11 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
             <div className="text-xs mb-6 border-t border-black pt-2 border-dashed">
                 <div className="flex justify-between">
                     <span>VATable Sales:</span>
-                    <span>{formatPrice(vatableSales).replace('$', '')}</span>
+                    <span>{formatPrice(vatableSales)}</span>
                 </div>
                 <div className="flex justify-between">
                     <span>VAT Amount (12%):</span>
-                    <span>{formatPrice(vatAmount).replace('$', '')}</span>
+                    <span>{formatPrice(vatAmount)}</span>
                 </div>
                 <div className="flex justify-between">
                     <span>VAT Exempt Sales:</span>

@@ -5,6 +5,7 @@ import { ROLES } from '../../constants/roles';
 import AdminDashboard from '../admin/AdminDashboard';
 import MemberDashboard from '../member/MemberDashboard';
 import StaffDashboard from '../staff/StaffDashboard';
+import TrainerDashboard from '../trainer/TrainerDashboard';
 
 export default function Dashboard() {
     const { user } = useAuth();
@@ -68,6 +69,8 @@ export default function Dashboard() {
 
             {user.role === ROLES.MEMBER ? (
                 <MemberDashboard stats={stats} user={user} />
+            ) : user.role === ROLES.TRAINER ? (
+                <TrainerDashboard />
             ) : user.role === ROLES.STAFF ? (
                 <StaffDashboard stats={stats} user={user} />
             ) : (

@@ -64,7 +64,6 @@ export default function Sidebar() {
             {
                 section: "Programs", items: [
                     { to: "/trainers", icon: "fitness_center", label: "Trainers" },
-                    { to: "/admin/training", icon: "event_note", label: "Training Sessions" },
                     { to: "/classes", icon: "event", label: "Classes" },
                 ]
             },
@@ -90,8 +89,8 @@ export default function Sidebar() {
                     { to: "/expenses", icon: "monetization_on", label: "Expenses" },
                     { to: "/pos-settings", icon: "pin", label: "POS Settings" },
                     { to: "/trainers", icon: "fitness_center", label: "Trainers" },
-                    { to: "/admin/training", icon: "event_note", label: "Training Sessions" },
                     { to: "/classes", icon: "event", label: "Classes" },
+                    { to: "/training-manager", icon: "assignment", label: "Training Sessions" },
                 ]
             },
             {
@@ -116,9 +115,9 @@ export default function Sidebar() {
                     { to: "/users", icon: "admin_panel_settings", label: "Users" },
                     { to: "/audit", icon: "verified_user", label: "Audit Logs" },
                     { to: "/settings", icon: "tune", label: "Settings" },
-                    { to: "/pos-settings", icon: "pin", label: "POS Settings" },
                     { to: "/suppliers", icon: "local_shipping", label: "Suppliers" },
                     { to: "/expenses", icon: "monetization_on", label: "Expenses" },
+                    { to: "/pos-settings", icon: "pin", label: "POS Settings" },
                 ]
             }
         ],
@@ -126,6 +125,14 @@ export default function Sidebar() {
             {
                 section: "Services", items: [
                     { to: "/shop", icon: "shopping_bag", label: "Shop" },
+                ]
+            }
+        ],
+        [ROLES.TRAINER]: [
+            {
+                section: "Trainer", items: [
+                    { to: "/trainer/sessions", icon: "event_note", label: "Sessions" },
+                    { to: "/trainer/classes", icon: "event", label: "Classes" }
                 ]
             }
         ]

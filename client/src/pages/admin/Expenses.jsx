@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useCurrency } from '../../context/CurrencyContext';
 import axios from 'axios';
+import DataTable from '../../components/common/DataTable';
 
 const Expenses = () => {
     const [expenses, setExpenses] = useState([]);
@@ -13,13 +14,6 @@ const Expenses = () => {
         date: new Date().toISOString().split('T')[0],
         notes: ''
     });
-
-    const [selectedCategory, setSelectedCategory] = useState('ALL');
-    const categories = ['ALL', 'UTILITIES', 'SALARY', 'SUPPLIES', 'MAINTENANCE', 'RENT', 'OTHER'];
-
-    const filteredExpenses = selectedCategory === 'ALL'
-        ? expenses
-        : expenses.filter(expense => expense.category === selectedCategory);
 
     useEffect(() => {
         fetchExpenses();
@@ -74,11 +68,11 @@ const Expenses = () => {
     };
 
     const { formatPrice } = useCurrency();
-    const totalExpenses = filteredExpenses.reduce((sum, item) => sum + item.amount, 0);
+    const totalExpenses = expenses.reduce((sum, item) => sum + item.amount, 0);
 
     const currentMonth = new Date().getMonth();
     const currentYear = new Date().getFullYear();
-    const mtdExpenses = filteredExpenses.reduce((sum, item) => {
+    const mtdExpenses = expenses.reduce((sum, item) => {
         const itemDate = new Date(item.date);
         if (itemDate.getMonth() === currentMonth && itemDate.getFullYear() === currentYear) {
             return sum + item.amount;
@@ -93,7 +87,7 @@ const Expenses = () => {
     const groupExpenses = () => {
         if (viewMode === 'LIST') return null;
 
-        return filteredExpenses.reduce((groups, expense) => {
+        return expenses.reduce((groups, expense) => {
             let key;
             const date = new Date(expense.date);
 
@@ -122,16 +116,6 @@ const Expenses = () => {
                 </div>
 
                 <div className="flex gap-2">
-                    <select
-                        value={selectedCategory}
-                        onChange={(e) => setSelectedCategory(e.target.value)}
-                        className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-500"
-                    >
-                        {categories.map(cat => (
-                            <option key={cat} value={cat}>{cat === 'ALL' ? 'All Categories' : cat.charAt(0) + cat.slice(1).toLowerCase()}</option>
-                        ))}
-                    </select>
-
                     <div className="bg-white dark:bg-gray-800 p-1 rounded-lg border border-gray-200 dark:border-gray-700 flex">
                         {['LIST', 'DAILY', 'MONTHLY', 'YEARLY'].map((mode) => (
                             <button
@@ -184,48 +168,37 @@ const Expenses = () => {
 
             {/* View Rendering */}
             {viewMode === 'LIST' ? (
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden border border-gray-100 dark:border-gray-700">
-                    <table className="w-full text-left">
-                        <thead className="bg-gray-50 dark:bg-gray-900/50 text-gray-500 dark:text-gray-400">
-                            <tr>
-                                <th className="p-4">Date</th>
-                                <th className="p-4">Title</th>
-                                <th className="p-4">Category</th>
-                                <th className="p-4">Amount</th>
-                                <th className="p-4">Notes</th>
-                                <th className="p-4">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                            {filteredExpenses.map((expense) => (
-                                <tr key={expense.id} className="text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                    <td className="p-4">{new Date(expense.date).toLocaleDateString()}</td>
-                                    <td className="p-4 font-medium">{expense.title}</td>
-                                    <td className="p-4">
-                                        <span className="px-2 py-1 text-xs rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
-                                            {expense.category}
-                                        </span>
-                                    </td>
-                                    <td className="p-4 font-semibold text-red-500">
-                                        {formatPrice(expense.amount)}
-                                    </td>
-                                    <td className="p-4 text-sm text-gray-500">{expense.notes || '-'}</td>
-                                    <td className="p-4">
-                                        <button
-                                            onClick={() => handleDelete(expense.id)}
-                                            className="text-red-500 hover:text-red-700 text-sm"
-                                        >
-                                            Delete
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                    {filteredExpenses.length === 0 && !loading && (
-                        <div className="p-8 text-center text-gray-500">No expenses recorded yet.</div>
+                <DataTable
+                    columns={[
+                        { header: 'Date', accessor: (expense) => new Date(expense.date).toLocaleDateString() },
+                        { header: 'Title', accessor: 'title', cellClassName: 'font-medium' },
+                        {
+                            header: 'Category',
+                            accessor: (expense) => (
+                                <span className="px-2 py-1 text-xs rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                                    {expense.category}
+                                </span>
+                            )
+                        },
+                        {
+                            header: 'Amount',
+                            accessor: (expense) => formatPrice(expense.amount),
+                            cellClassName: 'font-semibold text-red-500'
+                        },
+                        { header: 'Notes', accessor: (expense) => expense.notes || '-', cellClassName: 'text-sm text-gray-500' }
+                    ]}
+                    data={expenses}
+                    actions={(expense) => (
+                        <button
+                            onClick={() => handleDelete(expense.id)}
+                            className="text-red-500 hover:text-red-700 text-sm"
+                        >
+                            Delete
+                        </button>
                     )}
-                </div>
+                    isLoading={loading}
+                    emptyMessage="No expenses recorded yet."
+                />
             ) : (
                 <div className="space-y-8">
                     {groupedExpenses && Object.entries(groupedExpenses).map(([group, groupExpenses]) => (
@@ -287,7 +260,7 @@ const Expenses = () => {
                             </table>
                         </div>
                     ))}
-                    {filteredExpenses.length === 0 && !loading && (
+                    {expenses.length === 0 && !loading && (
                         <div className="p-12 text-center bg-white dark:bg-gray-800 rounded-xl border border-dashed border-gray-200 dark:border-gray-700">
                             <p className="text-gray-500 dark:text-gray-400">No expenses recorded yet.</p>
                             <button

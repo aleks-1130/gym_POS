@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useCurrency } from '../../context/CurrencyContext';
 import axios from 'axios';
+import DataTable from '../../components/common/DataTable';
 
 export default function Inventory() {
     const { user } = useAuth();
-    const { formatPrice, rate } = useCurrency();
+    const { formatPrice } = useCurrency();
     const [products, setProducts] = useState([]);
     const [suppliers, setSuppliers] = useState([]); // New state for suppliers
     const [loading, setLoading] = useState(false);
@@ -60,11 +61,11 @@ export default function Inventory() {
         setFormData({
             name: product.name,
             category: product.category,
-            price: (product.price * rate).toFixed(2), // Convert USD to PHP for display
+            price: product.price.toFixed(2),
             stock: product.stock,
             minStock: product.minStock,
             imageUrl: product.imageUrl || '',
-            supplyCost: (product.supplyCost * rate).toFixed(2), // Convert USD to PHP for display
+            supplyCost: product.supplyCost.toFixed(2),
             supplierId: product.supplierId || ''
         });
         setShowForm(true);
@@ -82,12 +83,10 @@ export default function Inventory() {
         e.preventDefault();
         const payload = {
             ...formData,
-            // Convert PHP input to USD for storage
-            price: (parseFloat(formData.price) || 0) / rate,
+            price: parseFloat(formData.price) || 0,
             stock: parseInt(formData.stock) || 0,
             minStock: parseInt(formData.minStock) || 0,
-            // Convert PHP input to USD for storage
-            supplyCost: (parseFloat(formData.supplyCost) || 0) / rate,
+            supplyCost: parseFloat(formData.supplyCost) || 0,
             supplierId: formData.supplierId ? parseInt(formData.supplierId) : null
         };
 
@@ -133,8 +132,7 @@ export default function Inventory() {
             await axios.post('http://localhost:5000/api/inventory/restock', {
                 productId: restockProduct.id,
                 quantity: parseInt(restockData.quantity),
-                notes: restockData.notes,
-                conversionRate: rate // Send current rate to backend
+                notes: restockData.notes
             }, {
                 headers: { Authorization: `Bearer ${token}` }
             });
@@ -265,90 +263,81 @@ export default function Inventory() {
             }
 
             {/* Inventory Table */}
-            <div className="bg-surface rounded-3xl border border-white/5 overflow-hidden shadow-sm">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                        <thead>
-                            <tr className="border-b border-white/5 text-text-muted text-sm bg-white/5">
-                                <th className="p-6 font-medium">Product</th>
-                                <th className="p-6 font-medium">Category</th>
-                                <th className="p-6 font-medium">Price</th>
-                                <th className="p-6 font-medium">Stock Level</th>
-                                <th className="p-6 font-medium text-right">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/5">
-                            {products.map(product => {
-                                const isLowStock = product.stock <= product.minStock;
-                                return (
-                                    <tr key={product.id} className="hover:bg-white/5 transition-colors group">
-                                        <td className="p-6">
-                                            <div className="flex items-center gap-4">
-                                                <div className="w-12 h-12 bg-white/5 rounded-xl overflow-hidden flex-shrink-0 border border-white/10">
-                                                    {product.imageUrl ? (
-                                                        <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
-                                                    ) : (
-                                                        <div className="w-full h-full flex items-center justify-center text-text-muted">
-                                                            <span className="material-icons-round text-sm">image</span>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <div>
-                                                    <p className="text-white font-bold">{product.name}</p>
-                                                    <p className="text-xs text-text-muted">SKU: {product.id.toString().padStart(4, '0')}</p>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="p-6">
-                                            <span className="px-3 py-1 bg-white/5 text-text-secondary rounded-full text-xs font-medium border border-white/10">
-                                                {product.category}
-                                            </span>
-                                        </td>
-                                        <td className="p-6 text-white font-mono font-bold">
-                                            {formatPrice(product.price)}
-                                        </td>
-                                        <td className="p-6">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-24 bg-white/10 h-2 rounded-full overflow-hidden">
-                                                    <div className={`h-full rounded-full ${isLowStock ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(100, (product.stock / 50) * 100)}%` }}></div>
-                                                </div>
-                                                <span className={`font-bold ${isLowStock ? 'text-red-500' : 'text-text-secondary'}`}>
-                                                    {product.stock} {isLowStock && <span className="text-xs ml-1">(Low!)</span>}
-                                                </span>
-                                            </div>
-                                        </td>
-                                        <td className="p-6 text-right">
-                                            <div className="flex items-center justify-end gap-2">
-                                                <button
-                                                    onClick={() => openRestock(product)}
-                                                    className="bg-emerald-500/10 hover:bg-emerald-500 text-emerald-500 hover:text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all border border-emerald-500/20"
-                                                >
-                                                    Restock
-                                                </button>
-                                                <button onClick={() => handleEdit(product)} className="text-text-muted hover:text-primary transition-colors p-2 rounded-lg hover:bg-primary/10">
-                                                    <span className="material-icons-round">edit</span>
-                                                </button>
-                                                {user?.role === 'ADMIN' && (
-                                                    <button onClick={() => handleDelete(product.id)} className="text-text-muted hover:text-red-500 transition-colors p-2 rounded-lg hover:bg-red-500/10">
-                                                        <span className="material-icons-round">delete</span>
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                            {products.length === 0 && !loading && (
-                                <tr>
-                                    <td colSpan="5" className="p-12 text-center text-text-muted">
-                                        No products in inventory. Click "Add Product" to start.
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+            <DataTable
+                columns={[
+                    {
+                        header: 'Product',
+                        accessor: (product) => (
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 bg-white/5 rounded-xl overflow-hidden flex-shrink-0 border border-white/10">
+                                    {product.imageUrl ? (
+                                        <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="w-full h-full flex items-center justify-center text-text-muted">
+                                            <span className="material-icons-round text-sm">image</span>
+                                        </div>
+                                    )}
+                                </div>
+                                <div>
+                                    <p className="text-white font-bold">{product.name}</p>
+                                    <p className="text-xs text-text-muted">SKU: {product.id.toString().padStart(4, '0')}</p>
+                                </div>
+                            </div>
+                        )
+                    },
+                    {
+                        header: 'Category',
+                        accessor: (product) => (
+                            <span className="px-3 py-1 bg-white/5 text-text-secondary rounded-lg text-[10px] font-bold border border-white/10 uppercase tracking-wider">
+                                {product.category}
+                            </span>
+                        )
+                    },
+                    {
+                        header: 'Price',
+                        accessor: (product) => formatPrice(product.price),
+                        className: 'text-center',
+                        cellClassName: 'text-white font-mono font-bold text-center'
+                    },
+                    {
+                        header: 'Stock Level',
+                        accessor: (product) => {
+                            const isLowStock = product.stock <= product.minStock;
+                            return (
+                                <div className="flex items-center gap-4">
+                                    <div className="flex-1 max-w-[140px] bg-white/10 h-1.5 rounded-full overflow-hidden">
+                                        <div className={`h-full rounded-full transition-all duration-500 ${isLowStock ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]' : 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]'}`} style={{ width: `${Math.min(100, (product.stock / (product.minStock * 4)) * 100)}%` }}></div>
+                                    </div>
+                                    <span className={`font-mono font-bold text-sm min-w-[30px] text-right ${isLowStock ? 'text-red-500' : 'text-emerald-400'}`}>
+                                        {product.stock}
+                                    </span>
+                                </div>
+                            );
+                        }
+                    }
+                ]}
+                data={products}
+                actions={(product) => (
+                    <div className="flex items-center justify-end gap-3 font-mono">
+                        <button
+                            onClick={() => openRestock(product)}
+                            className="bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-400 text-[10px] font-bold py-1.5 px-3 rounded-lg border border-emerald-500/20 transition-all uppercase tracking-tighter"
+                        >
+                            Restock
+                        </button>
+                        <button onClick={() => handleEdit(product)} className="text-text-muted hover:text-white transition-colors">
+                            <span className="material-icons-round text-lg">edit</span>
+                        </button>
+                        {user?.role === 'ADMIN' && (
+                            <button onClick={() => handleDelete(product.id)} className="text-text-muted hover:text-red-500 transition-colors">
+                                <span className="material-icons-round text-lg">delete</span>
+                            </button>
+                        )}
+                    </div>
+                )}
+                isLoading={loading}
+                emptyMessage="No products in inventory. Click 'Add Product' to start."
+            />
 
             {/* Restock Modal */}
             {

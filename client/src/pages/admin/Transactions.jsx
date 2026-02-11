@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
+import DataTable from '../../components/common/DataTable';
 
 export default function Transactions() {
     const { formatPrice } = useCurrency();
@@ -48,46 +49,53 @@ export default function Transactions() {
                 </button>
             </div>
 
-            <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
-                <table className="w-full text-left text-sm text-text-secondary">
-                    <thead className="bg-white/5 text-text-muted uppercase text-xs font-bold tracking-wider">
-                        <tr>
-                            <th className="px-6 py-4">Date</th>
-                            <th className="px-6 py-4">Type</th>
-                            <th className="px-6 py-4">Amount</th>
-                            <th className="px-6 py-4">Method</th>
-                            <th className="px-6 py-4">Member</th>
-                            <th className="px-6 py-4">Cashier</th>
-                            <th className="px-6 py-4">Status</th>
-                            <th className="px-6 py-4">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/5">
-                        {history.length === 0 && (
-                            <tr><td colSpan="8" className="p-6 text-center text-text-muted">No transactions found.</td></tr>
-                        )}
-                        {history.map(pay => (
-                            <tr key={pay.id} className="hover:bg-white/5 transition-colors">
-                                <td className="px-6 py-4 text-white font-medium">{new Date(pay.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(pay.date).toLocaleTimeString()}</span></td>
-                                <td className="px-6 py-4"><span className="bg-white/10 text-text-secondary px-2 py-1 rounded text-xs font-bold">{pay.type}</span></td>
-                                <td className="px-6 py-4 text-white font-bold">{formatPrice(pay.amount)}</td>
-                                <td className="px-6 py-4 text-text-secondary">{pay.method}</td>
-                                <td className="px-6 py-4 text-white">{pay.member ? `${pay.member.firstName} ${pay.member.lastName}` : 'Walk-in'}</td>
-                                <td className="px-6 py-4 text-white">{pay.cashier?.name || 'N/A'}</td>
-                                <td className="px-6 py-4">{renderStatusBadge(pay.status)}</td>
-                                <td className="px-6 py-4">
-                                    <a
-                                        href={`/pos/transactions/${pay.id}`}
-                                        className="text-xs font-bold px-3 py-1 rounded-lg border border-white/10 text-white hover:bg-white/10"
-                                    >
-                                        View Transaction
-                                    </a>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
+            <DataTable
+                columns={[
+                    {
+                        header: 'Date',
+                        accessor: (pay) => (
+                            <span className="text-white font-medium">
+                                {new Date(pay.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(pay.date).toLocaleTimeString()}</span>
+                            </span>
+                        )
+                    },
+                    {
+                        header: 'Type',
+                        accessor: (pay) => <span className="bg-white/10 text-text-secondary px-2 py-1 rounded text-xs font-bold">{pay.type}</span>
+                    },
+                    {
+                        header: 'Amount',
+                        accessor: (pay) => <span className="text-white font-bold">{formatPrice(pay.amount)}</span>
+                    },
+                    {
+                        header: 'Method',
+                        accessor: (pay) => <span className="text-text-secondary">{pay.method}</span>
+                    },
+                    {
+                        header: 'Member',
+                        accessor: (pay) => <span className="text-white">{pay.member ? `${pay.member.firstName} ${pay.member.lastName}` : 'Walk-in'}</span>
+                    },
+                    {
+                        header: 'Cashier',
+                        accessor: (pay) => <span className="text-white">{pay.cashier?.name || 'N/A'}</span>
+                    },
+                    {
+                        header: 'Status',
+                        accessor: (pay) => renderStatusBadge(pay.status)
+                    }
+                ]}
+                data={history}
+                actions={(pay) => (
+                    <a
+                        href={`/pos/transactions/${pay.id}`}
+                        className="text-xs font-bold px-3 py-1 rounded-lg border border-white/10 text-white hover:bg-white/10"
+                    >
+                        View Transaction
+                    </a>
+                )}
+                isLoading={loading}
+                emptyMessage="No transactions found."
+            />
         </div>
     );
 }
