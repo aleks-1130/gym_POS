@@ -6,7 +6,9 @@ import Sidebar from './components/Sidebar';
 import BottomNav from './components/BottomNav';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 
-// Auth
+// Auth & Public
+import Landing from './pages/Landing';
+import Signup from './pages/auth/Signup';
 import Login from './pages/auth/Login';
 
 // Shared
@@ -14,6 +16,8 @@ import Dashboard from './pages/shared/Dashboard';
 import Payments from './pages/shared/Payments';
 import Access from './pages/staff/Access';
 import Loyalty from './pages/shared/Loyalty';
+import Announcements from './pages/shared/Announcements';
+import DisplayMonitor from './pages/shared/DisplayMonitor';
 
 // Owner Pages
 import Settings from './pages/owner/Settings';
@@ -27,14 +31,17 @@ import Suppliers from './pages/admin/Suppliers';
 import TrainingManager from './pages/admin/TrainingManager';
 import PosSettings from './pages/admin/PosSettings';
 import Transactions from './pages/admin/Transactions';
+import Trainers from './pages/admin/Trainers';
+import Classes from './pages/admin/Classes';
 
 // Staff Pages
 import Inventory from './pages/staff/Inventory';
 import Members from './pages/staff/Members';
 import MemberDetail from './pages/staff/MemberDetail';
-import Trainers from './pages/admin/Trainers';
-import Classes from './pages/admin/Classes';
 import TransactionDetail from './pages/staff/TransactionDetail';
+import DoorScanner from './pages/staff/DoorScanner';
+
+// Trainer Pages
 import TrainerSessions from './pages/trainer/TrainerSessions';
 import TrainerClasses from './pages/trainer/TrainerClasses';
 import TrainerProfile from './pages/trainer/TrainerProfile';
@@ -46,18 +53,12 @@ import Profile from './pages/member/Profile';
 import Attendance from './pages/member/Attendance';
 import PurchaseHistory from './pages/member/PurchaseHistory';
 import TrainerBooking from './pages/member/TrainerBooking';
-import Announcements from './pages/shared/Announcements';
 import GymTraffic from './pages/member/GymTraffic';
 import PaymentMethods from './pages/member/PaymentMethods';
 import ShopCheckout from './pages/member/ShopCheckout';
 
-
-// Common
-// import Notifications from './pages/Notifications';
-
-// ✅ NEW IMPORTS
-import DisplayMonitor from './pages/shared/DisplayMonitor';
-// import MemberProfile from './pages/staff/MemberProfile';
+// Components
+import ProfileResult from './components/ProfileResult';
 
 const ProtectedRoute = ({ children, allowedRoles, fullScreen }) => {
   const { user, loading } = useAuth();
@@ -71,11 +72,11 @@ const ProtectedRoute = ({ children, allowedRoles, fullScreen }) => {
 
   if (!user) return <Navigate to="/login" />;
 
+  // Redirect unauthorized users to dashboard
   if (allowedRoles && !allowedRoles.includes(user.role)) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
-  // Full screen mode (no sidebar, no bottom nav)
   if (fullScreen) {
     return (
       <div className="bg-background min-h-screen w-full overflow-y-auto">
@@ -114,20 +115,38 @@ function AppRoutes() {
     <div className="flex-1 w-full bg-background overflow-auto relative">
       <PWAInstallPrompt isAuthenticated={Boolean(user)} />
       <Routes>
+        {/* --- PUBLIC ROUTES --- */}
+        <Route path="/" element={<Landing />} />
+        <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
 
-        {/* Public / Common Routes */}
+        {/* --- PROTECTED ROUTES --- */}
         <Route
-          path="/"
+          path="/dashboard"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER]}>
               <Dashboard />
             </ProtectedRoute>
           }
         />
 
-        {/* Display Monitor */}
-        {/* Display Monitor */}
+        {/* Staff Tools */}
+        <Route
+          path="/scanner"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
+              <DoorScanner />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/scan-result/:logId"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]} fullScreen>
+              <ProfileResult />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/display-monitor"
           element={
@@ -147,14 +166,6 @@ function AppRoutes() {
           }
         />
         <Route
-          path="/pos/transactions/:id"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              <TransactionDetail />
-            </ProtectedRoute>
-          }
-        />
-        <Route
           path="/loyalty"
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER]}>
@@ -170,17 +181,16 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
-
         <Route
-          path="/notifications"
+          path="/announcements"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
               <Announcements />
             </ProtectedRoute>
           }
         />
 
-        {/* Staff / Admin Routes */}
+        {/* Staff Management */}
         <Route
           path="/members"
           element={
@@ -189,7 +199,6 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
-        {/* Existing staff detail route */}
         <Route
           path="/members/:id"
           element={
@@ -198,19 +207,14 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
-
-        {/* Optional member full profile route (NO conflict) */}
-        {/*
         <Route
-          path="/members/profile/:memberId"
+          path="/pos/transactions/:id"
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              <MemberProfile />
+              <TransactionDetail />
             </ProtectedRoute>
           }
         />
-        */}
-
         <Route
           path="/inventory"
           element={
@@ -239,11 +243,13 @@ function AppRoutes() {
         <Route
           path="/training-manager"
           element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
               <TrainingManager />
             </ProtectedRoute>
           }
         />
+
+        {/* Trainer Routes */}
         <Route
           path="/trainer/sessions"
           element={
@@ -269,7 +275,7 @@ function AppRoutes() {
           }
         />
 
-        {/* Admin / Owner Routes */}
+        {/* Admin / Owner Features */}
         <Route
           path="/analytics"
           element={
@@ -278,8 +284,6 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
-
-        {/* Owner Only Routes */}
         <Route
           path="/settings"
           element={
@@ -293,6 +297,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
               <UserManagement />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/audit"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER]}>
+              <AuditLogs />
             </ProtectedRoute>
           }
         />
@@ -328,16 +340,8 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/audit"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER]}>
-              <AuditLogs />
-            </ProtectedRoute>
-          }
-        />
 
-        {/* Member / Mixed Routes */}
+        {/* Member Features */}
         <Route
           path="/schedule"
           element={
@@ -386,15 +390,6 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
-
-        <Route
-          path="/announcements"
-          element={
-            <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-              <Announcements />
-            </ProtectedRoute>
-          }
-        />
         <Route
           path="/gym-traffic"
           element={
@@ -419,6 +414,9 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+
+        {/* Catch-all */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>
   );
