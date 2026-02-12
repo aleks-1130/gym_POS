@@ -13,7 +13,7 @@ export default function BottomNav() {
 
     // Primary navigation items (bottom bar)
     const memberPrimaryNav = [
-        { to: "/", icon: Home, label: "Home" },
+        { to: "/dashboard", icon: Home, label: "Home" },
         { to: "/attendance", icon: CheckCircle, label: "Attendance" },
         { to: "/trainer-booking", icon: Dumbbell, label: "Trainers" },
         { to: "/gym-traffic", icon: Activity, label: "Traffic" },
@@ -22,7 +22,7 @@ export default function BottomNav() {
         { to: "/profile", icon: User, label: "Profile" },
     ];
     const trainerPrimaryNav = [
-        { to: "/", icon: Home, label: "Home" },
+        { to: "/dashboard", icon: Home, label: "Home" },
         { to: "/trainer/sessions", icon: Dumbbell, label: "Sessions" },
         { to: "/trainer/classes", icon: Calendar, label: "Classes" },
         { to: "/trainer/profile", icon: User, label: "Profile" },
@@ -38,7 +38,7 @@ export default function BottomNav() {
     ];
 
     const staffPrimaryNav = [
-        { to: "/", icon: Home, label: "Home" },
+        { to: "/dashboard", icon: Home, label: "Home" },
         { to: "/members", icon: Users, label: "Members" },
         { to: "/classes", icon: Dumbbell, label: "Classes" },
         { to: "/schedule", icon: Calendar, label: "Schedule" },

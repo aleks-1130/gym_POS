@@ -194,7 +194,7 @@ export default function Sidebar() {
 
                 {/* Navigation */}
                 <nav className="flex-1 flex flex-col px-3 py-4 gap-1 overflow-y-visible overflow-x-hidden no-scrollbar">
-                    <NavItem to="/" icon="dashboard" label="Dashboard" />
+                    <NavItem to="/dashboard" icon="dashboard" label="Dashboard" />
 
                     {currentMenu.map((section, idx) => (
                         <div key={idx}>
