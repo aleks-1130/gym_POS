@@ -6,9 +6,10 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
 
 model User {
     id        Int      @id @default(autoincrement())
@@ -61,7 +62,91 @@ model Member {
   trainingSessions TrainingSession[]
   membershipPeriods MembershipPeriod[]
   notes             MemberNote[]
-  }
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([planId])
+}
+
+model Payment {
+    id             Int           @id @default(autoincrement())
+    amount         Float
+    type           String        // MEMBERSHIP, POS, etc.
+    method         String        // CASH, CARD
+    status         String        @default("COMPLETED")
+    date           DateTime      @default(now())
+    memberId       Int?
+    member         Member?       @relation(fields: [memberId], references: [id])
+    cashierId      Int?
+    cashier        User?         @relation("PaymentCashier", fields: [cashierId], references: [id])
+    pointsAwarded  Int           @default(0)
+    pointsReversed Int           @default(0)
+    refundedAmount Float         @default(0)
+    cashTendered   Float?
+    changeDue      Float?
+    externalRef    String?
+    externalDate   DateTime?
+    discount       Float         @default(0)
+    items          PaymentItem[]
+
+    @@index([date])
+    @@index([type])
+    @@index([memberId])
+}
+
+model AccessLog {
+  id        Int      @id @default(autoincrement())
+  memberId  Int
+  member    Member   @relation(fields: [memberId], references: [id])
+  checkIn   DateTime @default(now())
+  status    String   @default("ALLOWED") // ALLOWED, DENIED
+
+  @@index([checkIn])
+  @@index([memberId])
+}
+
+model Expense {
+    id                     Int       @id @default(autoincrement())
+    title                  String
+    amount                 Float
+    category               String
+    date                   DateTime  @default(now())
+    recurring              Boolean   @default(false)
+    frequency              String?
+    notes                  String?
+    recordedBy             String?
+    supplierId             Int?
+    supplier               Supplier? @relation(fields: [supplierId], references: [id])
+    createdAt              DateTime  @default(now())
+    inventoryTransactionId Int?
+
+    @@index([date])
+}
+
+model TrainingSession {
+  id        Int      @id @default(autoincrement())
+  memberId  Int
+  member    Member   @relation(fields: [memberId], references: [id])
+  trainerId Int
+  trainer   Trainer  @relation(fields: [trainerId], references: [id])
+  date      DateTime
+  duration  Int      // minutes
+  price     Float
+  status    String   @default("SCHEDULED") // SCHEDULED, COMPLETED, CANCELLED
+  commissionPaid Boolean @default(false)
+  materialsCost Float    @default(0.0)
+  materials     SessionMaterial[]
+  paymentStatus String @default("PAID") // PAID, UNPAID
+  paymentMethod String? // CASH, CARD, GCASH
+  paidAt     DateTime?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
+  @@index([trainerId])
+  @@index([memberId])
+}
 
 model PaymentMethod {
   id        Int      @id @default(autoincrement())
@@ -87,27 +172,7 @@ model Plan {
 
 
 
-model Payment {
-    id             Int           @id @default(autoincrement())
-    amount         Float
-    type           String        // MEMBERSHIP, POS, etc.
-    method         String        // CASH, CARD
-    status         String        @default("COMPLETED")
-    date           DateTime      @default(now())
-    memberId       Int?
-    member         Member?       @relation(fields: [memberId], references: [id])
-    cashierId      Int?
-    cashier        User?         @relation("PaymentCashier", fields: [cashierId], references: [id])
-    pointsAwarded  Int           @default(0)
-    pointsReversed Int           @default(0)
-    refundedAmount Float         @default(0)
-    cashTendered   Float?
-    changeDue      Float?
-    externalRef    String?
-    externalDate   DateTime?
-    discount       Float         @default(0)
-    items          PaymentItem[]
-}
+
 
 model PaymentItem {
     id               Int      @id @default(autoincrement())
@@ -122,13 +187,7 @@ model PaymentItem {
     returnedQuantity Int      @default(0)
 }
 
-model AccessLog {
-  id        Int      @id @default(autoincrement())
-  memberId  Int
-  member    Member   @relation(fields: [memberId], references: [id])
-  checkIn   DateTime @default(now())
-  status    String   @default("ALLOWED") // ALLOWED, DENIED
-}
+
 
 model Supplier {
   id        Int       @id @default(autoincrement())
@@ -186,26 +245,7 @@ model Trainer {
   user             User?             @relation("TrainerUser")
 }
 
-model TrainingSession {
-  id        Int      @id @default(autoincrement())
-  memberId  Int
-  member    Member   @relation(fields: [memberId], references: [id])
-  trainerId Int
-  trainer   Trainer  @relation(fields: [trainerId], references: [id])
-  date      DateTime
-  duration  Int      // minutes
-  price     Float
-  status    String   @default("SCHEDULED") // SCHEDULED, COMPLETED, CANCELLED
-  commissionPaid Boolean @default(false)
-  materialsCost Float    @default(0.0)
-  materials     SessionMaterial[]
-  paymentStatus String @default("PAID") // PAID, UNPAID
-  paymentMethod String? // CASH, CARD, GCASH
-  paidAt     DateTime?
-  notes     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
+
 
 model SessionMaterial {
   id                Int             @id @default(autoincrement())
@@ -279,21 +319,7 @@ model MembershipPeriod {
   createdAt DateTime @default(now())
 }
 
-model Expense {
-    id                     Int       @id @default(autoincrement())
-    title                  String
-    amount                 Float
-    category               String
-    date                   DateTime  @default(now())
-    recurring              Boolean   @default(false)
-    frequency              String?
-    notes                  String?
-    recordedBy             String?
-    supplierId             Int?
-    supplier               Supplier? @relation(fields: [supplierId], references: [id])
-    createdAt              DateTime  @default(now())
-    inventoryTransactionId Int?
-}
+
 
 model LoyaltyReward {
     id          Int      @id @default(autoincrement())

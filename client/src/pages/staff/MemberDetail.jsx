@@ -359,7 +359,7 @@ export default function MemberDetail() {
                                     <span className="material-icons-round text-blue-400 text-lg">payments</span>
                                     <p className="text-text-muted text-xs uppercase font-bold">Spent</p>
                                 </div>
-                                <p className="text-3xl font-bold text-white">{formatPrice(member.payments?.reduce((sum, p) => sum + p.amount, 0) || 3525)}</p>
+                                <p className="text-3xl font-bold text-white">{formatPrice(member.payments?.reduce((sum, p) => sum + p.amount, 0) ?? 0)}</p>
                             </div>
                         </div>
                     </div>

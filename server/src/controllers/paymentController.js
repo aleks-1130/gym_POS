@@ -239,13 +239,43 @@ const getAllPayments = async (req, res) => {
     }
 
     // Staff/Admin: see all
-    const { startDate, endDate } = req.query;
+    const { startDate, endDate, page, limit } = req.query;
     const where = {};
     if (startDate && endDate) {
         where.date = {
             gte: new Date(startDate),
             lte: new Date(new Date(endDate).setHours(23, 59, 59, 999))
         };
+    }
+
+    if (page && limit) {
+        const pageNum = Math.max(1, parseInt(page) || 1);
+        const limitNum = Math.max(1, parseInt(limit) || 10);
+        const skip = (pageNum - 1) * limitNum;
+
+        const [payments, total] = await Promise.all([
+            prisma.payment.findMany({
+                where,
+                skip,
+                take: limitNum,
+                orderBy: { date: 'desc' },
+                include: {
+                    member: true,
+                    cashier: { select: { id: true, name: true, role: true } }
+                }
+            }),
+            prisma.payment.count({ where })
+        ]);
+
+        return res.json({
+            data: payments,
+            meta: {
+                total,
+                page: pageNum,
+                limit: limitNum,
+                totalPages: Math.ceil(total / limitNum)
+            }
+        });
     }
 
     const payments = await prisma.payment.findMany({

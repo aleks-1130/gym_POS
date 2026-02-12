@@ -67,15 +67,68 @@ const createPaymentCompat = async (tx, data) => {
     }
 };
 
-// Only Staff/Admin can list all members
 const getMembers = async (req, res) => {
     try {
-        const members = await prisma.member.findMany({
-            include: { plan: true }
-        });
+        const page = parseInt(req.query.page);
+        const limit = parseInt(req.query.limit);
+        const search = req.query.search;
+
+        const where = { status: { not: 'DELETED' } };
+
+        if (search) {
+            where.OR = [
+                { firstName: { contains: search, mode: 'insensitive' } },
+                { lastName: { contains: search, mode: 'insensitive' } },
+                { email: { contains: search, mode: 'insensitive' } }
+            ];
+        }
+
+        const queryOptions = {
+            where,
+            include: { plan: true },
+            orderBy: { createdAt: 'desc' }
+        };
+
+        if (page && limit) {
+            const skip = (page - 1) * limit;
+            const [members, total] = await Promise.all([
+                prisma.member.findMany({
+                    ...queryOptions,
+                    skip,
+                    take: limit
+                }),
+                prisma.member.count({ where: queryOptions.where })
+            ]);
+
+            return res.json({
+                data: members,
+                meta: {
+                    total,
+                    page,
+                    limit,
+                    totalPages: Math.ceil(total / limit)
+                }
+            });
+        }
+
+        const members = await prisma.member.findMany(queryOptions);
         res.json(members);
     } catch (e) {
         res.status(500).json({ error: e.message });
+    }
+};
+
+const deleteMember = async (req, res) => {
+    const { id } = req.params;
+    try {
+        // Soft delete
+        await prisma.member.update({
+            where: { id: Number(id) },
+            data: { status: 'DELETED' }
+        });
+        res.json({ message: "Member deleted successfully" });
+    } catch (e) {
+        res.status(500).json({ error: "Failed to delete member" });
     }
 };
 
@@ -164,6 +217,34 @@ const cancelBooking = async (req, res) => {
     }
 };
 
+// Helper to check for booking conflicts
+const checkBookingConflict = async (trainerId, startDateTime, durationMinutes) => {
+    const endDateTime = new Date(startDateTime.getTime() + durationMinutes * 60000);
+
+    // Define the range for the entire day to fetch relevant sessions
+    const startOfDay = new Date(startDateTime);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(startOfDay);
+    endOfDay.setDate(endOfDay.getDate() + 1);
+
+    const conflictingSessions = await prisma.trainingSession.findMany({
+        where: {
+            trainerId: Number(trainerId),
+            date: {
+                gte: startOfDay,
+                lt: endOfDay
+            },
+            status: { not: 'CANCELLED' }
+        }
+    });
+
+    return conflictingSessions.some(session => {
+        const sessionStart = new Date(session.date);
+        const sessionEnd = new Date(sessionStart.getTime() + session.duration * 60000);
+        return startDateTime < sessionEnd && endDateTime > sessionStart;
+    });
+};
+
 // Book a Trainer Session (Member)
 const bookTraining = async (req, res) => {
     const { trainerId, date, time, duration, notes, method } = req.body;
@@ -196,6 +277,11 @@ const bookTraining = async (req, res) => {
         }
         if (!isTimeAllowedForTrainer({ trainerId: Number(trainerId), date, time, duration: Number(duration) })) {
             return res.status(400).json({ error: "Selected schedule is outside trainer availability" });
+        }
+
+        // Check for conflicts
+        if (await checkBookingConflict(Number(trainerId), startDateTime, Number(duration))) {
+            return res.status(409).json({ error: "This time slot is already booked by another member" });
         }
 
         const allowedDurations = (trainer.sessionDurations || '60')
@@ -271,6 +357,11 @@ const bookTrainingCash = async (req, res) => {
         }
         if (!isTimeAllowedForTrainer({ trainerId: Number(trainerId), date, time, duration: Number(duration) })) {
             return res.status(400).json({ error: "Selected schedule is outside trainer availability" });
+        }
+
+        // Check for conflicts
+        if (await checkBookingConflict(Number(trainerId), startDateTime, Number(duration))) {
+            return res.status(409).json({ error: "This time slot is already booked by another member" });
         }
 
         const allowedDurations = (trainer.sessionDurations || '60')
@@ -769,5 +860,6 @@ module.exports = {
     addMemberNote,
     updateMemberStatus,
     updateMember,
-    changePassword
+    changePassword,
+    deleteMember
 };

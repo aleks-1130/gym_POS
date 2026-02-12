@@ -83,11 +83,17 @@ const Expenses = () => {
     const currentMonthName = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
 
     const [viewMode, setViewMode] = useState('LIST'); // LIST, DAILY, MONTHLY, YEARLY
+    const [selectedCategory, setSelectedCategory] = useState('ALL');
+
+    const filteredExpenses = expenses.filter(expense => {
+        if (selectedCategory === 'ALL') return true;
+        return expense.category === selectedCategory;
+    });
 
     const groupExpenses = () => {
         if (viewMode === 'LIST') return null;
 
-        return expenses.reduce((groups, expense) => {
+        return filteredExpenses.reduce((groups, expense) => {
             let key;
             const date = new Date(expense.date);
 
@@ -116,6 +122,22 @@ const Expenses = () => {
                 </div>
 
                 <div className="flex gap-2">
+                    {/* Category Filter */}
+                    <select
+                        value={selectedCategory}
+                        onChange={(e) => setSelectedCategory(e.target.value)}
+                        className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-sm rounded-lg px-3 py-2 outline-none focus:border-red-500"
+                    >
+                        <option value="ALL">All Categories</option>
+                        <option value="UTILITIES">Utilities</option>
+                        <option value="SALARY">Salary</option>
+                        <option value="SUPPLIES">Supplies</option>
+                        <option value="MAINTENANCE">Maintenance</option>
+                        <option value="RENT">Rent</option>
+                        <option value="SESSION_MATERIAL">Session Material</option>
+                        <option value="OTHER">Other</option>
+                    </select>
+
                     <div className="bg-white dark:bg-gray-800 p-1 rounded-lg border border-gray-200 dark:border-gray-700 flex">
                         {['LIST', 'DAILY', 'MONTHLY', 'YEARLY'].map((mode) => (
                             <button
@@ -187,7 +209,7 @@ const Expenses = () => {
                         },
                         { header: 'Notes', accessor: (expense) => expense.notes || '-', cellClassName: 'text-sm text-gray-500' }
                     ]}
-                    data={expenses}
+                    data={filteredExpenses}
                     actions={(expense) => (
                         <button
                             onClick={() => handleDelete(expense.id)}

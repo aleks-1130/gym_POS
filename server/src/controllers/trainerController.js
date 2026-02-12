@@ -9,7 +9,15 @@ const {
 const getAllTrainers = async (req, res) => {
     try {
         const trainers = await prisma.trainer.findMany({
-            include: { classes: true },
+            include: {
+                classes: true,
+                trainingSessions: {
+                    where: {
+                        date: { gte: new Date() },
+                        status: { not: 'CANCELLED' }
+                    },
+                }
+            },
             orderBy: { name: 'asc' }
         });
         res.json(trainers.map(withTrainerAvailability));
@@ -73,11 +81,24 @@ const createTrainer = async (req, res) => {
             sessionPrice,
             sessionDurations,
             availableSlots,
-            specialties
+            specialties,
+            commissionRate,
+            baseSalary,
+            createLogin,
+            loginEmail,
+            loginPassword
         } = req.body;
 
         if (!name || !String(name).trim()) {
             return res.status(400).json({ error: 'Trainer name is required' });
+        }
+
+        // 1. Check if login email is taken (if creating login)
+        if (createLogin && loginEmail) {
+            const existingUser = await prisma.user.findUnique({ where: { email: String(loginEmail).trim() } });
+            if (existingUser) {
+                return res.status(400).json({ error: 'Login email is already taken' });
+            }
         }
 
         const trainer = await prisma.trainer.create({
@@ -94,9 +115,30 @@ const createTrainer = async (req, res) => {
                 sessionPrice: sessionPrice !== '' && sessionPrice !== undefined ? Number(sessionPrice) : undefined,
                 sessionDurations: sessionDurations ? String(sessionDurations) : '60',
                 availableSlots: availableSlots !== '' && availableSlots !== undefined ? Number(availableSlots) : null,
-                specialties: specialties ? String(specialties) : null
+                specialties: specialties ? String(specialties) : null,
+                commissionRate: commissionRate !== '' && commissionRate !== undefined ? Number(commissionRate) : 0.0,
+                baseSalary: baseSalary !== '' && baseSalary !== undefined ? Number(baseSalary) : 0.0
             }
         });
+
+        // 2. Create Login if requested
+        if (createLogin && loginEmail && loginPassword) {
+            try {
+                const hashed = await bcrypt.hash(String(loginPassword), 10);
+                await prisma.user.create({
+                    data: {
+                        email: String(loginEmail).trim(),
+                        password: hashed,
+                        name: trainer.name,
+                        role: 'TRAINER',
+                        trainerId: trainer.id
+                    }
+                });
+            } catch (e) {
+                console.error("Failed to create trainer login:", e);
+                // Don't fail the whole request, but maybe warn?
+            }
+        }
 
         const availability = setTrainerAvailability(trainer.id, req.body);
         res.json({ ...trainer, ...availability });
@@ -121,7 +163,9 @@ const updateTrainer = async (req, res) => {
             sessionPrice,
             sessionDurations,
             availableSlots,
-            specialties
+            specialties,
+            commissionRate,
+            baseSalary
         } = req.body;
 
         const trainer = await prisma.trainer.update({
@@ -139,7 +183,9 @@ const updateTrainer = async (req, res) => {
                 ...(sessionPrice !== undefined && sessionPrice !== '' ? { sessionPrice: Number(sessionPrice) } : {}),
                 ...(sessionDurations !== undefined ? { sessionDurations: String(sessionDurations) } : {}),
                 ...(availableSlots !== undefined ? { availableSlots: availableSlots === '' ? null : Number(availableSlots) } : {}),
-                ...(specialties !== undefined ? { specialties: specialties ? String(specialties) : null } : {})
+                ...(specialties !== undefined ? { specialties: specialties ? String(specialties) : null } : {}),
+                ...(commissionRate !== undefined && commissionRate !== '' ? { commissionRate: Number(commissionRate) } : {}),
+                ...(baseSalary !== undefined && baseSalary !== '' ? { baseSalary: Number(baseSalary) } : {})
             }
         });
 

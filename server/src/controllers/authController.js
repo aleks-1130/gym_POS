@@ -15,7 +15,8 @@ const register = async (req, res) => {
                 id: true,
                 email: true,
                 name: true,
-                role: true
+                role: true,
+                trainerId: true
             }
         });
         res.json({ message: "User created" });
@@ -39,8 +40,8 @@ const login = async (req, res) => {
                 email: true,
                 password: true,
                 name: true,
-                role: true
-                // Exclude trainerId
+                role: true,
+                trainerId: true
             }
         });
         console.log("[DEBUG] User Found:", !!user, user ? user.role : "N/A");
@@ -49,10 +50,8 @@ const login = async (req, res) => {
             const match = await bcrypt.compare(password, user.password);
             console.log("[DEBUG] Password Match:", match);
             if (match) {
-                // Ensure role is sent
-                // trainerId is missing in DB, so set to null
-                const token = jwt.sign({ id: user.id, role: user.role, type: 'USER', trainerId: null }, SECRET);
-                return res.json({ token, user: { id: user.id, name: user.name, role: user.role, trainerId: null } });
+                const token = jwt.sign({ id: user.id, role: user.role, type: 'USER', trainerId: user.trainerId }, SECRET);
+                return res.json({ token, user: { id: user.id, name: user.name, role: user.role, trainerId: user.trainerId } });
             }
         }
 

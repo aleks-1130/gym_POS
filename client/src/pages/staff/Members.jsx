@@ -5,6 +5,40 @@ import { useReactToPrint } from 'react-to-print';
 import QRCode from 'react-qr-code';
 import { useCurrency } from '../../context/CurrencyContext';
 import DataTable from '../../components/common/DataTable';
+import Modal from '../../components/common/Modal'; // Import reusable Modal
+
+class ErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null, errorInfo: null };
+    }
+
+    static getDerivedStateFromError(error) {
+        return { hasError: true };
+    }
+
+    componentDidCatch(error, errorInfo) {
+        this.setState({ error, errorInfo });
+        console.error("Uncaught error:", error, errorInfo);
+    }
+
+    render() {
+        if (this.state.hasError) {
+            return (
+                <div className="p-6 bg-red-900/20 border border-red-500 rounded-xl text-white">
+                    <h2 className="text-xl font-bold mb-2">Something went wrong.</h2>
+                    <details className="whitespace-pre-wrap text-sm font-mono text-red-200">
+                        {this.state.error && this.state.error.toString()}
+                        <br />
+                        {this.state.errorInfo && this.state.errorInfo.componentStack}
+                    </details>
+                </div>
+            );
+        }
+
+        return this.props.children;
+    }
+}
 
 
 export default function Members() {
@@ -14,64 +48,90 @@ export default function Members() {
     const [plans, setPlans] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
-    const [viewMode, setViewMode] = useState('grid'); // Changed from 'list' to 'grid'
+    const [viewMode, setViewMode] = useState('grid');
 
-    // Modal State
+    const [error, setError] = useState(null);
+
+    // Pagination State
+    const [currentPage, setCurrentPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const LIMIT = 12; // Items per page
+
+    // Standard State
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [showTCModal, setShowTCModal] = useState(false);
-    const [newMember, setNewMember] = useState(null);
-    const [qrMember, setQrMember] = useState(null);
+    const [formData, setFormData] = useState({ firstName: '', lastName: '', email: '', phone: '', planId: '', birthDate: '', sex: '', imageUrl: '', agreedToTC: false, paymentMethod: 'CASH' });
+    const [submitting, setSubmitting] = useState(false);
+    const [isCameraOpen, setIsCameraOpen] = useState(false);
+    const videoRef = useRef(null);
+    const canvasRef = useRef(null);
+
+    // Payment State
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [amountTendered, setAmountTendered] = useState('');
     const [gcashReference, setGcashReference] = useState('');
     const [gcashDate, setGcashDate] = useState('');
     const [gcashTime, setGcashTime] = useState('');
+
+    // Modal State
     const [showTransactionModal, setShowTransactionModal] = useState(false);
     const [transactionInfo, setTransactionInfo] = useState(null);
+    const [showTCModal, setShowTCModal] = useState(false);
+    const [newMember, setNewMember] = useState(null);
+    const [qrMember, setQrMember] = useState(null);
 
+    // Delete State
+    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+    const [memberToDelete, setMemberToDelete] = useState(null);
+    const [isDeleting, setIsDeleting] = useState(false);
 
-    const [formData, setFormData] = useState({
-        firstName: '',
-        lastName: '',
-        email: '',
-        phone: '',
-        planId: '',
-        paymentMethod: 'CASH',
-        birthDate: '',
-        sex: '',
-
-        imageUrl: '',
-        agreedToTC: false
-    });
-    const [submitting, setSubmitting] = useState(false);
-
-    // Webcam State
-    const [isCameraOpen, setIsCameraOpen] = useState(false);
-    const videoRef = useRef(null);
-    const canvasRef = useRef(null);
-
-    // Printing
-    const tcPrintRef = useRef();
-    const handlePrintTC = useReactToPrint({
-        contentRef: tcPrintRef,
-    });
-
+    // Debounce Search
     useEffect(() => {
-        fetchData();
+        const delaySearch = setTimeout(() => {
+            setCurrentPage(1); // Reset to page 1 on search
+            fetchData(1, searchTerm);
+        }, 500);
+
+        return () => clearTimeout(delaySearch);
+    }, [searchTerm]);
+
+    // Initial Load
+    useEffect(() => {
+        // We handle initial load in the debounce effect for search term ''
+        // But we need to fetch plans once
+        fetchPlans();
     }, []);
 
-    const fetchData = async () => {
+    const fetchPlans = async () => {
         try {
-            const [membersRes, plansRes] = await Promise.all([
-                axios.get('http://localhost:5000/api/members'),
-                axios.get('http://localhost:5000/api/plans')
-            ]);
-            setMembers(membersRes.data);
-            setPlans(plansRes.data);
+            const res = await axios.get('http://localhost:5000/api/plans');
+            setPlans(res.data);
+        } catch (e) { console.error("Failed to fetch plans"); }
+    };
+
+    const fetchData = async (page = 1, search = '') => {
+        setLoading(true);
+        setError(null);
+        try {
+            const res = await axios.get(`http://localhost:5000/api/members?page=${page}&limit=${LIMIT}&search=${search}`);
+            if (res.data.meta) {
+                setMembers(res.data.data);
+                setTotalPages(res.data.meta.totalPages);
+            } else {
+                // Fallback for non-paginated API (shouldn't happen with updated backend)
+                setMembers(res.data);
+            }
         } catch (e) {
-            console.error("Failed to fetch data");
+            console.error("Failed to fetch members", e);
+            setError(e.response?.data?.error || e.message || "Failed to load members");
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handlePageChange = (newPage) => {
+        if (newPage >= 1 && newPage <= totalPages) {
+            setCurrentPage(newPage);
+            fetchData(newPage, searchTerm);
         }
     };
 
@@ -167,11 +227,31 @@ export default function Members() {
         submitRegistration();
     };
 
-    const filteredMembers = members.filter(m =>
-        m.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        m.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (m.email && m.email.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
+    const handleDeleteMember = async () => {
+        if (!memberToDelete) return;
+        setIsDeleting(true);
+        try {
+            await axios.delete(`http://localhost:5000/api/members/${memberToDelete.id}`);
+            // Update local state
+            setMembers(members.filter(m => m.id !== memberToDelete.id));
+            setIsDeleteModalOpen(false);
+            setMemberToDelete(null);
+        } catch (e) {
+            console.error("Failed to delete member", e);
+            alert("Failed to delete member. Please try again.");
+        } finally {
+            setIsDeleting(false);
+        }
+    };
+
+    const openDeleteModal = (member, e) => {
+        e.stopPropagation();
+        setMemberToDelete(member);
+        setIsDeleteModalOpen(true);
+    };
+
+    // Server-side filtered members are directly in 'members' state
+    const filteredMembers = Array.isArray(members) ? members : [];
 
     const selectedPlan = plans.find(plan => plan.id === Number(formData.planId));
     const planPrice = selectedPlan ? selectedPlan.price : 0;
@@ -191,718 +271,760 @@ export default function Members() {
 
 
     return (
-        <div className="space-y-6">
-            <header className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-                <div>
-                    <h1 className="text-3xl font-bold text-white">Members</h1>
-                    <p className="text-text-muted mt-1">Manage memberships and access</p>
-                </div>
-                <div className="flex flex-wrap gap-4 items-center">
-                    <div className="relative">
-                        <input
-                            type="text"
-                            placeholder="Search members..."
-                            className="bg-surfaceHighlight border border-white/10 pl-10 pr-4 py-2 rounded-xl text-sm focus:ring-primary focus:border-primary outline-none w-64 text-white shadow-sm transition-all"
-                            value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                        />
-                        <span className="material-icons-round absolute left-3 top-2.5 text-text-muted text-[18px]">search</span>
+        <ErrorBoundary>
+            <div className="space-y-6">
+                <header className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+                    <div>
+                        <h1 className="text-3xl font-bold text-white">Members</h1>
+                        <p className="text-text-muted mt-1">Manage memberships and access</p>
                     </div>
+                    <div className="flex flex-wrap gap-4 items-center">
+                        <div className="relative">
+                            <input
+                                type="text"
+                                placeholder="Search members..."
+                                className="bg-surfaceHighlight border border-white/10 pl-10 pr-4 py-2 rounded-xl text-sm focus:ring-primary focus:border-primary outline-none w-64 text-white shadow-sm transition-all"
+                                value={searchTerm}
+                                onChange={e => setSearchTerm(e.target.value)}
+                            />
+                            <span className="material-icons-round absolute left-3 top-2.5 text-text-muted text-[18px]">search</span>
+                        </div>
 
-                    {/* View Toggles */}
-                    <div className="bg-surfaceHighlight border border-white/10 rounded-xl p-1 flex">
+                        {/* View Toggles */}
+                        <div className="bg-surfaceHighlight border border-white/10 rounded-xl p-1 flex">
+                            <button
+                                onClick={() => setViewMode('list')}
+                                className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white/10 text-white shadow-sm' : 'text-text-muted hover:text-white'}`}
+                                title="List View"
+                            >
+                                <span className="material-icons-round text-lg">format_list_bulleted</span>
+                            </button>
+                            <button
+                                onClick={() => setViewMode('grid')}
+                                className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white/10 text-white shadow-sm' : 'text-text-muted hover:text-white'}`}
+                                title="Grid View"
+                            >
+                                <span className="material-icons-round text-lg">grid_view</span>
+                            </button>
+                        </div>
+
                         <button
-                            onClick={() => setViewMode('list')}
-                            className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white/10 text-white shadow-sm' : 'text-text-muted hover:text-white'}`}
-                            title="List View"
+                            onClick={() => setIsModalOpen(true)}
+                            className="bg-primary hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-xl shadow-lg shadow-primary/20 flex items-center gap-2 transition-colors"
                         >
-                            <span className="material-icons-round text-lg">format_list_bulleted</span>
+                            <span className="material-icons-round">person_add</span>
+                            New Member
+                        </button>
+                    </div>
+                </header>
+
+                {error && (
+                    <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl flex items-center gap-2 animate-fade-in">
+                        <span className="material-icons-round">error_outline</span>
+                        {error}
+                    </div>
+                )}
+
+                {/* Pagination Controls - Top */}
+                <div className="flex items-center justify-between bg-surface border border-white/5 px-4 py-2 rounded-xl">
+                    <span className="text-text-muted text-sm">
+                        Page <span className="text-white font-bold">{currentPage}</span> of {totalPages}
+                    </span>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => handlePageChange(currentPage - 1)}
+                            disabled={currentPage === 1}
+                            className="p-1 px-3 rounded-lg border border-white/10 text-white hover:bg-white/10 disabled:opacity-50 disabled:hover:bg-transparent transition-all"
+                        >
+                            Prev
                         </button>
                         <button
-                            onClick={() => setViewMode('grid')}
-                            className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white/10 text-white shadow-sm' : 'text-text-muted hover:text-white'}`}
-                            title="Grid View"
+                            onClick={() => handlePageChange(currentPage + 1)}
+                            disabled={currentPage === totalPages}
+                            className="p-1 px-3 rounded-lg border border-white/10 text-white hover:bg-white/10 disabled:opacity-50 disabled:hover:bg-transparent transition-all"
                         >
-                            <span className="material-icons-round text-lg">grid_view</span>
+                            Next
                         </button>
                     </div>
-
-                    <button
-                        onClick={() => setIsModalOpen(true)}
-                        className="bg-primary hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-xl shadow-lg shadow-primary/20 flex items-center gap-2 transition-colors"
-                    >
-                        <span className="material-icons-round">person_add</span>
-                        New Member
-                    </button>
                 </div>
-            </header>
 
-            {/* Content Area */}
-            {viewMode === 'list' ? (
-                // LIST VIEW
-                // LIST VIEW
-                <DataTable
-                    columns={[
-                        {
-                            header: 'Member',
-                            accessor: (member) => (
-                                <div className="flex items-center gap-4">
+                {/* Content Area */}
+                {viewMode === 'list' ? (
+                    // LIST VIEW
+                    // LIST VIEW
+                    <DataTable
+                        columns={[
+                            {
+                                header: 'Member',
+                                accessor: (member) => (
+                                    <div className="flex items-center gap-4">
+                                        {member.imageUrl ? (
+                                            <img src={member.imageUrl} className="w-10 h-10 rounded-full object-cover border border-primary/20" alt="" />
+                                        ) : (
+                                            <div className="w-10 h-10 bg-gradient-to-br from-primary/20 to-primary/5 text-primary rounded-full flex items-center justify-center font-bold text-sm border border-primary/20 backdrop-blur-sm shadow-inner">
+                                                {member.firstName[0]}{member.lastName[0]}
+                                            </div>
+                                        )}
+                                        <div>
+                                            <p className="font-bold text-white group-hover:text-primary transition-colors">{member.firstName} {member.lastName}</p>
+                                            <p className="text-xs text-text-muted">{member.email}</p>
+                                        </div>
+                                    </div>
+                                )
+                            },
+                            {
+                                header: 'Plan',
+                                accessor: (member) => <span className="text-text-secondary font-medium">{member.plan?.name || "None"}</span>
+                            },
+                            {
+                                header: 'Status',
+                                accessor: (member) => (
+                                    <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(member.status)}`}>
+                                        {member.status}
+                                    </span>
+                                )
+                            },
+                            {
+                                header: 'Join Date',
+                                accessor: (member) => <span className="text-text-secondary text-sm">{new Date(member.startDate).toLocaleDateString()}</span>
+                            }
+                        ]}
+                        data={filteredMembers}
+                        onRowClick={(member) => navigate(`/members/${member.id}`)}
+                        actions={(member) => (
+                            <div className="flex items-center justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setQrMember(member);
+                                    }}
+                                    className="w-9 h-9 rounded-lg border border-white/10 bg-white/5 text-text-muted hover:text-white hover:border-primary/30 transition-all flex items-center justify-center"
+                                    title="View QR Code"
+                                >
+                                    <span className="material-icons-round text-[18px]">qr_code_2</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={(e) => openDeleteModal(member, e)}
+                                    className="w-9 h-9 rounded-lg border border-white/10 bg-white/5 text-text-muted hover:text-red-400 hover:border-red-500/30 transition-all flex items-center justify-center"
+                                    title="Delete Member"
+                                >
+                                    <span className="material-icons-round text-[18px]">delete</span>
+                                </button>
+                                <span className="material-icons-round text-text-muted group-hover:text-primary transition-colors">chevron_right</span>
+                            </div>
+                        )}
+                        isLoading={loading}
+                        emptyMessage="No members found."
+                    />
+                ) : (
+                    // GRID VIEW
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
+                        {filteredMembers.map(member => (
+                            <div
+                                key={member.id}
+                                onClick={() => navigate(`/members/${member.id}`)}
+                                className="bg-surface rounded-3xl border border-white/5 p-6 shadow-sm hover:shadow-xl hover:border-primary/30 transition-all cursor-pointer group flex flex-col gap-4"
+                            >
+                                <div className="flex justify-between items-start">
                                     {member.imageUrl ? (
-                                        <img src={member.imageUrl} className="w-10 h-10 rounded-full object-cover border border-primary/20" alt="" />
+                                        <img src={member.imageUrl} className="w-12 h-12 rounded-2xl object-cover border border-primary/20" alt="" />
                                     ) : (
-                                        <div className="w-10 h-10 bg-gradient-to-br from-primary/20 to-primary/5 text-primary rounded-full flex items-center justify-center font-bold text-sm border border-primary/20 backdrop-blur-sm shadow-inner">
+                                        <div className="w-12 h-12 bg-gradient-to-br from-primary/20 to-primary/5 text-primary rounded-2xl flex items-center justify-center font-bold text-lg border border-primary/20 shadow-inner">
                                             {member.firstName[0]}{member.lastName[0]}
                                         </div>
                                     )}
-                                    <div>
-                                        <p className="font-bold text-white group-hover:text-primary transition-colors">{member.firstName} {member.lastName}</p>
-                                        <p className="text-xs text-text-muted">{member.email}</p>
-                                    </div>
-                                </div>
-                            )
-                        },
-                        {
-                            header: 'Plan',
-                            accessor: (member) => <span className="text-text-secondary font-medium">{member.plan?.name || "None"}</span>
-                        },
-                        {
-                            header: 'Status',
-                            accessor: (member) => (
-                                <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(member.status)}`}>
-                                    {member.status}
-                                </span>
-                            )
-                        },
-                        {
-                            header: 'Join Date',
-                            accessor: (member) => <span className="text-text-secondary text-sm">{new Date(member.startDate).toLocaleDateString()}</span>
-                        }
-                    ]}
-                    data={filteredMembers}
-                    onRowClick={(member) => navigate(`/members/${member.id}`)}
-                    actions={(member) => (
-                        <div className="flex items-center justify-end gap-2">
-                            <button
-                                type="button"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setQrMember(member);
-                                }}
-                                className="w-9 h-9 rounded-lg border border-white/10 bg-white/5 text-text-muted hover:text-white hover:border-primary/30 transition-all flex items-center justify-center"
-                                title="View QR Code"
-                            >
-                                <span className="material-icons-round text-[18px]">qr_code_2</span>
-                            </button>
-                            <span className="material-icons-round text-text-muted group-hover:text-primary transition-colors">chevron_right</span>
-                        </div>
-                    )}
-                    isLoading={loading}
-                    emptyMessage="No members found."
-                />
-            ) : (
-                // GRID VIEW
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
-                    {filteredMembers.map(member => (
-                        <div
-                            key={member.id}
-                            onClick={() => navigate(`/members/${member.id}`)}
-                            className="bg-surface rounded-3xl border border-white/5 p-6 shadow-sm hover:shadow-xl hover:border-primary/30 transition-all cursor-pointer group flex flex-col gap-4"
-                        >
-                            <div className="flex justify-between items-start">
-                                {member.imageUrl ? (
-                                    <img src={member.imageUrl} className="w-12 h-12 rounded-2xl object-cover border border-primary/20" alt="" />
-                                ) : (
-                                    <div className="w-12 h-12 bg-gradient-to-br from-primary/20 to-primary/5 text-primary rounded-2xl flex items-center justify-center font-bold text-lg border border-primary/20 shadow-inner">
-                                        {member.firstName[0]}{member.lastName[0]}
-                                    </div>
-                                )}
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setQrMember(member);
-                                        }}
-                                        className="w-8 h-8 rounded-lg border border-white/10 bg-white/5 text-text-muted hover:text-white hover:border-primary/30 transition-all flex items-center justify-center"
-                                        title="View QR Code"
-                                    >
-                                        <span className="material-icons-round text-[16px]">qr_code_2</span>
-                                    </button>
-                                    <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${getStatusColor(member.status)}`}>
-                                        {member.status}
-                                    </span>
-                                </div>
-                            </div>
-
-                            <div>
-                                <h3 className="text-lg font-bold text-white group-hover:text-primary transition-colors truncate">
-                                    {member.firstName} {member.lastName}
-                                </h3>
-                                <p className="text-sm text-text-muted truncate">{member.email}</p>
-                                <p className="text-xs text-text-secondary mt-1">{member.phone}</p>
-                            </div>
-
-                            <div className="mt-auto pt-4 border-t border-white/5 grid grid-cols-2 gap-2 text-sm">
-                                <div>
-                                    <p className="text-text-muted text-xs">Plan</p>
-                                    <p className="text-white font-medium truncate">{member.plan?.name || "None"}</p>
-                                </div>
-                                <div className="text-right">
-                                    <p className="text-text-muted text-xs">Expires</p>
-                                    <p className={`font-medium ${new Date(member.expiryDate) < new Date() ? 'text-red-400' : 'text-emerald-400'}`}>
-                                        {member.expiryDate ? new Date(member.expiryDate).toLocaleDateString() : 'N/A'}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-                    {filteredMembers.length === 0 && !loading && (
-                        <div className="col-span-full p-12 text-center text-text-muted bg-surface rounded-3xl border border-white/5">
-                            No members found.
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* Register Member Modal */}
-            {isModalOpen && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-                    <div className="bg-surface rounded-3xl border border-white/10 w-full max-w-2xl shadow-2xl overflow-hidden scale-100 transition-transform max-h-[90vh] flex flex-col">
-                        <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
-                            <h2 className="text-xl font-bold text-white">Register New Member</h2>
-                            <button onClick={() => { stopCamera(); setIsModalOpen(false); }} className="text-text-muted hover:text-white transition-colors">
-                                <span className="material-icons-round">close</span>
-                            </button>
-                        </div>
-
-                        <form onSubmit={handleRegister} className="p-6 space-y-6 overflow-y-auto">
-                            {/* Profile Photo Capture */}
-                            <div className="flex flex-col items-center gap-4">
-                                <div className="relative w-32 h-32 rounded-3xl overflow-hidden border-2 border-dashed border-white/20 bg-white/5 flex items-center justify-center">
-                                    {isCameraOpen ? (
-                                        <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover scale-x-[-1]" />
-                                    ) : formData.imageUrl ? (
-                                        <img src={formData.imageUrl} className="w-full h-full object-cover" alt="Captured" />
-                                    ) : (
-                                        <span className="material-icons-round text-4xl text-white/20">person</span>
-                                    )}
-                                    {isCameraOpen && (
+                                    <div className="flex items-center gap-2">
                                         <button
                                             type="button"
-                                            onClick={capturePhoto}
-                                            className="absolute bottom-2 right-2 bg-primary text-white p-2 rounded-full shadow-lg hover:scale-110 active:scale-95 transition-all"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setQrMember(member);
+                                            }}
+                                            className="w-8 h-8 rounded-lg border border-white/10 bg-white/5 text-text-muted hover:text-white hover:border-primary/30 transition-all flex items-center justify-center"
+                                            title="View QR Code"
                                         >
-                                            <span className="material-icons-round text-sm">photo_camera</span>
+                                            <span className="material-icons-round text-[16px]">qr_code_2</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => openDeleteModal(member, e)}
+                                            className="w-8 h-8 rounded-lg border border-white/10 bg-white/5 text-text-muted hover:text-red-400 hover:border-red-500/30 transition-all flex items-center justify-center"
+                                            title="Delete Member"
+                                        >
+                                            <span className="material-icons-round text-[16px]">delete</span>
+                                        </button>
+                                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${getStatusColor(member.status)}`}>
+                                            {member.status}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <h3 className="text-lg font-bold text-white group-hover:text-primary transition-colors truncate">
+                                        {member.firstName} {member.lastName}
+                                    </h3>
+                                    <p className="text-sm text-text-muted truncate">{member.email}</p>
+                                    <p className="text-xs text-text-secondary mt-1">{member.phone}</p>
+                                </div>
+
+                                <div className="mt-auto pt-4 border-t border-white/5 grid grid-cols-2 gap-2 text-sm">
+                                    <div>
+                                        <p className="text-text-muted text-xs">Plan</p>
+                                        <p className="text-white font-medium truncate">{member.plan?.name || "None"}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-text-muted text-xs">Expires</p>
+                                        <p className={`font-medium ${new Date(member.expiryDate) < new Date() ? 'text-red-400' : 'text-emerald-400'}`}>
+                                            {member.expiryDate ? new Date(member.expiryDate).toLocaleDateString() : 'N/A'}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                        {filteredMembers.length === 0 && !loading && (
+                            <div className="col-span-full p-12 text-center text-text-muted bg-surface rounded-3xl border border-white/5">
+                                No members found.
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Register Member Modal */}
+                {isModalOpen && (
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+                        <div className="bg-surface rounded-3xl border border-white/10 w-full max-w-2xl shadow-2xl overflow-hidden scale-100 transition-transform max-h-[90vh] flex flex-col">
+                            <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
+                                <h2 className="text-xl font-bold text-white">Register New Member</h2>
+                                <button onClick={() => { stopCamera(); setIsModalOpen(false); }} className="text-text-muted hover:text-white transition-colors">
+                                    <span className="material-icons-round">close</span>
+                                </button>
+                            </div>
+
+                            <form onSubmit={handleRegister} className="p-6 space-y-6 overflow-y-auto">
+                                {/* Profile Photo Capture */}
+                                <div className="flex flex-col items-center gap-4">
+                                    <div className="relative w-32 h-32 rounded-3xl overflow-hidden border-2 border-dashed border-white/20 bg-white/5 flex items-center justify-center">
+                                        {isCameraOpen ? (
+                                            <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover scale-x-[-1]" />
+                                        ) : formData.imageUrl ? (
+                                            <img src={formData.imageUrl} className="w-full h-full object-cover" alt="Captured" />
+                                        ) : (
+                                            <span className="material-icons-round text-4xl text-white/20">person</span>
+                                        )}
+                                        {isCameraOpen && (
+                                            <button
+                                                type="button"
+                                                onClick={capturePhoto}
+                                                className="absolute bottom-2 right-2 bg-primary text-white p-2 rounded-full shadow-lg hover:scale-110 active:scale-95 transition-all"
+                                            >
+                                                <span className="material-icons-round text-sm">photo_camera</span>
+                                            </button>
+                                        )}
+                                    </div>
+                                    {!isCameraOpen ? (
+                                        <button
+                                            type="button"
+                                            onClick={startCamera}
+                                            className="text-xs font-bold text-primary flex items-center gap-1 hover:underline"
+                                        >
+                                            <span className="material-icons-round text-sm">{formData.imageUrl ? 'retake_photo' : 'add_a_photo'}</span>
+                                            {formData.imageUrl ? 'Change Photo' : 'Capture Member Photo'}
+                                        </button>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={stopCamera}
+                                            className="text-xs font-bold text-red-400 flex items-center gap-1 hover:underline"
+                                        >
+                                            Cancel Camera
                                         </button>
                                     )}
                                 </div>
-                                {!isCameraOpen ? (
-                                    <button
-                                        type="button"
-                                        onClick={startCamera}
-                                        className="text-xs font-bold text-primary flex items-center gap-1 hover:underline"
-                                    >
-                                        <span className="material-icons-round text-sm">{formData.imageUrl ? 'retake_photo' : 'add_a_photo'}</span>
-                                        {formData.imageUrl ? 'Change Photo' : 'Capture Member Photo'}
-                                    </button>
-                                ) : (
-                                    <button
-                                        type="button"
-                                        onClick={stopCamera}
-                                        className="text-xs font-bold text-red-400 flex items-center gap-1 hover:underline"
-                                    >
-                                        Cancel Camera
-                                    </button>
-                                )}
-                            </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">First Name</label>
-                                    <input
-                                        type="text"
-                                        required
-                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/20 focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
-                                        placeholder="John"
-                                        value={formData.firstName}
-                                        onChange={e => setFormData({ ...formData, firstName: e.target.value })}
-                                    />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">First Name</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/20 focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
+                                            placeholder="John"
+                                            value={formData.firstName}
+                                            onChange={e => setFormData({ ...formData, firstName: e.target.value })}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Last Name</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/20 focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
+                                            placeholder="Doe"
+                                            value={formData.lastName}
+                                            onChange={e => setFormData({ ...formData, lastName: e.target.value })}
+                                        />
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Last Name</label>
-                                    <input
-                                        type="text"
-                                        required
-                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/20 focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
-                                        placeholder="Doe"
-                                        value={formData.lastName}
-                                        onChange={e => setFormData({ ...formData, lastName: e.target.value })}
-                                    />
-                                </div>
-                            </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Email Address</label>
-                                    <input
-                                        type="email"
-                                        required
-                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/20 focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
-                                        placeholder="john@example.com"
-                                        value={formData.email}
-                                        onChange={e => setFormData({ ...formData, email: e.target.value })}
-                                    />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Email Address</label>
+                                        <input
+                                            type="email"
+                                            required
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/20 focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
+                                            placeholder="john@example.com"
+                                            value={formData.email}
+                                            onChange={e => setFormData({ ...formData, email: e.target.value })}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Phone Number</label>
+                                        <input
+                                            type="tel"
+                                            required
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/20 focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
+                                            placeholder="+1 234 567 890"
+                                            value={formData.phone}
+                                            onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                                        />
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Phone Number</label>
-                                    <input
-                                        type="tel"
-                                        required
-                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/20 focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
-                                        placeholder="+1 234 567 890"
-                                        value={formData.phone}
-                                        onChange={e => setFormData({ ...formData, phone: e.target.value })}
-                                    />
-                                </div>
-                            </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Birthday</label>
-                                    <input
-                                        type="date"
-                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
-                                        value={formData.birthDate}
-                                        onChange={e => setFormData({ ...formData, birthDate: e.target.value })}
-                                    />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Birthday</label>
+                                        <input
+                                            type="date"
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
+                                            value={formData.birthDate}
+                                            onChange={e => setFormData({ ...formData, birthDate: e.target.value })}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Sex</label>
+                                        <div className="relative">
+                                            <select
+                                                className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none appearance-none cursor-pointer transition-all"
+                                                value={formData.sex}
+                                                onChange={e => setFormData({ ...formData, sex: e.target.value })}
+                                            >
+                                                <option value="" className="bg-surface">Select sex</option>
+                                                <option value="Male" className="bg-surface">Male</option>
+                                                <option value="Female" className="bg-surface">Female</option>
+                                                <option value="Other" className="bg-surface">Other</option>
+                                            </select>
+                                            <span className="material-icons-round absolute right-4 top-3 text-text-muted pointer-events-none text-sm">expand_more</span>
+                                        </div>
+                                    </div>
                                 </div>
+
+
+
                                 <div>
-                                    <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Sex</label>
+                                    <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Membership Plan</label>
                                     <div className="relative">
                                         <select
+                                            required
                                             className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none appearance-none cursor-pointer transition-all"
-                                            value={formData.sex}
-                                            onChange={e => setFormData({ ...formData, sex: e.target.value })}
+                                            value={formData.planId}
+                                            onChange={e => setFormData({ ...formData, planId: e.target.value })}
                                         >
-                                            <option value="" className="bg-surface">Select sex</option>
-                                            <option value="Male" className="bg-surface">Male</option>
-                                            <option value="Female" className="bg-surface">Female</option>
-                                            <option value="Other" className="bg-surface">Other</option>
+                                            <option value="" disabled>Select a plan</option>
+                                            {plans.map(plan => (
+                                                <option key={plan.id} value={plan.id} className="bg-surface text-white">
+                                                    {plan.name} - ₱{plan.price} ({plan.duration} days)
+                                                </option>
+                                            ))}
                                         </select>
                                         <span className="material-icons-round absolute right-4 top-3 text-text-muted pointer-events-none text-sm">expand_more</span>
                                     </div>
                                 </div>
-                            </div>
-
-
-
-                            <div>
-                                <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Membership Plan</label>
-                                <div className="relative">
-                                    <select
-                                        required
-                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none appearance-none cursor-pointer transition-all"
-                                        value={formData.planId}
-                                        onChange={e => setFormData({ ...formData, planId: e.target.value })}
-                                    >
-                                        <option value="" disabled>Select a plan</option>
-                                        {plans.map(plan => (
-                                            <option key={plan.id} value={plan.id} className="bg-surface text-white">
-                                                {plan.name} - ₱{plan.price} ({plan.duration} days)
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <span className="material-icons-round absolute right-4 top-3 text-text-muted pointer-events-none text-sm">expand_more</span>
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Payment Method</label>
-                                <div className="relative">
-                                    <select
-                                        required
-                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none appearance-none cursor-pointer transition-all"
-                                        value={formData.paymentMethod}
-                                        onChange={e => setFormData({ ...formData, paymentMethod: e.target.value })}
-                                    >
-                                        <option value="CASH" className="bg-surface">Cash</option>
-                                        <option value="CARD" className="bg-surface">Card</option>
-                                        <option value="GCASH" className="bg-surface">GCash</option>
-                                        <option value="TRANSFER" className="bg-surface">Transfer</option>
-                                    </select>
-                                    <span className="material-icons-round absolute right-4 top-3 text-text-muted pointer-events-none text-sm">expand_more</span>
-                                </div>
-                            </div>
-
-                            {/* Terms and Conditions Checkbox */}
-                            <div className="bg-white/5 p-4 rounded-2xl border border-white/10">
-                                <label className="flex items-start gap-4 cursor-pointer group">
-                                    <div className="relative mt-1">
-                                        <input
-                                            type="checkbox"
+                                <div>
+                                    <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Payment Method</label>
+                                    <div className="relative">
+                                        <select
                                             required
-                                            className="peer sr-only"
-                                            checked={formData.agreedToTC}
-                                            onChange={e => setFormData({ ...formData, agreedToTC: e.target.checked })}
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none appearance-none cursor-pointer transition-all"
+                                            value={formData.paymentMethod}
+                                            onChange={e => setFormData({ ...formData, paymentMethod: e.target.value })}
+                                        >
+                                            <option value="CASH" className="bg-surface">Cash</option>
+                                            <option value="CARD" className="bg-surface">Card</option>
+                                            <option value="GCASH" className="bg-surface">GCash</option>
+                                            <option value="TRANSFER" className="bg-surface">Transfer</option>
+                                        </select>
+                                        <span className="material-icons-round absolute right-4 top-3 text-text-muted pointer-events-none text-sm">expand_more</span>
+                                    </div>
+                                </div>
+
+                                {/* Terms and Conditions Checkbox */}
+                                <div className="bg-white/5 p-4 rounded-2xl border border-white/10">
+                                    <label className="flex items-start gap-4 cursor-pointer group">
+                                        <div className="relative mt-1">
+                                            <input
+                                                type="checkbox"
+                                                required
+                                                className="peer sr-only"
+                                                checked={formData.agreedToTC}
+                                                onChange={e => setFormData({ ...formData, agreedToTC: e.target.checked })}
+                                            />
+                                            <div className="w-5 h-5 bg-surfaceHighlight border border-white/20 rounded-md peer-checked:bg-primary peer-checked:border-primary transition-all"></div>
+                                            <span className="material-icons-round absolute inset-0 text-white text-[16px] hidden peer-checked:block text-center leading-5 font-bold">check</span>
+                                        </div>
+                                        <div className="flex-1">
+                                            <p className="text-sm font-medium text-white group-hover:text-primary transition-colors">Agree to Terms & Conditions</p>
+                                            <p className="text-xs text-text-muted leading-relaxed mt-1">
+                                                I hereby acknowledge that I have read and agree to the Gym's Safety Regulations, Membership Policies, and Privacy Agreement.
+                                            </p>
+                                        </div>
+                                    </label>
+                                </div>
+
+                                <div className="pt-4 flex justify-end gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => { stopCamera(); setIsModalOpen(false); }}
+                                        className="px-6 py-2.5 rounded-xl text-text-muted hover:text-white hover:bg-white/5 transition-all font-medium"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={submitting}
+                                        className="px-6 py-2.5 rounded-xl bg-primary hover:bg-orange-600 text-white font-bold shadow-lg shadow-primary/20 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {submitting ? 'Registering...' : 'Register Member'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                        {/* Hidden canvas for capture */}
+                        <canvas ref={canvasRef} className="hidden" />
+                    </div>
+                )}
+
+                {/* Cash Payment Modal */}
+                {showPaymentModal && formData.paymentMethod === 'CASH' && (
+                    <div className="fixed inset-0 z-[55] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                        <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6">
+                            <div className="text-center mb-6">
+                                <h2 className="text-2xl font-bold text-white mb-2">Cash Payment</h2>
+                                <p className="text-text-muted">Amount Due</p>
+                                <p className="text-4xl font-bold text-primary mt-1">{formatPrice(planPrice)}</p>
+                            </div>
+
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="block text-text-muted text-sm font-medium mb-2">Amount Tendered</label>
+                                    <div className="relative">
+                                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white font-bold">₱</span>
+                                        <input
+                                            type="number"
+                                            autoFocus
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-4 pl-8 pr-4 text-white text-xl font-bold focus:border-green-500 outline-none"
+                                            placeholder="0.00"
+                                            value={amountTendered}
+                                            onChange={(e) => setAmountTendered(e.target.value)}
                                         />
-                                        <div className="w-5 h-5 bg-surfaceHighlight border border-white/20 rounded-md peer-checked:bg-primary peer-checked:border-primary transition-all"></div>
-                                        <span className="material-icons-round absolute inset-0 text-white text-[16px] hidden peer-checked:block text-center leading-5 font-bold">check</span>
                                     </div>
-                                    <div className="flex-1">
-                                        <p className="text-sm font-medium text-white group-hover:text-primary transition-colors">Agree to Terms & Conditions</p>
-                                        <p className="text-xs text-text-muted leading-relaxed mt-1">
-                                            I hereby acknowledge that I have read and agree to the Gym's Safety Regulations, Membership Policies, and Privacy Agreement.
-                                        </p>
-                                    </div>
-                                </label>
-                            </div>
+                                </div>
 
-                            <div className="pt-4 flex justify-end gap-3">
-                                <button
-                                    type="button"
-                                    onClick={() => { stopCamera(); setIsModalOpen(false); }}
-                                    className="px-6 py-2.5 rounded-xl text-text-muted hover:text-white hover:bg-white/5 transition-all font-medium"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={submitting}
-                                    className="px-6 py-2.5 rounded-xl bg-primary hover:bg-orange-600 text-white font-bold shadow-lg shadow-primary/20 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {submitting ? 'Registering...' : 'Register Member'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                    {/* Hidden canvas for capture */}
-                    <canvas ref={canvasRef} className="hidden" />
-                </div>
-            )}
+                                <div className="bg-white/5 rounded-xl p-4 flex justify-between items-center">
+                                    <span className="text-text-secondary">Change Due:</span>
+                                    <span className={`text-2xl font-bold ${cashTenderedValue >= amountDueLocal ? 'text-green-400' : 'text-red-400'}`}>
+                                        {formatPrice(changeDue)}
+                                    </span>
+                                </div>
 
-            {/* Cash Payment Modal */}
-            {showPaymentModal && formData.paymentMethod === 'CASH' && (
-                <div className="fixed inset-0 z-[55] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-                    <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6">
-                        <div className="text-center mb-6">
-                            <h2 className="text-2xl font-bold text-white mb-2">Cash Payment</h2>
-                            <p className="text-text-muted">Amount Due</p>
-                            <p className="text-4xl font-bold text-primary mt-1">{formatPrice(planPrice)}</p>
-                        </div>
-
-                        <div className="space-y-6">
-                            <div>
-                                <label className="block text-text-muted text-sm font-medium mb-2">Amount Tendered</label>
-                                <div className="relative">
-                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white font-bold">₱</span>
-                                    <input
-                                        type="number"
-                                        autoFocus
-                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-4 pl-8 pr-4 text-white text-xl font-bold focus:border-green-500 outline-none"
-                                        placeholder="0.00"
-                                        value={amountTendered}
-                                        onChange={(e) => setAmountTendered(e.target.value)}
-                                    />
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => setShowPaymentModal(false)}
+                                        className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 rounded-xl"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            const tenderedAmount = cashTenderedValue;
+                                            if (cashTenderedValue < amountDueLocal) return;
+                                            setShowPaymentModal(false);
+                                            submitRegistration({
+                                                cashTendered: tenderedAmount,
+                                                changeDue: changeDue
+                                            });
+                                        }}
+                                        disabled={cashTenderedValue < amountDueLocal || submitting}
+                                        className="flex-1 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl flex items-center justify-center gap-2"
+                                    >
+                                        {submitting && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>}
+                                        Confirm Payment
+                                    </button>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                )}
 
-                            <div className="bg-white/5 rounded-xl p-4 flex justify-between items-center">
-                                <span className="text-text-secondary">Change Due:</span>
-                                <span className={`text-2xl font-bold ${cashTenderedValue >= amountDueLocal ? 'text-green-400' : 'text-red-400'}`}>
-                                    {formatPrice(changeDue)}
-                                </span>
+                {/* GCash Payment Modal */}
+                {showPaymentModal && formData.paymentMethod === 'GCASH' && (
+                    <div className="fixed inset-0 z-[55] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                        <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6">
+                            <div className="text-center mb-6">
+                                <h2 className="text-2xl font-bold text-white mb-2">GCash Payment</h2>
+                                <p className="text-text-muted">Amount Due</p>
+                                <p className="text-4xl font-bold text-primary mt-1">{formatPrice(planPrice)}</p>
                             </div>
 
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={() => setShowPaymentModal(false)}
-                                    className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 rounded-xl"
-                                >
-                                    Cancel
-                                </button>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-text-muted text-sm font-medium mb-2">GCash Reference ID</label>
+                                    <input
+                                        type="text"
+                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-3 px-4 text-white text-sm font-bold focus:border-primary outline-none"
+                                        placeholder="Enter GCash transaction ID"
+                                        value={gcashReference}
+                                        onChange={(e) => setGcashReference(e.target.value)}
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-text-muted text-sm font-medium mb-2">Date</label>
+                                        <input
+                                            type="date"
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-3 px-4 text-white text-sm focus:border-primary outline-none"
+                                            value={gcashDate}
+                                            onChange={(e) => setGcashDate(e.target.value)}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-text-muted text-sm font-medium mb-2">Time</label>
+                                        <input
+                                            type="time"
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-3 px-4 text-white text-sm focus:border-primary outline-none"
+                                            value={gcashTime}
+                                            onChange={(e) => setGcashTime(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => setShowPaymentModal(false)}
+                                        className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 rounded-xl"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            if (!gcashReference || !gcashDate || !gcashTime) return;
+                                            setShowPaymentModal(false);
+                                            submitRegistration({
+                                                gcashReference,
+                                                gcashDate,
+                                                gcashTime
+                                            });
+                                        }}
+                                        disabled={!gcashReference || !gcashDate || !gcashTime || submitting}
+                                        className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl flex items-center justify-center gap-2"
+                                    >
+                                        {submitting && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>}
+                                        Confirm Payment
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Transaction Info Modal */}
+                {showTransactionModal && transactionInfo && (
+                    <div className="fixed inset-0 z-[58] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                        <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-sm w-full p-6">
+                            <h3 className="text-xl font-bold text-white mb-2">Transaction Created</h3>
+                            <p className="text-text-muted text-sm mb-4">Please record the details below.</p>
+                            <div className="bg-white/5 rounded-xl p-4 space-y-3 text-sm">
+                                <div className="flex justify-between text-text-muted">
+                                    <span>Transaction ID</span>
+                                    <span className="text-white font-bold">#{transactionInfo.id}</span>
+                                </div>
+                                <div className="flex justify-between text-text-muted">
+                                    <span>Date</span>
+                                    <span className="text-white">{new Date(transactionInfo.date).toLocaleDateString('en-US')}</span>
+                                </div>
+                                <div className="flex justify-between text-text-muted">
+                                    <span>Time</span>
+                                    <span className="text-white">{new Date(transactionInfo.date).toLocaleTimeString()}</span>
+                                </div>
+                            </div>
+                            <div className="mt-6 flex gap-3">
                                 <button
                                     onClick={() => {
-                                        const tenderedAmount = cashTenderedValue;
-                                        if (cashTenderedValue < amountDueLocal) return;
-                                        setShowPaymentModal(false);
-                                        submitRegistration({
-                                            cashTendered: tenderedAmount,
-                                            changeDue: changeDue
-                                        });
+                                        setShowTransactionModal(false);
+                                        setShowTCModal(true);
                                     }}
-                                    disabled={cashTenderedValue < amountDueLocal || submitting}
-                                    className="flex-1 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl flex items-center justify-center gap-2"
+                                    className="flex-1 py-3 bg-primary hover:bg-orange-600 text-white font-bold rounded-xl"
                                 >
-                                    {submitting && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>}
-                                    Confirm Payment
+                                    Continue
                                 </button>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )}
 
-            {/* GCash Payment Modal */}
-            {showPaymentModal && formData.paymentMethod === 'GCASH' && (
-                <div className="fixed inset-0 z-[55] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-                    <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6">
-                        <div className="text-center mb-6">
-                            <h2 className="text-2xl font-bold text-white mb-2">GCash Payment</h2>
-                            <p className="text-text-muted">Amount Due</p>
-                            <p className="text-4xl font-bold text-primary mt-1">{formatPrice(planPrice)}</p>
-                        </div>
-
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-text-muted text-sm font-medium mb-2">GCash Reference ID</label>
-                                <input
-                                    type="text"
-                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-3 px-4 text-white text-sm font-bold focus:border-primary outline-none"
-                                    placeholder="Enter GCash transaction ID"
-                                    value={gcashReference}
-                                    onChange={(e) => setGcashReference(e.target.value)}
-                                />
+                {/* Terms and Conditions Print Modal */}
+                {showTCModal && newMember && (
+                    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-[60] animate-fade-in">
+                        <div className="bg-surface rounded-3xl border border-white/10 w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col">
+                            <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
+                                <h2 className="text-xl font-bold text-white">Membership Agreement</h2>
+                                <button onClick={() => setShowTCModal(false)} className="text-text-muted hover:text-white transition-colors">
+                                    <span className="material-icons-round">close</span>
+                                </button>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-text-muted text-sm font-medium mb-2">Date</label>
-                                    <input
-                                        type="date"
-                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-3 px-4 text-white text-sm focus:border-primary outline-none"
-                                        value={gcashDate}
-                                        onChange={(e) => setGcashDate(e.target.value)}
-                                    />
+                            <div className="p-8 overflow-y-auto max-h-[70vh] bg-white text-black font-serif" ref={tcPrintRef}>
+                                <div className="text-center mb-8">
+                                    <h1 className="text-3xl font-black uppercase tracking-widest border-b-2 border-black pb-2 mb-1">Gym POS Membership Form</h1>
+                                    <p className="text-sm italic">Official Registration & Waiver Agreement</p>
                                 </div>
-                                <div>
-                                    <label className="block text-text-muted text-sm font-medium mb-2">Time</label>
-                                    <input
-                                        type="time"
-                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-3 px-4 text-white text-sm focus:border-primary outline-none"
-                                        value={gcashTime}
-                                        onChange={(e) => setGcashTime(e.target.value)}
-                                    />
+
+                                <div className="grid grid-cols-2 gap-4 mb-8 text-sm">
+                                    <div className="border border-black p-3 rounded">
+                                        <p className="font-bold border-b border-black mb-1">MEMBER INFORMATION</p>
+                                        <p><strong>Name:</strong> {newMember.firstName} {newMember.lastName}</p>
+                                        <p><strong>Email:</strong> {newMember.email}</p>
+                                        <p><strong>Phone:</strong> {newMember.phone}</p>
+                                    </div>
+                                    <div className="border border-black p-3 rounded">
+                                        <p className="font-bold border-b border-black mb-1">MEMBERSHIP DETAILS</p>
+                                        <p><strong>Status:</strong> {newMember.status}</p>
+                                        <p><strong>Join Date:</strong> {new Date(newMember.startDate).toLocaleDateString()}</p>
+                                        <p><strong>Expiry Date:</strong> {new Date(newMember.expiryDate).toLocaleDateString()}</p>
+                                    </div>
+                                </div>
+                                <div className="border border-black p-3 rounded mb-8 text-sm flex items-center justify-between gap-6">
+                                    <div>
+                                        <p className="font-bold border-b border-black mb-1">MEMBER QR CODE</p>
+                                        <p><strong>ID:</strong> {newMember.id}</p>
+                                        <p><strong>Code:</strong> MEMBER:{newMember.id}</p>
+                                    </div>
+                                    <div className="bg-white p-2 border border-black">
+                                        <QRCode value={getQrValue(newMember.id)} size={96} />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4 text-xs leading-relaxed">
+                                    <section>
+                                        <p className="font-bold uppercase mb-1">1. Health and Safety</p>
+                                        <p>I confirm that I am in good physical health and have no medical conditions that would prevent me from using the gym facilities safely. I assume all risks associated with physical exercise.</p>
+                                    </section>
+                                    <section>
+                                        <p className="font-bold uppercase mb-1">2. Rules and Regulations</p>
+                                        <p>Members must follow all gym rules, including appropriate attire and proper equipment usage. Management reserves the right to terminate membership for violation of rules.</p>
+                                    </section>
+                                    <section>
+                                        <p className="font-bold uppercase mb-1">3. Liability Waiver</p>
+                                        <p>The gym is not responsible for any lost or stolen items. Members use the facilities at their own risk. The gym and its staff are not liable for any injuries sustained on the premises.</p>
+                                    </section>
+                                    <section>
+                                        <p className="font-bold uppercase mb-1">4. Membership Cancellation</p>
+                                        <p>Membership fees are non-refundable. Notice requirement for cancellation depends on the specific plan purchased.</p>
+                                    </section>
+                                </div>
+
+                                <div className="mt-12 grid grid-cols-2 gap-12 text-sm italic">
+                                    <div className="border-t border-black pt-2">
+                                        <p>Member Signature</p>
+                                    </div>
+                                    <div className="border-t border-black pt-2">
+                                        <p>Gym Official Signature</p>
+                                        <p className="text-[10px] mt-1">Date: {new Date().toLocaleDateString()}</p>
+                                    </div>
                                 </div>
                             </div>
 
-                            <div className="flex gap-3">
+                            <div className="p-6 border-t border-white/5 bg-white/5 flex gap-4">
                                 <button
-                                    onClick={() => setShowPaymentModal(false)}
-                                    className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 rounded-xl"
+                                    onClick={() => setShowTCModal(false)}
+                                    className="flex-1 py-3 border border-white/10 rounded-xl text-text-muted hover:text-white transition-all font-bold"
                                 >
-                                    Cancel
+                                    Not Now
                                 </button>
                                 <button
-                                    onClick={() => {
-                                        if (!gcashReference || !gcashDate || !gcashTime) return;
-                                        setShowPaymentModal(false);
-                                        submitRegistration({
-                                            gcashReference,
-                                            gcashDate,
-                                            gcashTime
-                                        });
-                                    }}
-                                    disabled={!gcashReference || !gcashDate || !gcashTime || submitting}
-                                    className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl flex items-center justify-center gap-2"
+                                    onClick={handlePrintTC}
+                                    className="flex-1 py-3 bg-primary hover:bg-orange-600 text-white rounded-xl font-bold shadow-lg shadow-primary/20 flex items-center justify-center gap-2 transition-all"
                                 >
-                                    {submitting && <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>}
-                                    Confirm Payment
+                                    <span className="material-icons-round">print</span>
+                                    Print Agreement
                                 </button>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+                }
 
-            {/* Transaction Info Modal */}
-            {showTransactionModal && transactionInfo && (
-                <div className="fixed inset-0 z-[58] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-                    <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-sm w-full p-6">
-                        <h3 className="text-xl font-bold text-white mb-2">Transaction Created</h3>
-                        <p className="text-text-muted text-sm mb-4">Please record the details below.</p>
-                        <div className="bg-white/5 rounded-xl p-4 space-y-3 text-sm">
-                            <div className="flex justify-between text-text-muted">
-                                <span>Transaction ID</span>
-                                <span className="text-white font-bold">#{transactionInfo.id}</span>
-                            </div>
-                            <div className="flex justify-between text-text-muted">
-                                <span>Date</span>
-                                <span className="text-white">{new Date(transactionInfo.date).toLocaleDateString('en-US')}</span>
-                            </div>
-                            <div className="flex justify-between text-text-muted">
-                                <span>Time</span>
-                                <span className="text-white">{new Date(transactionInfo.date).toLocaleTimeString()}</span>
+                {/* QR Code Modal */}
+                {
+                    qrMember && (
+                        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[70] animate-fade-in">
+                            <div className="bg-surface rounded-3xl border border-white/10 w-full max-w-sm shadow-2xl overflow-hidden">
+                                <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
+                                    <div>
+                                        <h2 className="text-lg font-bold text-white">Member QR Code</h2>
+                                        <p className="text-xs text-text-muted">{qrMember.firstName} {qrMember.lastName}</p>
+                                    </div>
+                                    <button onClick={() => setQrMember(null)} className="text-text-muted hover:text-white transition-colors">
+                                        <span className="material-icons-round">close</span>
+                                    </button>
+                                </div>
+
+                                <div className="p-6 flex flex-col items-center gap-4">
+                                    <div className="bg-white p-4 rounded-2xl shadow-lg">
+                                        <QRCode value={getQrValue(qrMember.id)} size={180} />
+                                    </div>
+                                    <div className="text-center">
+                                        <p className="text-xs text-text-muted">Member ID</p>
+                                        <p className="text-white font-mono text-sm">MEMBER:{qrMember.id}</p>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div className="mt-6 flex gap-3">
+                    )
+                }
+
+                {/* Delete Confirmation Modal */}
+                <Modal
+                    isOpen={isDeleteModalOpen}
+                    onClose={() => setIsDeleteModalOpen(false)}
+                    title="Delete Member"
+                >
+                    <div className="space-y-4">
+                        <p className="text-text-muted">
+                            Are you sure you want to delete <span className="text-white font-bold">{memberToDelete?.firstName} {memberToDelete?.lastName}</span>?
+                            This action cannot be undone.
+                        </p>
+                        <div className="flex justify-end gap-3 mt-6">
                             <button
-                                onClick={() => {
-                                    setShowTransactionModal(false);
-                                    setShowTCModal(true);
-                                }}
-                                className="flex-1 py-3 bg-primary hover:bg-orange-600 text-white font-bold rounded-xl"
+                                onClick={() => setIsDeleteModalOpen(false)}
+                                className="px-4 py-2 rounded-xl text-text-muted hover:text-white hover:bg-white/5 transition-colors"
                             >
-                                Continue
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Terms and Conditions Print Modal */}
-            {showTCModal && newMember && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-[60] animate-fade-in">
-                    <div className="bg-surface rounded-3xl border border-white/10 w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col">
-                        <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
-                            <h2 className="text-xl font-bold text-white">Membership Agreement</h2>
-                            <button onClick={() => setShowTCModal(false)} className="text-text-muted hover:text-white transition-colors">
-                                <span className="material-icons-round">close</span>
-                            </button>
-                        </div>
-
-                        <div className="p-8 overflow-y-auto max-h-[70vh] bg-white text-black font-serif" ref={tcPrintRef}>
-                            <div className="text-center mb-8">
-                                <h1 className="text-3xl font-black uppercase tracking-widest border-b-2 border-black pb-2 mb-1">Gym POS Membership Form</h1>
-                                <p className="text-sm italic">Official Registration & Waiver Agreement</p>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4 mb-8 text-sm">
-                                <div className="border border-black p-3 rounded">
-                                    <p className="font-bold border-b border-black mb-1">MEMBER INFORMATION</p>
-                                    <p><strong>Name:</strong> {newMember.firstName} {newMember.lastName}</p>
-                                    <p><strong>Email:</strong> {newMember.email}</p>
-                                    <p><strong>Phone:</strong> {newMember.phone}</p>
-                                </div>
-                                <div className="border border-black p-3 rounded">
-                                    <p className="font-bold border-b border-black mb-1">MEMBERSHIP DETAILS</p>
-                                    <p><strong>Status:</strong> {newMember.status}</p>
-                                    <p><strong>Join Date:</strong> {new Date(newMember.startDate).toLocaleDateString()}</p>
-                                    <p><strong>Expiry Date:</strong> {new Date(newMember.expiryDate).toLocaleDateString()}</p>
-                                </div>
-                            </div>
-                            <div className="border border-black p-3 rounded mb-8 text-sm flex items-center justify-between gap-6">
-                                <div>
-                                    <p className="font-bold border-b border-black mb-1">MEMBER QR CODE</p>
-                                    <p><strong>ID:</strong> {newMember.id}</p>
-                                    <p><strong>Code:</strong> MEMBER:{newMember.id}</p>
-                                </div>
-                                <div className="bg-white p-2 border border-black">
-                                    <QRCode value={getQrValue(newMember.id)} size={96} />
-                                </div>
-                            </div>
-                            <div className="border border-black p-3 rounded mb-8 text-sm flex items-center justify-between gap-6">
-                                <div>
-                                    <p className="font-bold border-b border-black mb-1">MEMBER QR CODE</p>
-                                    <p><strong>ID:</strong> {newMember.id}</p>
-                                    <p><strong>Code:</strong> MEMBER:{newMember.id}</p>
-                                </div>
-                                <div className="bg-white p-2 border border-black">
-                                    <QRCode value={getQrValue(newMember.id)} size={96} />
-                                </div>
-                            </div>
-
-                            <div className="space-y-4 text-xs leading-relaxed">
-                                <section>
-                                    <p className="font-bold uppercase mb-1">1. Health and Safety</p>
-                                    <p>I confirm that I am in good physical health and have no medical conditions that would prevent me from using the gym facilities safely. I assume all risks associated with physical exercise.</p>
-                                </section>
-                                <section>
-                                    <p className="font-bold uppercase mb-1">2. Rules and Regulations</p>
-                                    <p>Members must follow all gym rules, including appropriate attire and proper equipment usage. Management reserves the right to terminate membership for violation of rules.</p>
-                                </section>
-                                <section>
-                                    <p className="font-bold uppercase mb-1">3. Liability Waiver</p>
-                                    <p>The gym is not responsible for any lost or stolen items. Members use the facilities at their own risk. The gym and its staff are not liable for any injuries sustained on the premises.</p>
-                                </section>
-                                <section>
-                                    <p className="font-bold uppercase mb-1">4. Membership Cancellation</p>
-                                    <p>Membership fees are non-refundable. Notice requirement for cancellation depends on the specific plan purchased.</p>
-                                </section>
-                            </div>
-
-                            <div className="mt-12 grid grid-cols-2 gap-12 text-sm italic">
-                                <div className="border-t border-black pt-2">
-                                    <p>Member Signature</p>
-                                </div>
-                                <div className="border-t border-black pt-2">
-                                    <p>Gym Official Signature</p>
-                                    <p className="text-[10px] mt-1">Date: {new Date().toLocaleDateString()}</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="p-6 border-t border-white/5 bg-white/5 flex gap-4">
-                            <button
-                                onClick={() => setShowTCModal(false)}
-                                className="flex-1 py-3 border border-white/10 rounded-xl text-text-muted hover:text-white transition-all font-bold"
-                            >
-                                Not Now
+                                Cancel
                             </button>
                             <button
-                                onClick={handlePrintTC}
-                                className="flex-1 py-3 bg-primary hover:bg-orange-600 text-white rounded-xl font-bold shadow-lg shadow-primary/20 flex items-center justify-center gap-2 transition-all"
+                                onClick={handleDeleteMember}
+                                disabled={isDeleting}
+                                className="px-4 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold shadow-lg shadow-red-500/20 transition-all flex items-center gap-2"
                             >
-                                <span className="material-icons-round">print</span>
-                                Print Agreement
+                                {isDeleting ? 'Deleting...' : 'Delete'}
                             </button>
                         </div>
                     </div>
-                </div>
-            )}
-
-            {/* QR Code Modal */}
-            {qrMember && (
-                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[70] animate-fade-in">
-                    <div className="bg-surface rounded-3xl border border-white/10 w-full max-w-sm shadow-2xl overflow-hidden">
-                        <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
-                            <div>
-                                <h2 className="text-lg font-bold text-white">Member QR Code</h2>
-                                <p className="text-xs text-text-muted">{qrMember.firstName} {qrMember.lastName}</p>
-                            </div>
-                            <button onClick={() => setQrMember(null)} className="text-text-muted hover:text-white transition-colors">
-                                <span className="material-icons-round">close</span>
-                            </button>
-                        </div>
-
-                        <div className="p-6 flex flex-col items-center gap-4">
-                            <div className="bg-white p-4 rounded-2xl shadow-lg">
-                                <QRCode value={getQrValue(qrMember.id)} size={180} />
-                            </div>
-                            <div className="text-center">
-                                <p className="text-xs text-text-muted">Member ID</p>
-                                <p className="text-white font-mono text-sm">MEMBER:{qrMember.id}</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* QR Code Modal */}
-            {qrMember && (
-                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-[70] animate-fade-in">
-                    <div className="bg-surface rounded-3xl border border-white/10 w-full max-w-sm shadow-2xl overflow-hidden">
-                        <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/5">
-                            <div>
-                                <h2 className="text-lg font-bold text-white">Member QR Code</h2>
-                                <p className="text-xs text-text-muted">{qrMember.firstName} {qrMember.lastName}</p>
-                            </div>
-                            <button onClick={() => setQrMember(null)} className="text-text-muted hover:text-white transition-colors">
-                                <span className="material-icons-round">close</span>
-                            </button>
-                        </div>
-
-                        <div className="p-6 flex flex-col items-center gap-4">
-                            <div className="bg-white p-4 rounded-2xl shadow-lg">
-                                <QRCode value={getQrValue(qrMember.id)} size={180} />
-                            </div>
-                            <div className="text-center">
-                                <p className="text-xs text-text-muted">Member ID</p>
-                                <p className="text-white font-mono text-sm">MEMBER:{qrMember.id}</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </div>
+                </Modal>
+            </div>
+        </ErrorBoundary>
     );
 }
-

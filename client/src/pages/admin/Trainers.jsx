@@ -46,6 +46,8 @@ export default function Trainers() {
         availabilityIntervalMinutes: 30,
         bio: '',
         imageUrl: '',
+        commissionRate: '',
+        baseSalary: '',
         createLogin: false,
         loginEmail: '',
         loginPassword: ''
@@ -110,6 +112,8 @@ export default function Trainers() {
             availabilityIntervalMinutes: 30,
             bio: '',
             imageUrl: '',
+            commissionRate: '',
+            baseSalary: '',
             createLogin: false,
             loginEmail: '',
             loginPassword: ''
@@ -150,6 +154,8 @@ export default function Trainers() {
             availabilityIntervalMinutes: trainer.availabilityIntervalMinutes || 30,
             bio: trainer.bio || '',
             imageUrl: trainer.imageUrl || '',
+            commissionRate: trainer.commissionRate != null ? (trainer.commissionRate * 100).toFixed(0) : '',
+            baseSalary: trainer.baseSalary ?? '',
             createLogin: false,
             loginEmail: '',
             loginPassword: ''
@@ -180,12 +186,14 @@ export default function Trainers() {
             if (formMode === 'create') {
                 await axios.post('http://localhost:5000/api/trainers', {
                     ...formData,
-                    sessionDurations: formData.sessionDurations.join(',')
+                    sessionDurations: formData.sessionDurations.join(','),
+                    commissionRate: formData.commissionRate ? Number(formData.commissionRate) / 100 : 0
                 });
             } else if (selectedTrainer) {
                 await axios.put(`http://localhost:5000/api/trainers/${selectedTrainer.id}`, {
                     ...formData,
-                    sessionDurations: formData.sessionDurations.join(',')
+                    sessionDurations: formData.sessionDurations.join(','),
+                    commissionRate: formData.commissionRate !== '' ? Number(formData.commissionRate) / 100 : undefined
                 });
             }
             setShowForm(false);
@@ -620,6 +628,29 @@ export default function Trainers() {
                                             onChange={(e) => handleFormChange('sessionPrice', e.target.value)}
                                             className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
                                             placeholder="300"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Commission Rate (%)</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            value={formData.commissionRate}
+                                            onChange={(e) => handleFormChange('commissionRate', e.target.value)}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                            placeholder="50"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Base Salary</label>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={formData.baseSalary}
+                                            onChange={(e) => handleFormChange('baseSalary', e.target.value)}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                            placeholder="20000"
                                         />
                                     </div>
                                     <div>

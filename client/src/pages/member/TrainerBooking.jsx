@@ -263,6 +263,7 @@ export default function TrainerBooking() {
         if (!selectedTrainer) return [];
         const dateObj = new Date(`${isoDate}T00:00:00`);
         if (Number.isNaN(dateObj.getTime())) return [];
+
         const dayKey = String(dateObj.getDay());
         if (availabilityDays.length > 0 && !availabilityDays.includes(dateObj.getDay())) return [];
 
@@ -270,14 +271,40 @@ export default function TrainerBooking() {
         const dayConfig = selectedTrainer.availabilityByDay?.[dayKey];
         const start = toMinutes(dayConfig?.start || selectedTrainer.availabilityStart || '09:00');
         const end = toMinutes(dayConfig?.end || selectedTrainer.availabilityEnd || '18:00');
+
         if (start === null || end === null || end <= start) return [];
+
+        // Get booked sessions for this date
+        const bookedSessions = (selectedTrainer.trainingSessions || []).filter(session => {
+            if (session.status === 'CANCELLED') return false;
+            const sDate = new Date(session.date);
+            return toIsoDate(sDate) === isoDate;
+        }).map(session => {
+            const sDate = new Date(session.date);
+            const startMins = sDate.getHours() * 60 + sDate.getMinutes();
+            return {
+                start: startMins,
+                end: startMins + (session.duration || 60)
+            };
+        });
 
         const duration = Number(bookingData.duration) || 60;
         const slots = [];
+
         for (let t = start; t + duration <= end; t += interval) {
-            const hh = String(Math.floor(t / 60)).padStart(2, '0');
-            const mm = String(t % 60).padStart(2, '0');
-            slots.push(`${hh}:${mm}`);
+            const slotStart = t;
+            const slotEnd = t + duration;
+
+            // Check for overlap
+            const isBlocked = bookedSessions.some(session => {
+                return (slotStart < session.end && slotEnd > session.start);
+            });
+
+            if (!isBlocked) {
+                const hh = String(Math.floor(t / 60)).padStart(2, '0');
+                const mm = String(t % 60).padStart(2, '0');
+                slots.push(`${hh}:${mm}`);
+            }
         }
         return slots;
     }, [selectedTrainer, availabilityDays, bookingData.duration]);
@@ -386,88 +413,88 @@ export default function TrainerBooking() {
             </div>
 
             {activeTab === 'bookings' ? (
-            /* My Booked Sessions */
-            <div className="bg-surface rounded-2xl border border-white/5 p-4 sm:p-5 space-y-4">
-                <div className="flex items-center justify-between gap-3">
-                    <div>
-                        <h2 className="text-white font-bold text-base sm:text-lg">My Booked Sessions</h2>
-                        <p className="text-text-muted text-xs sm:text-sm mt-0.5">Track your trainer session bookings</p>
+                /* My Booked Sessions */
+                <div className="bg-surface rounded-2xl border border-white/5 p-4 sm:p-5 space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <h2 className="text-white font-bold text-base sm:text-lg">My Booked Sessions</h2>
+                            <p className="text-text-muted text-xs sm:text-sm mt-0.5">Track your trainer session bookings</p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={fetchMemberSessions}
+                            className="px-3 py-2 rounded-lg bg-white/5 text-text-muted hover:text-white text-xs font-semibold"
+                        >
+                            Refresh
+                        </button>
                     </div>
-                    <button
-                        type="button"
-                        onClick={fetchMemberSessions}
-                        className="px-3 py-2 rounded-lg bg-white/5 text-text-muted hover:text-white text-xs font-semibold"
-                    >
-                        Refresh
-                    </button>
-                </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-white/5 border border-white/10 rounded-xl p-3">
-                        <p className="text-[11px] uppercase tracking-wide text-text-muted">Upcoming</p>
-                        <p className="text-xl font-bold text-white mt-1">{upcomingSessions.length}</p>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+                            <p className="text-[11px] uppercase tracking-wide text-text-muted">Upcoming</p>
+                            <p className="text-xl font-bold text-white mt-1">{upcomingSessions.length}</p>
+                        </div>
+                        <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+                            <p className="text-[11px] uppercase tracking-wide text-text-muted">Total Booked</p>
+                            <p className="text-xl font-bold text-white mt-1">{memberSessions.length}</p>
+                        </div>
                     </div>
-                    <div className="bg-white/5 border border-white/10 rounded-xl p-3">
-                        <p className="text-[11px] uppercase tracking-wide text-text-muted">Total Booked</p>
-                        <p className="text-xl font-bold text-white mt-1">{memberSessions.length}</p>
-                    </div>
-                </div>
 
-                {sessionsLoading ? (
-                    <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-text-muted">
-                        Loading your sessions...
-                    </div>
-                ) : sessionsError ? (
-                    <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-sm text-red-300">
-                        {sessionsError}
-                    </div>
-                ) : memberSessions.length === 0 ? (
-                    <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-text-muted">
-                        You have no trainer bookings yet.
-                    </div>
-                ) : (
-                    <div className="space-y-3">
-                        {memberSessions.slice(0, 8).map((session) => {
-                            const sessionDate = new Date(session.date);
-                            const isUpcoming = sessionDate >= now;
-                            return (
-                                <div key={session.id} className="bg-white/5 border border-white/10 rounded-xl p-3 sm:p-4">
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div>
-                                            <p className="text-white font-semibold text-sm sm:text-base">{session.trainer?.name || 'Trainer'}</p>
-                                            <p className="text-text-muted text-xs sm:text-sm mt-0.5">
-                                                {sessionDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
-                                                {' at '}
-                                                {sessionDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
-                                            </p>
+                    {sessionsLoading ? (
+                        <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-text-muted">
+                            Loading your sessions...
+                        </div>
+                    ) : sessionsError ? (
+                        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-sm text-red-300">
+                            {sessionsError}
+                        </div>
+                    ) : memberSessions.length === 0 ? (
+                        <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-text-muted">
+                            You have no trainer bookings yet.
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            {memberSessions.slice(0, 8).map((session) => {
+                                const sessionDate = new Date(session.date);
+                                const isUpcoming = sessionDate >= now;
+                                return (
+                                    <div key={session.id} className="bg-white/5 border border-white/10 rounded-xl p-3 sm:p-4">
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div>
+                                                <p className="text-white font-semibold text-sm sm:text-base">{session.trainer?.name || 'Trainer'}</p>
+                                                <p className="text-text-muted text-xs sm:text-sm mt-0.5">
+                                                    {sessionDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                                                    {' at '}
+                                                    {sessionDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                                                </p>
+                                            </div>
+                                            <span className={`text-[10px] uppercase tracking-wide font-bold px-2 py-1 rounded-md border ${isUpcoming
+                                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                                : 'bg-white/10 text-text-muted border-white/20'
+                                                }`}>
+                                                {isUpcoming ? 'Upcoming' : 'Past'}
+                                            </span>
                                         </div>
-                                        <span className={`text-[10px] uppercase tracking-wide font-bold px-2 py-1 rounded-md border ${isUpcoming
-                                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                                            : 'bg-white/10 text-text-muted border-white/20'
-                                            }`}>
-                                            {isUpcoming ? 'Upcoming' : 'Past'}
-                                        </span>
+                                        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs">
+                                            <span className="px-2 py-1 rounded-md bg-white/10 text-text-muted">{session.duration} min</span>
+                                            <span className="px-2 py-1 rounded-md bg-white/10 text-text-muted">{formatPrice(session.price)}</span>
+                                            <span className={`px-2 py-1 rounded-md border ${session.paymentStatus === 'PAID'
+                                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                                : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                                                }`}>
+                                                {session.paymentStatus || 'UNPAID'}
+                                            </span>
+                                            <span className="px-2 py-1 rounded-md bg-white/10 text-text-muted">{session.paymentMethod || 'N/A'}</span>
+                                        </div>
                                     </div>
-                                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs">
-                                        <span className="px-2 py-1 rounded-md bg-white/10 text-text-muted">{session.duration} min</span>
-                                        <span className="px-2 py-1 rounded-md bg-white/10 text-text-muted">{formatPrice(session.price)}</span>
-                                        <span className={`px-2 py-1 rounded-md border ${session.paymentStatus === 'PAID'
-                                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                                            : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                                            }`}>
-                                            {session.paymentStatus || 'UNPAID'}
-                                        </span>
-                                        <span className="px-2 py-1 rounded-md bg-white/10 text-text-muted">{session.paymentMethod || 'N/A'}</span>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                        {memberSessions.length > 8 && (
-                            <p className="text-xs text-text-muted">Showing latest 8 sessions.</p>
-                        )}
-                    </div>
-                )}
-            </div>
+                                );
+                            })}
+                            {memberSessions.length > 8 && (
+                                <p className="text-xs text-text-muted">Showing latest 8 sessions.</p>
+                            )}
+                        </div>
+                    )}
+                </div>
             ) : (
                 filteredTrainers.length === 0 ? (
                     <div className="text-center py-12 px-4">
@@ -692,13 +719,12 @@ export default function TrainerBooking() {
                                                                 });
                                                             }}
                                                             disabled={isPast || unavailableDay}
-                                                            className={`h-9 rounded-lg text-xs font-semibold transition-all ${
-                                                                selected
+                                                            className={`h-9 rounded-lg text-xs font-semibold transition-all ${selected
                                                                     ? 'bg-primary text-background'
                                                                     : (isPast || unavailableDay)
                                                                         ? 'bg-white/5 text-text-muted/40 cursor-not-allowed'
                                                                         : 'bg-white/5 text-white hover:bg-white/10'
-                                                            }`}
+                                                                }`}
                                                         >
                                                             {day.getDate()}
                                                         </button>
@@ -768,11 +794,10 @@ export default function TrainerBooking() {
                                                                             key={`${isoDate}-${slot}`}
                                                                             type="button"
                                                                             onClick={() => setSelectedTimesByDate((prev) => ({ ...prev, [isoDate]: slot }))}
-                                                                            className={`px-2 py-2 rounded-lg text-xs font-semibold border transition-all ${
-                                                                                selectedTime === slot
+                                                                            className={`px-2 py-2 rounded-lg text-xs font-semibold border transition-all ${selectedTime === slot
                                                                                     ? 'bg-primary/15 text-primary border-primary/40'
                                                                                     : 'bg-white/5 text-text-muted border-white/10 hover:text-white'
-                                                                            }`}
+                                                                                }`}
                                                                         >
                                                                             {formatTimeLabel(slot)}
                                                                         </button>

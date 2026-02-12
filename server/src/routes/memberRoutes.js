@@ -31,6 +31,7 @@ router.get('/:id/notes', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF'
 router.post('/:id/notes', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.addMemberNote);
 router.post('/:id/status', authenticateToken, authorize(['ADMIN', 'STAFF']), memberController.updateMemberStatus);
 router.put('/:id', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBER']), memberController.updateMember);
+router.delete('/:id', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.deleteMember);
 router.post('/:id/change-password', authenticateToken, authorize(['MEMBER']), memberController.changePassword);
 
 module.exports = router;

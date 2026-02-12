@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 const Suppliers = () => {
+    const navigate = useNavigate();
     const [suppliers, setSuppliers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
@@ -164,9 +166,15 @@ const Suppliers = () => {
                                     <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                                     <span className="text-xs text-text-muted">Active Vendor</span>
                                 </div>
-                                <div className="text-xs font-bold text-white bg-white/5 px-3 py-1.5 rounded-lg border border-white/5">
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        navigate(`/inventory?supplierId=${supplier.id}`);
+                                    }}
+                                    className="text-xs font-bold text-white bg-white/5 px-3 py-1.5 rounded-lg border border-white/5 hover:bg-primary hover:border-primary transition-colors cursor-pointer"
+                                >
                                     {supplier._count?.products || 0} Products
-                                </div>
+                                </button>
                             </div>
                         </div>
                     ))}

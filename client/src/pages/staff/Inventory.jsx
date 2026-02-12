@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useCurrency } from '../../context/CurrencyContext';
 import axios from 'axios';
@@ -148,6 +149,22 @@ export default function Inventory() {
     };
 
 
+    // --- Filter Logic ---
+    const [searchParams] = useSearchParams();
+    const [selectedSupplier, setSelectedSupplier] = useState('ALL');
+
+    useEffect(() => {
+        const supplierId = searchParams.get('supplierId');
+        if (supplierId) {
+            setSelectedSupplier(supplierId);
+        }
+    }, [searchParams]);
+
+    const filteredProducts = products.filter(product => {
+        if (selectedSupplier === 'ALL') return true;
+        return product.supplierId === parseInt(selectedSupplier);
+    });
+
     return (
         <div className="space-y-6 relative">
             <header className="flex justify-between items-center">
@@ -155,16 +172,31 @@ export default function Inventory() {
                     <h1 className="text-3xl font-bold text-white">Inventory Management</h1>
                     <p className="text-text-muted mt-1">Track stock levels and manage catalog</p>
                 </div>
-                <button
-                    onClick={() => {
-                        if (showForm) resetForm();
-                        else setShowForm(true);
-                    }}
-                    className={`font-bold py-2 px-4 rounded-xl transition-colors flex items-center gap-2 ${showForm ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-primary hover:bg-orange-600 text-white shadow-lg shadow-primary/20'}`}
-                >
-                    <span className="material-icons-round">{showForm ? 'close' : 'add'}</span>
-                    {showForm ? 'Cancel' : 'Add Product'}
-                </button>
+
+                <div className="flex gap-4">
+                    {/* Supplier Filter */}
+                    <select
+                        value={selectedSupplier}
+                        onChange={(e) => setSelectedSupplier(e.target.value)}
+                        className="bg-surface border border-white/10 text-white text-sm rounded-xl px-4 py-2 focus:border-primary outline-none"
+                    >
+                        <option value="ALL">All Suppliers</option>
+                        {suppliers.map(s => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                    </select>
+
+                    <button
+                        onClick={() => {
+                            if (showForm) resetForm();
+                            else setShowForm(true);
+                        }}
+                        className={`font-bold py-2 px-4 rounded-xl transition-colors flex items-center gap-2 ${showForm ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-primary hover:bg-orange-600 text-white shadow-lg shadow-primary/20'}`}
+                    >
+                        <span className="material-icons-round">{showForm ? 'close' : 'add'}</span>
+                        {showForm ? 'Cancel' : 'Add Product'}
+                    </button>
+                </div>
             </header>
 
             {/* Product Form */}
@@ -316,7 +348,7 @@ export default function Inventory() {
                         }
                     }
                 ]}
-                data={products}
+                data={filteredProducts}
                 actions={(product) => (
                     <div className="flex items-center justify-end gap-3 font-mono">
                         <button

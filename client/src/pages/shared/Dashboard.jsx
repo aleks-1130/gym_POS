@@ -11,19 +11,26 @@ export default function Dashboard() {
     const { user } = useAuth();
     const [stats, setStats] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
     useEffect(() => {
         const fetchStats = async () => {
             try {
                 const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-                if (!token) return;
+                if (!token) {
+                    setError("No authentication token found. Please login again.");
+                    setLoading(false);
+                    return;
+                }
 
                 const res = await axios.get('http://localhost:5000/api/dashboard/stats', {
                     headers: { Authorization: `Bearer ${token}` }
                 });
                 setStats(res.data);
+                setError(null);
             } catch (error) {
                 console.error("Failed to fetch dashboard stats", error);
+                setError(error.response?.data?.error || error.message || "Failed to load dashboard data");
             } finally {
                 setLoading(false);
             }
@@ -33,6 +40,18 @@ export default function Dashboard() {
     }, []);
 
     if (loading) return <div className="text-white p-8">Loading Dashboard...</div>;
+
+    if (error) return (
+        <div className="text-center p-8">
+            <p className="text-red-500 mb-4">{error}</p>
+            <button
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 bg-primary text-white rounded-lg"
+            >
+                Retry
+            </button>
+        </div>
+    );
 
     const isStaff = user.role === ROLES.STAFF;
     const isAdmin = user.role === ROLES.ADMIN || user.role === ROLES.OWNER;

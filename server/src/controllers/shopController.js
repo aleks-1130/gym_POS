@@ -2,8 +2,11 @@ const prisma = require('../config/prisma');
 
 // Checkout (Member Shop)
 const checkout = async (req, res) => {
-    const { items, paymentMethod, total } = req.body;
+    const { items, paymentMethod, paymentType, total } = req.body;
     const memberId = req.user.id; // Authenticated member
+
+    // Frontend sends 'paymentType', backend previously expected 'paymentMethod'
+    const method = paymentMethod || paymentType;
 
     if (!items || items.length === 0) {
         return res.status(400).json({ error: "No items in cart" });
@@ -11,39 +14,34 @@ const checkout = async (req, res) => {
 
     try {
         const result = await prisma.$transaction(async (tx) => {
-            // 1. Create Payment
-            // Note: For 'CASH' (Pay at Counter), we might set status to 'PENDING'?
-            // But usually shop checkout implies immediate payment or intent.
-            // Let's assume COMPLETED for now if it's In-App (e.g. Card/GCash simulated), 
-            // or PENDING if Cash?
-            // Existing logic didn't specify status, so it defaults to COMPLETED usually?
-            // Payment model has status default 'COMPLETED'?
-            // Let's check schema/previous usage.
-            // Previous 'checkout' logic set status? No, default.
-
             // Calculate points
             const pointsAwarded = Math.floor(parseFloat(total) / 100);
+
+            // Determine status and clean method
+            const isPending = method === 'CASH_PENDING';
+            const cleanMethod = isPending ? 'CASH' : method;
+            const status = isPending ? 'PENDING' : 'COMPLETED';
 
             const payment = await tx.payment.create({
                 data: {
                     amount: parseFloat(total),
-                    type: 'STORE_SALE', // or IN_APP_PURCHASE
-                    method: paymentMethod,
-                    memberId: memberId,
+                    type: 'STORE_SALE',
+                    method: cleanMethod,
+                    member: { connect: { id: Number(memberId) } },
                     pointsAwarded,
-                    // If method is CASH, maybe we should mark it? 
-                    // But for Member App, usually they pay via 'GCASH' or 'CARD'.
-                    // If they select 'CASH' (Pay at Counter), it's a reservation/order?
-                    // Let's assume standard flow.
+                    status: status
                 }
             });
 
             // 2. Create Items and Deduct Stock
             for (const item of items) {
+                // Frontend sends 'productId', backend previously expected 'id'
+                const prodId = item.id || item.productId;
+
                 await tx.paymentItem.create({
                     data: {
                         paymentId: payment.id,
-                        productId: Number(item.id),
+                        productId: Number(prodId),
                         name: item.name,
                         type: 'PRODUCT',
                         quantity: Number(item.quantity),
@@ -53,7 +51,7 @@ const checkout = async (req, res) => {
 
                 // Deduct stock
                 await tx.product.update({
-                    where: { id: Number(item.id) },
+                    where: { id: Number(prodId) },
                     data: { stock: { decrement: Number(item.quantity) } }
                 });
             }

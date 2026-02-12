@@ -78,70 +78,198 @@ const getDashboardStats = async (req, res) => {
         const queryEnd = req.query.endDate ? new Date(new Date(req.query.endDate).setHours(23, 59, 59, 999)) : new Date();
         console.log("Parsed Range:", queryStart, queryEnd);
 
-        // 1. Period Financials
-        const periodRevenueAgg = await prisma.payment.aggregate({
-            _sum: { amount: true },
-            where: { date: { gte: queryStart, lte: queryEnd } }
-        });
-        const periodExpensesAgg = await prisma.expense.aggregate({
-            _sum: { amount: true },
-            where: { date: { gte: queryStart, lte: queryEnd } }
-        });
+        const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+        // 1. Parallelize Period Financials, Trend, Net Profit basics, Expiring, Distribution, and Legacy Stats
+        // 1. Parallelize Period Financials, Trend, Net Profit basics, Expiring, Distribution, and Legacy Stats
+        const [
+            periodRevenueAgg,
+            periodExpensesAgg,
+            revenueTrendRaw,
+            monthlyRevenue,
+            monthlyExpenses,
+            expiring,
+            activeMembersList,
+            todayRevenueAgg,
+            storeRevenueAgg,
+            posRevenueAgg,
+            trainingRevenueAgg,
+            trainingExpensesAgg,
+            membershipRevenueAgg,
+            recentActivity,
+            sixMonthPayments,
+            sixMonthExpenses,
+            expenseByCategory,
+            expensesTodayAgg,
+            transactionsTodayCount,
+            lowStockCount,
+            lowStockItems,
+            pendingPaymentRecords,
+            unpaidSessionsCount
+        ] = await Promise.all([
+            // 1. Period Financials
+            prisma.payment.aggregate({
+                _sum: { amount: true },
+                where: { date: { gte: queryStart, lte: queryEnd } }
+            }),
+            prisma.expense.aggregate({
+                _sum: { amount: true },
+                where: { date: { gte: queryStart, lte: queryEnd } }
+            }),
+            // 2. Revenue Trend
+            prisma.payment.findMany({
+                where: { date: { gte: queryStart, lte: queryEnd } },
+                select: { date: true, amount: true }
+            }),
+            // Net Profit (This Month)
+            prisma.payment.aggregate({
+                _sum: { amount: true },
+                where: { date: { gte: firstDayOfMonth } }
+            }),
+            prisma.expense.aggregate({
+                _sum: { amount: true },
+                where: { date: { gte: firstDayOfMonth } }
+            }),
+            // Expiring
+            prisma.member.count({
+                where: {
+                    expiryDate: {
+                        lte: new Date(new Date().setDate(new Date().getDate() + 7)),
+                        gte: new Date()
+                    }
+                }
+            }),
+            // Membership Distribution
+            prisma.member.findMany({
+                where: { status: 'ACTIVE' },
+                select: { plan: { select: { name: true } } }
+            }),
+            // Legacy / Dashboard Specific
+            prisma.payment.aggregate({
+                _sum: { amount: true },
+                where: { date: { gte: startOfToday } }
+            }),
+            // Breakdowns
+            prisma.payment.aggregate({
+                _sum: { amount: true },
+                where: { date: { gte: queryStart, lte: queryEnd }, type: 'STORE_SALE' }
+            }),
+            prisma.payment.aggregate({
+                _sum: { amount: true },
+                where: { date: { gte: queryStart, lte: queryEnd }, type: 'POS_SALE' }
+            }),
+            prisma.payment.aggregate({
+                _sum: { amount: true },
+                where: { date: { gte: queryStart, lte: queryEnd }, type: { in: ['TRAINING', 'SERVICE'] } }
+            }),
+            prisma.expense.aggregate({
+                _sum: { amount: true },
+                where: {
+                    date: { gte: queryStart, lte: queryEnd },
+                    OR: [
+                        { title: { startsWith: 'Commission:' } },
+                        { title: { startsWith: 'Session Material' } }
+                    ]
+                }
+            }),
+            prisma.payment.aggregate({
+                _sum: { amount: true },
+                where: { date: { gte: queryStart, lte: queryEnd }, type: 'MEMBERSHIP' }
+            }),
+            getRecentActivity(),
+            // 6-Month History
+            prisma.payment.groupBy({
+                by: ['date'],
+                _sum: { amount: true },
+                where: { date: { gte: new Date(new Date().setMonth(new Date().getMonth() - 5)) } }
+            }),
+            prisma.expense.groupBy({
+                by: ['date'],
+                _sum: { amount: true },
+                where: { date: { gte: new Date(new Date().setMonth(new Date().getMonth() - 5)) } }
+            }),
+            // Expense Breakdown by Category
+            prisma.expense.groupBy({
+                by: ['category'],
+                _sum: { amount: true },
+                where: { date: { gte: queryStart, lte: queryEnd } }
+            }),
+            // Expenses Today
+            prisma.expense.aggregate({
+                _sum: { amount: true },
+                where: { date: { gte: startOfToday } }
+            }),
+            // 19. Transactions Today
+            prisma.payment.count({
+                where: { date: { gte: startOfToday } }
+            }),
+            // 20. Low Stock Items (Threshold <= 10)
+            prisma.product.count({
+                where: { stock: { lte: 10 } }
+            }),
+            prisma.product.findMany({
+                where: { stock: { lte: 10 } },
+                orderBy: { stock: 'asc' },
+                take: 3,
+                select: { name: true, stock: true }
+            }),
+            // 21. Pending Payments
+            // 21. Pending Payments
+            prisma.payment.count({
+                where: { status: 'PENDING' }
+            }),
+            // 22. Unpaid Training Sessions
+            prisma.trainingSession.count({
+                where: { paymentStatus: 'UNPAID' }
+            })
+        ]);
+
+        const pendingPaymentsCount = pendingPaymentRecords + unpaidSessionsCount;
 
         const periodRevenue = periodRevenueAgg._sum.amount || 0;
         const periodExpenses = periodExpensesAgg._sum.amount || 0;
 
-        // 2. Revenue Trend (Daily for the selected period)
-        const revenueTrendRaw = await prisma.payment.findMany({
-            where: { date: { gte: queryStart, lte: queryEnd } },
-            select: { date: true, amount: true }
-        });
-
         const trendMap = {};
-        const dailyRevenue = {}; // For weekly distribution Mon-Sun
+        const dailyRevenue = {}; // Restore dailyRevenue for weekly distribution
+        // trendMap structure: { "YYYY-MM-DD": { revenue: 0, expense: 0 } }
+
         revenueTrendRaw.forEach(item => {
             const dayStr = item.date.toISOString().split('T')[0];
-            trendMap[dayStr] = (trendMap[dayStr] || 0) + item.amount;
+            if (!trendMap[dayStr]) trendMap[dayStr] = { revenue: 0, expense: 0 };
+            trendMap[dayStr].revenue += item.amount;
 
+            // Restore Weekly Distribution Logic
             const weekday = item.date.toLocaleDateString('en-US', { weekday: 'short' });
             dailyRevenue[weekday] = (dailyRevenue[weekday] || 0) + item.amount;
         });
 
+        // Restore Weekly Revenue Array
         const weeklyRevenue = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => dailyRevenue[day] || 0);
 
-        const revenueTrend = Object.keys(trendMap).map(date => ({
-            date,
-            amount: trendMap[date]
-        }));
+        // Merge Expenses into Trend
+        const expensesTrendRaw = await prisma.expense.findMany({
+            where: { date: { gte: queryStart, lte: queryEnd } },
+            select: { date: true, amount: true }
+        });
 
-        // Calculate Net Profit (Month to Date)
-        const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-        const monthlyRevenue = await prisma.payment.aggregate({
-            _sum: { amount: true },
-            where: { date: { gte: firstDayOfMonth } }
+        expensesTrendRaw.forEach(item => {
+            const dayStr = item.date.toISOString().split('T')[0];
+            if (!trendMap[dayStr]) trendMap[dayStr] = { revenue: 0, expense: 0 };
+            trendMap[dayStr].expense += item.amount;
         });
-        const monthlyExpenses = await prisma.expense.aggregate({
-            _sum: { amount: true },
-            where: { date: { gte: firstDayOfMonth } }
-        });
+
+        const revenueTrend = Object.keys(trendMap).sort().map(date => ({
+            date,
+            revenue: trendMap[date].revenue,
+            expense: trendMap[date].expense,
+            net: trendMap[date].revenue - trendMap[date].expense
+        }));
 
         const totalRev = monthlyRevenue._sum.amount || 0;
         const totalExp = monthlyExpenses._sum.amount || 0;
+        const netProfit = totalRev - totalExp;
+        const profitMargin = totalRev > 0 ? ((netProfit / totalRev) * 100).toFixed(1) : 0;
 
-        const expiring = await prisma.member.count({
-            where: {
-                expiryDate: {
-                    lte: new Date(new Date().setDate(new Date().getDate() + 7)),
-                    gte: new Date()
-                }
-            }
-        });
-
-        // Calculate Membership Distribution (by Plan)
-        const activeMembersList = await prisma.member.findMany({
-            where: { status: 'ACTIVE' },
-            select: { plan: { select: { name: true } } }
-        });
         const distMap = {};
         activeMembersList.forEach(m => {
             const pName = m.plan?.name || 'Unknown';
@@ -151,40 +279,6 @@ const getDashboardStats = async (req, res) => {
             label: key,
             count: distMap[key]
         }));
-
-        // 3. Legacy/Dashboard Specific Stats (for AdminDashboard.jsx)
-        const todayRevenueAgg = await prisma.payment.aggregate({
-            _sum: { amount: true },
-            where: { date: { gte: startOfToday } }
-        });
-
-        // Detailed Revenue Breakdown
-        const storeRevenueAgg = await prisma.payment.aggregate({
-            _sum: { amount: true },
-            where: { date: { gte: queryStart, lte: queryEnd }, type: 'STORE_SALE' }
-        });
-        const posRevenueAgg = await prisma.payment.aggregate({
-            _sum: { amount: true },
-            where: { date: { gte: queryStart, lte: queryEnd }, type: 'POS_SALE' }
-        });
-        const trainingRevenueAgg = await prisma.payment.aggregate({
-            _sum: { amount: true },
-            where: { date: { gte: queryStart, lte: queryEnd }, type: { in: ['TRAINING', 'SERVICE'] } }
-        });
-        const trainingExpensesAgg = await prisma.expense.aggregate({
-            _sum: { amount: true },
-            where: {
-                date: { gte: queryStart, lte: queryEnd },
-                OR: [
-                    { title: { startsWith: 'Commission:' } },
-                    { title: { startsWith: 'Session Material' } }
-                ]
-            }
-        });
-        const membershipRevenueAgg = await prisma.payment.aggregate({
-            _sum: { amount: true },
-            where: { date: { gte: queryStart, lte: queryEnd }, type: 'MEMBERSHIP' }
-        });
 
         const storeRevenue = storeRevenueAgg._sum.amount || 0;
         const posRevenue = posRevenueAgg._sum.amount || 0;
@@ -201,15 +295,48 @@ const getDashboardStats = async (req, res) => {
             { label: 'POS (Counter)', value: posRevenue, color: '#8B5CF6' }
         ];
 
+        // Process 6-Month P&L
+        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const pnlMap = {};
+
+        // Initialize last 6 months
+        for (let i = 5; i >= 0; i--) {
+            const d = new Date();
+            d.setMonth(d.getMonth() - i);
+            const key = `${monthNames[d.getMonth()]} ${d.getFullYear()}`;
+            pnlMap[key] = { month: key, revenue: 0, expense: 0 };
+        }
+
+        sixMonthPayments.forEach(p => {
+            const key = `${monthNames[new Date(p.date).getMonth()]} ${new Date(p.date).getFullYear()}`;
+            if (pnlMap[key]) pnlMap[key].revenue += p._sum.amount || 0;
+        });
+
+        sixMonthExpenses.forEach(e => {
+            const key = `${monthNames[new Date(e.date).getMonth()]} ${new Date(e.date).getFullYear()}`;
+            if (pnlMap[key]) pnlMap[key].expense += e._sum.amount || 0;
+        });
+
+        const profitLossHistory = Object.values(pnlMap);
+
+        // Process Expense Breakdown
+        const expenseBreakdown = expenseByCategory.map(e => ({
+            category: e.category,
+            amount: e._sum.amount || 0
+        })).sort((a, b) => b.amount - a.amount);
+
         res.json({
             activeMembers: totalMembers,
             revenueToday: todayRevenueAgg._sum.amount || 0,
+            expensesToday: expensesTodayAgg._sum.amount || 0,
+            netProfitToday: (todayRevenueAgg._sum.amount || 0) - (expensesTodayAgg._sum.amount || 0),
             expiringSoon: expiring,
             monthlyRevenue: totalRev,
             totalExpenses: totalExp,
             periodRevenue,
             periodExpenses,
             netProfit: periodRevenue - periodExpenses,
+            profitMargin,
             revenueTrend,
             weeklyRevenue,
             membershipDistribution,
@@ -222,9 +349,16 @@ const getDashboardStats = async (req, res) => {
                 trainingExpenses,
                 trainingNet
             },
-            recentActivity: await getRecentActivity()
+            recentActivity,
+            profitLossHistory,
+            expenseBreakdown,
+            transactionsToday: transactionsTodayCount,
+            lowStockCount,
+            lowStockItems, // Top 3 items
+            pendingPaymentsCount
         });
     } catch (e) {
+        console.error("Dashboard Stats Error:", e);
         res.status(500).json({ error: e.message });
     }
 };
@@ -240,8 +374,8 @@ const getRecentActivity = async () => {
     // Fetch last 5 new members
     const newMembers = await prisma.member.findMany({
         take: 5,
-        orderBy: { joinDate: 'desc' },
-        select: { firstName: true, lastName: true, joinDate: true }
+        orderBy: { createdAt: 'desc' },
+        select: { firstName: true, lastName: true, createdAt: true }
     });
 
     // Combine and sort
@@ -256,7 +390,7 @@ const getRecentActivity = async () => {
             type: 'MEMBER',
             user: `${m.firstName} ${m.lastName}`,
             action: 'joined the gym',
-            time: m.joinDate
+            time: m.createdAt
         }))
     ]
         .sort((a, b) => new Date(b.time) - new Date(a.time))

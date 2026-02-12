@@ -124,7 +124,7 @@ function AppRoutes() {
         <Route
           path="/dashboard"
           element={
-            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER]}>
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER, ROLES.TRAINER]}>
               <Dashboard />
             </ProtectedRoute>
           }

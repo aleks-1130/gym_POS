@@ -7,15 +7,24 @@ export default function Transactions() {
     const { formatPrice } = useCurrency();
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const LIMIT = 15;
 
     useEffect(() => {
-        fetchHistory();
-    }, []);
+        fetchHistory(currentPage);
+    }, [currentPage]);
 
-    const fetchHistory = async () => {
+    const fetchHistory = async (page = 1) => {
+        setLoading(true);
         try {
-            const res = await axios.get('http://localhost:5000/api/payments');
-            setHistory(res.data);
+            const res = await axios.get(`http://localhost:5000/api/payments?page=${page}&limit=${LIMIT}`);
+            if (res.data.meta) {
+                setHistory(res.data.data);
+                setTotalPages(res.data.meta.totalPages);
+            } else {
+                setHistory(res.data);
+            }
         } catch (error) {
             console.error('Failed to fetch history');
         } finally {
@@ -96,6 +105,29 @@ export default function Transactions() {
                 isLoading={loading}
                 emptyMessage="No transactions found."
             />
+
+            {/* Pagination */}
+            <div className="flex items-center justify-between border-t border-white/5 pt-4">
+                <span className="text-text-muted text-sm">
+                    Page <span className="text-white font-bold">{currentPage}</span> of {totalPages}
+                </span>
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                        disabled={currentPage === 1}
+                        className="px-4 py-2 rounded-lg border border-white/10 text-white hover:bg-white/10 disabled:opacity-50 disabled:hover:bg-transparent transition-all text-sm font-medium"
+                    >
+                        Previous
+                    </button>
+                    <button
+                        onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                        disabled={currentPage === totalPages}
+                        className="px-4 py-2 rounded-lg border border-white/10 text-white hover:bg-white/10 disabled:opacity-50 disabled:hover:bg-transparent transition-all text-sm font-medium"
+                    >
+                        Next
+                    </button>
+                </div>
+            </div>
         </div>
     );
 }

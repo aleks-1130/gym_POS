@@ -22,7 +22,7 @@ const checkIn = async (req, res) => {
 
 const getAccessLogs = async (req, res) => {
     try {
-        const { date } = req.query;
+        const { date, page, limit } = req.query;
         let where = {};
 
         if (req.user?.role === 'MEMBER') {
@@ -35,6 +35,33 @@ const getAccessLogs = async (req, res) => {
             const end = new Date(date);
             end.setHours(23, 59, 59, 999);
             where.checkIn = { gte: start, lte: end };
+        }
+
+        if (page && limit) {
+            const pageNum = parseInt(page);
+            const limitNum = parseInt(limit);
+            const skip = (pageNum - 1) * limitNum;
+
+            const [logs, total] = await Promise.all([
+                prisma.accessLog.findMany({
+                    where,
+                    skip,
+                    take: limitNum,
+                    include: { member: true },
+                    orderBy: { checkIn: 'desc' }
+                }),
+                prisma.accessLog.count({ where })
+            ]);
+
+            return res.json({
+                data: logs,
+                meta: {
+                    total,
+                    page: pageNum,
+                    limit: limitNum,
+                    totalPages: Math.ceil(total / limitNum)
+                }
+            });
         }
 
         const logs = await prisma.accessLog.findMany({
