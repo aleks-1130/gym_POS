@@ -384,7 +384,8 @@ const getRecentActivity = async () => {
             type: 'PAYMENT',
             user: p.member ? `${p.member.firstName} ${p.member.lastName}` : 'Guest',
             action: p.type === 'MEMBERSHIP' ? 'renewed membership' : `paid for ${p.type.toLowerCase().replace('_', ' ')}`,
-            time: p.date
+            time: p.date,
+            amount: p.amount
         })),
         ...newMembers.map(m => ({
             type: 'MEMBER',

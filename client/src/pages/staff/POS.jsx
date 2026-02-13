@@ -3,10 +3,12 @@ import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useReactToPrint } from 'react-to-print';
+import { useUIStore } from '../../stores/useUIStore';
 import Receipt from '../../components/Receipt';
 
 export default function POS() {
     const { user } = useAuth();
+    const { isSidebarCollapsed } = useUIStore();
     const { formatPrice } = useCurrency();
     const [products, setProducts] = useState([]);
     const [plans, setPlans] = useState([]);
@@ -408,7 +410,7 @@ export default function POS() {
         return (
             <div className="space-y-6">
                 <div className="flex justify-between items-center">
-                    <h1 className="text-2xl font-bold text-white">Trainer Bookings</h1>
+                    <h1 className="text-2xl font-bold text-white">Bookings</h1>
                     <button onClick={() => setViewMode('POS')} className="text-primary hover:text-orange-400 font-bold flex items-center gap-1">
                         <span className="material-icons-round">arrow_back</span> Back to POS
                     </button>
@@ -721,30 +723,30 @@ export default function POS() {
 
             {/* Left: Product Grid */}
             <div className="flex-1 flex flex-col min-w-0">
-                <header className="mb-6 flex justify-between items-center">
+                <header className="mb-6 flex flex-wrap justify-between items-center gap-4">
                     <div>
                         <h1 className="text-2xl font-bold text-white">Touch-First POS</h1>
                         <p className="text-text-muted text-sm">Select items to add to cart</p>
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex flex-wrap items-center gap-4">
                         <button onClick={() => { fetchHistory(); setViewMode('HISTORY'); }} className="text-text-secondary hover:text-primary flex items-center gap-1 transition-colors">
                             <span className="material-icons-round">history</span> History
                         </button>
                         <button onClick={() => { fetchTrainingBookings(); setViewMode('TRAINING_BOOKINGS'); }} className="text-text-secondary hover:text-primary flex items-center gap-1 transition-colors">
-                            <span className="material-icons-round">event_available</span> Trainer Bookings
+                            <span className="material-icons-round">event_available</span> Bookings
                         </button>
                         {/* Category Filter */}
-                        <div className="flex gap-2 bg-surface p-1 rounded-xl border border-white/10">
+                        <div className="flex flex-wrap gap-2 bg-surface p-1 rounded-xl border border-white/10">
                             {['All', 'SUPPLEMENT', 'DRINK', 'MERCH', 'MEMBERSHIP', 'TRAINERS'].map(cat => (
                                 <button
                                     key={cat}
                                     onClick={() => setSelectedCategory(cat)}
-                                    className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${selectedCategory === cat
+                                    className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${selectedCategory === cat
                                         ? 'bg-primary/10 text-primary shadow-sm'
                                         : 'text-text-muted hover:text-text-secondary'
                                         }`}
                                 >
-                                    {cat === 'TRAINERS' ? 'BOOK SESSIONS' : cat}
+                                    {cat === 'TRAINERS' ? 'SESSIONS' : cat}
                                 </button>
                             ))}
                         </div>
@@ -831,7 +833,7 @@ export default function POS() {
             </div>
 
             {/* Right: Cart Panel */}
-            <div className="w-96 flex flex-col bg-surface rounded-3xl border border-white/10 shadow-xl shadow-black/50 overflow-hidden">
+            <div className={`${isSidebarCollapsed ? 'w-96' : 'w-[320px]'} transition-all duration-300 flex flex-col bg-surface rounded-3xl border border-white/10 shadow-xl shadow-black/50 overflow-hidden`}>
                 {/* Cart Header */}
                 <div className="p-6 border-b border-white/5 bg-white/5">
                     <div className="flex justify-between items-center mb-1">
@@ -1001,10 +1003,10 @@ export default function POS() {
                     <button
                         onClick={initiateCheckout}
                         disabled={cart.length === 0 || loading}
-                        className="w-full bg-primary hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl shadow-xl shadow-primary/20 active:scale-95 transition-all flex flex-col items-center justify-center"
+                        className="w-full bg-primary hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-2xl shadow-xl shadow-primary/20 active:scale-95 transition-all flex flex-col items-center justify-center"
                     >
-                        <span className="text-xs uppercase tracking-wider opacity-90 font-bold mb-1">Charge {selectedMemberId ? 'Member' : 'Guest'}</span>
-                        <span className="text-xl">{formatCartPrice(cartTotal)}</span>
+                        <span className="text-[10px] uppercase tracking-wider opacity-90 font-bold mb-0.5">Charge {selectedMemberId ? 'Member' : 'Guest'}</span>
+                        <span className="text-lg">{formatCartPrice(cartTotal)}</span>
                     </button>
                 </div>
             </div>

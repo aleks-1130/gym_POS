@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import axios from 'axios';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { User, Star, History, X, Info, Pencil, Trash2, Plus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { ROLES } from '../../constants/roles';
@@ -18,20 +19,18 @@ const WEEKDAY_OPTIONS = [
 export default function Trainers() {
     const { user } = useAuth();
     const isAdmin = user?.role === ROLES.ADMIN;
-    const [trainers, setTrainers] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const queryClient = useQueryClient();
+
+    // -- State --
     const [selectedTrainer, setSelectedTrainer] = useState(null);
     const [viewMode, setViewMode] = useState(null); // 'profile' or 'sessions'
-    const [sessions, setSessions] = useState([]);
-    const [sessionsLoading, setSessionsLoading] = useState(false);
     const [showForm, setShowForm] = useState(false);
     const [formMode, setFormMode] = useState('create'); // create | edit
-    const [saving, setSaving] = useState(false);
     const [showLoginModal, setShowLoginModal] = useState(false);
     const [loginTrainer, setLoginTrainer] = useState(null);
     const [loginEmail, setLoginEmail] = useState('');
     const [loginPassword, setLoginPassword] = useState('');
-    const [loginSaving, setLoginSaving] = useState(false);
+
     const [formData, setFormData] = useState({
         name: '',
         specialty: '',
@@ -52,48 +51,97 @@ export default function Trainers() {
         loginEmail: '',
         loginPassword: ''
     });
+
+    // -- Queries --
+    const { data: trainers = [], isLoading: trainersLoading } = useQuery({
+        queryKey: ['trainers'],
+        queryFn: async () => {
+            const res = await axios.get('http://localhost:5000/api/trainers');
+            return res.data;
+        }
+    });
+
+    const { data: sessions = [], isLoading: sessionsLoading } = useQuery({
+        queryKey: ['trainer-sessions', selectedTrainer?.id],
+        queryFn: async () => {
+            if (!selectedTrainer?.id) return [];
+            const res = await axios.get(`http://localhost:5000/api/trainers/${selectedTrainer.id}/sessions`);
+            return res.data;
+        },
+        enabled: !!selectedTrainer?.id && viewMode === 'sessions'
+    });
+
+    // -- Mutations --
+    const createTrainerMutation = useMutation({
+        mutationFn: async (newTrainer) => {
+            return axios.post('http://localhost:5000/api/trainers', newTrainer);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries(['trainers']);
+            setShowForm(false);
+        },
+        onError: (error) => {
+            alert(error?.response?.data?.error || 'Failed to create trainer.');
+        }
+    });
+
+    const updateTrainerMutation = useMutation({
+        mutationFn: async ({ id, data }) => {
+            return axios.put(`http://localhost:5000/api/trainers/${id}`, data);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries(['trainers']);
+            setShowForm(false);
+        },
+        onError: (error) => {
+            alert(error?.response?.data?.error || 'Failed to update trainer.');
+        }
+    });
+
+    const deleteTrainerMutation = useMutation({
+        mutationFn: async (id) => {
+            return axios.delete(`http://localhost:5000/api/trainers/${id}`);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries(['trainers']);
+        },
+        onError: (error) => {
+            alert(error?.response?.data?.error || 'Failed to delete trainer.');
+        }
+    });
+
+    const createLoginMutation = useMutation({
+        mutationFn: async ({ id, creds }) => {
+            return axios.post(`http://localhost:5000/api/trainers/${id}/create-login`, creds);
+        },
+        onSuccess: () => {
+            setShowLoginModal(false);
+            setLoginTrainer(null);
+            alert('Trainer login created successfully.');
+        },
+        onError: (error) => {
+            alert(error?.response?.data?.error || 'Failed to create trainer login.');
+        }
+    });
+
+    // -- Derived Data --
     const totalTrainers = trainers.length;
     const avgRating = totalTrainers
         ? (trainers.reduce((sum, t) => sum + (Number(t.rating) || 0), 0) / totalTrainers).toFixed(1)
         : '0.0';
     const totalClasses = trainers.reduce((sum, t) => sum + (t.classes?.length || 0), 0);
+    const saving = createTrainerMutation.isPending || updateTrainerMutation.isPending;
+    const loginSaving = createLoginMutation.isPending;
 
-    useEffect(() => {
-        fetchTrainers();
-    }, []);
-
-    const fetchTrainers = async () => {
-        try {
-            const res = await axios.get('http://localhost:5000/api/trainers');
-            setTrainers(res.data);
-            setLoading(false);
-        } catch (error) {
-            console.error("Failed to fetch trainers");
-            setLoading(false);
-        }
-    };
-
-    const fetchTrainerSessions = async (trainerId) => {
-        setSessionsLoading(true);
-        try {
-            const res = await axios.get(`http://localhost:5000/api/trainers/${trainerId}/sessions`);
-            setSessions(res.data);
-            setSessionsLoading(false);
-        } catch (error) {
-            console.error("Failed to fetch sessions");
-            setSessionsLoading(false);
-        }
-    };
-
-    const handleViewProfile = async (trainer) => {
+    // -- Handlers --
+    const handleViewProfile = (trainer) => {
         setSelectedTrainer(trainer);
         setViewMode('profile');
     };
 
-    const handleViewSessions = async (trainer) => {
+    const handleViewSessions = (trainer) => {
         setSelectedTrainer(trainer);
         setViewMode('sessions');
-        fetchTrainerSessions(trainer.id);
     };
 
     const openCreateForm = () => {
@@ -119,7 +167,6 @@ export default function Trainers() {
             loginPassword: ''
         });
         setShowForm(true);
-        // Scroll modal to top when opened
         setTimeout(() => {
             const modalContent = document.querySelector('.modal-scroll-container');
             if (modalContent) modalContent.scrollTop = 0;
@@ -162,7 +209,6 @@ export default function Trainers() {
         });
         setSelectedTrainer(trainer);
         setShowForm(true);
-        // Scroll modal to top when opened
         setTimeout(() => {
             const modalContent = document.querySelector('.modal-scroll-container');
             if (modalContent) modalContent.scrollTop = 0;
@@ -173,7 +219,7 @@ export default function Trainers() {
         setFormData((prev) => ({ ...prev, [field]: value }));
     };
 
-    const handleSaveTrainer = async (e) => {
+    const handleSaveTrainer = (e) => {
         e.preventDefault();
         if (!formData.name.trim()) return alert('Trainer name is required.');
         if (formMode === 'create' && formData.createLogin) {
@@ -181,38 +227,27 @@ export default function Trainers() {
                 return alert('Login email and password are required to create trainer access.');
             }
         }
-        setSaving(true);
-        try {
-            if (formMode === 'create') {
-                await axios.post('http://localhost:5000/api/trainers', {
-                    ...formData,
-                    sessionDurations: formData.sessionDurations.join(','),
-                    commissionRate: formData.commissionRate ? Number(formData.commissionRate) / 100 : 0
-                });
-            } else if (selectedTrainer) {
-                await axios.put(`http://localhost:5000/api/trainers/${selectedTrainer.id}`, {
-                    ...formData,
-                    sessionDurations: formData.sessionDurations.join(','),
-                    commissionRate: formData.commissionRate !== '' ? Number(formData.commissionRate) / 100 : undefined
-                });
-            }
-            setShowForm(false);
-            await fetchTrainers();
-        } catch (error) {
-            alert(error?.response?.data?.error || 'Failed to save trainer.');
-        } finally {
-            setSaving(false);
+
+        const payload = {
+            ...formData,
+            sessionDurations: formData.sessionDurations.join(','),
+            commissionRate: formData.commissionRate ? Number(formData.commissionRate) / 100 : 0,
+            commissionRateRaw: formData.commissionRate // Keep raw for UI if needed, but usually we just transform back
+        };
+
+        // Cleanup raw field if not needed by backend, strict mode might complain? 
+        // Backend usually ignores extra fields.
+
+        if (formMode === 'create') {
+            createTrainerMutation.mutate(payload);
+        } else if (selectedTrainer) {
+            updateTrainerMutation.mutate({ id: selectedTrainer.id, data: payload });
         }
     };
 
-    const handleDeleteTrainer = async (trainer) => {
-        const confirmed = confirm(`Delete trainer ${trainer.name}?`);
-        if (!confirmed) return;
-        try {
-            await axios.delete(`http://localhost:5000/api/trainers/${trainer.id}`);
-            await fetchTrainers();
-        } catch (error) {
-            alert(error?.response?.data?.error || 'Failed to delete trainer.');
+    const handleDeleteTrainer = (trainer) => {
+        if (confirm(`Delete trainer ${trainer.name}?`)) {
+            deleteTrainerMutation.mutate(trainer.id);
         }
     };
 
@@ -223,28 +258,19 @@ export default function Trainers() {
         setShowLoginModal(true);
     };
 
-    const handleCreateLogin = async (e) => {
+    const handleCreateLogin = (e) => {
         e.preventDefault();
         if (!loginTrainer) return;
         if (!loginEmail || !loginPassword) {
             return alert('Login email and password are required.');
         }
-        setLoginSaving(true);
-        try {
-            await axios.post(`http://localhost:5000/api/trainers/${loginTrainer.id}/create-login`, {
-                loginEmail,
-                loginPassword
-            });
-            setShowLoginModal(false);
-            setLoginTrainer(null);
-        } catch (error) {
-            alert(error?.response?.data?.error || 'Failed to create trainer login.');
-        } finally {
-            setLoginSaving(false);
-        }
+        createLoginMutation.mutate({
+            id: loginTrainer.id,
+            creds: { loginEmail, loginPassword }
+        });
     };
 
-    if (loading) {
+    if (trainersLoading) {
         return (
             <div className="flex items-center justify-center min-h-[50vh]">
                 <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>

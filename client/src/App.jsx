@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CurrencyProvider } from './context/CurrencyContext';
+import { SettingsProvider } from './context/SettingsContext';
 import { ROLES } from './constants/roles';
 import Sidebar from './components/Sidebar';
 import BottomNav from './components/BottomNav';
@@ -33,6 +34,9 @@ import PosSettings from './pages/admin/PosSettings';
 import Transactions from './pages/admin/Transactions';
 import Trainers from './pages/admin/Trainers';
 import Classes from './pages/admin/Classes';
+import DashboardReportPage from './pages/admin/DashboardReportPage';
+import PnLReportPage from './pages/admin/PnLReportPage';
+import AnalyticsReportPage from './pages/admin/AnalyticsReportPage';
 
 // Staff Pages
 import Inventory from './pages/staff/Inventory';
@@ -285,6 +289,30 @@ function AppRoutes() {
           }
         />
         <Route
+          path="/analytics/pnl-report"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]} fullScreen>
+              <PnLReportPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/analytics/report/:type"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]} fullScreen>
+              <AnalyticsReportPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/report"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]} fullScreen>
+              <DashboardReportPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/settings"
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER]}>
@@ -426,9 +454,11 @@ function App() {
   return (
     <AuthProvider>
       <CurrencyProvider>
-        <Router>
-          <AppRoutes />
-        </Router>
+        <SettingsProvider>
+          <Router>
+            <AppRoutes />
+          </Router>
+        </SettingsProvider>
       </CurrencyProvider>
     </AuthProvider>
   );

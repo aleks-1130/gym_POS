@@ -357,3 +357,13 @@ model MemberNote {
     user      User?    @relation(fields: [createdBy], references: [id])
 }
 
+
+model GymProfile {
+  id        Int      @id @default(autoincrement())
+  name      String   @default("FitOS Gym")
+  address   String?  @default("123 Fitness Blvd, Gym City")
+  phone     String?  @default("(555) 123-4567")
+  email     String?  @default("contact@fitos.com")
+  website   String?  @default("www.fitos.com")
+  updatedAt DateTime @updatedAt
+}

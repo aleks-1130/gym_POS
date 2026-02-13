@@ -155,6 +155,12 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
                 <p>Date Issued: {transactionDate.toLocaleDateString()}</p>
                 <p className="mt-4">Thank you for training with us!</p>
             </div>
+            <style>{`
+                @media print {
+                    @page { size: 80mm auto; margin: 0; }
+                    body { -webkit-print-color-adjust: exact; }
+                }
+            `}</style>
         </div>
     );
 });

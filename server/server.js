@@ -45,6 +45,7 @@ app.use('/api/notifications', require('./src/routes/notificationRoutes'));
 app.use('/api/analytics', require('./src/routes/analyticsRoutes'));
 app.use('/api/seed', require('./src/routes/seedRoutes'));
 app.use('/api/payment-methods', require('./src/routes/paymentMethodRoutes'));
+app.use('/api/settings', require('./src/routes/settingsRoutes'));
 
 // --- PUBLIC ROUTES (Plans) ---
 app.get('/api/plans', async (req, res) => {

@@ -1,17 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
+import { useSettings } from '../../context/SettingsContext';
 
 export default function Settings() {
     const { formatPrice } = useCurrency();
+    const { settings, updateSettings } = useSettings();
     const [activeTab, setActiveTab] = useState('plans');
+
+    // Gym Profile State - initialize from context
     const [gymProfile, setGymProfile] = useState({
-        name: 'FitOS Gym',
-        address: '123 Fitness Blvd, Gym City',
-        phone: '(555) 123-4567',
-        email: 'contact@fitos.com',
-        website: 'www.fitos.com'
+        name: '',
+        address: '',
+        phone: '',
+        email: '',
+        website: ''
     });
+
+    useEffect(() => {
+        if (settings) {
+            setGymProfile({
+                name: settings.name || '',
+                address: settings.address || '',
+                phone: settings.phone || '',
+                email: settings.email || '',
+                website: settings.website || ''
+            });
+        }
+    }, [settings]);
 
     const [plans, setPlans] = useState([]);
     const [formData, setFormData] = useState({ name: '', price: '', duration: '' });
@@ -54,10 +70,14 @@ export default function Settings() {
         }
     };
 
-    const handleProfileSave = (e) => {
+    const handleProfileSave = async (e) => {
         e.preventDefault();
-        alert("Gym Profile Updated Successfully!");
-        // In real app, persist to backend
+        const success = await updateSettings(gymProfile);
+        if (success) {
+            alert("Gym Branding Updated Successfully!");
+        } else {
+            alert("Failed to update branding.");
+        }
     };
 
     return (

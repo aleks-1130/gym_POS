@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
+import { useUIStore } from '../stores/useUIStore';
 
 export default function Sidebar() {
     const { user, logout } = useAuth();
-    const [isCollapsed, setIsCollapsed] = useState(false);
+    const { isSidebarCollapsed: isCollapsed, toggleSidebar } = useUIStore();
     const [isMobileOpen, setIsMobileOpen] = useState(false);
 
     const NavItem = ({ to, icon, label }) => (
@@ -183,7 +184,7 @@ export default function Sidebar() {
 
                     {/* Desktop Collapse Toggle */}
                     <button
-                        onClick={() => setIsCollapsed(!isCollapsed)}
+                        onClick={toggleSidebar}
                         className="hidden lg:flex items-center justify-center w-8 h-8 rounded-lg hover:bg-white/5 transition-all flex-shrink-0 hover:scale-105 active:scale-95"
                     >
                         <span className="material-icons-round text-base text-text-muted">
