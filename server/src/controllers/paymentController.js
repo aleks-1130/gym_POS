@@ -44,9 +44,6 @@ const createPayment = async (req, res) => {
         ? req.user.id
         : (memberId ? Number(memberId) : null);
 
-    console.log("PAYMENT REQUEST:", JSON.stringify(req.body, null, 2));
-    console.log("User:", req.user);
-
     try {
         const badRequest = (message) => {
             const err = new Error(message);
@@ -54,157 +51,235 @@ const createPayment = async (req, res) => {
             throw err;
         };
 
-        const parsedAmount = parseFloat(amount);
-        if (!Number.isFinite(parsedAmount) || parsedAmount < 0) {
-            badRequest("Invalid payment amount");
-        }
+        if (!type) badRequest("Payment type is required");
 
         const allowedMethods = ['CASH', 'CARD', 'GCASH'];
-        if (!allowedMethods.includes(method)) {
-            badRequest("Invalid payment method");
-        }
+        if (!allowedMethods.includes(method)) badRequest("Invalid payment method");
 
         const normalizedDiscount = discount !== undefined ? Number(discount) : 0;
-        if (!Number.isFinite(normalizedDiscount) || normalizedDiscount < 0) {
-            badRequest("Invalid discount value");
+        if (!Number.isFinite(normalizedDiscount) || normalizedDiscount < 0) badRequest("Invalid discount value");
+
+        const normalizedItems = Array.isArray(items)
+            ? items.map((item) => ({
+                ...item,
+                type: item.type || 'PRODUCT',
+                productId: Number(item.id || item.productId),
+                quantity: Number(item.quantity)
+            }))
+            : [];
+
+        let authoritativeAmount = Number(amount);
+        if (normalizedItems.length > 0) {
+            const productIds = [...new Set(
+                normalizedItems
+                    .filter((item) => item.type === 'PRODUCT' && Number.isInteger(item.productId) && item.productId > 0)
+                    .map((item) => item.productId)
+            )];
+            const planIds = [...new Set(
+                normalizedItems
+                    .filter((item) => item.type === 'PLAN')
+                    .map((item) => Number(item.id || item.planId || item.productId))
+                    .filter((id) => Number.isInteger(id) && id > 0)
+            )];
+
+            const [products, plans] = await Promise.all([
+                productIds.length
+                    ? prisma.product.findMany({
+                        where: { id: { in: productIds } },
+                        select: { id: true, name: true, price: true, stock: true }
+                    })
+                    : Promise.resolve([]),
+                planIds.length
+                    ? prisma.plan.findMany({
+                        where: { id: { in: planIds } },
+                        select: { id: true, name: true, price: true, duration: true }
+                    })
+                    : Promise.resolve([])
+            ]);
+
+            const productById = new Map(products.map((product) => [product.id, product]));
+            const planById = new Map(plans.map((plan) => [plan.id, plan]));
+
+            authoritativeAmount = 0;
+            for (const item of normalizedItems) {
+                if (!Number.isInteger(item.quantity) || item.quantity <= 0) badRequest("Invalid item quantity");
+
+                if (item.type === 'PRODUCT') {
+                    const product = productById.get(item.productId);
+                    if (!product) badRequest(`Product ${item.productId} not found`);
+                    if (item.quantity > product.stock) badRequest(`Insufficient stock for ${product.name}`);
+                    authoritativeAmount += Number(product.price) * item.quantity;
+                    continue;
+                }
+
+                if (item.type === 'PLAN') {
+                    const planId = Number(item.id || item.planId || item.productId);
+                    const plan = planById.get(planId);
+                    if (!plan) badRequest(`Plan ${planId} not found`);
+                    authoritativeAmount += Number(plan.price) * item.quantity;
+                    continue;
+                }
+
+                const clientPrice = Number(item.price);
+                if (!Number.isFinite(clientPrice) || clientPrice < 0) badRequest("Invalid custom item price");
+                authoritativeAmount += clientPrice * item.quantity;
+            }
+        } else if (!Number.isFinite(authoritativeAmount) || authoritativeAmount < 0) {
+            badRequest("Invalid payment amount");
         }
 
         const normalizedCashTendered = method === 'CASH'
             ? (cashTendered !== undefined && cashTendered !== null && cashTendered !== '' ? Number(cashTendered) : null)
             : null;
-        if (method === 'CASH' && (!Number.isFinite(normalizedCashTendered) || normalizedCashTendered < parsedAmount)) {
+        if (method === 'CASH' && (!Number.isFinite(normalizedCashTendered) || normalizedCashTendered < authoritativeAmount)) {
             badRequest("Cash tendered is invalid or less than amount");
         }
 
         const normalizedChangeDue = method === 'CASH'
-            ? (changeDue !== undefined && changeDue !== null && changeDue !== '' ? Number(changeDue) : (normalizedCashTendered - parsedAmount))
+            ? (changeDue !== undefined && changeDue !== null && changeDue !== '' ? Number(changeDue) : (normalizedCashTendered - authoritativeAmount))
             : null;
-        if (method === 'CASH' && !Number.isFinite(normalizedChangeDue)) {
-            badRequest("Invalid change due");
-        }
+        if (method === 'CASH' && !Number.isFinite(normalizedChangeDue)) badRequest("Invalid change due");
 
         let normalizedExternalDate = null;
         if (method === 'GCASH' && externalDate) {
             const parsedExternalDate = new Date(externalDate);
-            if (Number.isNaN(parsedExternalDate.getTime())) {
-                badRequest("Invalid external payment date");
-            }
+            if (Number.isNaN(parsedExternalDate.getTime())) badRequest("Invalid external payment date");
             normalizedExternalDate = parsedExternalDate;
         }
 
-        const pointsAwarded = resolvedMemberId ? Math.floor(parsedAmount / 100) : 0;
+        const pointsAwarded = resolvedMemberId ? Math.floor(authoritativeAmount / 100) : 0;
         const resolvedCashierId = req.user.role === 'MEMBER' ? null : req.user.id;
 
-        // 1. Create Payment Record
-        // Handle mixed Prisma client/schema versions by stripping unknown optional fields.
-        const paymentCreateData = {
-            amount: parsedAmount,
-            type,
-            method,
-            ...(resolvedMemberId ? { member: { connect: { id: Number(resolvedMemberId) } } } : {}),
-            ...(resolvedCashierId ? { cashier: { connect: { id: Number(resolvedCashierId) } } } : {}),
-            pointsAwarded,
-            cashTendered: normalizedCashTendered,
-            changeDue: normalizedChangeDue,
-            externalRef: method === 'GCASH' ? (externalRef || null) : null,
-            externalDate: normalizedExternalDate,
-            discount: normalizedDiscount
-        };
+        const payment = await prisma.$transaction(async (tx) => {
+            const paymentCreateData = {
+                amount: authoritativeAmount,
+                type,
+                method,
+                ...(resolvedMemberId ? { member: { connect: { id: Number(resolvedMemberId) } } } : {}),
+                ...(resolvedCashierId ? { cashier: { connect: { id: Number(resolvedCashierId) } } } : {}),
+                pointsAwarded,
+                cashTendered: normalizedCashTendered,
+                changeDue: normalizedChangeDue,
+                externalRef: method === 'GCASH' ? (externalRef || null) : null,
+                externalDate: normalizedExternalDate,
+                discount: normalizedDiscount
+            };
 
-        const removableOptionalFields = new Set(['discount', 'cashTendered', 'changeDue', 'externalRef', 'externalDate']);
-        let payment;
-        // eslint-disable-next-line no-constant-condition
-        while (true) {
-            try {
-                payment = await prisma.payment.create({ data: paymentCreateData });
-                break;
-            } catch (err) {
-                const unknownArg = /Unknown argument `([^`]+)`/.exec(err?.message || '')?.[1];
-                if (!unknownArg || !removableOptionalFields.has(unknownArg) || !(unknownArg in paymentCreateData)) {
-                    throw err;
+            const removableOptionalFields = new Set(['discount', 'cashTendered', 'changeDue', 'externalRef', 'externalDate']);
+            let createdPayment;
+            // eslint-disable-next-line no-constant-condition
+            while (true) {
+                try {
+                    createdPayment = await tx.payment.create({ data: paymentCreateData });
+                    break;
+                } catch (err) {
+                    const unknownArg = /Unknown argument `([^`]+)`/.exec(err?.message || '')?.[1];
+                    if (!unknownArg || !removableOptionalFields.has(unknownArg) || !(unknownArg in paymentCreateData)) {
+                        throw err;
+                    }
+                    delete paymentCreateData[unknownArg];
                 }
-                console.warn(`payment.create: stripping unsupported field '${unknownArg}' for current Prisma client`);
-                delete paymentCreateData[unknownArg];
-            }
-        }
-
-        // 2. Process Items (Stock Deduction & Membership Updates)
-        if (items && items.length > 0) {
-            if (!Array.isArray(items)) {
-                badRequest("Items must be an array");
             }
 
-            const paymentItems = items.map((item) => ({
-                type: item.type || 'PRODUCT',
-                paymentId: payment.id,
-                productId: (item.type === 'PRODUCT' && item.id) ? Number(item.id) : null,
-                name: item.name || 'Item',
-                quantity: Number(item.quantity) || 1,
-                unitPrice: parseFloat(item.price) || 0
-            }));
+            if (normalizedItems.length > 0) {
+                const productIds = [...new Set(
+                    normalizedItems
+                        .filter((item) => item.type === 'PRODUCT' && Number.isInteger(item.productId) && item.productId > 0)
+                        .map((item) => item.productId)
+                )];
+                const planIds = [...new Set(
+                    normalizedItems
+                        .filter((item) => item.type === 'PLAN')
+                        .map((item) => Number(item.id || item.planId || item.productId))
+                        .filter((id) => Number.isInteger(id) && id > 0)
+                )];
 
-            await prisma.paymentItem.createMany({ data: paymentItems });
+                const [products, plans] = await Promise.all([
+                    productIds.length
+                        ? tx.product.findMany({
+                            where: { id: { in: productIds } },
+                            select: { id: true, name: true, price: true }
+                        })
+                        : Promise.resolve([]),
+                    planIds.length
+                        ? tx.plan.findMany({
+                            where: { id: { in: planIds } },
+                            select: { id: true, name: true, price: true, duration: true }
+                        })
+                        : Promise.resolve([])
+                ]);
+                const productById = new Map(products.map((product) => [product.id, product]));
+                const planById = new Map(plans.map((plan) => [plan.id, plan]));
 
-            for (const item of items) {
-                // A. Membership Plan Update
-                if (item.type === 'PLAN') {
-                    if (!resolvedMemberId) throw new Error("Member ID required for plan purchase");
+                const paymentItems = normalizedItems.map((item) => {
+                    const planId = Number(item.id || item.planId || item.productId);
+                    const product = item.type === 'PRODUCT' ? productById.get(item.productId) : null;
+                    const plan = item.type === 'PLAN' ? planById.get(planId) : null;
+                    return {
+                        type: item.type,
+                        paymentId: createdPayment.id,
+                        productId: item.type === 'PRODUCT' ? item.productId : null,
+                        name: product?.name || plan?.name || item.name || 'Item',
+                        quantity: item.quantity,
+                        unitPrice: item.type === 'PRODUCT'
+                            ? Number(product.price)
+                            : item.type === 'PLAN'
+                                ? Number(plan.price)
+                                : (parseFloat(item.price) || 0)
+                    };
+                });
+                await tx.paymentItem.createMany({ data: paymentItems });
 
-                    const member = await prisma.member.findUnique({ where: { id: Number(resolvedMemberId) } });
-                    if (!member) throw new Error("Member not found");
+                for (const item of normalizedItems) {
+                    if (item.type === 'PLAN') {
+                        if (!resolvedMemberId) throw new Error("Member ID required for plan purchase");
+                        const member = await tx.member.findUnique({ where: { id: Number(resolvedMemberId) } });
+                        if (!member) throw new Error("Member not found");
 
-                    // Fetch authoritative plan details (Duration, etc)
-                    const plan = await prisma.plan.findUnique({ where: { id: Number(item.id) } });
-                    if (!plan) throw new Error(`Plan ${item.id} not found`);
+                        const planId = Number(item.id || item.planId || item.productId);
+                        const plan = planById.get(planId);
+                        if (!plan) throw new Error(`Plan ${planId} not found`);
 
-                    // Calculate new expiry
-                    const currentExpiry = new Date(member.expiryDate) > new Date() ? new Date(member.expiryDate) :
-                        new Date();
-                    const newExpiry = new Date(currentExpiry);
-                    // Add duration (days)
-                    newExpiry.setDate(newExpiry.getDate() + (plan.duration));
+                        const currentExpiry = member.expiryDate && new Date(member.expiryDate) > new Date()
+                            ? new Date(member.expiryDate)
+                            : new Date();
+                        const newExpiry = new Date(currentExpiry);
+                        newExpiry.setDate(newExpiry.getDate() + plan.duration);
 
-                    await prisma.member.update({
-                        where: { id: Number(resolvedMemberId) },
-                        data: {
-                            expiryDate: newExpiry,
-                            status: 'ACTIVE',
-                            planId: Number(item.id) // Update their plan to the new one
-                        }
-                    });
-                }
-
-                // B. Stock Deduction (Products)
-                // Only deduct if it's a tracked product (has an ID and is not a quick-add service or Plan)
-                else if (item.id && (!item.type || item.type === 'PRODUCT')) { // Tracked products
-                    // Check if it's actually a product in DB
-                    try {
-                        await prisma.product.update({
-                            where: { id: Number(item.id) },
+                        await tx.member.update({
+                            where: { id: Number(resolvedMemberId) },
+                            data: {
+                                expiryDate: newExpiry,
+                                status: 'ACTIVE',
+                                planId
+                            }
+                        });
+                    } else if (item.type === 'PRODUCT' && item.productId) {
+                        const updated = await tx.product.updateMany({
+                            where: {
+                                id: item.productId,
+                                stock: { gte: item.quantity }
+                            },
                             data: { stock: { decrement: item.quantity } }
                         });
-                    } catch (err) {
-                        // Ignore if product not found (might be a custom item)
-                        console.warn(`Could not update stock for item ${item.id}`);
+                        if (updated.count === 0) throw new Error(`Insufficient stock for product ${item.productId}`);
                     }
                 }
             }
-        }
 
-        // 3. Award Loyalty Points (1 point per 100 PHP spent)
-        if (resolvedMemberId) {
-            if (pointsAwarded > 0) {
-                await prisma.member.update({
+            if (resolvedMemberId && pointsAwarded > 0) {
+                await tx.member.update({
                     where: { id: Number(resolvedMemberId) },
                     data: { points: { increment: pointsAwarded } }
                 });
             }
-        }
+
+            return createdPayment;
+        });
 
         res.json(payment);
     } catch (e) {
-        console.error(e);
-        res.status(e.status || 500).json({ error: e.message });
+        res.status(e.status || 500).json({ error: e.message || "Payment failed" });
     }
 };
 

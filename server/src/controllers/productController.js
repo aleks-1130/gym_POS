@@ -1,6 +1,37 @@
 const prisma = require('../config/prisma');
 const logAudit = require('../services/auditService');
 
+const normalizeProductPayload = (payload = {}) => {
+    const name = String(payload.name || '').trim();
+    const category = String(payload.category || '').trim();
+    const price = Number(payload.price);
+    const stock = Number(payload.stock);
+    const minStock = Number(payload.minStock);
+    const supplyCost = payload.supplyCost === undefined || payload.supplyCost === null || payload.supplyCost === ''
+        ? 0
+        : Number(payload.supplyCost);
+
+    if (!name) return { error: "Product name is required" };
+    if (!category) return { error: "Product category is required" };
+    if (!Number.isFinite(price) || price < 0) return { error: "Price must be a non-negative number" };
+    if (!Number.isInteger(stock) || stock < 0) return { error: "Stock must be a non-negative integer" };
+    if (!Number.isInteger(minStock) || minStock < 0) return { error: "Min stock must be a non-negative integer" };
+    if (!Number.isFinite(supplyCost) || supplyCost < 0) return { error: "Supply cost must be a non-negative number" };
+
+    return {
+        data: {
+            name,
+            category,
+            price,
+            stock,
+            minStock,
+            imageUrl: payload.imageUrl || null,
+            supplyCost,
+            supplierId: payload.supplierId ? Number(payload.supplierId) : null
+        }
+    };
+};
+
 const getAllProducts = async (req, res) => {
     try {
         const products = await prisma.product.findMany({
@@ -13,18 +44,12 @@ const getAllProducts = async (req, res) => {
 };
 
 const createProduct = async (req, res) => {
-    const { name, category, price, stock, minStock, imageUrl, supplyCost, supplierId } = req.body;
     try {
+        const normalized = normalizeProductPayload(req.body);
+        if (normalized.error) return res.status(400).json({ error: normalized.error });
+
         const product = await prisma.product.create({
-            data: {
-                name, category,
-                price: parseFloat(price) || 0,
-                stock: Number(stock) || 0,
-                minStock: Number(minStock) || 0,
-                imageUrl,
-                supplyCost: parseFloat(supplyCost) || 0,
-                supplierId: supplierId ? Number(supplierId) : null
-            }
+            data: normalized.data
         });
         await logAudit("CREATE_PRODUCT", req.user.id.toString(), `Product: ${product.name}`, "Created new product");
         res.json(product);
@@ -35,19 +60,13 @@ const createProduct = async (req, res) => {
 
 const updateProduct = async (req, res) => {
     const { id } = req.params;
-    const { name, category, price, stock, minStock, imageUrl, supplyCost, supplierId } = req.body;
     try {
+        const normalized = normalizeProductPayload(req.body);
+        if (normalized.error) return res.status(400).json({ error: normalized.error });
+
         const product = await prisma.product.update({
             where: { id: Number(id) },
-            data: {
-                name, category,
-                price: parseFloat(price) || 0,
-                stock: Number(stock) || 0,
-                minStock: Number(minStock) || 0,
-                imageUrl,
-                supplyCost: parseFloat(supplyCost) || 0,
-                supplierId: supplierId ? Number(supplierId) : null
-            }
+            data: normalized.data
         });
         await logAudit("UPDATE_PRODUCT", req.user.id.toString(), `Product: ${product.name}`, "Updated details");
         res.json(product);
@@ -73,6 +92,9 @@ const restockProduct = async (req, res) => {
 
     if (!productId || !quantity) {
         return res.status(400).json({ error: "Missing required fields" });
+    }
+    if (!Number.isInteger(Number(quantity)) || Number(quantity) <= 0) {
+        return res.status(400).json({ error: "Quantity must be a positive integer" });
     }
 
     try {

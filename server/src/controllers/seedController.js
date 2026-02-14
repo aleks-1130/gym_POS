@@ -2,8 +2,17 @@ const prisma = require('../config/prisma');
 
 const seedDatabase = async (req, res) => {
     try {
+        await prisma.paymentItem.deleteMany({});
+        await prisma.orderItem.deleteMany({});
+        await prisma.order.deleteMany({});
+        await prisma.booking.deleteMany({});
+        await prisma.sessionMaterial.deleteMany({});
+        await prisma.trainingSession.deleteMany({});
         await prisma.accessLog.deleteMany({});
         await prisma.payment.deleteMany({});
+        await prisma.memberNote.deleteMany({});
+        await prisma.membershipPeriod.deleteMany({});
+        await prisma.paymentMethod.deleteMany({});
         await prisma.member.deleteMany({});
         await prisma.class.deleteMany({});
         await prisma.plan.deleteMany({});

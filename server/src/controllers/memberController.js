@@ -551,47 +551,72 @@ const bcrypt = require('bcryptjs'); // Need bcrypt for password change
 const createMember = async (req, res) => {
     const { firstName, lastName, email, phone, planId, imageUrl, birthDate, sex, paymentMethod, cashTendered, changeDue, gcashReference, gcashDate, gcashTime } = req.body;
     try {
+        if (!firstName || !lastName || !planId || !paymentMethod) {
+            return res.status(400).json({ error: "firstName, lastName, planId, and paymentMethod are required" });
+        }
+        if (!['CASH', 'CARD', 'GCASH'].includes(String(paymentMethod).toUpperCase())) {
+            return res.status(400).json({ error: "Invalid payment method" });
+        }
+
         // Calculate expiry based on plan
         const plan = await prisma.plan.findUnique({ where: { id: Number(planId) } });
+        if (!plan) return res.status(404).json({ error: "Plan not found" });
         const startDate = new Date();
         const expiryDate = new Date();
         expiryDate.setDate(startDate.getDate() + (plan ? plan.duration : 30));
 
-        const member = await prisma.member.create({
-            data: {
-                firstName, lastName, email, phone, planId: Number(planId),
-                imageUrl,
-                birthDate: birthDate ? new Date(birthDate) : null,
-                sex,
-                status: 'ACTIVE',
-                startDate,
-                expiryDate,
-                password: await bcrypt.hash('password123', 10) // Default password
-            }
-        });
+        const method = String(paymentMethod).toUpperCase();
+        const normalizedCashTendered = method === 'CASH'
+            ? Number(cashTendered)
+            : null;
+        if (method === 'CASH' && (!Number.isFinite(normalizedCashTendered) || normalizedCashTendered < Number(plan.price))) {
+            return res.status(400).json({ error: "Cash tendered must be provided and cover full membership amount" });
+        }
+        const normalizedChangeDue = method === 'CASH'
+            ? (changeDue !== undefined ? Number(changeDue) : (normalizedCashTendered - Number(plan.price)))
+            : null;
+        if (method === 'CASH' && !Number.isFinite(normalizedChangeDue)) {
+            return res.status(400).json({ error: "Invalid change due" });
+        }
+        if (method === 'GCASH' && !gcashReference) {
+            return res.status(400).json({ error: "GCash reference is required for GCash payments" });
+        }
 
-        let payment = null;
-        if (plan) {
-            const pointsAwarded = Math.floor(plan.price / 100);
-            const externalDate = (gcashDate && gcashTime) ? new Date(`${gcashDate}T${gcashTime}`) : null;
-            payment = await prisma.payment.create({
+        const { member, payment } = await prisma.$transaction(async (tx) => {
+            const createdMember = await tx.member.create({
                 data: {
-                    amount: plan.price,
-                    type: 'MEMBERSHIP',
-                    method: paymentMethod || 'CASH',
-                    memberId: member.id,
-                    cashierId: req.user.id,
-                    pointsAwarded,
-                    cashTendered: paymentMethod === 'CASH' ? (cashTendered !== undefined ? Number(cashTendered) : null) : null,
-                    changeDue: paymentMethod === 'CASH' ? (changeDue !== undefined ? Number(changeDue) : null) : null,
-                    externalRef: paymentMethod === 'GCASH' ? (gcashReference || null) : null,
-                    externalDate: paymentMethod === 'GCASH' ? externalDate : null
+                    firstName, lastName, email, phone, planId: Number(planId),
+                    imageUrl,
+                    birthDate: birthDate ? new Date(birthDate) : null,
+                    sex,
+                    status: 'ACTIVE',
+                    startDate,
+                    expiryDate,
+                    password: await bcrypt.hash('password123', 10) // Default password
                 }
             });
 
-            await prisma.paymentItem.create({
+            const pointsAwarded = Math.floor(plan.price / 100);
+            const externalDate = (gcashDate && gcashTime) ? new Date(`${gcashDate}T${gcashTime}`) : null;
+            const createdPayment = await tx.payment.create({
                 data: {
-                    paymentId: payment.id,
+                    amount: plan.price,
+                    type: 'MEMBERSHIP',
+                    method,
+                    status: 'COMPLETED',
+                    memberId: createdMember.id,
+                    cashierId: req.user.id,
+                    pointsAwarded,
+                    cashTendered: method === 'CASH' ? normalizedCashTendered : null,
+                    changeDue: method === 'CASH' ? normalizedChangeDue : null,
+                    externalRef: method === 'GCASH' ? (gcashReference || null) : null,
+                    externalDate: method === 'GCASH' ? externalDate : null
+                }
+            });
+
+            await tx.paymentItem.create({
+                data: {
+                    paymentId: createdPayment.id,
                     productId: null,
                     name: plan.name,
                     type: 'PLAN',
@@ -601,12 +626,13 @@ const createMember = async (req, res) => {
             });
 
             if (pointsAwarded > 0) {
-                await prisma.member.update({
-                    where: { id: member.id },
+                await tx.member.update({
+                    where: { id: createdMember.id },
                     data: { points: { increment: pointsAwarded } }
                 });
             }
-        }
+            return { member: createdMember, payment: createdPayment };
+        });
 
         res.json({ member, payment });
     } catch (e) {
@@ -619,13 +645,42 @@ const renewMembership = async (req, res) => {
     const { id } = req.params;
     const { duration, amount, method, planId, cashTendered, changeDue, gcashReference, gcashDate, gcashTime } = req.body; // duration in days
     try {
+        const normalizedDuration = Number(duration);
+        const normalizedAmount = Number(amount);
+        const normalizedMethod = String(method || '').toUpperCase();
+        if (!Number.isInteger(normalizedDuration) || normalizedDuration <= 0 || normalizedDuration > 366) {
+            return res.status(400).json({ error: "Duration must be a whole number of days between 1 and 366" });
+        }
+        if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+            return res.status(400).json({ error: "Amount must be greater than zero" });
+        }
+        if (!['CASH', 'CARD', 'GCASH'].includes(normalizedMethod)) {
+            return res.status(400).json({ error: "Invalid payment method" });
+        }
+
+        const normalizedCashTendered = normalizedMethod === 'CASH'
+            ? Number(cashTendered)
+            : null;
+        if (normalizedMethod === 'CASH' && (!Number.isFinite(normalizedCashTendered) || normalizedCashTendered < normalizedAmount)) {
+            return res.status(400).json({ error: "Cash tendered must be provided and cover full renewal amount" });
+        }
+        const normalizedChangeDue = normalizedMethod === 'CASH'
+            ? (changeDue !== undefined ? Number(changeDue) : (normalizedCashTendered - normalizedAmount))
+            : null;
+        if (normalizedMethod === 'CASH' && !Number.isFinite(normalizedChangeDue)) {
+            return res.status(400).json({ error: "Invalid change due" });
+        }
+        if (normalizedMethod === 'GCASH' && !gcashReference) {
+            return res.status(400).json({ error: "GCash reference is required for GCash renewals" });
+        }
+
         const member = await prisma.member.findUnique({ where: { id: Number(id) } });
         if (!member) return res.status(404).json({ error: "Member not found" });
 
         const now = new Date();
         const currentExpiry = member.expiryDate && new Date(member.expiryDate) > now ? new Date(member.expiryDate) : now;
         const newExpiry = new Date(currentExpiry);
-        newExpiry.setDate(newExpiry.getDate() + Number(duration));
+        newExpiry.setDate(newExpiry.getDate() + normalizedDuration);
 
         const existingPeriods = await prisma.membershipPeriod.count({
             where: { memberId: Number(id) }
@@ -658,25 +713,26 @@ const renewMembership = async (req, res) => {
                 startDate: currentExpiry,
                 endDate: newExpiry,
                 amount: amount !== undefined && amount !== null ? parseFloat(amount) : null,
-                method: method || null
+                method: normalizedMethod || null
             }
         });
 
         const externalDate = (gcashDate && gcashTime) ? new Date(`${gcashDate}T${gcashTime}`) : null;
-        const pointsAwarded = Math.floor(parseFloat(amount) / 100);
+        const pointsAwarded = Math.floor(normalizedAmount / 100);
 
         const payment = await prisma.payment.create({
             data: {
-                amount: parseFloat(amount),
+                amount: normalizedAmount,
                 type: 'MEMBERSHIP',
-                method,
+                method: normalizedMethod,
+                status: 'COMPLETED',
                 memberId: Number(id),
                 cashierId: req.user.id,
                 pointsAwarded,
-                cashTendered: method === 'CASH' ? (cashTendered !== undefined ? Number(cashTendered) : null) : null,
-                changeDue: method === 'CASH' ? (changeDue !== undefined ? Number(changeDue) : null) : null,
-                externalRef: method === 'GCASH' ? (gcashReference || null) : null,
-                externalDate: method === 'GCASH' ? externalDate : null
+                cashTendered: normalizedMethod === 'CASH' ? normalizedCashTendered : null,
+                changeDue: normalizedMethod === 'CASH' ? normalizedChangeDue : null,
+                externalRef: normalizedMethod === 'GCASH' ? (gcashReference || null) : null,
+                externalDate: normalizedMethod === 'GCASH' ? externalDate : null
             }
         });
 
@@ -693,7 +749,7 @@ const renewMembership = async (req, res) => {
                 name: planName,
                 type: 'PLAN',
                 quantity: 1,
-                unitPrice: parseFloat(amount)
+                unitPrice: normalizedAmount
             }
         });
 

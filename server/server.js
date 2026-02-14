@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -86,6 +87,12 @@ app.listen(PORT, '0.0.0.0', async () => {
             console.log("Database seeded! Admin: admin@gym.com / password123");
         }
     } catch (e) {
-        console.error("Seeding failed:", e);
+        const msg = (e && e.message) ? e.message : '';
+        if (msg.includes("Can't reach database server")) {
+            console.error("Seeding skipped: database is unreachable.");
+            console.error("Check outbound access to Neon host/port 5432 and verify your Neon project is active.");
+        } else {
+            console.error("Seeding failed:", e);
+        }
     }
 });

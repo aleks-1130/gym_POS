@@ -1,4 +1,5 @@
 const prisma = require('../config/prisma');
+const { isDatabaseUnreachableError } = require('../utils/prismaError');
 
 const getSettings = async (req, res) => {
     try {
@@ -17,6 +18,10 @@ const getSettings = async (req, res) => {
         }
         res.json(profile);
     } catch (error) {
+        if (isDatabaseUnreachableError(error)) {
+            console.error('Error fetching settings: database unreachable');
+            return res.status(503).json({ error: 'Database unavailable. Please try again shortly.' });
+        }
         console.error('Error fetching settings:', error);
         res.status(500).json({ error: 'Failed to fetch settings' });
     }
@@ -41,6 +46,10 @@ const updateSettings = async (req, res) => {
 
         res.json(profile);
     } catch (error) {
+        if (isDatabaseUnreachableError(error)) {
+            console.error('Error updating settings: database unreachable');
+            return res.status(503).json({ error: 'Database unavailable. Please try again shortly.' });
+        }
         console.error('Error updating settings:', error);
         res.status(500).json({ error: 'Failed to update settings' });
     }

@@ -3,6 +3,7 @@ import axios from 'axios';
 
 export default function Attendance() {
     const [logs, setLogs] = useState([]);
+    const [trainingSessions, setTrainingSessions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [monthCursor, setMonthCursor] = useState(() => {
         const now = new Date();
@@ -10,18 +11,21 @@ export default function Attendance() {
     });
 
     useEffect(() => {
-        fetchLogs();
+        fetchData();
     }, []);
 
-    const fetchLogs = async () => {
+    const fetchData = async () => {
         try {
             const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-            const res = await axios.get('http://localhost:5000/api/access/logs', {
-                headers: token ? { Authorization: `Bearer ${token}` } : undefined
-            });
-            setLogs(res.data);
+            const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+            const [logsRes, sessionsRes] = await Promise.all([
+                axios.get('http://localhost:5000/api/access/logs', { headers }),
+                axios.get('http://localhost:5000/api/members/me/training-sessions', { headers })
+            ]);
+            setLogs(Array.isArray(logsRes.data) ? logsRes.data : []);
+            setTrainingSessions(Array.isArray(sessionsRes.data) ? sessionsRes.data : []);
         } catch {
-            console.error("Failed to fetch logs");
+            console.error("Failed to fetch attendance or training sessions");
         } finally {
             setLoading(false);
         }
@@ -49,6 +53,18 @@ export default function Attendance() {
         () => logs.filter((log) => !log.status || log.status === 'ALLOWED').length,
         [logs]
     );
+
+    const bookingsByDate = useMemo(() => {
+        const map = new Map();
+        for (const session of trainingSessions) {
+            if (session?.status === 'CANCELLED') continue;
+            const dt = new Date(session?.date);
+            if (Number.isNaN(dt.getTime())) continue;
+            const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+            map.set(key, (map.get(key) || 0) + 1);
+        }
+        return map;
+    }, [trainingSessions]);
 
 
     const calendarDays = useMemo(() => {
@@ -80,7 +96,7 @@ export default function Attendance() {
             <div className="flex items-center justify-between gap-3">
                 <div>
                     <h1 className="text-2xl sm:text-3xl font-bold text-white">Attendance Calendar</h1>
-                    <p className="text-text-muted text-xs sm:text-sm mt-1">Check mark = timed in, cross = missed day</p>
+                    <p className="text-text-muted text-xs sm:text-sm mt-1">Check mark = timed in, cross = missed day, bell = booked training</p>
                 </div>
                 <div className="flex items-center gap-2">
                     <button
@@ -124,6 +140,8 @@ export default function Attendance() {
 
                         const dayKey = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
                         const checkInDate = attendedByDate.get(dayKey);
+                        const bookingCount = bookingsByDate.get(dayKey) || 0;
+                        const hasBooking = bookingCount > 0;
                         const today = new Date();
                         const isFuture = day > new Date(today.getFullYear(), today.getMonth(), today.getDate());
                         const isMissed = !checkInDate && !isFuture;
@@ -151,7 +169,17 @@ export default function Attendance() {
                                             <span className="material-icons-round text-base sm:text-lg">close</span>
                                         </div>
                                     )}
+                                    {!checkInDate && !isMissed && hasBooking && (
+                                        <div className="inline-flex items-center text-amber-300 font-semibold">
+                                            <span className="material-icons-round text-base sm:text-lg">notifications_active</span>
+                                        </div>
+                                    )}
                                 </div>
+                                {hasBooking && (
+                                    <p className="text-[10px] sm:text-[11px] text-amber-300 font-semibold leading-tight text-center">
+                                        {bookingCount} booking{bookingCount > 1 ? 's' : ''}
+                                    </p>
+                                )}
                             </div>
                         );
                     })}

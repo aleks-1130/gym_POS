@@ -3,17 +3,42 @@ const logAudit = require('../services/auditService');
 
 // Check-in (Manual/Kiosk)
 const checkIn = async (req, res) => {
-    const { memberId, status } = req.body;
+    const { memberId } = req.body;
     try {
+        const parsedMemberId = Number(memberId);
+        if (!Number.isInteger(parsedMemberId) || parsedMemberId <= 0) {
+            return res.status(400).json({ error: "Valid memberId is required" });
+        }
+
+        const member = await prisma.member.findUnique({
+            where: { id: parsedMemberId },
+            select: { id: true, status: true, expiryDate: true, freezeStartDate: true, freezeEndDate: true }
+        });
+        if (!member) {
+            return res.status(404).json({ error: "Member not found" });
+        }
+
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const expiry = member.expiryDate ? new Date(member.expiryDate) : null;
+        const isExpired = expiry ? expiry < today : false;
+        const isFrozen = member.freezeStartDate && member.freezeEndDate
+            ? (now >= new Date(member.freezeStartDate) && now <= new Date(member.freezeEndDate))
+            : false;
+        const isAllowed = member.status === 'ACTIVE' && !isExpired && !isFrozen;
+
         const log = await prisma.accessLog.create({
             data: {
-                memberId: parseInt(memberId),
-                status: status || 'ALLOWED', // ALLOWED, DENIED
+                memberId: parsedMemberId,
+                status: isAllowed ? 'ALLOWED' : 'DENIED',
                 checkIn: new Date()
             }
         });
 
-        // Update member usage stats if needed?
+        if (!isAllowed) {
+            return res.status(403).json({ ...log, reason: "Membership is not eligible for access" });
+        }
+
         res.json(log);
     } catch (e) {
         res.status(500).json({ error: "Check-in failed" });

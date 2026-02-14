@@ -1,6 +1,5 @@
 import axios from 'axios';
-
-const API_BASE_URL = 'http://localhost:5000/api';
+import { withApiBase } from '../config/api';
 
 /**
  * Member service - handles all member-related API calls
@@ -13,7 +12,7 @@ export const memberService = {
      * @returns {Promise<Object>} Member data
      */
     async getMemberById(id) {
-        const response = await axios.get(`${API_BASE_URL}/members/${id}`);
+        const response = await axios.get(withApiBase(`/api/members/${id}`));
         return response.data;
     },
 
@@ -24,7 +23,7 @@ export const memberService = {
      * @returns {Promise<Object>} Updated member
      */
     async updateMember(id, data) {
-        const response = await axios.put(`${API_BASE_URL}/members/${id}`, data);
+        const response = await axios.put(withApiBase(`/api/members/${id}`), data);
         return response.data;
     },
 
@@ -35,7 +34,7 @@ export const memberService = {
      * @returns {Promise<Object>} Renewal result
      */
     async renewMembership(id, renewData) {
-        const response = await axios.post(`${API_BASE_URL}/members/${id}/renew`, renewData);
+        const response = await axios.post(withApiBase(`/api/members/${id}/renew`), renewData);
         return response.data;
     },
 
@@ -47,7 +46,7 @@ export const memberService = {
      * @returns {Promise<Object>} Updated member
      */
     async updateMemberStatus(id, status, extraData = {}) {
-        const response = await axios.post(`${API_BASE_URL}/members/${id}/status`, {
+        const response = await axios.post(withApiBase(`/api/members/${id}/status`), {
             status,
             ...extraData
         });
@@ -61,7 +60,7 @@ export const memberService = {
      * @returns {Promise<Object>} Result
      */
     async setMemberPassword(email, password) {
-        const response = await axios.post(`${API_BASE_URL}/auth/member-setup`, {
+        const response = await axios.post(withApiBase('/api/auth/member-setup'), {
             email,
             password
         });
@@ -74,7 +73,7 @@ export const memberService = {
      * @returns {Promise<Array>} Array of notes
      */
     async getMemberNotes(id) {
-        const response = await axios.get(`${API_BASE_URL}/members/${id}/notes`);
+        const response = await axios.get(withApiBase(`/api/members/${id}/notes`));
         return response.data;
     },
 
@@ -85,7 +84,7 @@ export const memberService = {
      * @returns {Promise<Object>} Created note
      */
     async addMemberNote(id, content) {
-        const response = await axios.post(`${API_BASE_URL}/members/${id}/notes`, {
+        const response = await axios.post(withApiBase(`/api/members/${id}/notes`), {
             content
         });
         return response.data;
@@ -97,7 +96,7 @@ export const memberService = {
      * @returns {Promise<Array>} Array of payments
      */
     async getMemberPayments(id) {
-        const response = await axios.get(`${API_BASE_URL}/members/${id}/payments`);
+        const response = await axios.get(withApiBase(`/api/members/${id}/payments`));
         return response.data;
     }
 };

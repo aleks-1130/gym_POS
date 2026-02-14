@@ -24,12 +24,12 @@ router.patch('/:id/payment-methods/:methodId', authenticateToken, memberControll
 router.delete('/:id/payment-methods/:methodId', authenticateToken, memberController.deletePaymentMethod);
 
 // Member CRUD (Staff/Admin/Self)
-router.post('/', authenticateToken, authorize(['ADMIN', 'STAFF']), memberController.createMember);
-router.post('/:id/renew', authenticateToken, authorize(['ADMIN', 'STAFF']), memberController.renewMembership);
+router.post('/', authenticateToken, authorize(['OWNER', 'ADMIN']), memberController.createMember);
+router.post('/:id/renew', authenticateToken, authorize(['OWNER', 'ADMIN']), memberController.renewMembership);
 router.get('/:id/payments', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.getMemberPayments);
 router.get('/:id/notes', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.getMemberNotes);
 router.post('/:id/notes', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.addMemberNote);
-router.post('/:id/status', authenticateToken, authorize(['ADMIN', 'STAFF']), memberController.updateMemberStatus);
+router.post('/:id/status', authenticateToken, authorize(['OWNER', 'ADMIN']), memberController.updateMemberStatus);
 router.put('/:id', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBER']), memberController.updateMember);
 router.delete('/:id', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.deleteMember);
 router.post('/:id/change-password', authenticateToken, authorize(['MEMBER']), memberController.changePassword);
