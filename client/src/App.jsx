@@ -6,6 +6,7 @@ import { ROLES } from './constants/roles';
 import Sidebar from './components/Sidebar';
 import BottomNav from './components/BottomNav';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
+import FullscreenController from './components/FullscreenController';
 
 // Auth & Public
 import Landing from './pages/Landing';
@@ -34,6 +35,7 @@ import PosSettings from './pages/admin/PosSettings';
 import Transactions from './pages/admin/Transactions';
 import Trainers from './pages/admin/Trainers';
 import Classes from './pages/admin/Classes';
+import AdminMembers from './pages/admin/Members';
 import DashboardReportPage from './pages/admin/DashboardReportPage';
 import PnLReportPage from './pages/admin/PnLReportPage';
 import AnalyticsReportPage from './pages/admin/AnalyticsReportPage';
@@ -117,10 +119,12 @@ function AppRoutes() {
 
   return (
     <div className="flex-1 w-full bg-background overflow-auto relative">
-      <PWAInstallPrompt isAuthenticated={Boolean(user)} />
+      <PWAInstallPrompt user={user} />
+      <FullscreenController enabled={Boolean(user)} />
       <Routes>
         {/* --- PUBLIC ROUTES --- */}
-        <Route path="/" element={<Landing />} />
+        <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="/landing" element={<Landing />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
 
@@ -200,6 +204,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
               <Members />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/members"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
+              <AdminMembers />
             </ProtectedRoute>
           }
         />

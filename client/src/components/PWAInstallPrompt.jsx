@@ -1,11 +1,31 @@
 import React from 'react';
 import { usePWA } from '../hooks/usePWA';
 
-export default function PWAInstallPrompt({ isAuthenticated }) {
+export default function PWAInstallPrompt({ user }) {
     const { isInstallable, isInstalled, isDismissed, installApp, dismissInstallPrompt } = usePWA();
+    const isAuthenticated = Boolean(user);
     const isIOS = /iphone|ipad|ipod/i.test(window.navigator.userAgent || '');
+    const promptSeenKey = `pwa_install_seen_${user?.id || user?.email || 'user'}`;
 
-    if (!isAuthenticated || isInstalled || isDismissed) {
+    const [hasSeenInSession, setHasSeenInSession] = React.useState(true);
+
+    React.useEffect(() => {
+        if (!isAuthenticated || isInstalled) {
+            setHasSeenInSession(true);
+            return;
+        }
+
+        const alreadySeen = sessionStorage.getItem(promptSeenKey) === '1';
+        if (alreadySeen) {
+            setHasSeenInSession(true);
+            return;
+        }
+
+        sessionStorage.setItem(promptSeenKey, '1');
+        setHasSeenInSession(false);
+    }, [isAuthenticated, isInstalled, promptSeenKey]);
+
+    if (!isAuthenticated || isInstalled || isDismissed || hasSeenInSession) {
         return null;
     }
 

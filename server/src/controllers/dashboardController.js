@@ -1,5 +1,48 @@
 const prisma = require('../config/prisma');
 
+const isDbConnectivityError = (error) => {
+    if (!error) return false;
+    return error.code === 'P1001' || String(error.message || '').includes("Can't reach database server");
+};
+
+const getFallbackDashboardStats = () => ({
+    activeMembers: 0,
+    revenueToday: 0,
+    expensesToday: 0,
+    netProfitToday: 0,
+    expiringSoon: 0,
+    monthlyRevenue: 0,
+    totalExpenses: 0,
+    periodRevenue: 0,
+    periodExpenses: 0,
+    netProfit: 0,
+    profitMargin: 0,
+    revenueTrend: [],
+    weeklyRevenue: [0, 0, 0, 0, 0, 0, 0],
+    membershipDistribution: [],
+    revenueDistribution: [
+        { label: 'Membership', value: 0, color: '#FF8C00' },
+        { label: 'Training', value: 0, color: '#10B981' },
+        { label: 'Store (App)', value: 0, color: '#3B82F6' },
+        { label: 'POS (Counter)', value: 0, color: '#8B5CF6' }
+    ],
+    breakdown: {
+        shopRevenue: 0,
+        storeRevenue: 0,
+        posRevenue: 0,
+        trainingRevenue: 0,
+        trainingExpenses: 0,
+        trainingNet: 0
+    },
+    recentActivity: [],
+    profitLossHistory: [],
+    expenseBreakdown: [],
+    transactionsToday: 0,
+    lowStockCount: 0,
+    lowStockItems: [],
+    pendingPaymentsCount: 0
+});
+
 const getHealthStats = async (req, res) => {
     try {
         const expenseSum = await prisma.expense.aggregate({ _sum: { amount: true } });
@@ -359,6 +402,14 @@ const getDashboardStats = async (req, res) => {
         });
     } catch (e) {
         console.error("Dashboard Stats Error:", e);
+        if (isDbConnectivityError(e)) {
+            // Keep UI usable during transient Neon/network disconnects.
+            return res.status(200).json({
+                ...getFallbackDashboardStats(),
+                dbUnavailable: true,
+                warning: "Database connection is temporarily unavailable. Showing fallback data."
+            });
+        }
         res.status(500).json({ error: e.message });
     }
 };

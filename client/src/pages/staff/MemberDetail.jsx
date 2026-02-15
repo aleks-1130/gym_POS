@@ -349,6 +349,29 @@ export default function MemberDetail() {
         getGroupedLogs(filteredLogs),
         [filteredLogs]
     );
+    const currentPlan = useMemo(
+        () => member?.plan || plans.find((p) => p.id === Number(member?.planId)) || null,
+        [member, plans]
+    );
+
+    useEffect(() => {
+        if (!currentPlan) return;
+        setRenewData((prev) => {
+            if (
+                Number(prev.planId) === Number(currentPlan.id) &&
+                Number(prev.amount) === Number(currentPlan.price) &&
+                Number(prev.duration) === Number(currentPlan.duration)
+            ) {
+                return prev;
+            }
+            return {
+                ...prev,
+                planId: currentPlan.id,
+                amount: currentPlan.price,
+                duration: currentPlan.duration
+            };
+        });
+    }, [currentPlan]);
 
 
     if (loading) return (
@@ -490,7 +513,7 @@ export default function MemberDetail() {
                                 <div className="flex-1">
                                     <p className="text-text-muted text-xs uppercase font-bold tracking-wider mb-2">Current Membership</p>
                                     <p className="text-3xl font-bold text-white mb-2">{stats.combinedPlanLabel}</p>
-                                    <p className="text-primary font-semibold text-lg">{formatPrice(member.plan?.price || 0)} / {member.plan?.duration || 0} Days</p>
+                                    <p className="text-primary font-semibold text-lg">{formatPrice(currentPlan?.price || 0)} / {currentPlan?.duration || 0} Days</p>
                                 </div>
                                 <div className="relative w-28 h-28">
                                     <svg className="transform -rotate-90 w-28 h-28">
@@ -547,7 +570,7 @@ export default function MemberDetail() {
                                 <div className="bg-white/5 rounded-xl p-4 border border-white/5">
                                     <p className="text-text-muted text-xs uppercase font-bold tracking-wider mb-2">Plan Included</p>
                                     <p className="text-2xl font-bold text-white">
-                                        {member.plan?.includesClasses ? (member.plan?.includedClassSessions || 0) : 0}
+                                        {currentPlan?.includesClasses ? (currentPlan?.includedClassSessions || 0) : 0}
                                     </p>
                                 </div>
                             </div>

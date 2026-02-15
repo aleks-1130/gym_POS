@@ -7,10 +7,7 @@ export default function Schedule() {
     const [sessionInfo, setSessionInfo] = useState({
         classSessionsRemaining: 0,
         classSessionsUsed: 0,
-        classSessionsPurchased: 0,
-        includedClassSessions: 0,
-        canBookClasses: false,
-        planName: null
+        canBookClasses: false
     });
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState('all');
@@ -25,10 +22,7 @@ export default function Schedule() {
             setSessionInfo(res.data?.sessionInfo || {
                 classSessionsRemaining: 0,
                 classSessionsUsed: 0,
-                classSessionsPurchased: 0,
-                includedClassSessions: 0,
-                canBookClasses: false,
-                planName: null
+                canBookClasses: false
             });
         } catch (error) {
             console.error('Failed to fetch classes', error);
@@ -131,28 +125,16 @@ export default function Schedule() {
             </div>
 
             <div className="mb-4 bg-surface border border-white/10 rounded-xl p-4">
-                <div className="flex flex-wrap items-center gap-4">
-                    <div>
-                        <p className="text-xs text-text-muted">Current Plan</p>
-                        <p className="text-sm font-bold text-white">{sessionInfo.planName || 'No active plan'}</p>
-                    </div>
-                    <div>
-                        <p className="text-xs text-text-muted">Sessions Remaining</p>
-                        <p className={`text-sm font-bold ${sessionInfo.classSessionsRemaining > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
+                        <p className="text-xs font-semibold tracking-wide uppercase text-text-muted">Sessions Left</p>
+                        <p className={`mt-1 text-2xl font-extrabold ${sessionInfo.classSessionsRemaining > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                             {sessionInfo.classSessionsRemaining}
                         </p>
                     </div>
-                    <div>
-                        <p className="text-xs text-text-muted">Sessions Used</p>
-                        <p className="text-sm font-bold text-white">{sessionInfo.classSessionsUsed}</p>
-                    </div>
-                    <div>
-                        <p className="text-xs text-text-muted">Included in Plan</p>
-                        <p className="text-sm font-bold text-white">{sessionInfo.includedClassSessions}</p>
-                    </div>
-                    <div>
-                        <p className="text-xs text-text-muted">From Packages</p>
-                        <p className="text-sm font-bold text-white">{sessionInfo.classSessionsPurchased}</p>
+                    <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4">
+                        <p className="text-xs font-semibold tracking-wide uppercase text-text-muted">Sessions Used</p>
+                        <p className="mt-1 text-2xl font-extrabold text-white">{sessionInfo.classSessionsUsed}</p>
                     </div>
                 </div>
                 {sessionInfo.classSessionsRemaining <= 0 && (
@@ -164,7 +146,7 @@ export default function Schedule() {
                 <div className="flex gap-2">
                     {[
                         { value: 'all', label: 'All Classes', icon: 'grid_view' },
-                        { value: 'booked', label: 'My Bookings', icon: 'check_circle' },
+                        { value: 'booked', label: 'Joined Classes', icon: 'check_circle' },
                         { value: 'available', label: 'Available', icon: 'event_available' }
                     ].map(f => (
                         <button

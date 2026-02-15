@@ -6,5 +6,6 @@ const { authenticateToken, authorize } = require('../middleware/authMiddleware')
 router.post('/book-training', authenticateToken, authorize(['ADMIN', 'STAFF']), trainingController.bookTraining);
 router.get('/training-sessions', authenticateToken, authorize(['ADMIN', 'STAFF']), trainingController.getTrainingSessions);
 router.post('/training-sessions/:id/collect', authenticateToken, authorize(['ADMIN', 'STAFF']), trainingController.collectSessionPayment);
+router.post('/training-sessions/:id/decline', authenticateToken, authorize(['ADMIN', 'STAFF']), trainingController.declineSessionBooking);
 
 module.exports = router;

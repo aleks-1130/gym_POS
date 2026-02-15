@@ -270,11 +270,53 @@ const getMySessions = async (req, res) => {
     }
 };
 
+const declineSession = async (req, res) => {
+    const sessionId = Number(req.params.id);
+    if (!Number.isInteger(sessionId) || sessionId <= 0) {
+        return res.status(400).json({ error: "Invalid session ID" });
+    }
+
+    try {
+        const session = await prisma.trainingSession.findUnique({
+            where: { id: sessionId }
+        });
+        if (!session) return res.status(404).json({ error: "Training session not found" });
+
+        if (req.user.role === 'TRAINER' && Number(req.user.trainerId) !== Number(session.trainerId)) {
+            return res.status(403).json({ error: "Access denied" });
+        }
+
+        if (session.paymentStatus === 'PAID') {
+            return res.status(400).json({ error: "Cannot decline a paid booking" });
+        }
+
+        if (session.status === 'CANCELLED') {
+            return res.json({ ...session, message: "Booking already cancelled" });
+        }
+
+        const updated = await prisma.trainingSession.update({
+            where: { id: sessionId },
+            data: {
+                status: 'CANCELLED',
+                paymentStatus: 'UNPAID',
+                notes: [session.notes, `Declined by ${req.user.role} ${req.user.id} on ${new Date().toISOString()}`]
+                    .filter(Boolean)
+                    .join('\n')
+            }
+        });
+
+        res.json(updated);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to decline booking", detail: e?.message });
+    }
+};
+
 module.exports = {
     getAllSessions,
     getSessionById,
     completeSession,
     updateSession,
     getTrainerSessions,
-    getMySessions
+    getMySessions,
+    declineSession
 };

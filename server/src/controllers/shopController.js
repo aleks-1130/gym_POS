@@ -75,7 +75,7 @@ const checkout = async (req, res) => {
             const payment = await tx.payment.create({
                 data: {
                     amount: computedTotal,
-                    type: 'STORE_SALE',
+                    type: isPendingCash ? 'IN_APP_PURCHASE' : 'STORE_SALE',
                     method,
                     member: { connect: { id: Number(memberId) } },
                     pointsAwarded,
@@ -87,17 +87,6 @@ const checkout = async (req, res) => {
 
             for (const item of normalizedItems) {
                 const product = productById.get(item.productId);
-                const updated = await tx.product.updateMany({
-                    where: {
-                        id: item.productId,
-                        stock: { gte: item.quantity }
-                    },
-                    data: { stock: { decrement: item.quantity } }
-                });
-                if (updated.count === 0) {
-                    throw new Error(`Insufficient stock for ${product.name}`);
-                }
-
                 await tx.paymentItem.create({
                     data: {
                         paymentId: payment.id,
@@ -108,6 +97,20 @@ const checkout = async (req, res) => {
                         unitPrice: Number(product.price)
                     }
                 });
+
+                // Pending cash checkout should not consume stock until cashier accepts payment.
+                if (!isPendingCash) {
+                    const updated = await tx.product.updateMany({
+                        where: {
+                            id: item.productId,
+                            stock: { gte: item.quantity }
+                        },
+                        data: { stock: { decrement: item.quantity } }
+                    });
+                    if (updated.count === 0) {
+                        throw new Error(`Insufficient stock for ${product.name}`);
+                    }
+                }
             }
 
             if (pointsAwarded > 0) {

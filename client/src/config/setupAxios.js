@@ -8,7 +8,7 @@ if (API_BASE_URL) {
 }
 
 axios.interceptors.request.use((config) => {
-    if (API_BASE_URL && typeof config.url === 'string' && config.url.startsWith(LOCAL_API_PREFIX)) {
+    if (typeof config.url === 'string' && config.url.startsWith(LOCAL_API_PREFIX)) {
         const relative = config.url.slice(LOCAL_API_PREFIX.length);
         config.url = withApiBase(relative);
     }

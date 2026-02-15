@@ -255,6 +255,7 @@ export default function Members() {
     const filteredMembers = Array.isArray(members) ? members : [];
 
     const selectedPlan = plans.find(plan => plan.id === Number(formData.planId));
+    const getMemberPlan = (member) => member?.plan || plans.find(plan => plan.id === Number(member?.planId));
     const planPrice = selectedPlan ? selectedPlan.price : 0;
     const cashTenderedValue = parseFloat(amountTendered) || 0;
     const amountDueLocal = planPrice;
@@ -375,7 +376,7 @@ export default function Members() {
                             },
                             {
                                 header: 'Plan',
-                                accessor: (member) => <span className="text-text-secondary font-medium">{member.plan?.name || "None"}</span>
+                                accessor: (member) => <span className="text-text-secondary font-medium">{getMemberPlan(member)?.name || "None"}</span>
                             },
                             {
                                 header: 'Status',
@@ -473,7 +474,7 @@ export default function Members() {
                                 <div className="mt-auto pt-4 border-t border-white/5 grid grid-cols-2 gap-2 text-sm">
                                     <div>
                                         <p className="text-text-muted text-xs">Plan</p>
-                                        <p className="text-white font-medium truncate">{member.plan?.name || "None"}</p>
+                                        <p className="text-white font-medium truncate">{getMemberPlan(member)?.name || "None"}</p>
                                     </div>
                                     <div className="text-right">
                                         <p className="text-text-muted text-xs">Expires</p>

@@ -3,11 +3,13 @@ import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useCurrency } from '../../context/CurrencyContext';
 import Receipt from '../../components/Receipt';
+import { withApiBase } from '../../config/api';
 
 export default function PurchaseHistory() {
     const { user } = useAuth();
     const { formatPrice } = useCurrency();
     const [payments, setPayments] = useState([]);
+    const [trainingSessions, setTrainingSessions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('all'); // all, membership, training
     const [selectedReceipt, setSelectedReceipt] = useState(null);
@@ -18,15 +20,18 @@ export default function PurchaseHistory() {
 
     const fetchPaymentHistory = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const res = await axios.get('http://localhost:5000/api/members/me/transactions', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            console.log('[PURCHASE HISTORY] Fetched transactions:', res.data.length);
-            console.log('[PURCHASE HISTORY] First transaction:', res.data[0]);
-            setPayments(res.data);
+            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+            const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+
+            const [transactionsRes, sessionsRes] = await Promise.all([
+                axios.get(withApiBase('/api/members/me/transactions'), { headers }),
+                axios.get(withApiBase('/api/members/me/training-sessions'), { headers })
+            ]);
+
+            setPayments(transactionsRes.data || []);
+            setTrainingSessions(sessionsRes.data || []);
         } catch (error) {
-            console.error("Failed to fetch payment history", error);
+            console.error('Failed to fetch payment history', error);
         } finally {
             setLoading(false);
         }
@@ -34,27 +39,74 @@ export default function PurchaseHistory() {
 
     if (loading) return <div className="text-white p-6 text-center">Loading payment history...</div>;
 
-    // All transactions from API
-    const allTransactions = payments.sort((a, b) => new Date(b.date) - new Date(a.date));
+    const cancelledBookings = trainingSessions
+        .filter((session) => String(session?.status || '').toUpperCase() === 'CANCELLED')
+        .map((session) => ({
+            id: `booking-${session.id}`,
+            date: session.date,
+            type: 'TRAINING_BOOKING',
+            method: session.paymentMethod || 'CASH',
+            status: 'CANCELLED',
+            amount: session.price || 0,
+            items: [{
+                name: `Trainer Booking - ${session?.trainer?.name || 'Trainer'}`,
+                quantity: 1,
+                unitPrice: session.price || 0
+            }]
+        }));
+
+    // Merge payment transactions + cancelled training bookings for member visibility.
+    const allTransactions = [...payments, ...cancelledBookings].sort((a, b) => new Date(b.date) - new Date(a.date));
 
     const filteredTransactions = activeTab === 'all'
         ? allTransactions
         : activeTab === 'membership'
-            ? allTransactions.filter(p => p.type === 'MEMBERSHIP')
-            : allTransactions.filter(p => p.type === 'TRAINING');
+            ? allTransactions.filter((p) => p.type === 'MEMBERSHIP')
+            : allTransactions.filter((p) => p.type === 'TRAINING' || p.type === 'TRAINING_BOOKING');
 
-    const totalSpent = allTransactions.reduce((sum, item) => sum + (item.amount || 0), 0);
+    const totalSpent = payments.reduce((sum, item) => sum + (item.amount || 0), 0);
+
+    const isActionDisabled = (item) => item.status === 'PENDING' || item.status === 'VOIDED' || item.status === 'CANCELLED';
+
+    const getActionLabel = (item, mobile = false) => {
+        if (item.status === 'PENDING') return 'Pending Approval';
+        if (item.status === 'VOIDED') return 'Declined';
+        if (item.status === 'CANCELLED') return 'Cancelled';
+        return mobile ? 'View Receipt' : 'View';
+    };
+
+    const getTypeBadge = (item) => {
+        if (item.type === 'MEMBERSHIP') return 'bg-blue-500/20 text-blue-300';
+        if (item.type === 'TRAINING') return 'bg-green-500/20 text-green-300';
+        if (item.type === 'TRAINING_BOOKING') return 'bg-red-500/20 text-red-300';
+        if (item.type === 'STORE_SALE') return 'bg-purple-500/20 text-purple-300';
+        return 'bg-orange-500/20 text-orange-300';
+    };
+
+    const getTypeIcon = (item) => {
+        if (item.type === 'MEMBERSHIP') return 'card_membership';
+        if (item.type === 'TRAINING') return 'fitness_center';
+        if (item.type === 'TRAINING_BOOKING') return 'event_busy';
+        if (item.type === 'STORE_SALE') return 'shopping_bag';
+        return 'payment';
+    };
+
+    const getTypeLabel = (item) => (item.type === 'TRAINING_BOOKING' ? 'TRAINING (CANCELLED)' : item.type);
+
+    const getStatusBadge = (item) => {
+        if (item.status === 'PENDING') return 'bg-yellow-500/20 text-yellow-300';
+        if (item.status === 'VOIDED' || item.status === 'CANCELLED') return 'bg-red-500/20 text-red-300';
+        return 'bg-emerald-500/20 text-emerald-300';
+    };
 
     return (
         <div className="space-y-4 sm:space-y-6">
-            {/* Header */}
             <div className="space-y-3">
                 <div>
                     <h1 className="text-2xl sm:text-3xl font-bold text-white">Payment History</h1>
-                    <p className="text-text-muted text-xs sm:text-sm mt-1">View all your transactions and receipts</p>
+                    <p className="text-text-muted text-xs sm:text-sm mt-1">View all your transactions and cancelled trainer bookings</p>
                 </div>
 
-                {/* Summary Cards */}
                 <div className="grid grid-cols-2 gap-3">
                     <div className="bg-surface rounded-xl p-3 sm:p-4 border border-white/5">
                         <p className="text-text-muted text-[10px] sm:text-xs mb-1">Total Spent</p>
@@ -67,9 +119,8 @@ export default function PurchaseHistory() {
                 </div>
             </div>
 
-            {/* Filter Tabs */}
             <div className="flex gap-2 overflow-x-auto pb-1">
-                {['all', 'membership', 'training'].map(tab => (
+                {['all', 'membership', 'training'].map((tab) => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
@@ -83,7 +134,6 @@ export default function PurchaseHistory() {
                 ))}
             </div>
 
-            {/* Transactions List */}
             {filteredTransactions.length === 0 ? (
                 <div className="bg-surface rounded-xl p-8 text-center border border-white/5">
                     <span className="material-icons-round text-text-muted text-4xl mb-2">receipt_long</span>
@@ -91,7 +141,6 @@ export default function PurchaseHistory() {
                 </div>
             ) : (
                 <div className="space-y-3">
-                    {/* Desktop Table View */}
                     <div className="hidden sm:block bg-surface rounded-xl border border-white/5 overflow-hidden">
                         <table className="w-full">
                             <thead className="bg-white/5 border-b border-white/5">
@@ -100,6 +149,7 @@ export default function PurchaseHistory() {
                                     <th className="px-4 sm:px-6 py-3 text-text-muted text-xs font-bold uppercase">Type</th>
                                     <th className="px-4 sm:px-6 py-3 text-text-muted text-xs font-bold uppercase">Items</th>
                                     <th className="px-4 sm:px-6 py-3 text-text-muted text-xs font-bold uppercase">Method</th>
+                                    <th className="px-4 sm:px-6 py-3 text-text-muted text-xs font-bold uppercase">Status</th>
                                     <th className="px-4 sm:px-6 py-3 text-text-muted text-xs font-bold uppercase text-right">Amount</th>
                                     <th className="px-4 sm:px-6 py-3 text-text-muted text-xs font-bold uppercase text-right">Actions</th>
                                 </tr>
@@ -116,17 +166,9 @@ export default function PurchaseHistory() {
                                             </div>
                                         </td>
                                         <td className="px-4 sm:px-6 py-4">
-                                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-bold ${item.type === 'MEMBERSHIP' ? 'bg-blue-500/20 text-blue-300' :
-                                                item.type === 'TRAINING' ? 'bg-green-500/20 text-green-300' :
-                                                    item.type === 'STORE_SALE' ? 'bg-purple-500/20 text-purple-300' :
-                                                        'bg-orange-500/20 text-orange-300'
-                                                }`}>
-                                                <span className="material-icons-round text-xs">
-                                                    {item.type === 'MEMBERSHIP' ? 'card_membership' :
-                                                        item.type === 'TRAINING' ? 'fitness_center' :
-                                                            item.type === 'STORE_SALE' ? 'shopping_bag' : 'payment'}
-                                                </span>
-                                                {item.type}
+                                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-bold ${getTypeBadge(item)}`}>
+                                                <span className="material-icons-round text-xs">{getTypeIcon(item)}</span>
+                                                {getTypeLabel(item)}
                                             </span>
                                         </td>
                                         <td className="px-4 sm:px-6 py-4">
@@ -140,13 +182,21 @@ export default function PurchaseHistory() {
                                                     {item.items.length > 2 && (
                                                         <div className="text-text-muted text-xs">+{item.items.length - 2} more</div>
                                                     )}
+                                                    {item.type === 'TRAINING_BOOKING' && (
+                                                        <div className="text-red-300 text-xs mt-1">This trainer booking was cancelled.</div>
+                                                    )}
                                                 </div>
                                             ) : (
-                                                <span className="text-text-muted text-xs">—</span>
+                                                <span className="text-text-muted text-xs">-</span>
                                             )}
                                         </td>
                                         <td className="px-4 sm:px-6 py-4">
                                             <span className="text-white text-sm">{item.method}</span>
+                                        </td>
+                                        <td className="px-4 sm:px-6 py-4">
+                                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-bold ${getStatusBadge(item)}`}>
+                                                {item.status || 'COMPLETED'}
+                                            </span>
                                         </td>
                                         <td className="px-4 sm:px-6 py-4 text-right">
                                             <span className="text-primary font-bold text-sm">{formatPrice(item.amount)}</span>
@@ -154,10 +204,11 @@ export default function PurchaseHistory() {
                                         <td className="px-4 sm:px-6 py-4 text-right">
                                             <button
                                                 onClick={() => setSelectedReceipt(item)}
-                                                className="text-primary hover:text-orange-400 font-medium text-xs flex items-center gap-1 ml-auto transition-colors"
+                                                disabled={isActionDisabled(item)}
+                                                className="text-primary hover:text-orange-400 disabled:text-text-muted disabled:cursor-not-allowed font-medium text-xs flex items-center gap-1 ml-auto transition-colors"
                                             >
                                                 <span className="material-icons-round text-sm">receipt</span>
-                                                View
+                                                {getActionLabel(item)}
                                             </button>
                                         </td>
                                     </tr>
@@ -166,34 +217,31 @@ export default function PurchaseHistory() {
                         </table>
                     </div>
 
-                    {/* Mobile Card View */}
                     <div className="sm:hidden space-y-3">
                         {filteredTransactions.map((item) => (
                             <div key={item.id} className="bg-surface rounded-xl p-4 border border-white/5 space-y-3">
                                 <div className="flex items-start justify-between">
                                     <div className="flex-1">
                                         <div className="flex items-center gap-2 mb-1">
-                                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-bold ${item.type === 'MEMBERSHIP' ? 'bg-blue-500/20 text-blue-300' :
-                                                item.type === 'TRAINING' ? 'bg-green-500/20 text-green-300' :
-                                                    item.type === 'STORE_SALE' ? 'bg-purple-500/20 text-purple-300' :
-                                                        'bg-orange-500/20 text-orange-300'
-                                                }`}>
-                                                <span className="material-icons-round text-xs">
-                                                    {item.type === 'MEMBERSHIP' ? 'card_membership' :
-                                                        item.type === 'TRAINING' ? 'fitness_center' :
-                                                            item.type === 'STORE_SALE' ? 'shopping_bag' : 'payment'}
-                                                </span>
-                                                {item.type}
+                                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-bold ${getTypeBadge(item)}`}>
+                                                <span className="material-icons-round text-xs">{getTypeIcon(item)}</span>
+                                                {getTypeLabel(item)}
                                             </span>
                                         </div>
                                         <div className="text-text-muted text-xs">
-                                            {new Date(item.date).toLocaleDateString()} • {new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            {new Date(item.date).toLocaleDateString()} - {new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                         </div>
                                     </div>
                                     <div className="text-right">
                                         <div className="text-primary font-bold text-lg">{formatPrice(item.amount)}</div>
                                         <div className="text-text-muted text-xs">{item.method}</div>
                                     </div>
+                                </div>
+
+                                <div>
+                                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold ${getStatusBadge(item)}`}>
+                                        {item.status || 'COMPLETED'}
+                                    </span>
                                 </div>
 
                                 {item.items && item.items.length > 0 && (
@@ -207,16 +255,20 @@ export default function PurchaseHistory() {
                                         {item.items.length > 2 && (
                                             <div className="text-text-muted text-xs">+{item.items.length - 2} more</div>
                                         )}
+                                        {item.type === 'TRAINING_BOOKING' && (
+                                            <div className="text-red-300 text-xs mt-1">This trainer booking was cancelled.</div>
+                                        )}
                                     </div>
                                 )}
 
                                 <div className="pt-2 border-t border-white/5">
                                     <button
                                         onClick={() => setSelectedReceipt(item)}
-                                        className="text-primary hover:text-orange-400 font-medium text-xs flex items-center gap-1 transition-colors"
+                                        disabled={isActionDisabled(item)}
+                                        className="text-primary hover:text-orange-400 disabled:text-text-muted disabled:cursor-not-allowed font-medium text-xs flex items-center gap-1 transition-colors"
                                     >
                                         <span className="material-icons-round text-sm">receipt</span>
-                                        View Receipt
+                                        {getActionLabel(item, true)}
                                     </button>
                                 </div>
                             </div>
@@ -225,22 +277,15 @@ export default function PurchaseHistory() {
                 </div>
             )}
 
-            {/* Receipt Modal */}
             {selectedReceipt && (() => {
-                console.log('[RECEIPT MODAL] Selected receipt:', selectedReceipt);
-
-                // For transactions without items (membership, training), create a synthetic item
                 let receiptItems = selectedReceipt.items || [];
-                console.log('[RECEIPT MODAL] Original items:', receiptItems);
 
-                // Map unitPrice to price for Receipt component compatibility
-                receiptItems = receiptItems.map(item => ({
+                receiptItems = receiptItems.map((item) => ({
                     ...item,
                     price: item.unitPrice || item.price || 0
                 }));
 
                 if (receiptItems.length === 0 && selectedReceipt.amount) {
-                    // Create a synthetic item based on transaction type
                     const itemName = selectedReceipt.type === 'MEMBERSHIP'
                         ? 'Membership Fee'
                         : selectedReceipt.type === 'TRAINING'
@@ -254,15 +299,11 @@ export default function PurchaseHistory() {
                         quantity: 1,
                         price: selectedReceipt.amount
                     }];
-                    console.log('[RECEIPT MODAL] Created synthetic items:', receiptItems);
                 }
-
-                console.log('[RECEIPT MODAL] Final items to pass:', receiptItems);
 
                 return (
                     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in overflow-y-auto">
                         <div className="relative my-8">
-                            {/* Close Button */}
                             <button
                                 onClick={() => setSelectedReceipt(null)}
                                 className="absolute -top-4 -right-4 z-10 w-10 h-10 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg transition-colors"
@@ -270,7 +311,6 @@ export default function PurchaseHistory() {
                                 <span className="material-icons-round">close</span>
                             </button>
 
-                            {/* Receipt Component */}
                             <Receipt
                                 transaction={selectedReceipt}
                                 items={receiptItems}

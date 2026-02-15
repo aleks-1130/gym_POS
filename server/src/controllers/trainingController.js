@@ -128,7 +128,10 @@ const bookTraining = async (req, res) => {
 const getTrainingSessions = async (req, res) => {
     const { status } = req.query; // paymentStatus filter: UNPAID/PAID
     try {
-        const where = status ? { paymentStatus: String(status).toUpperCase() } : {};
+        const where = {
+            ...(status ? { paymentStatus: String(status).toUpperCase() } : {}),
+            status: { not: 'CANCELLED' }
+        };
         const sessions = await prisma.trainingSession.findMany({
             where,
             include: { member: true, trainer: true },
@@ -191,8 +194,45 @@ const collectSessionPayment = async (req, res) => {
     }
 };
 
+// Staff decline/cancel an unpaid trainer booking
+const declineSessionBooking = async (req, res) => {
+    const sessionId = Number(req.params.id);
+    if (!Number.isInteger(sessionId) || sessionId <= 0) {
+        return res.status(400).json({ error: "Invalid session ID" });
+    }
+
+    try {
+        const session = await prisma.trainingSession.findUnique({
+            where: { id: sessionId }
+        });
+        if (!session) return res.status(404).json({ error: "Training session not found" });
+        if (session.paymentStatus === 'PAID') {
+            return res.status(400).json({ error: "Cannot decline a paid booking" });
+        }
+        if (session.status === 'CANCELLED') {
+            return res.json({ ...session, message: "Booking already cancelled" });
+        }
+
+        const updated = await prisma.trainingSession.update({
+            where: { id: sessionId },
+            data: {
+                status: 'CANCELLED',
+                paymentStatus: 'UNPAID',
+                notes: [session.notes, `Declined by staff ${req.user.id} on ${new Date().toISOString()}`]
+                    .filter(Boolean)
+                    .join('\n')
+            }
+        });
+
+        res.json(updated);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to decline booking", detail: e?.message });
+    }
+};
+
 module.exports = {
     bookTraining,
     getTrainingSessions,
-    collectSessionPayment
+    collectSessionPayment,
+    declineSessionBooking
 };

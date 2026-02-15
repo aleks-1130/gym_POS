@@ -360,7 +360,8 @@ const getAllPayments = async (req, res) => {
                 OR: [
                     { cashierId: req.user.id },
                     { type: 'IN_APP_PURCHASE' },
-                    { type: 'TRAINING' }
+                    { type: 'TRAINING' },
+                    { status: 'PENDING' }
                 ]
             },
             take: 50,
@@ -646,6 +647,126 @@ const getMyTransactions = async (req, res) => {
     }
 };
 
+const collectPendingCashPayment = async (req, res) => {
+    const paymentId = Number(req.params.id);
+    const cashTendered = Number(req.body?.cashTendered);
+
+    if (!Number.isInteger(paymentId)) {
+        return res.status(400).json({ error: "Invalid payment ID" });
+    }
+    if (!Number.isFinite(cashTendered) || cashTendered < 0) {
+        return res.status(400).json({ error: "Invalid cash tendered amount" });
+    }
+
+    try {
+        const payment = await prisma.payment.findUnique({
+            where: { id: paymentId },
+            include: { member: true }
+        });
+        if (!payment) return res.status(404).json({ error: "Payment not found" });
+        if (payment.status !== 'PENDING') {
+            return res.status(400).json({ error: "Only pending payments can be collected" });
+        }
+        if (String(payment.method || '').toUpperCase() !== 'CASH') {
+            return res.status(400).json({ error: "Only pending cash payments can be collected from this flow" });
+        }
+        if (cashTendered < Number(payment.amount || 0)) {
+            return res.status(400).json({ error: "Cash tendered must be at least the payment amount" });
+        }
+
+        const pointsAwarded = payment.memberId ? Math.floor(Number(payment.amount || 0) / 100) : 0;
+        const changeDue = Number((cashTendered - Number(payment.amount || 0)).toFixed(2));
+
+        const updated = await prisma.$transaction(async (tx) => {
+            const paymentItems = await tx.paymentItem.findMany({
+                where: { paymentId },
+                select: { id: true, productId: true, quantity: true, name: true }
+            });
+
+            for (const item of paymentItems) {
+                if (!item.productId) continue;
+                const decremented = await tx.product.updateMany({
+                    where: {
+                        id: Number(item.productId),
+                        stock: { gte: Number(item.quantity) }
+                    },
+                    data: { stock: { decrement: Number(item.quantity) } }
+                });
+                if (decremented.count === 0) {
+                    throw new Error(`Insufficient stock for ${item.name || 'product'}`);
+                }
+            }
+
+            const completedPayment = await tx.payment.update({
+                where: { id: paymentId },
+                data: {
+                    status: 'COMPLETED',
+                    cashTendered,
+                    changeDue,
+                    pointsAwarded,
+                    cashierId: req.user.id
+                },
+                include: {
+                    member: true,
+                    cashier: { select: { id: true, name: true, role: true } },
+                    items: true
+                }
+            });
+
+            if (payment.memberId && pointsAwarded > 0) {
+                await tx.member.update({
+                    where: { id: Number(payment.memberId) },
+                    data: { points: { increment: pointsAwarded } }
+                });
+            }
+
+            return completedPayment;
+        });
+
+        res.json(updated);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to collect pending cash payment", detail: e.message });
+    }
+};
+
+const declinePendingCashPayment = async (req, res) => {
+    const paymentId = Number(req.params.id);
+    if (!Number.isInteger(paymentId)) {
+        return res.status(400).json({ error: "Invalid payment ID" });
+    }
+
+    try {
+        const payment = await prisma.payment.findUnique({
+            where: { id: paymentId },
+            include: { member: true }
+        });
+        if (!payment) return res.status(404).json({ error: "Payment not found" });
+        if (payment.status !== 'PENDING') {
+            return res.status(400).json({ error: "Only pending payments can be declined" });
+        }
+        if (String(payment.method || '').toUpperCase() !== 'CASH') {
+            return res.status(400).json({ error: "Only pending cash payments can be declined from this flow" });
+        }
+
+        const declined = await prisma.payment.update({
+            where: { id: paymentId },
+            data: {
+                status: 'VOIDED',
+                cashierId: req.user.id
+            },
+            include: {
+                member: true,
+                cashier: { select: { id: true, name: true, role: true } },
+                items: true
+            }
+        });
+
+        res.json(declined);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to decline pending cash payment", detail: e.message });
+    }
+};
+
 const getPaymentMethods = async (req, res) => {
     try {
         let targetMemberId;
@@ -721,6 +842,8 @@ module.exports = {
     getPosSettings,
     updatePosSettings,
     getMyTransactions,
+    collectPendingCashPayment,
+    declinePendingCashPayment,
     getPaymentMethods,
     addPaymentMethod,
     deletePaymentMethod

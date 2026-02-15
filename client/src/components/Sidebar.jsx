@@ -79,7 +79,7 @@ export default function Sidebar() {
             {
                 section: "Operations", items: [
                     { to: "/payments", icon: "receipt_long", label: "POS" },
-                    { to: "/members", icon: "groups", label: "Members" },
+                    { to: "/admin/members", icon: "groups", label: "Members" },
                     { to: "/access", icon: "qr_code_scanner", label: "Access" },
                 ]
             },

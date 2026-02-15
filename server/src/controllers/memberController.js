@@ -137,15 +137,101 @@ const getMembers = async (req, res) => {
 
 const deleteMember = async (req, res) => {
     const { id } = req.params;
+    const memberId = Number(id);
+
+    if (!Number.isInteger(memberId)) {
+        return res.status(400).json({ error: "Invalid member ID" });
+    }
+
     try {
-        // Soft delete
-        await prisma.member.update({
-            where: { id: Number(id) },
-            data: { status: 'DELETED' }
+        const deletedSummary = await prisma.$transaction(async (tx) => {
+            const existingMember = await tx.member.findUnique({
+                where: { id: memberId },
+                select: { id: true }
+            });
+
+            if (!existingMember) {
+                return null;
+            }
+
+            // Keep class slot counts accurate before removing bookings.
+            const confirmedBookings = await tx.booking.findMany({
+                where: { memberId, status: 'CONFIRMED' },
+                select: { classId: true }
+            });
+
+            const bookingCountsByClass = confirmedBookings.reduce((acc, booking) => {
+                acc[booking.classId] = (acc[booking.classId] || 0) + 1;
+                return acc;
+            }, {});
+
+            for (const [classIdRaw, count] of Object.entries(bookingCountsByClass)) {
+                const classId = Number(classIdRaw);
+                const cls = await tx.class.findUnique({
+                    where: { id: classId },
+                    select: { enrolled: true }
+                });
+
+                if (cls) {
+                    await tx.class.update({
+                        where: { id: classId },
+                        data: {
+                            enrolled: Math.max(0, Number(cls.enrolled || 0) - count)
+                        }
+                    });
+                }
+            }
+
+            const deletedSessionMaterials = await tx.sessionMaterial.deleteMany({
+                where: {
+                    session: { memberId }
+                }
+            });
+
+            const deletedPaymentItems = await tx.paymentItem.deleteMany({
+                where: {
+                    payment: { memberId }
+                }
+            });
+
+            const deletedOrderItems = await tx.orderItem.deleteMany({
+                where: {
+                    order: { memberId }
+                }
+            });
+
+            const deletedAccessLogs = await tx.accessLog.deleteMany({ where: { memberId } });
+            const deletedPaymentMethods = await tx.paymentMethod.deleteMany({ where: { memberId } });
+            const deletedMemberNotes = await tx.memberNote.deleteMany({ where: { memberId } });
+            const deletedMembershipPeriods = await tx.membershipPeriod.deleteMany({ where: { memberId } });
+            const deletedBookings = await tx.booking.deleteMany({ where: { memberId } });
+            const deletedTrainingSessions = await tx.trainingSession.deleteMany({ where: { memberId } });
+            const deletedPayments = await tx.payment.deleteMany({ where: { memberId } });
+            const deletedOrders = await tx.order.deleteMany({ where: { memberId } });
+            await tx.member.delete({ where: { id: memberId } });
+
+            return {
+                deletedAccessLogs: deletedAccessLogs.count,
+                deletedBookings: deletedBookings.count,
+                deletedMemberNotes: deletedMemberNotes.count,
+                deletedMembershipPeriods: deletedMembershipPeriods.count,
+                deletedOrderItems: deletedOrderItems.count,
+                deletedOrders: deletedOrders.count,
+                deletedPaymentItems: deletedPaymentItems.count,
+                deletedPaymentMethods: deletedPaymentMethods.count,
+                deletedPayments: deletedPayments.count,
+                deletedSessionMaterials: deletedSessionMaterials.count,
+                deletedTrainingSessions: deletedTrainingSessions.count
+            };
         });
-        res.json({ message: "Member deleted successfully" });
+
+        if (!deletedSummary) {
+            return res.status(404).json({ error: "Member not found" });
+        }
+
+        res.json({ message: "Member and related data deleted successfully", deletedSummary });
     } catch (e) {
-        res.status(500).json({ error: "Failed to delete member" });
+        res.status(500).json({ error: "Failed to delete member", detail: e.message });
     }
 };
 
@@ -739,7 +825,13 @@ const createMember = async (req, res) => {
                     data: { points: { increment: pointsAwarded } }
                 });
             }
-            return { member: createdMember, payment: createdPayment };
+
+            const hydratedMember = await tx.member.findUnique({
+                where: { id: createdMember.id },
+                include: { plan: true }
+            });
+
+            return { member: hydratedMember || createdMember, payment: createdPayment };
         });
 
         res.json({ member, payment });
