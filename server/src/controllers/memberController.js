@@ -67,6 +67,23 @@ const createPaymentCompat = async (tx, data) => {
     }
 };
 
+const getPlanClassSessions = (plan) => {
+    if (!plan || !plan.includesClasses) return 0;
+    const included = Number(plan.includedClassSessions || 0);
+    return Number.isInteger(included) && included > 0 ? included : 0;
+};
+
+const applyPlanClassSessions = async ({ tx, memberId, plan }) => {
+    const grantedSessions = getPlanClassSessions(plan);
+    if (grantedSessions <= 0) return;
+    await tx.member.update({
+        where: { id: Number(memberId) },
+        data: {
+            classSessionsRemaining: { increment: grantedSessions }
+        }
+    });
+};
+
 const getMembers = async (req, res) => {
     try {
         const page = parseInt(req.query.page);
@@ -135,20 +152,55 @@ const deleteMember = async (req, res) => {
 // Get Available Classes (Member View)
 const getAvailableClasses = async (req, res) => {
     try {
-        const classes = await prisma.class.findMany({
-            include: {
-                trainer: true,
-                bookings: {
-                    where: { memberId: req.user.id }
+        const memberId = Number(req.user.id);
+        const [member, classes] = await Promise.all([
+            prisma.member.findUnique({
+                where: { id: memberId },
+                include: { plan: true }
+            }),
+            prisma.class.findMany({
+                include: {
+                    trainer: true,
+                    bookings: {
+                        where: { memberId }
+                    }
                 }
-            }
-        });
-        // Transform to indicate if booked
-        const result = classes.map(c => ({
+            })
+        ]);
+
+        if (!member) {
+            return res.status(404).json({ error: "Member profile not found" });
+        }
+
+        const includedClassSessions = getPlanClassSessions(member.plan);
+        const classSessionsPurchased = Number(member.classSessionsPurchased || 0);
+        const classSessionsUsed = Number(member.classSessionsUsed || 0);
+        const ledgerRemaining = Math.max(0, (includedClassSessions + classSessionsPurchased) - classSessionsUsed);
+        const storedRemaining = Number(member.classSessionsRemaining || 0);
+        const classSessionsRemaining = Math.max(0, Math.max(storedRemaining, ledgerRemaining));
+        if (classSessionsRemaining !== storedRemaining) {
+            await prisma.member.update({
+                where: { id: memberId },
+                data: { classSessionsRemaining }
+            });
+        }
+        const canBookClasses = classSessionsRemaining > 0;
+        const classesWithBooking = classes.map(c => ({
             ...c,
             isBooked: c.bookings.length > 0
         }));
-        res.json(result);
+
+        res.json({
+            sessionInfo: {
+                planName: member.plan?.name || null,
+                includedClassSessions,
+                classSessionsRemaining,
+                classSessionsUsed,
+                classSessionsPurchased,
+                canBookClasses
+            },
+            classes: classesWithBooking
+        });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -157,33 +209,67 @@ const getAvailableClasses = async (req, res) => {
 // Book a Class
 const bookClass = async (req, res) => {
     const { classId } = req.body;
-    const memberId = req.user.id;
+    const memberId = Number(req.user.id);
 
     // Safety check: Ensure user is a member
     if (req.user.type !== 'MEMBER') return res.status(403).json({ error: "Only members can book classes" });
 
     try {
-        const cls = await prisma.class.findUnique({ where: { id: classId } });
-        if (!cls) return res.status(404).json({ error: "Class not found" });
+        const parsedClassId = Number(classId);
+        if (!Number.isInteger(parsedClassId)) {
+            return res.status(400).json({ error: "Invalid class ID" });
+        }
 
-        if (cls.enrolled >= cls.capacity) return res.status(400).json({ error: "Class is full" });
+        const bookingResult = await prisma.$transaction(async (tx) => {
+            const [member, cls] = await Promise.all([
+                tx.member.findUnique({ where: { id: memberId } }),
+                tx.class.findUnique({ where: { id: parsedClassId } })
+            ]);
 
-        // Check if already booked
-        const existing = await prisma.booking.findFirst({
-            where: { memberId, classId, status: 'CONFIRMED' }
-        });
-        if (existing) return res.status(400).json({ error: "Already booked" });
+            if (!member) {
+                return { error: "Member profile not found", status: 404 };
+            }
+            if (!cls) {
+                return { error: "Class not found", status: 404 };
+            }
+            if (Number(member.classSessionsRemaining || 0) <= 0) {
+                return {
+                    error: "No class sessions remaining. Please purchase a class session package.",
+                    status: 400
+                };
+            }
+            if (cls.enrolled >= cls.capacity) {
+                return { error: "Class is full", status: 400 };
+            }
 
-        // Transaction: Create Booking + Increment Enrollment
-        await prisma.$transaction([
-            prisma.booking.create({
-                data: { memberId, classId, status: 'CONFIRMED' }
-            }),
-            prisma.class.update({
-                where: { id: classId },
+            const existing = await tx.booking.findFirst({
+                where: { memberId, classId: parsedClassId, status: 'CONFIRMED' }
+            });
+            if (existing) {
+                return { error: "Already booked", status: 400 };
+            }
+
+            await tx.booking.create({
+                data: { memberId, classId: parsedClassId, status: 'CONFIRMED' }
+            });
+            await tx.class.update({
+                where: { id: parsedClassId },
                 data: { enrolled: { increment: 1 } }
-            })
-        ]);
+            });
+            await tx.member.update({
+                where: { id: memberId },
+                data: {
+                    classSessionsRemaining: { decrement: 1 },
+                    classSessionsUsed: { increment: 1 }
+                }
+            });
+
+            return { success: true };
+        });
+
+        if (!bookingResult.success) {
+            return res.status(bookingResult.status || 400).json({ error: bookingResult.error || "Booking failed" });
+        }
 
         res.json({ message: "Booking confirmed" });
     } catch (e) {
@@ -194,22 +280,42 @@ const bookClass = async (req, res) => {
 // Cancel Booking
 const cancelBooking = async (req, res) => {
     const { classId } = req.body;
-    const memberId = req.user.id;
+    const memberId = Number(req.user.id);
 
     try {
-        const booking = await prisma.booking.findFirst({
-            where: { memberId, classId, status: 'CONFIRMED' }
+        const parsedClassId = Number(classId);
+        if (!Number.isInteger(parsedClassId)) {
+            return res.status(400).json({ error: "Invalid class ID" });
+        }
+
+        const cancelResult = await prisma.$transaction(async (tx) => {
+            const booking = await tx.booking.findFirst({
+                where: { memberId, classId: parsedClassId, status: 'CONFIRMED' }
+            });
+
+            if (!booking) {
+                return { error: "Booking not found", status: 404 };
+            }
+
+            await tx.booking.delete({ where: { id: booking.id } });
+            await tx.class.update({
+                where: { id: parsedClassId },
+                data: { enrolled: { decrement: 1 } }
+            });
+            await tx.member.update({
+                where: { id: memberId },
+                data: {
+                    classSessionsRemaining: { increment: 1 },
+                    classSessionsUsed: { decrement: 1 }
+                }
+            });
+
+            return { success: true };
         });
 
-        if (!booking) return res.status(404).json({ error: "Booking not found" });
-
-        await prisma.$transaction([
-            prisma.booking.delete({ where: { id: booking.id } }),
-            prisma.class.update({
-                where: { id: classId },
-                data: { enrolled: { decrement: 1 } }
-            })
-        ]);
+        if (!cancelResult.success) {
+            return res.status(cancelResult.status || 400).json({ error: cancelResult.error || "Cancellation failed" });
+        }
 
         res.json({ message: "Booking cancelled" });
     } catch (e) {
@@ -596,6 +702,8 @@ const createMember = async (req, res) => {
                 }
             });
 
+            await applyPlanClassSessions({ tx, memberId: createdMember.id, plan });
+
             const pointsAwarded = Math.floor(plan.price / 100);
             const externalDate = (gcashDate && gcashTime) ? new Date(`${gcashDate}T${gcashTime}`) : null;
             const createdPayment = await tx.payment.create({
@@ -676,6 +784,10 @@ const renewMembership = async (req, res) => {
 
         const member = await prisma.member.findUnique({ where: { id: Number(id) } });
         if (!member) return res.status(404).json({ error: "Member not found" });
+        const selectedPlanId = planId ? Number(planId) : member.planId;
+        const selectedPlan = selectedPlanId
+            ? await prisma.plan.findUnique({ where: { id: selectedPlanId } })
+            : null;
 
         const now = new Date();
         const currentExpiry = member.expiryDate && new Date(member.expiryDate) > now ? new Date(member.expiryDate) : now;
@@ -702,14 +814,17 @@ const renewMembership = async (req, res) => {
             data: {
                 expiryDate: newExpiry,
                 status: 'ACTIVE',
-                ...(planId ? { planId: Number(planId) } : {})
+                ...(planId ? { planId: Number(planId) } : {}),
+                ...(getPlanClassSessions(selectedPlan) > 0
+                    ? { classSessionsRemaining: { increment: getPlanClassSessions(selectedPlan) } }
+                    : {})
             }
         });
 
         await prisma.membershipPeriod.create({
             data: {
                 memberId: Number(id),
-                planId: planId ? Number(planId) : member.planId,
+                planId: selectedPlanId,
                 startDate: currentExpiry,
                 endDate: newExpiry,
                 amount: amount !== undefined && amount !== null ? parseFloat(amount) : null,
@@ -737,9 +852,8 @@ const renewMembership = async (req, res) => {
         });
 
         let planName = 'Membership Renewal';
-        if (planId) {
-            const plan = await prisma.plan.findUnique({ where: { id: Number(planId) } });
-            if (plan?.name) planName = plan.name;
+        if (selectedPlan?.name) {
+            planName = selectedPlan.name;
         }
 
         await prisma.paymentItem.create({
@@ -763,6 +877,101 @@ const renewMembership = async (req, res) => {
         res.json({ member: updatedMember, payment });
     } catch (e) {
         res.status(500).json({ error: e.message });
+    }
+};
+
+const purchaseClassSessionPackage = async (req, res) => {
+    const memberId = Number(req.params.id);
+    const {
+        packageId,
+        method = 'CASH',
+        cashTendered,
+        changeDue,
+        gcashReference,
+        gcashDate,
+        gcashTime
+    } = req.body;
+
+    const normalizedMethod = String(method || '').toUpperCase();
+    if (!['CASH', 'CARD', 'GCASH'].includes(normalizedMethod)) {
+        return res.status(400).json({ error: "Invalid payment method" });
+    }
+
+    try {
+        const packageRecord = await prisma.classSessionPackage.findUnique({
+            where: { id: Number(packageId) }
+        });
+        if (!packageRecord || !packageRecord.isActive) {
+            return res.status(404).json({ error: "Class session package not found" });
+        }
+
+        const member = await prisma.member.findUnique({ where: { id: memberId } });
+        if (!member) {
+            return res.status(404).json({ error: "Member not found" });
+        }
+
+        const normalizedCashTendered = normalizedMethod === 'CASH'
+            ? Number(cashTendered)
+            : null;
+        if (normalizedMethod === 'CASH' && (!Number.isFinite(normalizedCashTendered) || normalizedCashTendered < Number(packageRecord.price))) {
+            return res.status(400).json({ error: "Cash tendered must cover package amount" });
+        }
+        const normalizedChangeDue = normalizedMethod === 'CASH'
+            ? (changeDue !== undefined ? Number(changeDue) : (normalizedCashTendered - Number(packageRecord.price)))
+            : null;
+        if (normalizedMethod === 'CASH' && !Number.isFinite(normalizedChangeDue)) {
+            return res.status(400).json({ error: "Invalid change due" });
+        }
+        if (normalizedMethod === 'GCASH' && !gcashReference) {
+            return res.status(400).json({ error: "GCash reference is required for GCash payments" });
+        }
+
+        const externalDate = (gcashDate && gcashTime) ? new Date(`${gcashDate}T${gcashTime}`) : null;
+        const pointsAwarded = Math.floor(Number(packageRecord.price) / 100);
+
+        const result = await prisma.$transaction(async (tx) => {
+            const payment = await tx.payment.create({
+                data: {
+                    amount: Number(packageRecord.price),
+                    type: 'CLASS_SESSION_PACKAGE',
+                    method: normalizedMethod,
+                    status: 'COMPLETED',
+                    memberId,
+                    cashierId: req.user.id,
+                    pointsAwarded,
+                    cashTendered: normalizedMethod === 'CASH' ? normalizedCashTendered : null,
+                    changeDue: normalizedMethod === 'CASH' ? normalizedChangeDue : null,
+                    externalRef: normalizedMethod === 'GCASH' ? (gcashReference || null) : null,
+                    externalDate: normalizedMethod === 'GCASH' ? externalDate : null
+                }
+            });
+
+            await tx.paymentItem.create({
+                data: {
+                    paymentId: payment.id,
+                    productId: null,
+                    name: packageRecord.name,
+                    type: 'CLASS_PACKAGE',
+                    quantity: 1,
+                    unitPrice: Number(packageRecord.price)
+                }
+            });
+
+            const updatedMember = await tx.member.update({
+                where: { id: memberId },
+                data: {
+                    classSessionsRemaining: { increment: Number(packageRecord.sessions) },
+                    classSessionsPurchased: { increment: Number(packageRecord.sessions) },
+                    ...(pointsAwarded > 0 ? { points: { increment: pointsAwarded } } : {})
+                }
+            });
+
+            return { payment, member: updatedMember };
+        });
+
+        res.json(result);
+    } catch (e) {
+        res.status(500).json({ error: e.message || "Failed to purchase class session package" });
     }
 };
 
@@ -911,6 +1120,7 @@ module.exports = {
     deletePaymentMethod,
     createMember,
     renewMembership,
+    purchaseClassSessionPackage,
     getMemberPayments,
     getMemberNotes,
     addMemberNote,

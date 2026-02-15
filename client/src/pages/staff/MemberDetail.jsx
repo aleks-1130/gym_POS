@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
+import { withApiBase } from '../../config/api';
 
 // Reusable Components
 import StatCard from '../../components/common/StatCard';
@@ -30,6 +31,7 @@ export default function MemberDetail() {
     const [member, setMember] = useState(null);
     const [loading, setLoading] = useState(true);
     const [plans, setPlans] = useState([]);
+    const [classSessionPackages, setClassSessionPackages] = useState([]);
 
     // Modals
     const [showRenewModal, setShowRenewModal] = useState(false);
@@ -39,6 +41,7 @@ export default function MemberDetail() {
     const [showNotesModal, setShowNotesModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
     const [showMoreActions, setShowMoreActions] = useState(false);
+    const [showClassSessionModal, setShowClassSessionModal] = useState(false);
 
     // Form Data
     const [renewData, setRenewData] = useState({ planId: '', duration: 30, amount: 0, method: 'CASH' });
@@ -56,6 +59,14 @@ export default function MemberDetail() {
     const [payments, setPayments] = useState([]);
     const [loadingPayments, setLoadingPayments] = useState(false);
     const [editFormData, setEditFormData] = useState({});
+    const [classSessionPurchaseData, setClassSessionPurchaseData] = useState({
+        packageId: '',
+        method: 'CASH',
+        cashTendered: '',
+        gcashReference: '',
+        gcashDate: '',
+        gcashTime: ''
+    });
 
     // Photo Capture
     const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -73,6 +84,7 @@ export default function MemberDetail() {
     useEffect(() => {
         fetchMember();
         fetchPlans();
+        fetchSessionPackages();
         fetchNotes();
         fetchPayments();
     }, [id]);
@@ -103,6 +115,15 @@ export default function MemberDetail() {
             setPlans(data);
         } catch (e) {
             console.error("Failed to fetch plans", e);
+        }
+    }, []);
+
+    const fetchSessionPackages = useCallback(async () => {
+        try {
+            const res = await axios.get(withApiBase('/api/plans/class-session-packages'));
+            setClassSessionPackages((res.data || []).filter(item => item.isActive));
+        } catch (e) {
+            console.error("Failed to fetch class session packages", e);
         }
     }, []);
 
@@ -235,6 +256,53 @@ export default function MemberDetail() {
         submitRenew();
     };
 
+    const handleClassSessionPurchase = async (e) => {
+        e.preventDefault();
+        if (!classSessionPurchaseData.packageId) return;
+
+        const payload = {
+            packageId: Number(classSessionPurchaseData.packageId),
+            method: classSessionPurchaseData.method
+        };
+
+        if (classSessionPurchaseData.method === 'CASH') {
+            const tendered = Number(classSessionPurchaseData.cashTendered || 0);
+            if (!Number.isFinite(tendered) || tendered <= 0) {
+                alert("Enter a valid tendered amount");
+                return;
+            }
+            payload.cashTendered = tendered;
+        }
+
+        if (classSessionPurchaseData.method === 'GCASH') {
+            if (!classSessionPurchaseData.gcashReference || !classSessionPurchaseData.gcashDate || !classSessionPurchaseData.gcashTime) {
+                alert("GCash reference, date, and time are required");
+                return;
+            }
+            payload.gcashReference = classSessionPurchaseData.gcashReference;
+            payload.gcashDate = classSessionPurchaseData.gcashDate;
+            payload.gcashTime = classSessionPurchaseData.gcashTime;
+        }
+
+        try {
+            await axios.post(withApiBase(`/api/members/${id}/class-session-packages`), payload);
+            setShowClassSessionModal(false);
+            setClassSessionPurchaseData({
+                packageId: '',
+                method: 'CASH',
+                cashTendered: '',
+                gcashReference: '',
+                gcashDate: '',
+                gcashTime: ''
+            });
+            alert("Class sessions added successfully");
+            fetchMember();
+            fetchPayments();
+        } catch (e) {
+            alert(e.response?.data?.error || "Failed to add class sessions");
+        }
+    };
+
     const handleSetPassword = useCallback(async (e) => {
         e.preventDefault();
         try {
@@ -361,6 +429,15 @@ export default function MemberDetail() {
                                 </div>
                                 <p className="text-3xl font-bold text-white">{formatPrice(member.payments?.reduce((sum, p) => sum + p.amount, 0) ?? 0)}</p>
                             </div>
+                            <div className="bg-white/5 border border-white/10 rounded-2xl p-4 min-w-[160px]">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <span className="material-icons-round text-amber-400 text-lg">event_available</span>
+                                    <p className="text-text-muted text-xs uppercase font-bold">Class Sessions</p>
+                                </div>
+                                <p className={`text-3xl font-bold ${(member.classSessionsRemaining || 0) > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    {member.classSessionsRemaining || 0}
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -391,6 +468,12 @@ export default function MemberDetail() {
                     className="bg-surfaceHighlight hover:bg-white/10 text-white px-6 py-3 rounded-xl font-medium flex items-center gap-2 border border-white/5 transition-all"
                 >
                     <span className="material-icons-round text-[18px]">note_add</span> Add Note
+                </button>
+                <button
+                    onClick={() => setShowClassSessionModal(true)}
+                    className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all"
+                >
+                    <span className="material-icons-round text-[18px]">add_circle</span> Add Class Sessions
                 </button>
             </div>
 
@@ -437,6 +520,35 @@ export default function MemberDetail() {
                                 <div className="bg-white/5 rounded-xl p-3">
                                     <p className="text-text-muted font-semibold text-xs mb-1">Expiry Date</p>
                                     <p className={`font-bold ${stats.isExpired ? 'text-red-400' : 'text-emerald-400'}`}>{member.expiryDate ? new Date(member.expiryDate).toLocaleDateString() : 'N/A'}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-surface rounded-3xl border border-white/5 p-6">
+                            <h3 className="font-bold text-white flex items-center gap-2 mb-4">
+                                <span className="material-icons-round text-amber-400">event_note</span>
+                                Class Session Tracking
+                            </h3>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-white/5 rounded-xl p-4 border border-white/5">
+                                    <p className="text-text-muted text-xs uppercase font-bold tracking-wider mb-2">Remaining</p>
+                                    <p className={`text-2xl font-bold ${(member.classSessionsRemaining || 0) > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {member.classSessionsRemaining || 0}
+                                    </p>
+                                </div>
+                                <div className="bg-white/5 rounded-xl p-4 border border-white/5">
+                                    <p className="text-text-muted text-xs uppercase font-bold tracking-wider mb-2">Used</p>
+                                    <p className="text-2xl font-bold text-white">{member.classSessionsUsed || 0}</p>
+                                </div>
+                                <div className="bg-white/5 rounded-xl p-4 border border-white/5">
+                                    <p className="text-text-muted text-xs uppercase font-bold tracking-wider mb-2">Purchased Sessions</p>
+                                    <p className="text-2xl font-bold text-white">{member.classSessionsPurchased || 0}</p>
+                                </div>
+                                <div className="bg-white/5 rounded-xl p-4 border border-white/5">
+                                    <p className="text-text-muted text-xs uppercase font-bold tracking-wider mb-2">Plan Included</p>
+                                    <p className="text-2xl font-bold text-white">
+                                        {member.plan?.includesClasses ? (member.plan?.includedClassSessions || 0) : 0}
+                                    </p>
                                 </div>
                             </div>
                         </div>
@@ -584,6 +696,85 @@ export default function MemberDetail() {
             )}
 
             {/* Modals */}
+            {showClassSessionModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                    <div className="bg-surface p-8 rounded-[32px] w-full max-w-md border border-white/10 shadow-2xl">
+                        <h3 className="text-xl font-bold text-white mb-6">Add Class Sessions</h3>
+                        <form onSubmit={handleClassSessionPurchase} className="space-y-4">
+                            <select
+                                required
+                                className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white outline-none"
+                                value={classSessionPurchaseData.packageId}
+                                onChange={e => setClassSessionPurchaseData({ ...classSessionPurchaseData, packageId: e.target.value })}
+                            >
+                                <option value="">-- Choose Package --</option>
+                                {classSessionPackages.map(pkg => (
+                                    <option key={pkg.id} value={pkg.id}>
+                                        {pkg.name} - {pkg.sessions} sessions ({formatPrice(pkg.price)})
+                                    </option>
+                                ))}
+                            </select>
+
+                            <select
+                                className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white outline-none"
+                                value={classSessionPurchaseData.method}
+                                onChange={e => setClassSessionPurchaseData({ ...classSessionPurchaseData, method: e.target.value })}
+                            >
+                                <option value="CASH">Cash</option>
+                                <option value="GCASH">GCash</option>
+                                <option value="CARD">Card</option>
+                            </select>
+
+                            {classSessionPurchaseData.method === 'CASH' && (
+                                <input
+                                    required
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white"
+                                    placeholder="Amount Tendered"
+                                    value={classSessionPurchaseData.cashTendered}
+                                    onChange={e => setClassSessionPurchaseData({ ...classSessionPurchaseData, cashTendered: e.target.value })}
+                                />
+                            )}
+
+                            {classSessionPurchaseData.method === 'GCASH' && (
+                                <div className="space-y-3">
+                                    <input
+                                        required
+                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white"
+                                        placeholder="GCash Reference"
+                                        value={classSessionPurchaseData.gcashReference}
+                                        onChange={e => setClassSessionPurchaseData({ ...classSessionPurchaseData, gcashReference: e.target.value })}
+                                    />
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <input
+                                            required
+                                            type="date"
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white"
+                                            value={classSessionPurchaseData.gcashDate}
+                                            onChange={e => setClassSessionPurchaseData({ ...classSessionPurchaseData, gcashDate: e.target.value })}
+                                        />
+                                        <input
+                                            required
+                                            type="time"
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white"
+                                            value={classSessionPurchaseData.gcashTime}
+                                            onChange={e => setClassSessionPurchaseData({ ...classSessionPurchaseData, gcashTime: e.target.value })}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="flex justify-end gap-3">
+                                <button type="button" onClick={() => setShowClassSessionModal(false)} className="text-text-muted">Cancel</button>
+                                <button type="submit" className="bg-emerald-500 text-white font-bold px-8 py-2.5 rounded-2xl">Add Sessions</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             {showPasswordModal && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                     <div className="bg-surface p-8 rounded-[32px] w-full max-w-sm border border-white/10 shadow-2xl">

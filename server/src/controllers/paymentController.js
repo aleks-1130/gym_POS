@@ -4,6 +4,12 @@ const bcrypt = require('bcryptjs');
 
 const POS_PIN_MIN_LENGTH = 4;
 
+const getPlanClassSessions = (plan) => {
+    if (!plan || !plan.includesClasses) return 0;
+    const included = Number(plan.includedClassSessions || 0);
+    return Number.isInteger(included) && included > 0 ? included : 0;
+};
+
 // Get Payment Details
 const getPaymentDetails = async (req, res) => {
     const { id } = req.params;
@@ -81,8 +87,14 @@ const createPayment = async (req, res) => {
                     .map((item) => Number(item.id || item.planId || item.productId))
                     .filter((id) => Number.isInteger(id) && id > 0)
             )];
+            const classPackageIds = [...new Set(
+                normalizedItems
+                    .filter((item) => item.type === 'CLASS_PACKAGE')
+                    .map((item) => Number(item.id || item.classPackageId || item.packageId || item.productId))
+                    .filter((id) => Number.isInteger(id) && id > 0)
+            )];
 
-            const [products, plans] = await Promise.all([
+            const [products, plans, classPackages] = await Promise.all([
                 productIds.length
                     ? prisma.product.findMany({
                         where: { id: { in: productIds } },
@@ -92,13 +104,20 @@ const createPayment = async (req, res) => {
                 planIds.length
                     ? prisma.plan.findMany({
                         where: { id: { in: planIds } },
-                        select: { id: true, name: true, price: true, duration: true }
+                        select: { id: true, name: true, price: true, duration: true, includesClasses: true, includedClassSessions: true }
+                    })
+                    : Promise.resolve([]),
+                classPackageIds.length
+                    ? prisma.classSessionPackage.findMany({
+                        where: { id: { in: classPackageIds }, isActive: true },
+                        select: { id: true, name: true, price: true, sessions: true }
                     })
                     : Promise.resolve([])
             ]);
 
             const productById = new Map(products.map((product) => [product.id, product]));
             const planById = new Map(plans.map((plan) => [plan.id, plan]));
+            const classPackageById = new Map(classPackages.map((pkg) => [pkg.id, pkg]));
 
             authoritativeAmount = 0;
             for (const item of normalizedItems) {
@@ -117,6 +136,13 @@ const createPayment = async (req, res) => {
                     const plan = planById.get(planId);
                     if (!plan) badRequest(`Plan ${planId} not found`);
                     authoritativeAmount += Number(plan.price) * item.quantity;
+                    continue;
+                }
+                if (item.type === 'CLASS_PACKAGE') {
+                    const packageId = Number(item.id || item.classPackageId || item.packageId || item.productId);
+                    const classPackage = classPackageById.get(packageId);
+                    if (!classPackage) badRequest(`Class package ${packageId} not found`);
+                    authoritativeAmount += Number(classPackage.price) * item.quantity;
                     continue;
                 }
 
@@ -193,8 +219,14 @@ const createPayment = async (req, res) => {
                         .map((item) => Number(item.id || item.planId || item.productId))
                         .filter((id) => Number.isInteger(id) && id > 0)
                 )];
+                const classPackageIds = [...new Set(
+                    normalizedItems
+                        .filter((item) => item.type === 'CLASS_PACKAGE')
+                        .map((item) => Number(item.id || item.classPackageId || item.packageId || item.productId))
+                        .filter((id) => Number.isInteger(id) && id > 0)
+                )];
 
-                const [products, plans] = await Promise.all([
+                const [products, plans, classPackages] = await Promise.all([
                     productIds.length
                         ? tx.product.findMany({
                             where: { id: { in: productIds } },
@@ -204,27 +236,38 @@ const createPayment = async (req, res) => {
                     planIds.length
                         ? tx.plan.findMany({
                             where: { id: { in: planIds } },
-                            select: { id: true, name: true, price: true, duration: true }
+                            select: { id: true, name: true, price: true, duration: true, includesClasses: true, includedClassSessions: true }
+                        })
+                        : Promise.resolve([]),
+                    classPackageIds.length
+                        ? tx.classSessionPackage.findMany({
+                            where: { id: { in: classPackageIds }, isActive: true },
+                            select: { id: true, name: true, price: true, sessions: true }
                         })
                         : Promise.resolve([])
                 ]);
                 const productById = new Map(products.map((product) => [product.id, product]));
                 const planById = new Map(plans.map((plan) => [plan.id, plan]));
+                const classPackageById = new Map(classPackages.map((pkg) => [pkg.id, pkg]));
 
                 const paymentItems = normalizedItems.map((item) => {
                     const planId = Number(item.id || item.planId || item.productId);
+                    const classPackageId = Number(item.id || item.classPackageId || item.packageId || item.productId);
                     const product = item.type === 'PRODUCT' ? productById.get(item.productId) : null;
                     const plan = item.type === 'PLAN' ? planById.get(planId) : null;
+                    const classPackage = item.type === 'CLASS_PACKAGE' ? classPackageById.get(classPackageId) : null;
                     return {
                         type: item.type,
                         paymentId: createdPayment.id,
                         productId: item.type === 'PRODUCT' ? item.productId : null,
-                        name: product?.name || plan?.name || item.name || 'Item',
+                        name: product?.name || plan?.name || classPackage?.name || item.name || 'Item',
                         quantity: item.quantity,
                         unitPrice: item.type === 'PRODUCT'
                             ? Number(product.price)
                             : item.type === 'PLAN'
                                 ? Number(plan.price)
+                                : item.type === 'CLASS_PACKAGE'
+                                    ? Number(classPackage.price)
                                 : (parseFloat(item.price) || 0)
                     };
                 });
@@ -251,7 +294,10 @@ const createPayment = async (req, res) => {
                             data: {
                                 expiryDate: newExpiry,
                                 status: 'ACTIVE',
-                                planId
+                                planId,
+                                ...(getPlanClassSessions(plan) > 0
+                                    ? { classSessionsRemaining: { increment: getPlanClassSessions(plan) } }
+                                    : {})
                             }
                         });
                     } else if (item.type === 'PRODUCT' && item.productId) {
@@ -263,6 +309,20 @@ const createPayment = async (req, res) => {
                             data: { stock: { decrement: item.quantity } }
                         });
                         if (updated.count === 0) throw new Error(`Insufficient stock for product ${item.productId}`);
+                    } else if (item.type === 'CLASS_PACKAGE') {
+                        if (!resolvedMemberId) throw new Error("Member ID required for class package purchase");
+                        const packageId = Number(item.id || item.classPackageId || item.packageId || item.productId);
+                        const classPackage = classPackageById.get(packageId);
+                        if (!classPackage) throw new Error(`Class package ${packageId} not found`);
+
+                        const sessionsToAdd = Number(classPackage.sessions) * Number(item.quantity);
+                        await tx.member.update({
+                            where: { id: Number(resolvedMemberId) },
+                            data: {
+                                classSessionsRemaining: { increment: sessionsToAdd },
+                                classSessionsPurchased: { increment: sessionsToAdd }
+                            }
+                        });
                     }
                 }
             }

@@ -137,6 +137,16 @@ export default function TrainerBooking() {
             alert("Please choose a time for all selected dates.");
             return;
         }
+        const hasPastDateTime = selectedDates.some((date) => {
+            const time = selectedTimesByDate[date];
+            if (!time) return true;
+            const scheduled = new Date(`${date}T${time}`);
+            return Number.isNaN(scheduled.getTime()) || scheduled <= new Date();
+        });
+        if (hasPastDateTime) {
+            alert("Past date/time is not allowed. Please select a future schedule.");
+            return;
+        }
 
         setBookingLoading(true);
         try {
@@ -290,10 +300,16 @@ export default function TrainerBooking() {
 
         const duration = Number(bookingData.duration) || 60;
         const slots = [];
+        const todayIso = toIsoDate(new Date());
+        const now = new Date();
+        const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
         for (let t = start; t + duration <= end; t += interval) {
             const slotStart = t;
             const slotEnd = t + duration;
+            if (isoDate === todayIso && slotStart <= nowMinutes) {
+                continue;
+            }
 
             // Check for overlap
             const isBlocked = bookedSessions.some(session => {

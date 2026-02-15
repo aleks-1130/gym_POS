@@ -62,6 +62,9 @@ model Member {
   trainingSessions TrainingSession[]
   membershipPeriods MembershipPeriod[]
   notes             MemberNote[]
+  classSessionsRemaining Int          @default(0)
+  classSessionsUsed      Int          @default(0)
+  classSessionsPurchased Int          @default(0)
 
   @@index([status])
   @@index([createdAt])
@@ -166,8 +169,20 @@ model Plan {
   name        String
   price       Float
   duration    Int      // Duration in days
+  includesClasses      Boolean @default(false)
+  includedClassSessions Int    @default(0)
   members     Member[]
   membershipPeriods MembershipPeriod[]
+}
+
+model ClassSessionPackage {
+  id        Int      @id @default(autoincrement())
+  name      String
+  sessions  Int
+  price     Float
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 
