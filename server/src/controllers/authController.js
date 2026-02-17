@@ -128,8 +128,17 @@ const setupMemberPassword = async (req, res) => {
     }
 };
 
+const getMe = async (req, res) => {
+    // req.user is already populated by the authenticateToken middleware
+    if (!req.user) {
+        return res.status(401).json({ error: "Not authenticated" });
+    }
+    res.json(req.user);
+};
+
 module.exports = {
     register,
     login,
-    setupMemberPassword
+    setupMemberPassword,
+    getMe
 };

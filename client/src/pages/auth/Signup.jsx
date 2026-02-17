@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { withApiBase } from '../../config/api';
+import { useAuth } from '../../context/AuthContext';
 
 export default function Signup() {
     const [formData, setFormData] = useState({
@@ -10,6 +11,7 @@ export default function Signup() {
     });
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const { register } = useAuth();
     const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
@@ -18,22 +20,16 @@ export default function Signup() {
         setLoading(true);
 
         try {
-            const response = await fetch(withApiBase('/api/auth/register'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(formData)
-            });
+            const success = await register(formData.name, formData.email, formData.password);
 
-            const data = await response.json();
-
-            if (response.ok) {
+            if (success) {
                 // Redirect to login after successful registration
                 navigate('/login');
             } else {
-                setError(data.error || 'Signup failed. Please try again.');
+                setError('Signup failed. Please try again.');
             }
         } catch (err) {
-            setError('Could not connect to the server.');
+            setError(err.message || 'Could not connect to the server.');
         } finally {
             setLoading(false);
         }

@@ -1,67 +1,152 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
 import { withApiBase } from '../config/api';
+import { createAuthClient } from '@neondatabase/neon-js/auth';
 
 const AuthContext = createContext();
+
+// Initialize Neon Auth Client
+// We use the URL from environment variables
+const neonAuthUrl = import.meta.env.VITE_NEON_AUTH_API_URL;
+console.log("Neon Auth URL from Env:", neonAuthUrl);
+
+const authClient = createAuthClient(neonAuthUrl);
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [token, setToken] = useState(localStorage.getItem('token') || sessionStorage.getItem('token'));
     const [loading, setLoading] = useState(true);
 
-    // Configure axios defaults
-    if (token) {
-        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    }
-
+    // Configure axios defaults when token changes
     useEffect(() => {
         if (token) {
-            // Decode token or fetch user profile if endpoint exists
-            // For now, we trust the token presence or add a /me endpoint later
-            // Simulating user restore from localstorage partial data if stored
-            const storedUser = localStorage.getItem('user');
-            if (storedUser) {
-                try {
-                    setUser(JSON.parse(storedUser));
-                } catch (e) {
-                    console.error("Failed to restore user session", e);
-                    localStorage.removeItem('user');
-                    localStorage.removeItem('token');
-                }
-            }
+            axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        } else {
+            delete axios.defaults.headers.common['Authorization'];
         }
-        setLoading(false);
     }, [token]);
+
+    const syncUserWithBackend = async (authToken) => {
+        try {
+            // We need an endpoint that returns the user's role and details from our local DB
+            // We can use a new endpoint or repurpose an existing one. 
+            // For now, let's assume we can fetch profile or "me" which is standard.
+            // If it doesn't exist, we might fail to get the role.
+
+            // NOTE: We are sending the Neon Auth Token to our backend.
+            // The backend validates it and returns the local user info (Role, ID, etc.)
+
+            // Ideally creating a /api/auth/me endpoint would be best, 
+            // but for now let's try to fetch a safe endpoint or just rely on the token if we can't sync immediately.
+
+            // However, the app relies heavily on `user.role`.
+            // So we MUST fetch the role.
+
+            // We will trust the backend to correctly identify the user from the token.
+            const res = await axios.get(withApiBase('/api/auth/me'), {
+                headers: { Authorization: `Bearer ${authToken}` }
+            });
+
+            return res.data; // Should contain { id, role, name, ... }
+        } catch (e) {
+            console.error("Failed to sync user with backend:", e);
+            return null;
+        }
+    };
 
     const login = async (email, password) => {
         try {
-            const res = await axios.post(withApiBase('/api/auth/login'), { email, password });
-            const { token, user } = res.data;
+            // 1. Authenticate with Neon Auth
+            // Use signIn.email directly to target correct endpoint
+            const result = await authClient.signIn.email({
+                email,
+                password
+            });
 
-            setToken(token);
-            setUser(user);
-            localStorage.setItem('token', token);
-            sessionStorage.setItem('token', token);
-            localStorage.setItem('user', JSON.stringify(user));
-            sessionStorage.setItem('user', JSON.stringify(user));
-            localStorage.removeItem('pwa_install_dismissed');
-            axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+            if (result.error) {
+                console.error("Neon Auth Error:", result.error);
+                throw new Error(result.error.message);
+            }
+
+            const data = result.data;
+            // signIn.email response is different from signInWithPassword
+            // It might return { token, user } directly (as per debug script) or { session: { ... } }
+            // Let's handle both.
+            const authToken = data.token || data.session?.token || data.session?.access_token;
+
+            if (!authToken) {
+                console.error("Login Success, but no Access Token found in:", data);
+                throw new Error("Authentication failed to provide token");
+            }
+
+            // 2. Set Token immediately
+            setToken(authToken);
+            localStorage.setItem('token', authToken);
+
+            // 3. Sync with Backend to get Role
+            const backendUser = await syncUserWithBackend(authToken);
+
+            if (!backendUser) {
+                // Determine layout/role based on failure or fallback?
+                // For now, we logout if we can't identify the user role, 
+                // OR we can allow them as a generic "MEMBER" if that's safe.
+                // But strict security implies we should fail.
+                throw new Error("Failed to retrieve user role from system.");
+            }
+
+            setUser(backendUser);
+            localStorage.setItem('user', JSON.stringify(backendUser));
+
             return true;
         } catch (e) {
-            console.error(e);
-            // Prevent stale sessions after failed login attempts.
-            setToken(null);
-            setUser(null);
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-            sessionStorage.removeItem('token');
-            sessionStorage.removeItem('user');
-            delete axios.defaults.headers.common['Authorization'];
+            console.error("Login Failed:", e);
+            // Cleanup
+            logout();
             return false;
         }
     };
 
-    const logout = () => {
+    const register = async (name, email, password) => {
+        try {
+            // 1. Create account in Neon Auth
+            // 1. Create account in Neon Auth
+            // We use signUp.email directly because the generic signUp targets /sign-up which returns 404
+            const result = await authClient.signUp.email({
+                email,
+                password,
+                name // generic better-auth uses name at top level
+            });
+
+            if (result.error) {
+                throw new Error(result.error.message);
+            }
+
+            // 2. We ALSO need to create the user in our local DB (Prisma)
+            try {
+                await axios.post(withApiBase('/api/auth/register'), {
+                    name,
+                    email,
+                    password
+                });
+            } catch (apiError) {
+                // Extract error message from backend response
+                const msg = apiError.response?.data?.error || apiError.message;
+                throw new Error(msg);
+            }
+
+            return true;
+        } catch (e) {
+            console.error("Registration Failed:", e);
+            throw e; // Rethrow so component can display the error
+        }
+    };
+
+    const logout = async () => {
+        try {
+            await authClient.signOut();
+        } catch (e) {
+            console.warn("Neon signOut failed", e);
+        }
         setUser(null);
         setToken(null);
         localStorage.removeItem('token');
@@ -71,8 +156,55 @@ export const AuthProvider = ({ children }) => {
         delete axios.defaults.headers.common['Authorization'];
     };
 
+    // Initialize session check
+    useEffect(() => {
+        const initSession = async () => {
+            // Check if we have a token
+            const storedToken = localStorage.getItem('token');
+            if (!storedToken) {
+                setLoading(false);
+                return;
+            }
+
+            // Verify if session is valid with Neon (optional but good)
+            try {
+                const result = await authClient.getSession();
+
+                if (result.error || !result.data || !result.data.session) {
+                    throw new Error("Session expired or invalid");
+                }
+
+                const { session } = result.data;
+
+                // Refresh token if needed? Neon JS handles this?
+                const newToken = session.access_token;
+                if (newToken !== storedToken) {
+                    setToken(newToken);
+                    localStorage.setItem('token', newToken);
+                }
+
+                // Sync User
+                const backendUser = await syncUserWithBackend(newToken);
+                if (backendUser) {
+                    setUser(backendUser);
+                } else {
+                    // Fallback to stored user if offline or sync fails?
+                    const storedUser = localStorage.getItem('user');
+                    if (storedUser) setUser(JSON.parse(storedUser));
+                }
+
+            } catch (e) {
+                console.error("Session restoration failed:", e);
+                logout();
+            }
+            setLoading(false);
+        };
+
+        initSession();
+    }, []);
+
     return (
-        <AuthContext.Provider value={{ user, token, login, logout, loading }}>
+        <AuthContext.Provider value={{ user, token, login, register, logout, loading }}>
             {!loading && children}
         </AuthContext.Provider>
     );
