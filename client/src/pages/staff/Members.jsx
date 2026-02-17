@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useReactToPrint } from 'react-to-print';
 import QRCode from 'react-qr-code';
 import { useCurrency } from '../../context/CurrencyContext';
+import { withApiBase } from '../../config/api';
 import DataTable from '../../components/common/DataTable';
 import Modal from '../../components/common/Modal'; // Import reusable Modal
 
@@ -103,7 +104,7 @@ export default function Members() {
 
     const fetchPlans = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/plans');
+            const res = await axios.get(withApiBase('/api/plans'));
             setPlans(res.data);
         } catch (e) { console.error("Failed to fetch plans"); }
     };
@@ -112,7 +113,7 @@ export default function Members() {
         setLoading(true);
         setError(null);
         try {
-            const res = await axios.get(`http://localhost:5000/api/members?page=${page}&limit=${LIMIT}&search=${search}`);
+            const res = await axios.get(withApiBase(`/api/members?page=${page}&limit=${LIMIT}&search=${search}`));
             if (res.data.meta) {
                 setMembers(res.data.data);
                 setTotalPages(res.data.meta.totalPages);
@@ -188,12 +189,12 @@ export default function Members() {
                 sex: formData.sex || null,
                 ...paymentInfo
             };
-            const res = await axios.post('http://localhost:5000/api/members', payload);
+            const res = await axios.post(withApiBase('/api/members'), payload);
             const member = res.data?.member || res.data;
             const payment = res.data?.payment || null;
             setNewMember(member);
             setIsModalOpen(false);
-            setFormData({ firstName: '', lastName: '', email: '', phone: '', planId: '', birthDate: '', sex: '', imageUrl: '', agreedToTC: false });
+            setFormData({ firstName: '', lastName: '', email: '', phone: '', planId: '', birthDate: '', sex: '', imageUrl: '', agreedToTC: false, paymentMethod: 'CASH' });
 
             fetchData(); // Refresh list
             if (payment) {
@@ -204,7 +205,7 @@ export default function Members() {
             }
         } catch (e) {
             console.error(e);
-            alert("Failed to register member. Check email uniqueness or connection.");
+            alert(e.response?.data?.error || "Failed to register member. Check connection and required fields.");
         } finally {
             setSubmitting(false);
         }
@@ -231,7 +232,7 @@ export default function Members() {
         if (!memberToDelete) return;
         setIsDeleting(true);
         try {
-            await axios.delete(`http://localhost:5000/api/members/${memberToDelete.id}`);
+            await axios.delete(withApiBase(`/api/members/${memberToDelete.id}`));
             // Update local state
             setMembers(members.filter(m => m.id !== memberToDelete.id));
             setIsDeleteModalOpen(false);

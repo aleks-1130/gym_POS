@@ -5,6 +5,7 @@ import { useCurrency } from '../../context/CurrencyContext';
 import { useReactToPrint } from 'react-to-print';
 import { useUIStore } from '../../stores/useUIStore';
 import Receipt from '../../components/Receipt';
+import { withApiBase } from '../../config/api';
 
 export default function POS() {
     const { user } = useAuth();
@@ -13,6 +14,7 @@ export default function POS() {
     const [products, setProducts] = useState([]);
     const [plans, setPlans] = useState([]);
     const [trainers, setTrainers] = useState([]);
+    const [classPackages, setClassPackages] = useState([]);
     const [members, setMembers] = useState([]); // For POS member selection
     const [selectedMemberId, setSelectedMemberId] = useState('');
     const [cart, setCart] = useState([]);
@@ -26,12 +28,15 @@ export default function POS() {
     const [collectSession, setCollectSession] = useState(null);
     const [collectTendered, setCollectTendered] = useState('');
     const [collectLoading, setCollectLoading] = useState(false);
+    const [openCalendarLineId, setOpenCalendarLineId] = useState(null);
+    const [calendarMonthByLine, setCalendarMonthByLine] = useState({});
 
     // Derived Variables
     const subtotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
     const discountAmount = (subtotal * (discount / 100));
     const cartTotal = subtotal - discountAmount;
     const hasTraining = cart.some(item => item.type === 'TRAINING');
+    const hasClassPackages = cart.some(item => item.type === 'CLASS_PACKAGE');
 
     // Payment Selection
     const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -60,6 +65,7 @@ export default function POS() {
         fetchProducts();
         fetchPlans();
         fetchTrainers();
+        fetchClassPackages();
         fetchMembers();
     }, []);
 
@@ -72,7 +78,7 @@ export default function POS() {
 
     const fetchProducts = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/products');
+            const res = await axios.get(withApiBase('/api/products'));
             setProducts(res.data);
         } catch (_) {
             console.error("Failed to fetch products");
@@ -81,7 +87,7 @@ export default function POS() {
 
     const fetchPlans = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/plans');
+            const res = await axios.get(withApiBase('/api/plans'));
             setPlans(res.data);
         } catch (_) {
             console.error("Failed to fetch plans");
@@ -90,16 +96,27 @@ export default function POS() {
 
     const fetchTrainers = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/trainers');
+            const res = await axios.get(withApiBase('/api/trainers'));
             setTrainers(res.data);
         } catch (_) {
             console.error("Failed to fetch trainers");
         }
     };
 
+    const fetchClassPackages = async () => {
+        try {
+            const res = await axios.get(withApiBase('/api/plans/class-session-packages'), {
+                headers: authHeaders()
+            });
+            setClassPackages((res.data || []).filter((pkg) => pkg.isActive));
+        } catch (_) {
+            console.error("Failed to fetch class session packages");
+        }
+    };
+
     const fetchMembers = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/members');
+            const res = await axios.get(withApiBase('/api/members'));
             setMembers(res.data);
         } catch (_) {
             console.error("Failed to fetch members");
@@ -108,7 +125,7 @@ export default function POS() {
 
     const fetchHistory = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/payments', {
+            const res = await axios.get(withApiBase('/api/payments'), {
                 headers: authHeaders()
             });
             setHistory(res.data);
@@ -119,7 +136,7 @@ export default function POS() {
 
     const fetchTrainingBookings = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/staff/training-sessions', {
+            const res = await axios.get(withApiBase('/api/staff/training-sessions'), {
                 params: { status: 'UNPAID' },
                 headers: authHeaders()
             });
@@ -134,20 +151,6 @@ export default function POS() {
 
     const addToCart = (item, type = 'PRODUCT') => {
         setCart(prev => {
-            // Plans are unique items usually, but if we want to allow multiple?
-            // For simplicity, if it's a plan, we just add it. Or treat same as products.
-            const existing = prev.find(p => p.id === item.id && p.type === type);
-
-            // Stock Check
-            const currentQty = existing ? existing.quantity : 0;
-            if (type === 'PRODUCT' && (currentQty + 1) > item.stock) {
-                alert(`Not enough stock! Only ${item.stock} left.`);
-                return prev;
-            }
-
-            if (existing) {
-                return prev.map(p => p.id === item.id && p.type === type ? { ...p, quantity: p.quantity + 1 } : p);
-            }
             if (type === 'TRAINING') {
                 const durations = (item.sessionDurations || '60')
                     .split(',')
@@ -155,6 +158,7 @@ export default function POS() {
                     .filter((d) => Number.isFinite(d) && d > 0);
                 return [...prev, {
                     id: item.id,
+                    cartLineId: `training-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
                     name: item.name,
                     price: item.sessionPrice ?? item.price ?? 0,
                     type: 'TRAINING',
@@ -166,12 +170,28 @@ export default function POS() {
                     notes: ''
                 }];
             }
+
+            const existing = prev.find(p => p.id === item.id && p.type === type);
+
+            const currentQty = existing ? existing.quantity : 0;
+            if (type === 'PRODUCT' && (currentQty + 1) > item.stock) {
+                alert(`Not enough stock! Only ${item.stock} left.`);
+                return prev;
+            }
+
+            if (existing) {
+                return prev.map(p => p.id === item.id && p.type === type ? { ...p, quantity: p.quantity + 1 } : p);
+            }
             return [...prev, { ...item, type: type, quantity: 1 }];
         });
     };
 
-    const removeFromCart = (id) => {
-        setCart(prev => prev.filter(item => item.id !== id));
+    const removeFromCart = (id, type, cartLineId = null) => {
+        if (cartLineId) {
+            setCart(prev => prev.filter(item => item.cartLineId !== cartLineId));
+            return;
+        }
+        setCart(prev => prev.filter(item => !(item.id === id && item.type === type)));
     };
 
     const updateQuantity = (id, type, newQty) => {
@@ -213,10 +233,33 @@ export default function POS() {
             alert("Select a member for trainer booking.");
             return;
         }
+        if (hasClassPackages && !selectedMemberId) {
+            alert("Select a member for class package purchase.");
+            return;
+        }
         if (hasTraining) {
             const invalid = cart.some(item => item.type === 'TRAINING' && (!item.date || !item.time || !item.duration));
             if (invalid) {
                 alert("Please complete date, time, and duration for all training sessions.");
+                return;
+            }
+            const hasPastDateTime = cart.some((item) => {
+                if (item.type !== 'TRAINING') return false;
+                const scheduled = new Date(`${item.date}T${item.time}`);
+                return Number.isNaN(scheduled.getTime()) || scheduled <= new Date();
+            });
+            if (hasPastDateTime) {
+                alert("Past trainer booking schedule is not allowed.");
+                return;
+            }
+            const invalidSchedule = cart.some((item) => {
+                if (item.type !== 'TRAINING') return false;
+                const trainer = trainers.find((t) => t.id === item.trainerId);
+                const slots = getAvailableTimeSlotsForTrainer(trainer, item.date, item.duration);
+                return !slots.includes(item.time);
+            });
+            if (invalidSchedule) {
+                alert("One or more trainer bookings use unavailable time slots. Please reselect time.");
                 return;
             }
         }
@@ -245,7 +288,7 @@ export default function POS() {
                 if (!memberId) throw new Error("Member is required for training sessions");
 
                 for (const item of cart.filter(i => i.type === 'TRAINING')) {
-                    await axios.post('http://localhost:5000/api/staff/book-training', {
+                    await axios.post(withApiBase('/api/staff/book-training'), {
                         memberId,
                         trainerId: item.trainerId,
                         date: item.date,
@@ -276,10 +319,11 @@ export default function POS() {
             }
 
             const hasPlan = cart.some(item => item.type === 'PLAN');
-            const paymentType = hasPlan ? 'MEMBERSHIP' : 'POS_SALE';
+            const hasPackage = cart.some(item => item.type === 'CLASS_PACKAGE');
+            const paymentType = hasPlan ? 'MEMBERSHIP' : hasPackage ? 'CLASS_PACKAGE' : 'POS_SALE';
 
             const externalDate = (gcashDate && gcashTime) ? `${gcashDate}T${gcashTime}` : null;
-            const res = await axios.post('http://localhost:5000/api/payments', {
+            const res = await axios.post(withApiBase('/api/payments'), {
                 amount: cartTotal,
                 type: paymentType,
                 method: method,
@@ -320,6 +364,7 @@ export default function POS() {
             setDiscount(0);
             setSelectedMemberId('');
             fetchProducts(); // Refresh stock levels
+            fetchClassPackages();
         } catch (e) {
             alert("Transaction Failed: " + (e.response?.data?.error || e.message));
         } finally {
@@ -336,6 +381,133 @@ export default function POS() {
         return <span className={`${base} bg-emerald-500/10 text-emerald-400 border border-emerald-500/20`}>COMPLETED</span>;
     };
 
+    const toIsoDate = (date) => {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    };
+
+    const toMinutes = (timeString) => {
+        const [h, m] = String(timeString || '').split(':').map(Number);
+        if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+        return h * 60 + m;
+    };
+
+    const formatTimeLabel = (timeString) => {
+        const mins = toMinutes(timeString);
+        if (mins === null) return timeString;
+        const hour24 = Math.floor(mins / 60);
+        const minute = mins % 60;
+        const suffix = hour24 >= 12 ? 'PM' : 'AM';
+        const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+        return `${hour12}:${String(minute).padStart(2, '0')} ${suffix}`;
+    };
+
+    const getAvailableTimeSlotsForTrainer = (trainer, isoDate, duration) => {
+        if (!trainer || !isoDate || !duration) return [];
+        const dateObj = new Date(`${isoDate}T00:00:00`);
+        if (Number.isNaN(dateObj.getTime())) return [];
+
+        const availabilityDays = Array.isArray(trainer.availabilityDays)
+            ? trainer.availabilityDays.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+            : [];
+        if (availabilityDays.length > 0 && !availabilityDays.includes(dateObj.getDay())) return [];
+
+        const dayKey = String(dateObj.getDay());
+        const interval = Number(trainer.availabilityIntervalMinutes) || 30;
+        const dayConfig = trainer.availabilityByDay?.[dayKey];
+        const start = toMinutes(dayConfig?.start || trainer.availabilityStart || '09:00');
+        const end = toMinutes(dayConfig?.end || trainer.availabilityEnd || '18:00');
+        if (start === null || end === null || end <= start) return [];
+
+        const bookedSessions = (trainer.trainingSessions || [])
+            .filter((session) => {
+                if (session.status === 'CANCELLED') return false;
+                const sessionDate = new Date(session.date);
+                return toIsoDate(sessionDate) === isoDate;
+            })
+            .map((session) => {
+                const sessionDate = new Date(session.date);
+                const sessionStart = sessionDate.getHours() * 60 + sessionDate.getMinutes();
+                return {
+                    start: sessionStart,
+                    end: sessionStart + (Number(session.duration) || 60)
+                };
+            });
+
+        const resolvedDuration = Number(duration) || 60;
+        const slots = [];
+        const todayIso = toIsoDate(new Date());
+        const now = new Date();
+        const nowMinutes = now.getHours() * 60 + now.getMinutes();
+        for (let t = start; t + resolvedDuration <= end; t += interval) {
+            const slotStart = t;
+            const slotEnd = t + resolvedDuration;
+            if (isoDate === todayIso && slotStart <= nowMinutes) {
+                continue;
+            }
+            const blocked = bookedSessions.some((session) => slotStart < session.end && slotEnd > session.start);
+            if (!blocked) {
+                const hh = String(Math.floor(t / 60)).padStart(2, '0');
+                const mm = String(t % 60).padStart(2, '0');
+                slots.push(`${hh}:${mm}`);
+            }
+        }
+        return slots;
+    };
+
+    const getAvailableDatesForTrainer = (trainer, daysAhead = 45) => {
+        if (!trainer) return [];
+        const availabilityDays = Array.isArray(trainer.availabilityDays)
+            ? trainer.availabilityDays.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+            : [];
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const dates = [];
+        for (let i = 0; i <= daysAhead; i += 1) {
+            const current = new Date(today);
+            current.setDate(today.getDate() + i);
+            if (availabilityDays.length > 0 && !availabilityDays.includes(current.getDay())) {
+                continue;
+            }
+            dates.push(toIsoDate(current));
+        }
+        return dates;
+    };
+
+    const isTrainerDateAvailable = (trainer, isoDate) => {
+        if (!trainer || !isoDate) return false;
+        return getAvailableDatesForTrainer(trainer).includes(isoDate);
+    };
+
+    const getCalendarMonthForLine = (lineId) => {
+        const now = new Date();
+        return calendarMonthByLine[lineId] || new Date(now.getFullYear(), now.getMonth(), 1);
+    };
+
+    const shiftCalendarMonthForLine = (lineId, delta) => {
+        setCalendarMonthByLine((prev) => {
+            const current = getCalendarMonthForLine(lineId);
+            const next = new Date(current.getFullYear(), current.getMonth() + delta, 1);
+            return { ...prev, [lineId]: next };
+        });
+    };
+
+    const getCalendarCells = (monthDate) => {
+        const start = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+        const end = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
+        const leading = start.getDay();
+        const cells = [];
+        for (let i = 0; i < leading; i += 1) cells.push(null);
+        for (let d = 1; d <= end.getDate(); d += 1) {
+            cells.push(new Date(monthDate.getFullYear(), monthDate.getMonth(), d));
+        }
+        while (cells.length % 7 !== 0) cells.push(null);
+        return cells;
+    };
+
 
     const filteredProducts = selectedCategory === 'All'
         ? products
@@ -346,6 +518,8 @@ export default function POS() {
         ? plans
         : selectedCategory === 'TRAINERS'
             ? trainers
+            : selectedCategory === 'PACKAGES'
+                ? classPackages
             : filteredProducts;
 
     if (viewMode === 'HISTORY') {
@@ -506,7 +680,7 @@ export default function POS() {
                                             if ((parseFloat(collectTendered) || 0) < collectSession.price) return;
                                             setCollectLoading(true);
                                             try {
-                                                await axios.post(`http://localhost:5000/api/staff/training-sessions/${collectSession.id}/collect`, {
+                                                await axios.post(withApiBase(`/api/staff/training-sessions/${collectSession.id}/collect`), {
                                                     method: 'CASH',
                                                     cashTendered: parseFloat(collectTendered)
                                                 }, { headers: authHeaders() });
@@ -737,7 +911,7 @@ export default function POS() {
                         </button>
                         {/* Category Filter */}
                         <div className="flex flex-wrap gap-2 bg-surface p-1 rounded-xl border border-white/10">
-                            {['All', 'SUPPLEMENT', 'DRINK', 'MERCH', 'MEMBERSHIP', 'TRAINERS'].map(cat => (
+                            {['All', 'SUPPLEMENT', 'DRINK', 'MERCH', 'MEMBERSHIP', 'TRAINERS', 'PACKAGES'].map(cat => (
                                 <button
                                     key={cat}
                                     onClick={() => setSelectedCategory(cat)}
@@ -746,7 +920,7 @@ export default function POS() {
                                         : 'text-text-muted hover:text-text-secondary'
                                         }`}
                                 >
-                                    {cat === 'TRAINERS' ? 'SESSIONS' : cat}
+                                    {cat === 'TRAINERS' ? 'TRAINERS' : cat}
                                 </button>
                             ))}
                         </div>
@@ -759,7 +933,8 @@ export default function POS() {
                     )}
                     {displayItems.map(item => {
                         const isTrainer = selectedCategory === 'TRAINERS';
-                        const isSoldOut = !isTrainer && selectedCategory !== 'MEMBERSHIP' && item.stock <= 0;
+                        const isPackage = selectedCategory === 'PACKAGES';
+                        const isSoldOut = !isTrainer && !isPackage && selectedCategory !== 'MEMBERSHIP' && item.stock <= 0;
                         return (
                             <div
                                 key={item.id}
@@ -767,6 +942,8 @@ export default function POS() {
                                     if (isSoldOut) return;
                                     if (isTrainer) {
                                         addToCart(item, 'TRAINING');
+                                    } else if (isPackage) {
+                                        addToCart(item, 'CLASS_PACKAGE');
                                     } else {
                                         addToCart(item, selectedCategory === 'MEMBERSHIP' ? 'PLAN' : 'PRODUCT');
                                     }
@@ -778,7 +955,7 @@ export default function POS() {
                                         <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
                                     ) : (
                                         <div className="w-full h-full flex items-center justify-center text-text-muted group-hover:text-primary/50 transition-colors">
-                                            <span className="material-icons-round text-4xl">{selectedCategory === 'MEMBERSHIP' ? 'card_membership' : isTrainer ? 'person' : 'inventory_2'}</span>
+                                            <span className="material-icons-round text-4xl">{selectedCategory === 'MEMBERSHIP' ? 'card_membership' : isTrainer ? 'person' : isPackage ? 'redeem' : 'inventory_2'}</span>
                                         </div>
                                     )}
 
@@ -790,7 +967,7 @@ export default function POS() {
                                     )}
 
                                     {/* Stock Badge */}
-                                    {item.stock !== undefined && !isTrainer && (
+                                    {item.stock !== undefined && !isTrainer && !isPackage && (
                                         <div className={`absolute top-2 left-2 backdrop-blur-md text-white text-[10px] font-bold px-2 py-1 rounded-lg border shadow-sm z-20 ${item.stock <= 5 ? 'bg-red-500/80 border-red-400/50' : 'bg-surface/80 border-white/10'
                                             }`}>
                                             {item.stock} In Stock
@@ -807,6 +984,11 @@ export default function POS() {
                                             {item.availableSlots ?? 0} slots
                                         </div>
                                     )}
+                                    {isPackage && (
+                                        <div className="absolute top-2 right-2 bg-blue-500/90 backdrop-blur-sm text-white text-xs font-bold px-2 py-1 rounded-lg shadow-sm">
+                                            {item.sessions ?? 0} sessions
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="px-1 mt-2">
                                     <h3 className="text-white font-bold truncate text-sm">{item.name}</h3>
@@ -814,7 +996,7 @@ export default function POS() {
                                         <p className="text-primary font-bold">
                                             {isTrainer ? formatPrice(item.sessionPrice ?? 0, true) : formatPrice(item.price)}
                                         </p>
-                                        {item.category && !isTrainer && (
+                                        {item.category && !isTrainer && !isPackage && (
                                             <span className="text-[10px] text-text-muted uppercase font-bold tracking-tighter bg-white/5 px-1.5 py-0.5 rounded">
                                                 {item.category}
                                             </span>
@@ -822,6 +1004,11 @@ export default function POS() {
                                         {isTrainer && (
                                             <span className="text-[10px] text-text-muted uppercase font-bold tracking-tighter bg-white/5 px-1.5 py-0.5 rounded">
                                                 Trainer
+                                            </span>
+                                        )}
+                                        {isPackage && (
+                                            <span className="text-[10px] text-text-muted uppercase font-bold tracking-tighter bg-white/5 px-1.5 py-0.5 rounded">
+                                                Package
                                             </span>
                                         )}
                                     </div>
@@ -877,13 +1064,14 @@ export default function POS() {
                         </div>
                     ) : (
                         cart.map((item, idx) => (
-                            <div key={`${item.id}-${idx}`} className="p-3 hover:bg-white/5 rounded-2xl group transition-colors border border-transparent hover:border-white/5">
+                            <div key={item.cartLineId || `${item.id}-${idx}`} className="p-3 hover:bg-white/5 rounded-2xl group transition-colors border border-transparent hover:border-white/5">
                                 <div className="flex justify-between items-start">
                                     <div>
                                         <p className="text-white font-bold text-sm">
                                             {item.name}
                                             {item.type === 'PLAN' && <span className="ml-2 text-[10px] bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded border border-yellow-500/30">PLAN</span>}
-                                            {item.type === 'TRAINING' && <span className="ml-2 text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/30">SESSION</span>}
+                                            {item.type === 'TRAINING' && <span className="ml-2 text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/30">TRAINER</span>}
+                                            {item.type === 'CLASS_PACKAGE' && <span className="ml-2 text-[10px] bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded border border-blue-500/30">PACKAGE</span>}
                                         </p>
                                         {item.type !== 'TRAINING' && (
                                             <div className="flex items-center gap-2 mt-1.5">
@@ -915,7 +1103,7 @@ export default function POS() {
                                             <p className="text-text-muted text-[10px]">{formatCartPrice(item.price)} each</p>
                                         </div>
                                         <button
-                                            onClick={(e) => { e.stopPropagation(); removeFromCart(item.id); }}
+                                            onClick={(e) => { e.stopPropagation(); removeFromCart(item.id, item.type, item.cartLineId || null); }}
                                             className="w-6 h-6 flex items-center justify-center bg-white/10 text-text-muted hover:bg-red-500/20 hover:text-red-500 rounded-full transition-colors opacity-0 group-hover:opacity-100"
                                         >
                                             <span className="material-icons-round text-[14px]">close</span>
@@ -925,22 +1113,128 @@ export default function POS() {
 
                                 {item.type === 'TRAINING' && (
                                     <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                                        <input
-                                            type="date"
-                                            className="bg-surfaceHighlight border border-white/10 rounded-lg px-2 py-1.5 text-white"
-                                            value={item.date}
-                                            onChange={(e) => setCart(prev => prev.map(ci => ci === item ? { ...ci, date: e.target.value } : ci))}
-                                        />
-                                        <input
-                                            type="time"
+                                        <div className="col-span-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => setOpenCalendarLineId(openCalendarLineId === item.cartLineId ? null : item.cartLineId)}
+                                                className="w-full bg-surfaceHighlight border border-white/10 rounded-lg px-2 py-1.5 text-white text-left"
+                                            >
+                                                {item.date
+                                                    ? new Date(`${item.date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+                                                    : 'Select Date'}
+                                            </button>
+                                            {openCalendarLineId === item.cartLineId && (
+                                                <div className="mt-2 bg-surfaceHighlight border border-white/10 rounded-xl p-2">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => shiftCalendarMonthForLine(item.cartLineId, -1)}
+                                                            className="w-7 h-7 rounded bg-white/10 text-white"
+                                                        >
+                                                            <span className="material-icons-round text-sm">chevron_left</span>
+                                                        </button>
+                                                        <span className="text-[11px] text-white font-semibold">
+                                                            {getCalendarMonthForLine(item.cartLineId).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => shiftCalendarMonthForLine(item.cartLineId, 1)}
+                                                            className="w-7 h-7 rounded bg-white/10 text-white"
+                                                        >
+                                                            <span className="material-icons-round text-sm">chevron_right</span>
+                                                        </button>
+                                                    </div>
+                                                    <div className="grid grid-cols-7 gap-1 mb-1">
+                                                        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, idx) => (
+                                                            <div key={`${d}-${idx}`} className="text-[10px] text-center text-text-muted">{d}</div>
+                                                        ))}
+                                                    </div>
+                                                    <div className="grid grid-cols-7 gap-1">
+                                                        {(() => {
+                                                            const month = getCalendarMonthForLine(item.cartLineId);
+                                                            const cells = getCalendarCells(month);
+                                                            const trainer = trainers.find(t => t.id === item.trainerId);
+                                                            const todayIso = toIsoDate(new Date());
+                                                            return cells.map((day, idx) => {
+                                                                if (!day) return <div key={`blank-${idx}`} className="h-7" />;
+                                                                const iso = toIsoDate(day);
+                                                                const isPast = iso < todayIso;
+                                                                const unavailable = !isTrainerDateAvailable(trainer, iso);
+                                                                const selected = item.date === iso;
+                                                                return (
+                                                                    <button
+                                                                        key={iso}
+                                                                        type="button"
+                                                                        disabled={isPast || unavailable}
+                                                                        onClick={() => {
+                                                                            setCart(prev => prev.map(ci => {
+                                                                                const isTarget = (item.cartLineId && ci.cartLineId === item.cartLineId) || ci === item;
+                                                                                if (!isTarget) return ci;
+                                                                                const lineTrainer = trainers.find(t => t.id === ci.trainerId);
+                                                                                const slots = getAvailableTimeSlotsForTrainer(lineTrainer, iso, ci.duration);
+                                                                                return {
+                                                                                    ...ci,
+                                                                                    date: iso,
+                                                                                    time: slots.includes(ci.time) ? ci.time : ''
+                                                                                };
+                                                                            }));
+                                                                            setOpenCalendarLineId(null);
+                                                                        }}
+                                                                        className={`h-7 rounded text-[10px] font-semibold ${
+                                                                            selected
+                                                                                ? 'bg-primary text-background'
+                                                                                : (isPast || unavailable)
+                                                                                    ? 'bg-white/5 text-text-muted/40 cursor-not-allowed'
+                                                                                    : 'bg-white/5 text-white hover:bg-white/10'
+                                                                        }`}
+                                                                    >
+                                                                        {day.getDate()}
+                                                                    </button>
+                                                                );
+                                                            });
+                                                        })()}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <select
                                             className="bg-surfaceHighlight border border-white/10 rounded-lg px-2 py-1.5 text-white"
                                             value={item.time}
-                                            onChange={(e) => setCart(prev => prev.map(ci => ci === item ? { ...ci, time: e.target.value } : ci))}
-                                        />
+                                            onChange={(e) => {
+                                                const nextTime = e.target.value;
+                                                setCart(prev => prev.map(ci => {
+                                                    const isTarget = (item.cartLineId && ci.cartLineId === item.cartLineId) || ci === item;
+                                                    return isTarget ? { ...ci, time: nextTime } : ci;
+                                                }));
+                                            }}
+                                            disabled={!item.date}
+                                        >
+                                            <option value="">{item.date ? 'Select Time' : 'Select Date First'}</option>
+                                            {(() => {
+                                                const trainer = trainers.find(t => t.id === item.trainerId);
+                                                const slots = item.date ? getAvailableTimeSlotsForTrainer(trainer, item.date, item.duration) : [];
+                                                return slots.map(slot => (
+                                                    <option key={slot} value={slot}>{formatTimeLabel(slot)}</option>
+                                                ));
+                                            })()}
+                                        </select>
                                         <select
                                             className="bg-surfaceHighlight border border-white/10 rounded-lg px-2 py-1.5 text-white"
                                             value={item.duration}
-                                            onChange={(e) => setCart(prev => prev.map(ci => ci === item ? { ...ci, duration: Number(e.target.value) } : ci))}
+                                            onChange={(e) => {
+                                                const nextDuration = Number(e.target.value);
+                                                setCart(prev => prev.map(ci => {
+                                                    const isTarget = (item.cartLineId && ci.cartLineId === item.cartLineId) || ci === item;
+                                                    if (!isTarget) return ci;
+                                                    const trainer = trainers.find(t => t.id === ci.trainerId);
+                                                    const slots = ci.date ? getAvailableTimeSlotsForTrainer(trainer, ci.date, nextDuration) : [];
+                                                    return {
+                                                        ...ci,
+                                                        duration: nextDuration,
+                                                        time: slots.includes(ci.time) ? ci.time : ''
+                                                    };
+                                                }));
+                                            }}
                                         >
                                             {(trainers.find(t => t.id === item.trainerId)?.sessionDurations || '60')
                                                 .split(',')
@@ -955,7 +1249,10 @@ export default function POS() {
                                             className="bg-surfaceHighlight border border-white/10 rounded-lg px-2 py-1.5 text-white"
                                             placeholder="Notes"
                                             value={item.notes || ''}
-                                            onChange={(e) => setCart(prev => prev.map(ci => ci === item ? { ...ci, notes: e.target.value } : ci))}
+                                            onChange={(e) => setCart(prev => prev.map(ci => {
+                                                const isTarget = (item.cartLineId && ci.cartLineId === item.cartLineId) || ci === item;
+                                                return isTarget ? { ...ci, notes: e.target.value } : ci;
+                                            }))}
                                         />
                                     </div>
                                 )}

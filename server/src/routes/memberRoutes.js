@@ -24,8 +24,9 @@ router.patch('/:id/payment-methods/:methodId', authenticateToken, memberControll
 router.delete('/:id/payment-methods/:methodId', authenticateToken, memberController.deletePaymentMethod);
 
 // Member CRUD (Staff/Admin/Self)
-router.post('/', authenticateToken, authorize(['OWNER', 'ADMIN']), memberController.createMember);
+router.post('/', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.createMember);
 router.post('/:id/renew', authenticateToken, authorize(['OWNER', 'ADMIN']), memberController.renewMembership);
+router.post('/:id/class-session-packages', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.purchaseClassSessionPackage);
 router.get('/:id/payments', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.getMemberPayments);
 router.get('/:id/notes', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.getMemberNotes);
 router.post('/:id/notes', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.addMemberNote);

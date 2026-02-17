@@ -47,19 +47,7 @@ app.use('/api/analytics', require('./src/routes/analyticsRoutes'));
 app.use('/api/seed', require('./src/routes/seedRoutes'));
 app.use('/api/payment-methods', require('./src/routes/paymentMethodRoutes'));
 app.use('/api/settings', require('./src/routes/settingsRoutes'));
-
-// --- PUBLIC ROUTES (Plans) ---
-app.get('/api/plans', async (req, res) => {
-    // Public/Member endpoint to view plans
-    try {
-        const plans = await prisma.plan.findMany({
-            orderBy: { price: 'asc' }
-        });
-        res.json(plans);
-    } catch (e) {
-        res.status(500).json({ error: "Failed to fetch plans" });
-    }
-});
+app.use('/api/plans', require('./src/routes/planRoutes'));
 
 // --- INVENTORY / PRODUCT / SUPPLIER ROUTES ---
 // Moved to src/routes/productRoutes.js and src/routes/supplierRoutes.js
