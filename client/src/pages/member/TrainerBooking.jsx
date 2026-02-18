@@ -118,6 +118,22 @@ export default function TrainerBooking() {
         }
     };
 
+    const handleCancelSession = async (sessionId) => {
+        if (!confirm("Are you sure you want to cancel this session?")) return;
+
+        try {
+            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+            await axios.post(`http://localhost:5000/api/members/me/training-sessions/${sessionId}/cancel`, {}, {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined
+            });
+            alert("Session cancelled successfully.");
+            fetchMemberSessions();
+        } catch (error) {
+            console.error("Failed to cancel session", error);
+            alert(error.response?.data?.error || "Failed to cancel session");
+        }
+    };
+
     const handleBookSession = async (e) => {
         e.preventDefault();
         if (!selectedTrainer || selectedDates.length === 0) {
@@ -488,8 +504,18 @@ export default function TrainerBooking() {
                                                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                                                 : 'bg-white/10 text-text-muted border-white/20'
                                                 }`}>
-                                                {isUpcoming ? 'Upcoming' : 'Past'}
+                                                {session.status === 'CANCELLED' ? 'CANCELLED' : (isUpcoming ? 'Check-In' : 'Past')}
                                             </span>
+                                        </div>
+                                        <div className="mt-2 text-right">
+                                            {isUpcoming && session.status !== 'CANCELLED' && (
+                                                <button
+                                                    onClick={() => handleCancelSession(session.id)}
+                                                    className="px-3 py-1 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold hover:bg-red-500/20 transition-all"
+                                                >
+                                                    Cancel
+                                                </button>
+                                            )}
                                         </div>
                                         <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs">
                                             <span className="px-2 py-1 rounded-md bg-white/10 text-text-muted">{session.duration} min</span>
@@ -736,10 +762,10 @@ export default function TrainerBooking() {
                                                             }}
                                                             disabled={isPast || unavailableDay}
                                                             className={`h-9 rounded-lg text-xs font-semibold transition-all ${selected
-                                                                    ? 'bg-primary text-background'
-                                                                    : (isPast || unavailableDay)
-                                                                        ? 'bg-white/5 text-text-muted/40 cursor-not-allowed'
-                                                                        : 'bg-white/5 text-white hover:bg-white/10'
+                                                                ? 'bg-primary text-background'
+                                                                : (isPast || unavailableDay)
+                                                                    ? 'bg-white/5 text-text-muted/40 cursor-not-allowed'
+                                                                    : 'bg-white/5 text-white hover:bg-white/10'
                                                                 }`}
                                                         >
                                                             {day.getDate()}
@@ -811,8 +837,8 @@ export default function TrainerBooking() {
                                                                             type="button"
                                                                             onClick={() => setSelectedTimesByDate((prev) => ({ ...prev, [isoDate]: slot }))}
                                                                             className={`px-2 py-2 rounded-lg text-xs font-semibold border transition-all ${selectedTime === slot
-                                                                                    ? 'bg-primary/15 text-primary border-primary/40'
-                                                                                    : 'bg-white/5 text-text-muted border-white/10 hover:text-white'
+                                                                                ? 'bg-primary/15 text-primary border-primary/40'
+                                                                                : 'bg-white/5 text-text-muted border-white/10 hover:text-white'
                                                                                 }`}
                                                                         >
                                                                             {formatTimeLabel(slot)}

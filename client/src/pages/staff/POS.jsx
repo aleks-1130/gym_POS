@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { POS_VIEWS } from '../../constants/categories'; // Added import
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useCurrency } from '../../context/CurrencyContext';
@@ -514,13 +515,13 @@ export default function POS() {
         : products.filter(p => p.category === selectedCategory);
 
     // Combine Products and Plans for display if category is Memberships
-    const displayItems = selectedCategory === 'MEMBERSHIP'
+    const displayItems = selectedCategory === POS_VIEWS.MEMBERSHIP
         ? plans
-        : selectedCategory === 'TRAINERS'
+        : selectedCategory === POS_VIEWS.TRAINERS
             ? trainers
-            : selectedCategory === 'PACKAGES'
+            : selectedCategory === POS_VIEWS.PACKAGES
                 ? classPackages
-            : filteredProducts;
+                : filteredProducts;
 
     if (viewMode === 'HISTORY') {
         return (
@@ -911,7 +912,7 @@ export default function POS() {
                         </button>
                         {/* Category Filter */}
                         <div className="flex flex-wrap gap-2 bg-surface p-1 rounded-xl border border-white/10">
-                            {['All', 'SUPPLEMENT', 'DRINK', 'MERCH', 'MEMBERSHIP', 'TRAINERS', 'PACKAGES'].map(cat => (
+                            {['All', ...Object.values(POS_VIEWS)].map(cat => (
                                 <button
                                     key={cat}
                                     onClick={() => setSelectedCategory(cat)}
@@ -920,7 +921,7 @@ export default function POS() {
                                         : 'text-text-muted hover:text-text-secondary'
                                         }`}
                                 >
-                                    {cat === 'TRAINERS' ? 'TRAINERS' : cat}
+                                    {cat === POS_VIEWS.TRAINERS ? 'TRAINERS' : cat}
                                 </button>
                             ))}
                         </div>
@@ -932,9 +933,9 @@ export default function POS() {
                         <div className="col-span-full text-center text-text-muted py-10">No items found in this category.</div>
                     )}
                     {displayItems.map(item => {
-                        const isTrainer = selectedCategory === 'TRAINERS';
-                        const isPackage = selectedCategory === 'PACKAGES';
-                        const isSoldOut = !isTrainer && !isPackage && selectedCategory !== 'MEMBERSHIP' && item.stock <= 0;
+                        const isTrainer = selectedCategory === POS_VIEWS.TRAINERS;
+                        const isPackage = selectedCategory === POS_VIEWS.PACKAGES;
+                        const isSoldOut = !isTrainer && !isPackage && selectedCategory !== POS_VIEWS.MEMBERSHIP && item.stock <= 0;
                         return (
                             <div
                                 key={item.id}
@@ -945,17 +946,17 @@ export default function POS() {
                                     } else if (isPackage) {
                                         addToCart(item, 'CLASS_PACKAGE');
                                     } else {
-                                        addToCart(item, selectedCategory === 'MEMBERSHIP' ? 'PLAN' : 'PRODUCT');
+                                        addToCart(item, selectedCategory === POS_VIEWS.MEMBERSHIP ? 'PLAN' : 'PRODUCT');
                                     }
                                 }}
-                                className={`group bg-surface hover:bg-primary/5 rounded-3xl p-3 cursor-pointer transition-all duration-300 border border-white/5 hover:border-primary/20 shadow-sm hover:shadow-primary/10 active:scale-95 ${selectedCategory === 'MEMBERSHIP' ? 'ring-1 ring-yellow-500/30' : ''} ${isSoldOut ? 'opacity-70 grayscale-[0.5] cursor-not-allowed' : ''}`}
+                                className={`group bg-surface hover:bg-primary/5 rounded-3xl p-3 cursor-pointer transition-all duration-300 border border-white/5 hover:border-primary/20 shadow-sm hover:shadow-primary/10 active:scale-95 ${selectedCategory === POS_VIEWS.MEMBERSHIP ? 'ring-1 ring-yellow-500/30' : ''} ${isSoldOut ? 'opacity-70 grayscale-[0.5] cursor-not-allowed' : ''}`}
                             >
                                 <div className="aspect-[4/3] rounded-2xl overflow-hidden mb-3 relative bg-white/5">
                                     {item.imageUrl ? (
                                         <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
                                     ) : (
                                         <div className="w-full h-full flex items-center justify-center text-text-muted group-hover:text-primary/50 transition-colors">
-                                            <span className="material-icons-round text-4xl">{selectedCategory === 'MEMBERSHIP' ? 'card_membership' : isTrainer ? 'person' : isPackage ? 'redeem' : 'inventory_2'}</span>
+                                            <span className="material-icons-round text-4xl">{selectedCategory === POS_VIEWS.MEMBERSHIP ? 'card_membership' : isTrainer ? 'person' : isPackage ? 'redeem' : 'inventory_2'}</span>
                                         </div>
                                     )}
 
@@ -974,7 +975,7 @@ export default function POS() {
                                         </div>
                                     )}
 
-                                    {selectedCategory === 'MEMBERSHIP' && (
+                                    {selectedCategory === POS_VIEWS.MEMBERSHIP && (
                                         <div className="absolute top-2 right-2 bg-yellow-500/90 backdrop-blur-sm text-black text-xs font-bold px-2 py-1 rounded-lg shadow-sm">
                                             {item.duration} Days
                                         </div>
@@ -1180,13 +1181,12 @@ export default function POS() {
                                                                             }));
                                                                             setOpenCalendarLineId(null);
                                                                         }}
-                                                                        className={`h-7 rounded text-[10px] font-semibold ${
-                                                                            selected
+                                                                        className={`h-7 rounded text-[10px] font-semibold ${selected
                                                                                 ? 'bg-primary text-background'
                                                                                 : (isPast || unavailable)
                                                                                     ? 'bg-white/5 text-text-muted/40 cursor-not-allowed'
                                                                                     : 'bg-white/5 text-white hover:bg-white/10'
-                                                                        }`}
+                                                                            }`}
                                                                     >
                                                                         {day.getDate()}
                                                                     </button>

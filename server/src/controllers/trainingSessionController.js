@@ -67,7 +67,7 @@ const getSessionById = async (req, res) => {
 const completeSession = async (req, res) => {
     const { id } = req.params;
     const { materialsCost, notes, materials } = req.body;
-    console.log(`[DEBUG] Completing Session ${id}`, { materialsCost, notes, materials });
+    const { materialsCost, notes, materials } = req.body;
 
     try {
         const session = await prisma.trainingSession.findUnique({
@@ -270,11 +270,68 @@ const getMySessions = async (req, res) => {
     }
 };
 
+const cancelSession = async (req, res) => {
+    const sessionId = Number(req.params.id);
+    const user = req.user;
+
+    try {
+        const session = await prisma.trainingSession.findUnique({
+            where: { id: sessionId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: "Session not found" });
+        }
+
+        // 1. Check if session is in the past
+        const now = new Date();
+        if (new Date(session.date) < now) {
+            return res.status(400).json({ error: "Cannot cancel past sessions" });
+        }
+
+        // 2. Check Permissions
+        let isAuthorized = false;
+        if (user.role === 'ADMIN' || user.role === 'STAFF' || user.role === 'OWNER') {
+            isAuthorized = true;
+        } else if (user.role === 'TRAINER') {
+            // Trainers can only cancel sessions assigned to them
+            if (session.trainerId === Number(user.trainerId)) isAuthorized = true;
+        } else if (user.role === 'MEMBER') {
+            // Members can only cancel their own sessions
+            if (session.memberId === Number(user.id)) isAuthorized = true;
+        }
+
+        if (!isAuthorized) {
+            return res.status(403).json({ error: "You are not authorized to cancel this session" });
+        }
+
+        // 3. Update Status
+        await prisma.trainingSession.update({
+            where: { id: sessionId },
+            data: { status: 'CANCELLED' }
+        });
+
+        // 4. Return message
+        let message = "Session cancelled successfully.";
+        if (session.paymentStatus === 'PAID') {
+            message += " Note: This session was paid. Please contact the front desk for a refund.";
+        }
+
+        res.json({ message, session: { ...session, status: 'CANCELLED' } });
+
+    } catch (e) {
+        console.error("Cancel Session Error:", e);
+        res.status(500).json({ error: "Failed to cancel session" });
+    }
+};
+
+
 module.exports = {
     getAllSessions,
     getSessionById,
     completeSession,
     updateSession,
     getTrainerSessions,
-    getMySessions
+    getMySessions,
+    cancelSession
 };

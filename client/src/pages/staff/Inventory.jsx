@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { PRODUCT_CATEGORIES } from '../../constants/categories'; // Added import
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useCurrency } from '../../context/CurrencyContext';
@@ -16,7 +17,7 @@ export default function Inventory() {
     const [showForm, setShowForm] = useState(false);
     const [editingId, setEditingId] = useState(null);
     const [formData, setFormData] = useState({
-        name: '', category: 'SUPPLEMENT', price: '', stock: '', minStock: '5', imageUrl: '', supplyCost: '', supplierId: ''
+        name: '', category: PRODUCT_CATEGORIES.SUPPLEMENT, price: '', stock: '', minStock: '5', imageUrl: '', supplyCost: '', supplierId: ''
     });
 
     // Restock Modal State
@@ -75,7 +76,7 @@ export default function Inventory() {
     };
 
     const resetForm = () => {
-        setFormData({ name: '', category: 'SUPPLEMENT', price: '', stock: '', minStock: '5', imageUrl: '', supplyCost: '', supplierId: '' });
+        setFormData({ name: '', category: PRODUCT_CATEGORIES.SUPPLEMENT, price: '', stock: '', minStock: '5', imageUrl: '', supplyCost: '', supplierId: '' });
         setEditingId(null);
         setShowForm(false);
     };
@@ -214,10 +215,11 @@ export default function Inventory() {
                             <label className="block text-xs text-text-secondary mb-1">Category</label>
                             <select className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none transition-colors"
                                 value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })}>
-                                <option value="SUPPLEMENT">Supplement</option>
-                                <option value="DRINK">Drink</option>
-                                <option value="MERCH">Merchandise</option>
-                                <option value="EQUIPMENT">Equipment</option>
+                                <option value={PRODUCT_CATEGORIES.SUPPLEMENT}>Supplement</option>
+                                <option value={PRODUCT_CATEGORIES.DRINK}>Drink</option>
+                                <option value={PRODUCT_CATEGORIES.MERCH}>Merchandise</option>
+                                <option value={PRODUCT_CATEGORIES.EQUIPMENT}>Equipment</option>
+                                <option value={PRODUCT_CATEGORIES.OTHER}>Other</option>
                             </select>
                         </div>
                         <div>
