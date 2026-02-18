@@ -9,6 +9,7 @@ const { authenticateToken, authorize } = require('../middleware/authMiddleware')
 router.get('/me', authenticateToken, authorize(['TRAINER']), trainerController.getMe);
 router.get('/me/sessions', authenticateToken, authorize(['TRAINER']), trainingSessionController.getMySessions);
 router.post('/me/sessions/:id/complete', authenticateToken, authorize(['TRAINER']), trainingSessionController.completeSession);
+router.post('/me/sessions/:id/cancel', authenticateToken, authorize(['TRAINER']), trainingSessionController.cancelSession);
 router.patch('/me/sessions/:id', authenticateToken, authorize(['TRAINER']), trainingSessionController.updateSession);
 
 router.get('/me/classes', authenticateToken, authorize(['TRAINER']), classController.getAllClasses);

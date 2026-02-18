@@ -14,6 +14,24 @@ const getExpenses = async (req, res) => {
 
 const createExpense = async (req, res) => {
     const { title, amount, category, date, notes } = req.body;
+
+
+    // Strict Payroll Permissions
+    if (category === 'SALARY') {
+        // 1. Prevent Admin from paying themselves
+        if (req.body.staffId && Number(req.body.staffId) === req.user.id) {
+            return res.status(403).json({ error: "You cannot pay your own salary." });
+        }
+
+        // 2. Prevent Admin from paying other Admins (Only Owner can)
+        if (req.body.staffId) {
+            const targetUser = await prisma.user.findUnique({ where: { id: Number(req.body.staffId) } });
+            if (targetUser && (targetUser.role === 'ADMIN' || targetUser.role === 'OWNER') && req.user.role !== 'OWNER') {
+                return res.status(403).json({ error: "Only the Owner can pay Admin or Owner salaries." });
+            }
+        }
+    }
+
     try {
         const expense = await prisma.expense.create({
             data: {
@@ -22,7 +40,9 @@ const createExpense = async (req, res) => {
                 category,
                 date: date ? new Date(date) : new Date(),
                 notes,
-                recordedBy: req.user.id.toString()
+                recordedBy: req.user.id.toString(),
+                trainerId: req.body.trainerId ? Number(req.body.trainerId) : null,
+                staffId: req.body.staffId ? Number(req.body.staffId) : null
             }
         });
         await logAudit("CREATE_EXPENSE", req.user.id.toString(), `Expense: ${expense.title}`, `Recorded ${expense.amount} in ${expense.category}`);

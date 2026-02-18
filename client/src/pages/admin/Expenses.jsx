@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useCurrency } from '../../context/CurrencyContext';
 import axios from 'axios';
 import DataTable from '../../components/common/DataTable';
+import { EXPENSE_CATEGORIES } from '../../constants/categories';
 
 const Expenses = () => {
     const [expenses, setExpenses] = useState([]);
@@ -10,7 +11,7 @@ const Expenses = () => {
     const [formData, setFormData] = useState({
         title: '',
         amount: '',
-        category: 'UTILITIES',
+        category: EXPENSE_CATEGORIES.UTILITIES,
         date: new Date().toISOString().split('T')[0],
         notes: ''
     });
@@ -57,7 +58,7 @@ const Expenses = () => {
             setFormData({
                 title: '',
                 amount: '',
-                category: 'UTILITIES',
+                category: EXPENSE_CATEGORIES.UTILITIES,
                 date: new Date().toISOString().split('T')[0],
                 notes: ''
             });
@@ -129,13 +130,9 @@ const Expenses = () => {
                         className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-sm rounded-lg px-3 py-2 outline-none focus:border-red-500"
                     >
                         <option value="ALL">All Categories</option>
-                        <option value="UTILITIES">Utilities</option>
-                        <option value="SALARY">Salary</option>
-                        <option value="SUPPLIES">Supplies</option>
-                        <option value="MAINTENANCE">Maintenance</option>
-                        <option value="RENT">Rent</option>
-                        <option value="SESSION_MATERIAL">Session Material</option>
-                        <option value="OTHER">Other</option>
+                        {Object.values(EXPENSE_CATEGORIES).map(cat => (
+                            <option key={cat} value={cat}>{cat.replace('_', ' ')}</option>
+                        ))}
                     </select>
 
                     <div className="bg-white dark:bg-gray-800 p-1 rounded-lg border border-gray-200 dark:border-gray-700 flex">
@@ -330,12 +327,9 @@ const Expenses = () => {
                                         value={formData.category}
                                         onChange={e => setFormData({ ...formData, category: e.target.value })}
                                     >
-                                        <option value="UTILITIES">Utilities</option>
-                                        <option value="SALARY">Salary</option>
-                                        <option value="SUPPLIES">Supplies</option>
-                                        <option value="MAINTENANCE">Maintenance</option>
-                                        <option value="RENT">Rent</option>
-                                        <option value="OTHER">Other</option>
+                                        {Object.values(EXPENSE_CATEGORIES).filter(c => c !== 'INVENTORY').map(cat => (
+                                            <option key={cat} value={cat}>{cat.replace('_', ' ')}</option>
+                                        ))}
                                     </select>
                                 </div>
                             </div>

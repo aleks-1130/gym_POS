@@ -52,6 +52,16 @@ export default function TrainerSessions() {
         await refreshSessions();
     };
 
+    const handleCancelSession = async (sessionId) => {
+        if (!confirm("Are you sure you want to cancel this session?")) return;
+        try {
+            await axios.post(`http://localhost:5000/api/trainer/me/sessions/${sessionId}/cancel`);
+            refreshSessions();
+        } catch (e) {
+            alert(e.response?.data?.error || "Failed to cancel session");
+        }
+    };
+
     const handleOpenNotes = (session) => {
         setEditingSession(session);
         setNotesDraft(session.notes || '');
@@ -147,11 +157,10 @@ export default function TrainerSessions() {
                         <button
                             key={tab.value}
                             onClick={() => setActiveView(tab.value)}
-                            className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${
-                                activeView === tab.value
-                                    ? 'bg-primary text-background'
-                                    : 'bg-surface text-text-muted border border-white/5'
-                            }`}
+                            className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === tab.value
+                                ? 'bg-primary text-background'
+                                : 'bg-surface text-text-muted border border-white/5'
+                                }`}
                         >
                             {tab.label}
                         </button>
@@ -197,9 +206,8 @@ export default function TrainerSessions() {
                                     key={`${key}-${idx}`}
                                     onDragOver={(e) => e.preventDefault()}
                                     onDrop={() => handleDropOnDay(day)}
-                                    className={`min-h-[110px] rounded-xl border p-2 flex flex-col gap-2 transition-colors ${
-                                        isCurrentMonth ? 'bg-surface border-white/5' : 'bg-white/5 border-white/5 opacity-50'
-                                    } ${isToday ? 'ring-1 ring-primary/40' : ''}`}
+                                    className={`min-h-[110px] rounded-xl border p-2 flex flex-col gap-2 transition-colors ${isCurrentMonth ? 'bg-surface border-white/5' : 'bg-white/5 border-white/5 opacity-50'
+                                        } ${isToday ? 'ring-1 ring-primary/40' : ''}`}
                                 >
                                     <div className="flex items-center justify-between text-[10px] font-bold text-text-muted">
                                         <span>{day.getDate()}</span>
@@ -259,11 +267,10 @@ export default function TrainerSessions() {
                             <button
                                 key={day}
                                 onClick={() => setActiveDay(day)}
-                                className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap border transition-all ${
-                                    currentDay === day
-                                        ? 'bg-primary/15 text-primary border-primary/30'
-                                        : 'bg-surface text-text-muted border-white/10 hover:text-white'
-                                }`}
+                                className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap border transition-all ${currentDay === day
+                                    ? 'bg-primary/15 text-primary border-primary/30'
+                                    : 'bg-surface text-text-muted border-white/10 hover:text-white'
+                                    }`}
                             >
                                 {new Date(day).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
                                 <span className="ml-2 text-[10px] text-text-muted">({grouped[day].length})</span>
@@ -287,20 +294,18 @@ export default function TrainerSessions() {
                                             {new Date(session.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {session.duration} min
                                         </p>
                                         <div className="flex gap-2 mt-2">
-                                            <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${
-                                                session.status === 'COMPLETED'
-                                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                                                    : session.status === 'SCHEDULED'
-                                                        ? 'bg-primary/10 text-primary border-primary/20'
-                                                        : 'bg-red-500/10 text-red-500 border-red-500/20'
-                                            }`}>
+                                            <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${session.status === 'COMPLETED'
+                                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                                : session.status === 'SCHEDULED'
+                                                    ? 'bg-primary/10 text-primary border-primary/20'
+                                                    : 'bg-red-500/10 text-red-500 border-red-500/20'
+                                                }`}>
                                                 {session.status}
                                             </span>
-                                            <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${
-                                                session.paymentStatus === 'PAID'
-                                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                                                    : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                                            }`}>
+                                            <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${session.paymentStatus === 'PAID'
+                                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                                : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                                }`}>
                                                 {session.paymentStatus}
                                             </span>
                                         </div>
@@ -312,6 +317,14 @@ export default function TrainerSessions() {
                                             className="px-4 py-2 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold uppercase tracking-widest hover:bg-emerald-500/30 transition-all disabled:opacity-50"
                                         >
                                             {completingId === session.id ? 'Updating...' : 'Mark Completed'}
+                                        </button>
+                                    )}
+                                    {session.status !== 'CANCELLED' && session.status !== 'COMPLETED' && (
+                                        <button
+                                            onClick={() => handleCancelSession(session.id)}
+                                            className="px-4 py-2 rounded-xl bg-red-500/10 text-red-400 border border-red-500/20 text-xs font-bold uppercase tracking-widest hover:bg-red-500/20 transition-all"
+                                        >
+                                            Cancel
                                         </button>
                                     )}
                                     <button
@@ -354,22 +367,20 @@ export default function TrainerSessions() {
                                     </td>
                                     <td className="px-6 py-4 text-white">{session.duration} min</td>
                                     <td className="px-6 py-4">
-                                        <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${
-                                            session.status === 'COMPLETED'
-                                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                                                : session.status === 'SCHEDULED'
-                                                    ? 'bg-primary/10 text-primary border-primary/20'
-                                                    : 'bg-red-500/10 text-red-500 border-red-500/20'
-                                        }`}>
+                                        <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${session.status === 'COMPLETED'
+                                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                            : session.status === 'SCHEDULED'
+                                                ? 'bg-primary/10 text-primary border-primary/20'
+                                                : 'bg-red-500/10 text-red-500 border-red-500/20'
+                                            }`}>
                                             {session.status}
                                         </span>
                                     </td>
                                     <td className="px-6 py-4">
-                                        <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${
-                                            session.paymentStatus === 'PAID'
-                                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                                                : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                                        }`}>
+                                        <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${session.paymentStatus === 'PAID'
+                                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                            : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                            }`}>
                                             {session.paymentStatus}
                                         </span>
                                     </td>
@@ -391,6 +402,14 @@ export default function TrainerSessions() {
                                         >
                                             Notes
                                         </button>
+                                        {session.status !== 'CANCELLED' && session.status !== 'COMPLETED' && (
+                                            <button
+                                                onClick={() => handleCancelSession(session.id)}
+                                                className="ml-2 px-3 py-1 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 text-[10px] font-bold uppercase tracking-widest hover:bg-red-500/20 transition-all"
+                                            >
+                                                Cancel
+                                            </button>
+                                        )}
                                     </td>
                                 </tr>
                             ))}

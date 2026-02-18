@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const memberController = require('../controllers/memberController');
 const paymentController = require('../controllers/paymentController');
+const trainingSessionController = require('../controllers/trainingSessionController');
 const { authenticateToken, authorize } = require('../middleware/authMiddleware');
 
 // Only Staff/Admin can list all members
@@ -14,6 +15,7 @@ router.post('/cancel-booking', authenticateToken, memberController.cancelBooking
 router.post('/book-training', authenticateToken, authorize(['MEMBER']), memberController.bookTraining);
 router.post('/book-training-cash', authenticateToken, authorize(['MEMBER']), memberController.bookTrainingCash);
 router.get('/me/transactions', authenticateToken, authorize(['MEMBER']), paymentController.getMyTransactions);
+router.post('/me/training-sessions/:id/cancel', authenticateToken, authorize(['MEMBER']), trainingSessionController.cancelSession);
 router.get('/me/training-sessions', authenticateToken, authorize(['MEMBER']), memberController.getMyTrainingSessions);
 
 // Member Profile & Payment Methods

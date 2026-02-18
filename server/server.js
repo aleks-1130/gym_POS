@@ -63,7 +63,7 @@ app.listen(PORT, '0.0.0.0', async () => {
     try {
         const userCount = await prisma.user.count();
         if (userCount === 0) {
-            console.log("Seeding database...");
+            console.log("Force Restart (Production Switch): " + new Date().toISOString());
             await prisma.user.create({
                 data: {
                     email: 'admin@gym.com',

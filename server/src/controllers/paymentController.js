@@ -268,7 +268,7 @@ const createPayment = async (req, res) => {
                                 ? Number(plan.price)
                                 : item.type === 'CLASS_PACKAGE'
                                     ? Number(classPackage.price)
-                                : (parseFloat(item.price) || 0)
+                                    : (parseFloat(item.price) || 0)
                     };
                 });
                 await tx.paymentItem.createMany({ data: paymentItems });
@@ -833,12 +833,45 @@ const deletePaymentMethod = async (req, res) => {
     }
 };
 
+const completePayment = async (req, res) => {
+    const { id } = req.params;
+    const { cashTendered } = req.body;
+
+    try {
+        const payment = await prisma.payment.findUnique({
+            where: { id: Number(id) }
+        });
+
+        if (!payment) return res.status(404).json({ error: "Payment not found" });
+        if (payment.status === 'COMPLETED') return res.status(400).json({ error: "Payment already completed" });
+
+        const changeDue = Number(cashTendered) - payment.amount;
+        if (changeDue < 0) return res.status(400).json({ error: "Insufficient cash tendered" });
+
+        const updated = await prisma.payment.update({
+            where: { id: Number(id) },
+            data: {
+                status: 'COMPLETED',
+                cashTendered: Number(cashTendered),
+                changeDue,
+                cashierId: req.user.id
+            },
+            include: { member: true, items: true, cashier: true }
+        });
+
+        res.json(updated);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to complete payment" });
+    }
+};
+
 module.exports = {
     getPaymentDetails,
     createPayment,
     getAllPayments,
     returnPaymentItems,
     voidPayment,
+    completePayment,
     getPosSettings,
     updatePosSettings,
     getMyTransactions,

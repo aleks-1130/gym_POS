@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 
 export default function Login() {
     const [email, setEmail] = useState('');
@@ -85,8 +85,11 @@ export default function Login() {
 
                     </form>
 
-                    <p className="mt-8 text-center text-xs text-text-muted">
-                        For demo: <span className="text-white font-mono">admin@gym.com</span> / <span className="text-white font-mono">password123</span>
+                    <p className="mt-8 text-center text-sm text-text-muted">
+                        Don't have an account?{' '}
+                        <Link to="/signup" className="text-primary hover:text-white transition-colors font-medium">
+                            Sign Up
+                        </Link>
                     </p>
                 </div>
             </div>

@@ -1,5 +1,5 @@
 const prisma = require('../config/prisma');
-const logAudit = require('../services/auditService');
+const { logAudit } = require('../services/auditService');
 
 const normalizeProductPayload = (payload = {}) => {
     const name = String(payload.name || '').trim();

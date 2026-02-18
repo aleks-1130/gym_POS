@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { REWARD_CATEGORIES } from '../../constants/categories';
 
 export default function LoyaltyManager() {
     const [rewards, setRewards] = useState([]);
@@ -13,7 +14,7 @@ export default function LoyaltyManager() {
     const [showManageModal, setShowManageModal] = useState(false);
     const [showManualModal, setShowManualModal] = useState(false); // New: Manual Adjust Modal
     const [editReward, setEditReward] = useState(null); // If set, we are editing this reward
-    const [rewardFormData, setRewardFormData] = useState({ name: '', cost: '', category: 'MERCHANDISE', description: '', imageUrl: '' });
+    const [rewardFormData, setRewardFormData] = useState({ name: '', cost: '', category: REWARD_CATEGORIES.MERCHANDISE, description: '', imageUrl: '' });
 
     // Manual Adjust State (Friend's Feature)
     const [manualPoints, setManualPoints] = useState('');
@@ -163,7 +164,7 @@ export default function LoyaltyManager() {
 
     const openCreate = () => {
         setEditReward(null);
-        setRewardFormData({ name: '', cost: '', category: 'MERCHANDISE', description: '', imageUrl: '' });
+        setRewardFormData({ name: '', cost: '', category: REWARD_CATEGORIES.MERCHANDISE, description: '', imageUrl: '' });
         setShowManageModal(true);
     };
 
@@ -401,11 +402,9 @@ export default function LoyaltyManager() {
                                         value={rewardFormData.category}
                                         onChange={e => setRewardFormData({ ...rewardFormData, category: e.target.value })}
                                     >
-                                        <option value="MERCHANDISE">Merchandise</option>
-                                        <option value="SUPPLEMENT">Supplement</option>
-                                        <option value="APPAREL">Apparel</option>
-                                        <option value="EXPERIENCE">Experience / Service</option>
-                                        <option value="OTHER">Other</option>
+                                        {Object.values(REWARD_CATEGORIES).map(cat => (
+                                            <option key={cat} value={cat}>{cat}</option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div>

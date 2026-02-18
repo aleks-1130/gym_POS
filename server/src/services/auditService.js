@@ -10,4 +10,4 @@ const logAudit = async (action, performedBy, target, details) => {
     }
 };
 
-module.exports = logAudit;
+module.exports = { logAudit };

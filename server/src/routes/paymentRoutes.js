@@ -17,5 +17,6 @@ router.post('/:id/collect-cash', authenticateToken, authorize(['OWNER', 'ADMIN',
 router.post('/:id/decline-cash', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), paymentController.declinePendingCashPayment);
 router.post('/:id/return-items', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), paymentController.returnPaymentItems);
 router.post('/:id/void', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), paymentController.voidPayment);
+router.post('/:id/complete', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), paymentController.completePayment);
 
 module.exports = router;

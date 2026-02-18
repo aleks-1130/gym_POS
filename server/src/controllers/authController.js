@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const prisma = require('../config/prisma');
 const { isDatabaseUnreachableError } = require('../utils/prismaError');
+const { syncToNeonAuth } = require('../services/neonAuthSync');
 
 const SECRET = process.env.JWT_SECRET;
 
@@ -41,6 +42,10 @@ const register = async (req, res) => {
                 status: 'PENDING'
             }
         });
+
+        // Sync to Neon Auth
+        await syncToNeonAuth(`${firstName} ${lastName}`, normalizedEmail, rawPassword);
+
         res.json({ message: "Account created. Wait for membership activation by staff." });
     } catch (e) {
         res.status(400).json({ error: "Registration failed" });
@@ -67,7 +72,6 @@ const login = async (req, res) => {
                 trainerId: true
             }
         });
-        console.log("[DEBUG] User Found:", !!user, user ? user.role : "N/A");
 
         if (user) {
             const match = await bcrypt.compare(password, user.password);
@@ -82,7 +86,6 @@ const login = async (req, res) => {
         const member = await prisma.member.findFirst({
             where: { email: { equals: normalizedEmail, mode: 'insensitive' } }
         });
-        console.log("[DEBUG] Member Found:", !!member);
 
         if (member && member.password) { // Only if password is set
             if (member.status === 'PENDING') {
@@ -122,14 +125,34 @@ const setupMemberPassword = async (req, res) => {
             where: { id: member.id },
             data: { password: hashedPassword }
         });
+
+        // Sync to Neon Auth (Dual Write)
+        // Check if syncToNeonAuth is imported. It is likely not, so we need to add it or fix imports.
+        // Wait, I need to check imports in authController.js first.
+        try {
+            await syncToNeonAuth(`${member.firstName} ${member.lastName}`, normalizedEmail, password);
+        } catch (syncErr) {
+            console.error("Neon Auth Sync Warning:", syncErr.message);
+            // Don't fail the request, just warn
+        }
+
         res.json({ message: "Password set successfully" });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
 };
 
+const getMe = async (req, res) => {
+    // req.user is already populated by the authenticateToken middleware
+    if (!req.user) {
+        return res.status(401).json({ error: "Not authenticated" });
+    }
+    res.json(req.user);
+};
+
 module.exports = {
     register,
     login,
-    setupMemberPassword
+    setupMemberPassword,
+    getMe
 };

@@ -298,7 +298,7 @@ const bookClass = async (req, res) => {
     const memberId = Number(req.user.id);
 
     // Safety check: Ensure user is a member
-    if (req.user.type !== 'MEMBER') return res.status(403).json({ error: "Only members can book classes" });
+    if (req.user.role !== 'MEMBER') return res.status(403).json({ error: "Only members can book classes" });
 
     try {
         const parsedClassId = Number(classId);
@@ -442,7 +442,7 @@ const bookTraining = async (req, res) => {
     const { trainerId, date, time, duration, notes, method } = req.body;
     const memberId = req.user.id;
 
-    if (req.user.type !== 'MEMBER') {
+    if (req.user.role !== 'MEMBER') {
         return res.status(403).json({ error: "Only member accounts can book trainer sessions from this endpoint" });
     }
 
@@ -526,7 +526,7 @@ const bookTrainingCash = async (req, res) => {
     const { trainerId, date, time, duration, notes } = req.body;
     const resolvedMemberId = req.user.id;
 
-    if (req.user.type !== 'MEMBER') {
+    if (req.user.role !== 'MEMBER') {
         return res.status(403).json({ error: "Only member accounts can book trainer sessions from this endpoint" });
     }
 
@@ -613,7 +613,7 @@ const getMemberProfile = async (req, res) => {
 };
 
 const getMyTrainingSessions = async (req, res) => {
-    if (req.user.type !== 'MEMBER') {
+    if (req.user.role !== 'MEMBER') {
         return res.status(403).json({ error: "Only member accounts can access this endpoint" });
     }
 

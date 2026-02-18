@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useCurrency } from '../../context/CurrencyContext';
+import { PRODUCT_CATEGORIES } from '../../constants/categories';
 
 export default function TrainingManager() {
     const { user } = useAuth();
@@ -78,7 +79,7 @@ export default function TrainingManager() {
             const newItem = {
                 productId: null,
                 name: customName,
-                category: 'OTHER',
+                category: PRODUCT_CATEGORIES.OTHER,
                 cost: parseFloat(customCost) || 0,
                 quantity: parseInt(quantity) || 1
             };

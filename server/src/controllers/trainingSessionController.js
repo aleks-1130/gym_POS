@@ -67,7 +67,6 @@ const getSessionById = async (req, res) => {
 const completeSession = async (req, res) => {
     const { id } = req.params;
     const { materialsCost, notes, materials } = req.body;
-    console.log(`[DEBUG] Completing Session ${id}`, { materialsCost, notes, materials });
 
     try {
         const session = await prisma.trainingSession.findUnique({
@@ -143,7 +142,8 @@ const completeSession = async (req, res) => {
             });
         }
 
-        // 4. Process Commission
+        /* 
+        // 4. Process Commission - MOVED TO PAYROLL
         const commissionAmount = session.price * (session.trainer?.commissionRate || 0);
         if (commissionAmount > 0) {
             await prisma.expense.create({
@@ -153,10 +153,13 @@ const completeSession = async (req, res) => {
                     category: 'SALARY',
                     date: new Date(),
                     notes: `Session #${session.id} - ${(session.trainer.commissionRate * 100).toFixed(0)}% of ${session.price}`,
-                    recordedBy: req.user.id.toString()
+                    recordedBy: req.user.id.toString(),
+                    trainerId: session.trainerId
                 }
             });
         }
+        */
+        const commissionAmount = session.price * (session.trainer?.commissionRate || 0);
 
         const updated = await prisma.trainingSession.update({
             where: { id: Number(id) },
@@ -164,7 +167,7 @@ const completeSession = async (req, res) => {
                 status: 'COMPLETED',
                 materialsCost: calculatedMatCost,
                 notes: notes,
-                commissionPaid: commissionAmount > 0
+                commissionPaid: false // Will be paid via Payroll
             }
         });
 
@@ -270,46 +273,61 @@ const getMySessions = async (req, res) => {
     }
 };
 
-const declineSession = async (req, res) => {
+const cancelSession = async (req, res) => {
     const sessionId = Number(req.params.id);
-    if (!Number.isInteger(sessionId) || sessionId <= 0) {
-        return res.status(400).json({ error: "Invalid session ID" });
-    }
+    const user = req.user;
 
     try {
         const session = await prisma.trainingSession.findUnique({
             where: { id: sessionId }
         });
-        if (!session) return res.status(404).json({ error: "Training session not found" });
 
-        if (req.user.role === 'TRAINER' && Number(req.user.trainerId) !== Number(session.trainerId)) {
-            return res.status(403).json({ error: "Access denied" });
+        if (!session) {
+            return res.status(404).json({ error: "Session not found" });
         }
 
-        if (session.paymentStatus === 'PAID') {
-            return res.status(400).json({ error: "Cannot decline a paid booking" });
+        // 1. Check if session is in the past
+        const now = new Date();
+        if (new Date(session.date) < now) {
+            return res.status(400).json({ error: "Cannot cancel past sessions" });
         }
 
-        if (session.status === 'CANCELLED') {
-            return res.json({ ...session, message: "Booking already cancelled" });
+        // 2. Check Permissions
+        let isAuthorized = false;
+        if (user.role === 'ADMIN' || user.role === 'STAFF' || user.role === 'OWNER') {
+            isAuthorized = true;
+        } else if (user.role === 'TRAINER') {
+            // Trainers can only cancel sessions assigned to them
+            if (session.trainerId === Number(user.trainerId)) isAuthorized = true;
+        } else if (user.role === 'MEMBER') {
+            // Members can only cancel their own sessions
+            if (session.memberId === Number(user.id)) isAuthorized = true;
         }
 
-        const updated = await prisma.trainingSession.update({
+        if (!isAuthorized) {
+            return res.status(403).json({ error: "You are not authorized to cancel this session" });
+        }
+
+        // 3. Update Status
+        await prisma.trainingSession.update({
             where: { id: sessionId },
-            data: {
-                status: 'CANCELLED',
-                paymentStatus: 'UNPAID',
-                notes: [session.notes, `Declined by ${req.user.role} ${req.user.id} on ${new Date().toISOString()}`]
-                    .filter(Boolean)
-                    .join('\n')
-            }
+            data: { status: 'CANCELLED' }
         });
 
-        res.json(updated);
+        // 4. Return message
+        let message = "Session cancelled successfully.";
+        if (session.paymentStatus === 'PAID') {
+            message += " Note: This session was paid. Please contact the front desk for a refund.";
+        }
+
+        res.json({ message, session: { ...session, status: 'CANCELLED' } });
+
     } catch (e) {
-        res.status(500).json({ error: "Failed to decline booking", detail: e?.message });
+        console.error("Cancel Session Error:", e);
+        res.status(500).json({ error: "Failed to cancel session" });
     }
 };
+
 
 module.exports = {
     getAllSessions,
@@ -318,5 +336,5 @@ module.exports = {
     updateSession,
     getTrainerSessions,
     getMySessions,
-    declineSession
+    cancelSession
 };

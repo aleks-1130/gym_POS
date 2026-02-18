@@ -9,4 +9,7 @@ router.post('/', authenticateToken, authorize(['ADMIN', 'STAFF', 'TRAINER']), cl
 router.put('/:id', authenticateToken, authorize(['ADMIN', 'STAFF', 'TRAINER']), classController.updateClass);
 router.delete('/:id', authenticateToken, authorize(['ADMIN', 'STAFF', 'TRAINER']), classController.deleteClass);
 
+// Trainer Routes for Classes
+router.post('/:id/complete', authenticateToken, authorize(['TRAINER', 'ADMIN', 'OWNER']), classController.completeClass);
+
 module.exports = router;

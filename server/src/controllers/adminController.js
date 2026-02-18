@@ -1,5 +1,5 @@
 const prisma = require('../config/prisma');
-const logAudit = require('../services/auditService');
+const { logAudit } = require('../services/auditService');
 
 // Get Audit Logs (Owner Only)
 const getAuditLogs = async (req, res) => {

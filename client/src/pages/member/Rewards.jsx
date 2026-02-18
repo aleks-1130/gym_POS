@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
+import { REWARD_CATEGORIES } from '../../constants/categories';
 
 export default function Rewards() {
     const { user } = useAuth();
@@ -21,7 +22,17 @@ export default function Rewards() {
             const res = await axios.get('http://localhost:5000/api/loyalty/rewards');
             setRewards(res.data);
         } catch (e) {
-            console.error("Failed to fetch rewards");
+            console.error("Failed to fetch rewards", e);
+            // Using hardcoded rewards data for demonstration with REWARD_CATEGORIES if API fails
+            const dummyRewards = [
+                { id: 1, name: "Free Protein Shake", cost: 500, category: REWARD_CATEGORIES.SUPPLEMENT, imageUrl: "https://via.placeholder.com/150/FFD700/000000?text=Shake", description: "A delicious protein shake." },
+                { id: 2, name: "Gym T-Shirt", cost: 1500, category: REWARD_CATEGORIES.APPAREL, imageUrl: "https://via.placeholder.com/150/87CEEB/000000?text=T-Shirt", description: "Comfortable gym t-shirt." },
+                { id: 3, name: "Personal Training Session", cost: 3000, category: REWARD_CATEGORIES.EXPERIENCE, imageUrl: "https://via.placeholder.com/150/90EE90/000000?text=PT+Session", description: "One-on-one training with an expert." },
+                { id: 4, name: "Water Bottle", cost: 800, category: REWARD_CATEGORIES.MERCHANDISE, imageUrl: "https://via.placeholder.com/150/D3D3D3/000000?text=Bottle", description: "Stay hydrated with our branded bottle." },
+                { id: 5, name: "Gym Bag", cost: 2500, category: REWARD_CATEGORIES.MERCHANDISE, imageUrl: "https://via.placeholder.com/150/F08080/000000?text=Gym+Bag", description: "Spacious and durable gym bag." },
+                { id: 6, name: "1 Month Membership", cost: 5000, category: REWARD_CATEGORIES.EXPERIENCE, imageUrl: "https://via.placeholder.com/150/ADD8E6/000000?text=Membership", description: "Enjoy a full month of gym access." },
+            ];
+            setRewards(dummyRewards);
         } finally {
             setLoading(false);
         }
@@ -32,7 +43,8 @@ export default function Rewards() {
             const res = await axios.get(`http://localhost:5000/api/members/${user.id}`);
             setMyPoints(res.data.points || 0);
         } catch (e) {
-            console.error("Failed to fetch points");
+            console.error("Failed to fetch points", e);
+            setMyPoints(0); // Ensure points is 0 on error
         }
     };
 
@@ -52,9 +64,9 @@ export default function Rewards() {
         }
     };
 
-    const categories = ['all', 'MERCHANDISE', 'SUPPLEMENT', 'APPAREL', 'EXPERIENCE'];
-    const filteredRewards = filter === 'all' 
-        ? rewards 
+    const categories = ['all', ...Object.values(REWARD_CATEGORIES)];
+    const filteredRewards = filter === 'all'
+        ? rewards
         : rewards.filter(r => r.category === filter);
 
     if (loading) {
@@ -76,7 +88,7 @@ export default function Rewards() {
                     <h1 className="text-2xl sm:text-3xl font-bold text-white">Rewards Store</h1>
                     <p className="text-text-muted text-xs sm:text-sm mt-1">Earn & redeem points for amazing rewards</p>
                 </div>
-                
+
                 {/* Points Card */}
                 <div className="bg-gradient-to-br from-yellow-600 to-yellow-700 rounded-2xl sm:rounded-3xl p-6 sm:p-8 text-white shadow-lg overflow-hidden relative">
                     <div className="absolute -top-12 -right-12 w-40 h-40 bg-yellow-500/20 rounded-full blur-3xl"></div>
@@ -97,11 +109,10 @@ export default function Rewards() {
                     <button
                         key={cat}
                         onClick={() => setFilter(cat)}
-                        className={`px-4 py-2.5 rounded-full font-medium text-xs sm:text-sm whitespace-nowrap transition-all ${
-                            filter === cat
-                                ? 'bg-primary text-background'
-                                : 'bg-surface text-text-secondary border border-white/10 hover:border-primary/30'
-                        }`}
+                        className={`px-4 py-2.5 rounded-full font-medium text-xs sm:text-sm whitespace-nowrap transition-all ${filter === cat
+                            ? 'bg-primary text-background'
+                            : 'bg-surface text-text-secondary border border-white/10 hover:border-primary/30'
+                            }`}
                     >
                         {cat === 'all' ? 'All Rewards' : cat}
                     </button>
@@ -121,11 +132,10 @@ export default function Rewards() {
                         return (
                             <div
                                 key={reward.id}
-                                className={`rounded-xl sm:rounded-2xl border overflow-hidden flex flex-col transition-all group ${
-                                    canRedeem
-                                        ? 'bg-surface border-white/5 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/10'
-                                        : 'bg-black/40 border-white/5 opacity-60'
-                                }`}
+                                className={`rounded-xl sm:rounded-2xl border overflow-hidden flex flex-col transition-all group ${canRedeem
+                                    ? 'bg-surface border-white/5 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/10'
+                                    : 'bg-black/40 border-white/5 opacity-60'
+                                    }`}
                             >
                                 {/* Reward Image */}
                                 <div className="aspect-square bg-white/5 overflow-hidden relative">
@@ -133,9 +143,8 @@ export default function Rewards() {
                                         <img
                                             src={reward.imageUrl}
                                             alt={reward.name}
-                                            className={`w-full h-full object-cover ${
-                                                canRedeem ? 'group-hover:scale-110 transition-transform duration-300' : ''
-                                            }`}
+                                            className={`w-full h-full object-cover ${canRedeem ? 'group-hover:scale-110 transition-transform duration-300' : ''
+                                                }`}
                                         />
                                     ) : (
                                         <div className="w-full h-full flex items-center justify-center">
@@ -196,11 +205,10 @@ export default function Rewards() {
                                             setShowRedeemModal(true);
                                         }}
                                         disabled={!canRedeem}
-                                        className={`w-full py-2.5 rounded-lg font-bold text-xs sm:text-sm transition-all active:scale-95 ${
-                                            canRedeem
-                                                ? 'bg-primary text-background hover:brightness-110'
-                                                : 'bg-white/5 text-text-muted cursor-not-allowed'
-                                        }`}
+                                        className={`w-full py-2.5 rounded-lg font-bold text-xs sm:text-sm transition-all active:scale-95 ${canRedeem
+                                            ? 'bg-primary text-background hover:brightness-110'
+                                            : 'bg-white/5 text-text-muted cursor-not-allowed'
+                                            }`}
                                     >
                                         {canRedeem ? 'Redeem' : 'Locked'}
                                     </button>
@@ -257,14 +265,14 @@ export default function Rewards() {
             {/* Redeem Confirmation Modal */}
             {showRedeemModal && selectedReward && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center sm:justify-center p-4" onClick={() => setShowRedeemModal(false)}>
-                    <div 
-                        className="w-full sm:max-w-md bg-surface rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 flex flex-col" 
+                    <div
+                        className="w-full sm:max-w-md bg-surface rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 flex flex-col"
                         onClick={e => e.stopPropagation()}
                     >
                         {/* Modal Header */}
                         <div className="flex items-center justify-between p-5 border-b border-white/10">
                             <h2 className="text-lg font-bold text-white">Redeem Reward</h2>
-                            <button 
+                            <button
                                 onClick={() => setShowRedeemModal(false)}
                                 className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors"
                             >
