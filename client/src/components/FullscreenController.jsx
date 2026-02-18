@@ -3,8 +3,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 const getFullscreenElement = () =>
     document.fullscreenElement || document.webkitFullscreenElement || null;
 
-const isStandaloneDisplay = () =>
-    window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+const isInstalledAppContext = () => {
+    const standalone = window.matchMedia('(display-mode: standalone)').matches;
+    const fullscreen = window.matchMedia('(display-mode: fullscreen)').matches;
+    const minimalUi = window.matchMedia('(display-mode: minimal-ui)').matches;
+    const iosStandalone = window.navigator.standalone === true;
+    const androidTwa = document.referrer?.startsWith('android-app://');
+    return Boolean(standalone || fullscreen || minimalUi || iosStandalone || androidTwa);
+};
 
 const requestFullscreenCompat = async () => {
     const el = document.documentElement;
@@ -19,7 +25,7 @@ const requestFullscreenCompat = async () => {
 
 export default function FullscreenController({ enabled = true }) {
     const [isFullscreen, setIsFullscreen] = useState(Boolean(getFullscreenElement()));
-    const standalone = useMemo(() => isStandaloneDisplay(), []);
+    const [isInstalledMode, setIsInstalledMode] = useState(() => isInstalledAppContext());
     const supportsFullscreen = useMemo(() => {
         const el = document.documentElement;
         return Boolean(el.requestFullscreen || el.webkitRequestFullscreen);
@@ -50,8 +56,34 @@ export default function FullscreenController({ enabled = true }) {
         };
     }, [enabled, supportsFullscreen, syncFullscreenState]);
 
+    useEffect(() => {
+        const syncInstalledMode = () => setIsInstalledMode(isInstalledAppContext());
+        const displayModeQuery = window.matchMedia('(display-mode: standalone)');
+
+        syncInstalledMode();
+        window.addEventListener('appinstalled', syncInstalledMode);
+        window.addEventListener('focus', syncInstalledMode);
+        document.addEventListener('visibilitychange', syncInstalledMode);
+        if (displayModeQuery.addEventListener) {
+            displayModeQuery.addEventListener('change', syncInstalledMode);
+        } else if (displayModeQuery.addListener) {
+            displayModeQuery.addListener(syncInstalledMode);
+        }
+
+        return () => {
+            window.removeEventListener('appinstalled', syncInstalledMode);
+            window.removeEventListener('focus', syncInstalledMode);
+            document.removeEventListener('visibilitychange', syncInstalledMode);
+            if (displayModeQuery.removeEventListener) {
+                displayModeQuery.removeEventListener('change', syncInstalledMode);
+            } else if (displayModeQuery.removeListener) {
+                displayModeQuery.removeListener(syncInstalledMode);
+            }
+        };
+    }, []);
+
     // Installed app should not show fullscreen prompt/button.
-    if (!enabled || standalone || !supportsFullscreen || isFullscreen) return null;
+    if (!enabled || isInstalledMode || !supportsFullscreen || isFullscreen) return null;
 
     return (
         <button
