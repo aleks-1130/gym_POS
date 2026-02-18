@@ -68,8 +68,16 @@ export default function TrainerClasses() {
                                         {cls.dayOfWeek} • {cls.time} • {cls.duration} min
                                     </p>
                                 </div>
-                                <div className="text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full border border-primary/30 text-primary bg-primary/10">
-                                    {cls.enrolled}/{cls.capacity} enrolled
+                                <div className="flex items-center gap-3">
+                                    <div className="text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full border border-primary/30 text-primary bg-primary/10">
+                                        {cls.enrolled}/{cls.capacity} enrolled
+                                    </div>
+                                    <button
+                                        onClick={() => handleCompleteClass(cls.id)}
+                                        className="px-3 py-1 text-xs font-bold uppercase tracking-widest rounded-lg border border-emerald-500/30 text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20"
+                                    >
+                                        Complete & Pay
+                                    </button>
                                 </div>
                             </div>
 
@@ -121,4 +129,20 @@ export default function TrainerClasses() {
             )}
         </div>
     );
+
+    async function handleCompleteClass(classId) {
+        if (!window.confirm("Complete this class? This will record attendance for payroll based on current 'Attended' or 'Confirmed' bookings.")) return;
+
+        try {
+            const token = localStorage.getItem('token');
+            await axios.post(`http://localhost:5000/api/classes/${classId}/complete`, {}, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            alert("Class completed and commission recorded!");
+            refreshClasses();
+        } catch (error) {
+            console.error("Complete Class Error:", error);
+            alert("Failed to complete class");
+        }
+    }
 }

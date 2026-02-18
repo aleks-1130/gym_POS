@@ -37,6 +37,7 @@ import Classes from './pages/admin/Classes';
 import DashboardReportPage from './pages/admin/DashboardReportPage';
 import PnLReportPage from './pages/admin/PnLReportPage';
 import AnalyticsReportPage from './pages/admin/AnalyticsReportPage';
+import Payroll from './pages/admin/Payroll';
 
 // Staff Pages
 import Inventory from './pages/staff/Inventory';
@@ -365,6 +366,14 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
               <PosSettings />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/payroll"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
+              <Payroll />
             </ProtectedRoute>
           }
         />

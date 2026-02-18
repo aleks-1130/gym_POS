@@ -67,7 +67,6 @@ const getSessionById = async (req, res) => {
 const completeSession = async (req, res) => {
     const { id } = req.params;
     const { materialsCost, notes, materials } = req.body;
-    const { materialsCost, notes, materials } = req.body;
 
     try {
         const session = await prisma.trainingSession.findUnique({
@@ -143,7 +142,8 @@ const completeSession = async (req, res) => {
             });
         }
 
-        // 4. Process Commission
+        /* 
+        // 4. Process Commission - MOVED TO PAYROLL
         const commissionAmount = session.price * (session.trainer?.commissionRate || 0);
         if (commissionAmount > 0) {
             await prisma.expense.create({
@@ -153,10 +153,13 @@ const completeSession = async (req, res) => {
                     category: 'SALARY',
                     date: new Date(),
                     notes: `Session #${session.id} - ${(session.trainer.commissionRate * 100).toFixed(0)}% of ${session.price}`,
-                    recordedBy: req.user.id.toString()
+                    recordedBy: req.user.id.toString(),
+                    trainerId: session.trainerId
                 }
             });
         }
+        */
+        const commissionAmount = session.price * (session.trainer?.commissionRate || 0);
 
         const updated = await prisma.trainingSession.update({
             where: { id: Number(id) },
@@ -164,7 +167,7 @@ const completeSession = async (req, res) => {
                 status: 'COMPLETED',
                 materialsCost: calculatedMatCost,
                 notes: notes,
-                commissionPaid: commissionAmount > 0
+                commissionPaid: false // Will be paid via Payroll
             }
         });
 

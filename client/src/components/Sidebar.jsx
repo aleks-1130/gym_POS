@@ -85,6 +85,7 @@ export default function Sidebar() {
             },
             {
                 section: "Management", items: [
+                    { to: "/payroll", icon: "payments", label: "Payroll" },
                     { to: "/inventory", icon: "inventory_2", label: "Inventory" },
                     { to: "/suppliers", icon: "local_shipping", label: "Suppliers" },
                     { to: "/expenses", icon: "monetization_on", label: "Expenses" },
@@ -114,6 +115,7 @@ export default function Sidebar() {
             {
                 section: "Administration", items: [
                     { to: "/users", icon: "admin_panel_settings", label: "Users" },
+                    { to: "/payroll", icon: "payments", label: "Payroll" },
                     { to: "/audit", icon: "verified_user", label: "Audit Logs" },
                     { to: "/settings", icon: "tune", label: "Settings" },
                     { to: "/suppliers", icon: "local_shipping", label: "Suppliers" },

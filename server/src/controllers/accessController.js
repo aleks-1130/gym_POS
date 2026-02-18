@@ -1,5 +1,5 @@
 const prisma = require('../config/prisma');
-const logAudit = require('../services/auditService');
+const { logAudit } = require('../services/auditService');
 
 // Check-in (Manual/Kiosk)
 const checkIn = async (req, res) => {

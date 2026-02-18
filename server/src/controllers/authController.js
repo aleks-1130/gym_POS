@@ -72,7 +72,6 @@ const login = async (req, res) => {
                 trainerId: true
             }
         });
-        console.log("[DEBUG] User Found:", !!user, user ? user.role : "N/A");
 
         if (user) {
             const match = await bcrypt.compare(password, user.password);
@@ -87,7 +86,6 @@ const login = async (req, res) => {
         const member = await prisma.member.findFirst({
             where: { email: { equals: normalizedEmail, mode: 'insensitive' } }
         });
-        console.log("[DEBUG] Member Found:", !!member);
 
         if (member && member.password) { // Only if password is set
             if (member.status === 'PENDING') {
