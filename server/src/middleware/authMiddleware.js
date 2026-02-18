@@ -64,14 +64,17 @@ const authenticateToken = async (req, res, next) => {
         // 1. Check User (Admin/Staff/Owner/Trainer)
         const user = await prisma.user.findFirst({
             where: { email: { equals: email, mode: 'insensitive' } },
-            select: { id: true, role: true, name: true }
+            select: { id: true, role: true, name: true, trainerId: true }
         });
         console.log("[DEBUG] User Search Result:", user);
+
+        let userTrainerId = null;
 
         if (user) {
             userId = user.id;
             userRole = user.role;
             userName = user.name;
+            userTrainerId = user.trainerId;
         } else {
             // 2. Check Member
             const member = await prisma.member.findFirst({
@@ -99,7 +102,9 @@ const authenticateToken = async (req, res, next) => {
             id: userId,
             email: email,
             role: userRole,
+            role: userRole,
             name: userName,
+            trainerId: userTrainerId,
             neonSub: neonUserId
         };
 

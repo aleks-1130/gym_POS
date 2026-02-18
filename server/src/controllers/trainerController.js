@@ -5,6 +5,7 @@ const {
     setTrainerAvailability,
     removeTrainerAvailability
 } = require('../services/trainerAvailabilityService');
+const { syncToNeonAuth } = require('../services/neonAuthSync');
 
 const getAllTrainers = async (req, res) => {
     try {
@@ -140,6 +141,12 @@ const createTrainer = async (req, res) => {
             }
         }
 
+        // 3. Sync to Neon Auth (Dual Write)
+        if (createLogin && loginEmail && loginPassword) {
+            // Fire and forget, or await? Awaiting is safer to see logs.
+            await syncToNeonAuth(name, loginEmail, loginPassword);
+        }
+
         const availability = setTrainerAvailability(trainer.id, req.body);
         res.json({ ...trainer, ...availability });
     } catch (e) {
@@ -235,6 +242,9 @@ const createTrainerLogin = async (req, res) => {
             },
             select: { id: true, email: true, role: true, trainerId: true }
         });
+
+        // Sync to Neon Auth
+        await syncToNeonAuth(trainer.name, String(loginEmail).trim(), String(loginPassword));
 
         res.json({ message: 'Trainer login created', user });
     } catch (e) {

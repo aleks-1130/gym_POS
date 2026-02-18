@@ -65,6 +65,12 @@ export default function Members() {
     const [isCameraOpen, setIsCameraOpen] = useState(false);
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
+    const tcPrintRef = useRef(null);
+
+    const handlePrintTC = useReactToPrint({
+        contentRef: tcPrintRef,
+        documentTitle: 'Membership_Agreement',
+    });
 
     // Payment State
     const [showPaymentModal, setShowPaymentModal] = useState(false);

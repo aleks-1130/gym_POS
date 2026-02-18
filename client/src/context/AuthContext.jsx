@@ -176,9 +176,11 @@ export const AuthProvider = ({ children }) => {
 
                 const { session } = result.data;
 
-                // Refresh token if needed? Neon JS handles this?
-                const newToken = session.access_token;
-                if (newToken !== storedToken) {
+                // Refresh token if needed
+                // Fallback to storedToken if session doesn't explicitly return a new token string
+                const newToken = result.data.token || session?.token || session?.access_token || storedToken;
+
+                if (newToken && newToken !== storedToken) {
                     setToken(newToken);
                     localStorage.setItem('token', newToken);
                 }

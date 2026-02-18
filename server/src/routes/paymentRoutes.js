@@ -15,5 +15,6 @@ router.get('/', authenticateToken, paymentController.getAllPayments);
 router.get('/:id', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), paymentController.getPaymentDetails);
 router.post('/:id/return-items', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), paymentController.returnPaymentItems);
 router.post('/:id/void', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), paymentController.voidPayment);
+router.post('/:id/complete', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), paymentController.completePayment);
 
 module.exports = router;
