@@ -11,6 +11,7 @@ const Payroll = () => {
     const [staff, setStaff] = useState([]);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('TRAINERS'); // TRAINERS, STAFF
+    const [trainerFilter, setTrainerFilter] = useState('ALL'); // ALL, FREELANCER, FULLTIME
 
     // ... (state definitions remain same)
 
@@ -216,6 +217,24 @@ const Payroll = () => {
                 </button>
             </div>
 
+            {/* Trainer Type Filter (only shows on Trainers tab) */}
+            {activeTab === 'TRAINERS' && (
+                <div className="flex gap-2 mb-4">
+                    {[{ label: 'All', value: 'ALL' }, { label: 'Freelancers', value: 'FREELANCER' }, { label: 'Full-time', value: 'FULLTIME' }].map(f => (
+                        <button
+                            key={f.value}
+                            onClick={() => setTrainerFilter(f.value)}
+                            className={`px-3 py-1 text-xs font-medium rounded-full border transition-colors ${trainerFilter === f.value
+                                    ? 'bg-orange-500/15 text-orange-500 border-orange-500/40'
+                                    : 'bg-transparent text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:text-gray-700'
+                                }`}
+                        >
+                            {f.label}
+                        </button>
+                    ))}
+                </div>
+            )}
+
             {/* Content */}
             {loading ? (
                 <p className="text-center text-gray-500">Loading payroll data...</p>
@@ -237,39 +256,47 @@ const Payroll = () => {
                                 trainers.length === 0 ? (
                                     <tr><td colSpan="5" className="p-4 text-center text-gray-500">No trainers found.</td></tr>
                                 ) : (
-                                    trainers.map(trainer => (
-                                        <tr key={trainer.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                            <td className="p-4 font-medium text-gray-800 dark:text-white flex items-center gap-3">
-                                                {trainer.imageUrl && (
-                                                    <img src={`http://localhost:5000${trainer.imageUrl}`} alt={trainer.name} className="w-8 h-8 rounded-full object-cover" />
-                                                )}
-                                                {trainer.name}
-                                            </td>
-                                            <td className="p-4 text-gray-600 dark:text-gray-300">{(trainer.commissionRate * 100).toFixed(0)}%</td>
-                                            <td className="p-4 text-green-600 font-medium">{formatPrice(trainer.totalPaid)}</td>
-                                            <td className="p-4 text-orange-500 font-medium">{formatPrice(trainer.unpaidCommissions)}</td>
-                                            <td className="p-4 text-right flex justify-end gap-2">
-                                                <button
-                                                    onClick={() => handlePayCommission(trainer)}
-                                                    className="px-3 py-1.5 bg-orange-500 text-white text-sm rounded-lg hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                    disabled={trainer.unpaidCommissions <= 0}
-                                                >
-                                                    Pay Commission
-                                                </button>
-                                                <button
-                                                    onClick={() => handleRecordPayment(trainer, 'TRAINER')}
-                                                    className={`px-3 py-1.5 text-white text-sm rounded-lg ${canPaySalary(trainer)
+                                    trainers
+                                        .filter(t => trainerFilter === 'ALL' || t.type === trainerFilter)
+                                        .map(trainer => (
+                                            <tr key={trainer.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                                <td className="p-4 font-medium text-gray-800 dark:text-white flex items-center gap-3">
+                                                    {trainer.imageUrl && (
+                                                        <img src={`http://localhost:5000${trainer.imageUrl}`} alt={trainer.name} className="w-8 h-8 rounded-full object-cover" />
+                                                    )}
+                                                    {trainer.name}
+                                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${trainer.type === 'FREELANCER'
+                                                            ? 'bg-orange-500/15 text-orange-500'
+                                                            : 'bg-blue-500/15 text-blue-500'
+                                                        }`}>
+                                                        {trainer.type === 'FREELANCER' ? 'Freelance' : 'Full-time'}
+                                                    </span>
+                                                </td>
+                                                <td className="p-4 text-gray-600 dark:text-gray-300">{(trainer.commissionRate * 100).toFixed(0)}%</td>
+                                                <td className="p-4 text-green-600 font-medium">{formatPrice(trainer.totalPaid)}</td>
+                                                <td className="p-4 text-orange-500 font-medium">{formatPrice(trainer.unpaidCommissions)}</td>
+                                                <td className="p-4 text-right flex justify-end gap-2">
+                                                    <button
+                                                        onClick={() => handlePayCommission(trainer)}
+                                                        className="px-3 py-1.5 bg-orange-500 text-white text-sm rounded-lg hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        disabled={trainer.unpaidCommissions <= 0}
+                                                    >
+                                                        Pay Commission
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleRecordPayment(trainer, 'TRAINER')}
+                                                        className={`px-3 py-1.5 text-white text-sm rounded-lg ${canPaySalary(trainer)
                                                             ? 'bg-blue-500 hover:bg-blue-600'
                                                             : 'bg-gray-300 cursor-not-allowed'
-                                                        }`}
-                                                    disabled={!canPaySalary(trainer)}
-                                                    title={!canPaySalary(trainer) ? "Only Owner can pay Admins" : ""}
-                                                >
-                                                    Pay Salary
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))
+                                                            }`}
+                                                        disabled={!canPaySalary(trainer)}
+                                                        title={!canPaySalary(trainer) ? "Only Owner can pay Admins" : ""}
+                                                    >
+                                                        Pay Salary
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))
                                 )
                             ) : (
                                 staff.length === 0 ? (
@@ -288,8 +315,8 @@ const Payroll = () => {
                                                 <button
                                                     onClick={() => handleRecordPayment(user, 'STAFF')}
                                                     className={`px-3 py-1.5 text-white text-sm rounded-lg ${canPaySalary(user)
-                                                            ? 'bg-blue-500 hover:bg-blue-600'
-                                                            : 'bg-gray-300 cursor-not-allowed'
+                                                        ? 'bg-blue-500 hover:bg-blue-600'
+                                                        : 'bg-gray-300 cursor-not-allowed'
                                                         }`}
                                                     disabled={!canPaySalary(user)}
                                                     title={!canPaySalary(user) ? "Only Owner can pay Admins/Owners" : ""}
@@ -393,39 +420,64 @@ const Payroll = () => {
                         ) : (
                             <div className="space-y-4">
                                 {/* Training Sessions Table */}
-                                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Training Sessions</h3>
+                                <div className="flex items-center justify-between mb-1">
+                                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Training Sessions</h3>
+                                    {selectedUser.unpaidSessions?.length > 0 && (
+                                        <div className="flex gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedSessions(selectedUser.unpaidSessions.map(s => s.id))}
+                                                className="text-xs text-orange-500 hover:underline"
+                                            >
+                                                Select All
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedSessions([])}
+                                                className="text-xs text-gray-400 hover:underline"
+                                            >
+                                                Deselect All
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                                 <div className="max-h-40 overflow-y-auto border border-gray-100 dark:border-gray-700 rounded-lg">
                                     <table className="w-full text-sm text-left">
                                         <thead className="bg-gray-50 dark:bg-gray-900 text-gray-500 sticky top-0">
                                             <tr>
                                                 <th className="p-2 w-10">Select</th>
                                                 <th className="p-2">Date</th>
-                                                <th className="p-2">Session</th>
-                                                <th className="p-2 text-right">Comm.</th>
+                                                <th className="p-2">Member</th>
+                                                <th className="p-2 text-right">Calculation</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                                            {selectedUser.unpaidSessions?.map(session => (
-                                                <tr key={session.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                                    <td className="p-2 text-center">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={selectedSessions.includes(session.id)}
-                                                            onChange={() => toggleSessionSelection(session.id)}
-                                                            className="rounded border-gray-300 text-orange-500 focus:ring-orange-500"
-                                                        />
-                                                    </td>
-                                                    <td className="p-2 text-gray-600 dark:text-gray-300">
-                                                        {new Date(session.date).toLocaleDateString()}
-                                                    </td>
-                                                    <td className="p-2 text-gray-800 dark:text-white">
-                                                        #{session.id} - {formatPrice(session.price)}
-                                                    </td>
-                                                    <td className="p-2 text-right text-orange-500 font-medium">
-                                                        {formatPrice(session.price * (selectedUser.commissionRate || 0))}
-                                                    </td>
-                                                </tr>
-                                            ))}
+                                            {selectedUser.unpaidSessions?.map(session => {
+                                                const rate = selectedUser.commissionRate || 0;
+                                                const comm = session.price * rate;
+                                                return (
+                                                    <tr key={session.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                                        <td className="p-2 text-center">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedSessions.includes(session.id)}
+                                                                onChange={() => toggleSessionSelection(session.id)}
+                                                                className="rounded border-gray-300 text-orange-500 focus:ring-orange-500"
+                                                            />
+                                                        </td>
+                                                        <td className="p-2 text-gray-600 dark:text-gray-300 text-xs">
+                                                            {new Date(session.date).toLocaleDateString()}
+                                                        </td>
+                                                        <td className="p-2 text-gray-800 dark:text-white">
+                                                            {session.member ? `${session.member.firstName} ${session.member.lastName || ''}`.trim() : `Session #${session.id}`}
+                                                        </td>
+                                                        <td className="p-2 text-right text-xs">
+                                                            <span className="text-gray-400">{formatPrice(session.price)} × {(rate * 100).toFixed(0)}% = </span>
+                                                            <span className="text-orange-500 font-medium">{formatPrice(comm)}</span>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
                                             {(!selectedUser.unpaidSessions || selectedUser.unpaidSessions.length === 0) && (
                                                 <tr><td colSpan="4" className="p-4 text-center text-gray-500">No unpaid sessions.</td></tr>
                                             )}
@@ -434,7 +486,27 @@ const Payroll = () => {
                                 </div>
 
                                 {/* Class History Table */}
-                                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 pt-2">Class Commissions</h3>
+                                <div className="flex items-center justify-between mb-1 pt-2">
+                                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Class Commissions</h3>
+                                    {selectedUser.classHistory?.length > 0 && (
+                                        <div className="flex gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedClasses(selectedUser.classHistory.map(c => c.id))}
+                                                className="text-xs text-orange-500 hover:underline"
+                                            >
+                                                Select All
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedClasses([])}
+                                                className="text-xs text-gray-400 hover:underline"
+                                            >
+                                                Deselect All
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                                 <div className="max-h-40 overflow-y-auto border border-gray-100 dark:border-gray-700 rounded-lg">
                                     <table className="w-full text-sm text-left">
                                         <thead className="bg-gray-50 dark:bg-gray-900 text-gray-500 sticky top-0">
@@ -462,8 +534,8 @@ const Payroll = () => {
                                                     <td className="p-2 text-gray-800 dark:text-white">
                                                         {cls.class?.name} ({cls.attendeeCount} attendees)
                                                     </td>
-                                                    <td className="p-2 text-right text-orange-500 font-medium">
-                                                        {formatPrice(cls.commissionAmount)}
+                                                    <td className="p-2 text-right text-xs">
+                                                        <span className="text-orange-500 font-medium">{formatPrice(cls.commissionAmount)}</span>
                                                     </td>
                                                 </tr>
                                             ))}

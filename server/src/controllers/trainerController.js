@@ -186,6 +186,7 @@ const createTrainer = async (req, res) => {
     try {
         const {
             name,
+            type,
             specialty,
             specialization,
             email,
@@ -209,6 +210,21 @@ const createTrainer = async (req, res) => {
             return res.status(400).json({ error: 'Trainer name is required' });
         }
 
+        // Validate trainer type and commission rate
+        const trainerType = type || 'FULLTIME';
+        const rate = commissionRate !== '' && commissionRate !== undefined ? Number(commissionRate) : 0;
+        if (trainerType === 'FREELANCER') {
+            if (baseSalary && Number(baseSalary) > 0) {
+                return res.status(400).json({ error: 'Freelancers cannot have base salary' });
+            }
+            if (rate < 0.4 || rate > 1.0) {
+                return res.status(400).json({ error: 'Freelancer commission should be 40-100%' });
+            }
+        }
+        if (trainerType === 'FULLTIME' && rate > 0.4) {
+            return res.status(400).json({ error: 'Full-time commission cannot exceed 40%' });
+        }
+
         // 1. Check if login email is taken (if creating login)
         if (createLogin && loginEmail) {
             const existingUser = await prisma.user.findUnique({ where: { email: String(loginEmail).trim() } });
@@ -220,6 +236,7 @@ const createTrainer = async (req, res) => {
         const trainer = await prisma.trainer.create({
             data: {
                 name: String(name).trim(),
+                type: trainerType,
                 specialty: specialty ? String(specialty).trim() : 'Personal Trainer',
                 specialization: specialization ? String(specialization).trim() : null,
                 email: email ? String(email).trim() : null,
@@ -274,6 +291,7 @@ const updateTrainer = async (req, res) => {
     try {
         const {
             name,
+            type,
             specialty,
             specialization,
             email,
@@ -290,10 +308,27 @@ const updateTrainer = async (req, res) => {
             baseSalary
         } = req.body;
 
+        // Validate trainer type and commission rate
+        if (type !== undefined) {
+            const rate = commissionRate !== undefined && commissionRate !== '' ? Number(commissionRate) : null;
+            if (type === 'FREELANCER') {
+                if (baseSalary !== undefined && Number(baseSalary) > 0) {
+                    return res.status(400).json({ error: 'Freelancers cannot have base salary' });
+                }
+                if (rate !== null && (rate < 0.4 || rate > 1.0)) {
+                    return res.status(400).json({ error: 'Freelancer commission should be 40-100%' });
+                }
+            }
+            if (type === 'FULLTIME' && rate !== null && rate > 0.4) {
+                return res.status(400).json({ error: 'Full-time commission cannot exceed 40%' });
+            }
+        }
+
         const trainer = await prisma.trainer.update({
             where: { id: trainerId },
             data: {
                 ...(name !== undefined ? { name: String(name).trim() } : {}),
+                ...(type !== undefined ? { type } : {}),
                 ...(specialty !== undefined ? { specialty: String(specialty || 'Personal Trainer').trim() } : {}),
                 ...(specialization !== undefined ? { specialization: specialization ? String(specialization).trim() : null } : {}),
                 ...(email !== undefined ? { email: email ? String(email).trim() : null } : {}),

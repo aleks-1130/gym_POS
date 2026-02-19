@@ -1,4 +1,11 @@
 {
+  "1": {
+    "availabilityByDay": {},
+    "availabilityDays": [],
+    "availabilityStart": "",
+    "availabilityEnd": "",
+    "availabilityIntervalMinutes": 30
+  },
   "91": {
     "availabilityByDay": {
       "1": {

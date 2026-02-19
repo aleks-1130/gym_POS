@@ -150,24 +150,24 @@ const getDashboardStats = async (req, res) => {
             pendingPaymentRecords,
             unpaidSessionsCount
         ] = await Promise.all([
-            // 1. Period Financials
+            // 1. Period Financials (exclude voided)
             prisma.payment.aggregate({
-                _sum: { amount: true },
-                where: { date: { gte: queryStart, lte: queryEnd } }
+                _sum: { amount: true, refundedAmount: true },
+                where: { date: { gte: queryStart, lte: queryEnd }, status: { in: ['COMPLETED', 'RETURNED'] } }
             }),
             prisma.expense.aggregate({
                 _sum: { amount: true },
                 where: { date: { gte: queryStart, lte: queryEnd } }
             }),
-            // 2. Revenue Trend
+            // 2. Revenue Trend (exclude voided)
             prisma.payment.findMany({
-                where: { date: { gte: queryStart, lte: queryEnd } },
-                select: { date: true, amount: true }
+                where: { date: { gte: queryStart, lte: queryEnd }, status: { in: ['COMPLETED', 'RETURNED'] } },
+                select: { date: true, amount: true, refundedAmount: true }
             }),
-            // Net Profit (This Month)
+            // Net Profit (This Month, exclude voided)
             prisma.payment.aggregate({
-                _sum: { amount: true },
-                where: { date: { gte: firstDayOfMonth } }
+                _sum: { amount: true, refundedAmount: true },
+                where: { date: { gte: firstDayOfMonth }, status: { in: ['COMPLETED', 'RETURNED'] } }
             }),
             prisma.expense.aggregate({
                 _sum: { amount: true },
@@ -187,23 +187,23 @@ const getDashboardStats = async (req, res) => {
                 where: { status: 'ACTIVE' },
                 select: { plan: { select: { name: true } } }
             }),
-            // Legacy / Dashboard Specific
+            // Legacy / Dashboard Specific (exclude voided)
             prisma.payment.aggregate({
-                _sum: { amount: true },
-                where: { date: { gte: startOfToday } }
+                _sum: { amount: true, refundedAmount: true },
+                where: { date: { gte: startOfToday }, status: { in: ['COMPLETED', 'RETURNED'] } }
             }),
-            // Breakdowns
+            // Breakdowns (exclude voided)
             prisma.payment.aggregate({
                 _sum: { amount: true },
-                where: { date: { gte: queryStart, lte: queryEnd }, type: 'STORE_SALE' }
-            }),
-            prisma.payment.aggregate({
-                _sum: { amount: true },
-                where: { date: { gte: queryStart, lte: queryEnd }, type: 'POS_SALE' }
+                where: { date: { gte: queryStart, lte: queryEnd }, type: 'STORE_SALE', status: { in: ['COMPLETED', 'RETURNED'] } }
             }),
             prisma.payment.aggregate({
                 _sum: { amount: true },
-                where: { date: { gte: queryStart, lte: queryEnd }, type: { in: ['TRAINING', 'SERVICE'] } }
+                where: { date: { gte: queryStart, lte: queryEnd }, type: 'POS_SALE', status: { in: ['COMPLETED', 'RETURNED'] } }
+            }),
+            prisma.payment.aggregate({
+                _sum: { amount: true },
+                where: { date: { gte: queryStart, lte: queryEnd }, type: { in: ['TRAINING', 'SERVICE'] }, status: { in: ['COMPLETED', 'RETURNED'] } }
             }),
             prisma.expense.aggregate({
                 _sum: { amount: true },
@@ -217,14 +217,14 @@ const getDashboardStats = async (req, res) => {
             }),
             prisma.payment.aggregate({
                 _sum: { amount: true },
-                where: { date: { gte: queryStart, lte: queryEnd }, type: 'MEMBERSHIP' }
+                where: { date: { gte: queryStart, lte: queryEnd }, type: 'MEMBERSHIP', status: { in: ['COMPLETED', 'RETURNED'] } }
             }),
             getRecentActivity(),
-            // 6-Month History
+            // 6-Month History (exclude voided)
             prisma.payment.groupBy({
                 by: ['date'],
-                _sum: { amount: true },
-                where: { date: { gte: new Date(new Date().setMonth(new Date().getMonth() - 5)) } }
+                _sum: { amount: true, refundedAmount: true },
+                where: { date: { gte: new Date(new Date().setMonth(new Date().getMonth() - 5)) }, status: { in: ['COMPLETED', 'RETURNED'] } }
             }),
             prisma.expense.groupBy({
                 by: ['date'],
@@ -242,9 +242,9 @@ const getDashboardStats = async (req, res) => {
                 _sum: { amount: true },
                 where: { date: { gte: startOfToday } }
             }),
-            // 19. Transactions Today
+            // 19. Transactions Today (exclude voided)
             prisma.payment.count({
-                where: { date: { gte: startOfToday } }
+                where: { date: { gte: startOfToday }, status: { in: ['COMPLETED', 'RETURNED'] } }
             }),
             // 20. Low Stock Items (Threshold <= 10)
             prisma.product.count({
@@ -257,7 +257,6 @@ const getDashboardStats = async (req, res) => {
                 select: { name: true, stock: true }
             }),
             // 21. Pending Payments
-            // 21. Pending Payments
             prisma.payment.count({
                 where: { status: 'PENDING' }
             }),
@@ -269,7 +268,9 @@ const getDashboardStats = async (req, res) => {
 
         const pendingPaymentsCount = pendingPaymentRecords + unpaidSessionsCount;
 
-        const periodRevenue = periodRevenueAgg._sum.amount || 0;
+        const periodRevenueGross = periodRevenueAgg._sum.amount || 0;
+        const periodRefunds = periodRevenueAgg._sum.refundedAmount || 0;
+        const periodRevenue = periodRevenueGross - periodRefunds;
         const periodExpenses = periodExpensesAgg._sum.amount || 0;
 
         const trendMap = {};
@@ -279,11 +280,12 @@ const getDashboardStats = async (req, res) => {
         revenueTrendRaw.forEach(item => {
             const dayStr = item.date.toISOString().split('T')[0];
             if (!trendMap[dayStr]) trendMap[dayStr] = { revenue: 0, expense: 0 };
-            trendMap[dayStr].revenue += item.amount;
+            const netAmount = item.amount - (item.refundedAmount || 0);
+            trendMap[dayStr].revenue += netAmount;
 
             // Restore Weekly Distribution Logic
             const weekday = item.date.toLocaleDateString('en-US', { weekday: 'short' });
-            dailyRevenue[weekday] = (dailyRevenue[weekday] || 0) + item.amount;
+            dailyRevenue[weekday] = (dailyRevenue[weekday] || 0) + netAmount;
         });
 
         // Restore Weekly Revenue Array
@@ -308,7 +310,9 @@ const getDashboardStats = async (req, res) => {
             net: trendMap[date].revenue - trendMap[date].expense
         }));
 
-        const totalRev = monthlyRevenue._sum.amount || 0;
+        const monthlyRevGross = monthlyRevenue._sum.amount || 0;
+        const monthlyRefundsTotal = monthlyRevenue._sum.refundedAmount || 0;
+        const totalRev = monthlyRevGross - monthlyRefundsTotal;
         const totalExp = monthlyExpenses._sum.amount || 0;
         const netProfit = totalRev - totalExp;
         const profitMargin = totalRev > 0 ? ((netProfit / totalRev) * 100).toFixed(1) : 0;
@@ -352,7 +356,7 @@ const getDashboardStats = async (req, res) => {
 
         sixMonthPayments.forEach(p => {
             const key = `${monthNames[new Date(p.date).getMonth()]} ${new Date(p.date).getFullYear()}`;
-            if (pnlMap[key]) pnlMap[key].revenue += p._sum.amount || 0;
+            if (pnlMap[key]) pnlMap[key].revenue += (p._sum.amount || 0) - (p._sum.refundedAmount || 0);
         });
 
         sixMonthExpenses.forEach(e => {
@@ -368,15 +372,23 @@ const getDashboardStats = async (req, res) => {
             amount: e._sum.amount || 0
         })).sort((a, b) => b.amount - a.amount);
 
+        // Calculate today's refunds
+        const todayRevenueGross = todayRevenueAgg._sum.amount || 0;
+        const todayRefunds = todayRevenueAgg._sum.refundedAmount || 0;
+        const todayRevenueNet = todayRevenueGross - todayRefunds;
+
         res.json({
             activeMembers: totalMembers,
-            revenueToday: todayRevenueAgg._sum.amount || 0,
+            revenueToday: todayRevenueNet,
+            refundsToday: todayRefunds,
             expensesToday: expensesTodayAgg._sum.amount || 0,
-            netProfitToday: (todayRevenueAgg._sum.amount || 0) - (expensesTodayAgg._sum.amount || 0),
+            netProfitToday: todayRevenueNet - (expensesTodayAgg._sum.amount || 0),
             expiringSoon: expiring,
             monthlyRevenue: totalRev,
+            monthlyRefunds: monthlyRefundsTotal,
             totalExpenses: totalExp,
             periodRevenue,
+            periodRefunds,
             periodExpenses,
             netProfit: periodRevenue - periodExpenses,
             profitMargin,

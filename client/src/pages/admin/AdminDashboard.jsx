@@ -81,12 +81,18 @@ const AdminDashboard = ({ stats }) => {
             {/* 1. Today Overview (Operational Snapshot) */}
             <section>
                 <SectionHeader title="Today's Overview" subtitle="Operational Snapshot" />
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                     <StatCard
                         title="Today's Revenue"
                         value={formatPrice(data.revenueToday)}
                         icon="payments"
                         color="text-primary"
+                    />
+                    <StatCard
+                        title="Today's Refunds"
+                        value={`-${formatPrice(data.refundsToday || 0)}`}
+                        icon="undo"
+                        color="text-amber-400"
                     />
                     <StatCard
                         title="Today's Expenses"
@@ -112,13 +118,20 @@ const AdminDashboard = ({ stats }) => {
             {/* 2. Monthly Profit & Loss (Business Health) */}
             <section>
                 <SectionHeader title="Monthly Business Health" subtitle="Profit & Loss Overview" />
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                     <BusinessCard
                         title="Monthly Revenue"
                         value={formatPrice(data.monthlyRevenue)}
                         subtext="Total Incoming"
                         icon="account_balance_wallet"
                         color="bg-primary/10 text-primary border-primary/20"
+                    />
+                    <BusinessCard
+                        title="Monthly Refunds"
+                        value={`-${formatPrice(data.monthlyRefunds || 0)}`}
+                        subtext="Returns & Voids"
+                        icon="undo"
+                        color="bg-amber-500/10 text-amber-400 border-amber-500/20"
                     />
                     <BusinessCard
                         title="Monthly Expenses"

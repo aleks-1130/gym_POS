@@ -118,21 +118,31 @@ export default function TrainingManager() {
 
     const handleComplete = async (e) => {
         e.preventDefault();
+
+        // Warn if user has a product selected but not added
+        if (selectedProduct || (isCustomItem && customName)) {
+            const proceed = confirm('You have a material selected but not added to the list. Click the "Add" button first, or press OK to complete without it.');
+            if (!proceed) return;
+        }
+
         setSubmitting(true);
         try {
             const token = localStorage.getItem('token');
             await axios.post(`http://localhost:5000/api/training-sessions/${selectedSession.id}/complete`, {
-                materialsCost: totalMaterialCost, // Only use tracked items
+                materialsCost: totalMaterialCost,
                 materials: addedMaterials,
                 notes
             }, {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            alert("Session completed! Commission and Expenses recorded.");
+            alert("Session completed successfully!");
             setSelectedSession(null);
             setAddedMaterials([]);
             setNotes('');
+            setSelectedProduct('');
+            setCustomName('');
+            setCustomCost('');
             fetchSessions();
         } catch (error) {
             alert(error.response?.data?.error || "Failed to update session");
@@ -150,7 +160,7 @@ export default function TrainingManager() {
                     <span className="material-icons-round text-primary">fitness_center</span>
                     Training Sessions
                 </h1>
-                <p className="text-text-muted mt-1">Manage bookings, track completions, and payout commissions.</p>
+                <p className="text-text-muted mt-1">Manage bookings and track session completions.</p>
             </header>
 
             <div className="bg-surface rounded-3xl border border-white/5 overflow-hidden shadow-xl">
@@ -286,12 +296,16 @@ export default function TrainingManager() {
             {/* Completion Modal */}
             {
                 selectedSession && (
-                    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setSelectedSession(null)}>
+                    <div
+                        ref={el => { if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+                        className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-start justify-center p-4 pt-16 overflow-y-auto"
+                        onClick={() => setSelectedSession(null)}
+                    >
                         <div className="bg-surface rounded-2xl border border-white/10 w-full max-w-md p-6 space-y-6 animate-slide-up" onClick={e => e.stopPropagation()}>
                             <div>
                                 <h2 className="text-xl font-bold text-white">Complete Session</h2>
                                 <p className="text-text-muted text-sm mt-1">
-                                    Confirming this will payout commission to <span className="text-primary font-bold">{selectedSession.trainer?.name}</span>.
+                                    This will mark the session as completed. Commission for <span className="text-primary font-bold">{selectedSession.trainer?.name}</span> can be paid from the Payroll page.
                                 </p>
                             </div>
 
@@ -373,6 +387,9 @@ export default function TrainingManager() {
                                                 {isCustomItem ? "Select existing product" : "Enter custom item manually"}
                                             </button>
                                         </div>
+                                        {addedMaterials.length === 0 && (
+                                            <p className="text-[10px] text-text-muted italic">Select a product and click "Add" to include materials used in this session.</p>
+                                        )}
                                     </div>
 
                                     {addedMaterials.length > 0 && (
@@ -423,7 +440,11 @@ export default function TrainingManager() {
             {/* View Details Modal */}
             {
                 viewSession && (
-                    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setViewSession(null)}>
+                    <div
+                        ref={el => { if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+                        className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-start justify-center p-4 pt-16 overflow-y-auto"
+                        onClick={() => setViewSession(null)}
+                    >
                         <div className="bg-surface rounded-2xl border border-white/10 w-full max-w-2xl p-6 space-y-6 animate-slide-up max-h-[90vh] overflow-y-auto custom-scrollbar" onClick={e => e.stopPropagation()}>
                             <div className="flex justify-between items-start">
                                 <div>

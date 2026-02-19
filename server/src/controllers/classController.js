@@ -13,7 +13,30 @@ const getAllClasses = async (req, res) => {
             },
             orderBy: { dayOfWeek: 'asc' }
         });
-        res.json(classes);
+
+        // Check today's completion status for each class
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const todayEnd = new Date();
+        todayEnd.setHours(23, 59, 59, 999);
+
+        const todayCompletions = await prisma.classHistory.findMany({
+            where: {
+                date: { gte: todayStart, lte: todayEnd }
+            },
+            select: { classId: true, attendeeCount: true, commissionAmount: true }
+        });
+
+        const completionMap = {};
+        todayCompletions.forEach(c => { completionMap[c.classId] = c; });
+
+        const enriched = classes.map(cls => ({
+            ...cls,
+            completedToday: !!completionMap[cls.id],
+            todayCompletion: completionMap[cls.id] || null
+        }));
+
+        res.json(enriched);
     } catch (e) {
         res.status(500).json({ error: "Failed to fetch classes" });
     }
@@ -141,9 +164,6 @@ const updateAttendeeStatus = async (req, res) => {
 
 const completeClass = async (req, res) => {
     const classId = Number(req.params.id);
-    const trainerId = req.user.trainerId;
-
-    if (!trainerId) return res.status(400).json({ error: "Trainer account is not linked" });
 
     try {
         const cls = await prisma.class.findUnique({
@@ -153,9 +173,26 @@ const completeClass = async (req, res) => {
 
         if (!cls) return res.status(404).json({ error: "Class not found" });
 
-        // Allow substitutions? For now, let's assume the logged-in trainer is the one completing it.
-        // If we want to restrict to assigned trainer:
-        // if (cls.trainerId !== Number(trainerId)) return res.status(403).json({ error: "Access denied" });
+        // Use the logged-in trainer's ID if they are a trainer, otherwise use the class's assigned trainer
+        const trainerId = req.user.trainerId ? Number(req.user.trainerId) : cls.trainerId;
+        if (!trainerId) return res.status(400).json({ error: "No trainer assigned to this class" });
+
+        // Prevent duplicate completion on the same day
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const todayEnd = new Date();
+        todayEnd.setHours(23, 59, 59, 999);
+
+        const existingCompletion = await prisma.classHistory.findFirst({
+            where: {
+                classId,
+                date: { gte: todayStart, lte: todayEnd }
+            }
+        });
+
+        if (existingCompletion) {
+            return res.status(400).json({ error: "This class has already been completed for today" });
+        }
 
         // 1. Calculate Attendance from Active Bookings
         // In a real scenario, we might want a separate "Attendance" input, but for MVP, verify active bookings.
@@ -166,26 +203,14 @@ const completeClass = async (req, res) => {
             }
         });
 
-        // 2. Calculate Commission (Per Booking Logic)
-        // Formula: Attendees * (Trainer Commission Rate * Class Price? OR Flat Rate?)
-        // Since Class doesn't have a price field in schema yet (it's on Plan), let's assume a generic calculation or use Trainer's base rate?
-        // User asked for "Per Booking". Let's assume Trainer's commission rate applies to a "base value" or fixed amount per head.
-        // LIMITATION: 'Class' model has no price. 
-        // TEMPORARY FIX: Use a default value (e.g., $10 per head) or Trainer's 'sessionPrice'? 
-        // Let's use Trainer's 'commissionRate' * 'sessionPrice' (as a proxy for class value per head) OR just flat rate.
-        // CORRECT LOGIC BASED ON REQUEST: "Commission per member booking"
-        // Let's assume $10 value per student for now, or fetch from a config. 
-        // Better: Trainer has `sessionPrice`. Let's treat that as "Price per Class" or "Price per Session".
-        // Actually, usually classes have a set rate per student.
-        // Let's use: Commission = Attendees * (Trainer's Commission Rate * 100). (e.g. 5 students * (50% * 100) = $250?? No.)
+        // 2. Calculate Commission using PayrollConfig
+        const config = await prisma.payrollConfig.findUnique({ where: { id: 1 } });
+        const basePay = config?.classBasePay ?? 350;
+        const bonusPerStudent = config?.classBonusPerStudent ?? 30;
+        const threshold = config?.classBonusThreshold ?? 5;
 
-        // REVISED LOGIC: 
-        // Let's assume the Trainer gets a flat amount per student.
-        // OR: Total Class Value = Attendees * $10. Commission = Total * TrainerRate.
-        // Let's hardcode a "Class Value Per Student" of $15 for now (Average Gym Class).
-        const VALUE_PER_STUDENT = 15.0;
-        const totalValue = attendees * VALUE_PER_STUDENT;
-        const commissionAmount = totalValue * (cls.trainer.commissionRate || 0);
+        const bonus = Math.max(0, attendees - threshold) * bonusPerStudent;
+        const commissionAmount = basePay + bonus;
 
         // 3. Create History Record
         const history = await prisma.classHistory.create({

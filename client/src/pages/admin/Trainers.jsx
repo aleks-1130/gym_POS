@@ -35,6 +35,7 @@ export default function Trainers() {
 
     const [formData, setFormData] = useState({
         name: '',
+        type: 'FULLTIME',
         specialty: '',
         specialties: '',
         email: '',
@@ -150,6 +151,7 @@ export default function Trainers() {
         setFormMode('create');
         setFormData({
             name: '',
+            type: 'FULLTIME',
             specialty: '',
             specialties: '',
             email: '',
@@ -179,6 +181,7 @@ export default function Trainers() {
         setFormMode('edit');
         setFormData({
             name: trainer.name || '',
+            type: trainer.type || 'FULLTIME',
             specialty: trainer.specialty || '',
             specialties: trainer.specialties || '',
             email: trainer.email || '',
@@ -361,7 +364,15 @@ export default function Trainers() {
                                 )}
                             </div>
                             <div>
-                                <h3 className="text-xl font-bold text-white">{trainer.name}</h3>
+                                <div className="flex items-center gap-2">
+                                    <h3 className="text-xl font-bold text-white">{trainer.name}</h3>
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${trainer.type === 'FREELANCER'
+                                            ? 'bg-orange-500/15 text-orange-400 border border-orange-500/30'
+                                            : 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                                        }`}>
+                                        {trainer.type === 'FREELANCER' ? 'Freelance' : 'Full-time'}
+                                    </span>
+                                </div>
                                 <p className="text-text-secondary text-sm">{trainer.specialty || 'Elite Coach'}</p>
                             </div>
                         </div>
@@ -627,6 +638,29 @@ export default function Trainers() {
                                         />
                                     </div>
                                     <div>
+                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Trainer Type</label>
+                                        <select
+                                            value={formData.type}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                handleFormChange('type', val);
+                                                if (val === 'FREELANCER') {
+                                                    handleFormChange('baseSalary', '0');
+                                                    if (!formData.commissionRate || Number(formData.commissionRate) < 40) {
+                                                        handleFormChange('commissionRate', '50');
+                                                    }
+                                                }
+                                            }}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                        >
+                                            <option value="FULLTIME" className="bg-[#1a1d24]">Full-time</option>
+                                            <option value="FREELANCER" className="bg-[#1a1d24]">Freelancer</option>
+                                        </select>
+                                        <p className="text-[10px] text-text-muted mt-1">
+                                            {formData.type === 'FREELANCER' ? 'Commission 40-100% · No base salary' : 'Commission 0-40% · Has base salary'}
+                                        </p>
+                                    </div>
+                                    <div>
                                         <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Primary Specialty</label>
                                         <input
                                             value={formData.specialty}
@@ -666,28 +700,35 @@ export default function Trainers() {
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Commission Rate (%)</label>
+                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">
+                                            Commission Rate (%) — <span className="text-text-muted">1-on-1 sessions only</span>
+                                        </label>
                                         <input
                                             type="number"
-                                            min="0"
-                                            max="100"
+                                            min={formData.type === 'FREELANCER' ? 40 : 0}
+                                            max={formData.type === 'FREELANCER' ? 100 : 40}
                                             value={formData.commissionRate}
                                             onChange={(e) => handleFormChange('commissionRate', e.target.value)}
                                             className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
-                                            placeholder="50"
+                                            placeholder={formData.type === 'FREELANCER' ? '50' : '20'}
                                         />
+                                        <p className="text-[10px] text-text-muted mt-1">
+                                            {formData.type === 'FREELANCER' ? 'Range: 40-100%' : 'Range: 0-40%'}
+                                        </p>
                                     </div>
-                                    <div>
-                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Base Salary</label>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            value={formData.baseSalary}
-                                            onChange={(e) => handleFormChange('baseSalary', e.target.value)}
-                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
-                                            placeholder="20000"
-                                        />
-                                    </div>
+                                    {formData.type !== 'FREELANCER' && (
+                                        <div>
+                                            <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Base Salary</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                value={formData.baseSalary}
+                                                onChange={(e) => handleFormChange('baseSalary', e.target.value)}
+                                                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                                placeholder="20000"
+                                            />
+                                        </div>
+                                    )}
                                     <div>
                                         <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Session Durations</label>
                                         <div className="mt-2 flex flex-wrap gap-2">

@@ -256,6 +256,8 @@ const createPayment = async (req, res) => {
                     const product = item.type === 'PRODUCT' ? productById.get(item.productId) : null;
                     const plan = item.type === 'PLAN' ? planById.get(planId) : null;
                     const classPackage = item.type === 'CLASS_PACKAGE' ? classPackageById.get(classPackageId) : null;
+
+
                     return {
                         type: item.type,
                         paymentId: createdPayment.id,
@@ -271,6 +273,10 @@ const createPayment = async (req, res) => {
                                     : (parseFloat(item.price) || 0)
                     };
                 });
+                try {
+                    const fs = require('fs');
+                    fs.appendFileSync('server_debug.log', `[DEBUG] Final PaymentItems: ${JSON.stringify(paymentItems)}\n`);
+                } catch (err) { }
                 await tx.paymentItem.createMany({ data: paymentItems });
 
                 for (const item of normalizedItems) {
@@ -626,6 +632,7 @@ const updatePosSettings = async (req, res) => {
 
         res.json({ message: "POS settings updated" });
     } catch (e) {
+        console.error("updatePosSettings Error:", e);
         res.status(500).json({ error: "Failed to update POS settings" });
     }
 };

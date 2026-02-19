@@ -7,6 +7,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum TrainerType {
+  FREELANCER
+  FULLTIME
+}
+
 model User {
   id          Int          @id @default(autoincrement())
   email       String       @unique
@@ -170,15 +175,29 @@ model PaymentMethod {
 }
 
 model Plan {
-  id                    Int                @id @default(autoincrement())
-  name                  String
-  price                 Float
-  duration              Int
-  includedClassSessions Int                @default(0)
-  includesClasses       Boolean            @default(false)
-  members               Member[]
-  membershipPeriods     MembershipPeriod[]
+  id          Int      @id @default(autoincrement())
+  name        String
+  price       Float
+  duration    Int      // Duration in days
+  includesClasses      Boolean @default(false)
+  includedClassSessions Int    @default(0)
+  members     Member[]
+  membershipPeriods MembershipPeriod[]
 }
+
+model ClassSessionPackage {
+  id        Int      @id @default(autoincrement())
+  name      String
+  sessions  Int
+  price     Float
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+
+
+
 
 model PaymentItem {
   id               Int      @id @default(autoincrement())
@@ -228,6 +247,7 @@ model Product {
 model Trainer {
   id               Int               @id @default(autoincrement())
   name             String
+  type             TrainerType       @default(FULLTIME)
   specialty        String
   specialization   String?
   email            String?
@@ -387,13 +407,15 @@ model GymProfile {
   updatedAt DateTime @updatedAt
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model ClassSessionPackage {
-  id        Int      @id @default(autoincrement())
-  name      String
-  sessions  Int
-  price     Float
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime
+
+model PayrollConfig {
+  id                   Int      @id @default(1)
+  classBasePay         Float    @default(350.0)
+  classBonusPerStudent Float    @default(30.0)
+  classBonusThreshold  Int      @default(5)
+  lastUpdatedBy        Int?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@map("payroll_config")
 }

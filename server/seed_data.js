@@ -107,12 +107,22 @@ async function main() {
 
     const dbMembers = [];
     for (const m of memberData) {
-        // Assign random plan
-        const plan = await prisma.plan.findFirst();
+        // Assign random plan, but Annual Power for John Doe
+        let plan;
+        if (m.email === 'john@doe.com') {
+            plan = await prisma.plan.findFirst({ where: { name: 'Annual Power' } });
+            if (!plan) plan = await prisma.plan.findFirst();
+        } else {
+            plan = await prisma.plan.findFirst();
+        }
 
         const member = await prisma.member.upsert({
             where: { email: m.email },
-            update: {},
+            update: {
+                points: m.points,
+                status: m.status,
+                planId: plan.id
+            },
             create: {
                 ...m,
                 password,
@@ -161,13 +171,23 @@ async function main() {
 
     // 6. SEED ACCESS LOGS
     for (const member of dbMembers) {
-        await prisma.accessLog.create({
-            data: {
-                memberId: member.id,
-                status: 'ALLOWED',
-                checkIn: new Date()
-            }
-        });
+        if (member.email === 'john@doe.com') {
+            await prisma.accessLog.createMany({
+                data: [
+                    { memberId: member.id, checkIn: new Date(new Date().setDate(new Date().getDate() - 5)), status: 'ALLOWED' },
+                    { memberId: member.id, checkIn: new Date(new Date().setDate(new Date().getDate() - 3)), status: 'ALLOWED' },
+                    { memberId: member.id, checkIn: new Date(), status: 'ALLOWED' }
+                ]
+            });
+        } else {
+            await prisma.accessLog.create({
+                data: {
+                    memberId: member.id,
+                    status: 'ALLOWED',
+                    checkIn: new Date()
+                }
+            });
+        }
     }
     console.log("✅ Access Logs seeded");
 

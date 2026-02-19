@@ -196,9 +196,14 @@ const FinancialsView = ({ data, dateRange }) => {
                         </div>
                     </div>
 
-                    {/* Actions - Removed since the button is now in the header */}
-                    <div className="p-5 bg-surface rounded-xl border border-white/5 flex flex-col justify-center gap-3">
-                        <div className="text-xs text-gray-500 text-center uppercase tracking-widest font-bold">Financial Health Summary</div>
+                    {/* Total Refunds */}
+                    <div className="p-5 bg-surface rounded-xl border border-amber-500/20 shadow-lg relative overflow-hidden">
+                        <div className="absolute inset-0 bg-amber-500/5"></div>
+                        <div className="relative z-10">
+                            <p className="text-gray-400 text-xs uppercase tracking-wider font-bold mb-2">Total Refunds</p>
+                            <h3 className="text-2xl font-bold text-amber-400">-{formatPrice(data.totalRefunds || 0)}</h3>
+                            <p className="text-xs text-amber-500/80 mt-1 font-bold">Returns & Voids</p>
+                        </div>
                     </div>
                 </div>
 

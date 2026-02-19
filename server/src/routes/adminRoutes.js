@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
 const payrollController = require('../controllers/payrollController');
+const payrollConfigController = require('../controllers/payrollConfigController');
 const { authenticateToken, authorize } = require('../middleware/authMiddleware');
 
 router.get('/owner/audit-logs', authenticateToken, authorize('OWNER'), adminController.getAuditLogs);
@@ -14,5 +15,9 @@ router.get('/payroll/stats', authenticateToken, authorize(['OWNER', 'ADMIN']), p
 router.get('/payroll/trainers', authenticateToken, authorize(['OWNER', 'ADMIN']), payrollController.getTrainers);
 router.get('/payroll/staff', authenticateToken, authorize(['OWNER', 'ADMIN']), payrollController.getStaff);
 router.post('/payroll/pay-commissions', authenticateToken, authorize(['OWNER', 'ADMIN']), payrollController.payCommissions);
+
+// Payroll Config Routes
+router.get('/payroll/config', authenticateToken, authorize(['OWNER', 'ADMIN']), payrollConfigController.getPayrollConfig);
+router.post('/payroll/config', authenticateToken, authorize(['OWNER', 'ADMIN']), payrollConfigController.updatePayrollConfig);
 
 module.exports = router;

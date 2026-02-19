@@ -53,7 +53,8 @@ const getTrainers = async (req, res) => {
                     where: { category: 'SALARY' }
                 },
                 trainingSessions: {
-                    where: { status: 'COMPLETED', commissionPaid: false }
+                    where: { status: 'COMPLETED', commissionPaid: false },
+                    include: { member: { select: { firstName: true, lastName: true } } }
                 },
                 classHistory: {
                     where: { commissionPaid: false },
@@ -76,6 +77,7 @@ const getTrainers = async (req, res) => {
             return {
                 id: t.id,
                 name: t.name,
+                type: t.type,
                 imageUrl: t.imageUrl,
                 baseSalary: t.baseSalary,
                 commissionRate: t.commissionRate,
@@ -145,15 +147,20 @@ const payCommissions = async (req, res) => {
                     status: 'COMPLETED',
                     commissionPaid: false
                 },
-                include: { trainer: true }
+                include: { trainer: true, member: true }
             });
 
             sessions.forEach(session => {
-                totalCommission += session.price * (session.trainer?.commissionRate || 0);
+                const comm = session.price * (session.trainer?.commissionRate || 0);
+                totalCommission += comm;
+                const memberName = session.member
+                    ? `${session.member.firstName} ${session.member.lastName || ''}`.trim()
+                    : `Session #${session.id}`;
+                const rate = ((session.trainer?.commissionRate || 0) * 100).toFixed(0);
+                notes.push(`${memberName} (₱${session.price} × ${rate}% = ₱${comm.toFixed(2)})`);
             });
 
             if (sessions.length > 0) {
-                notes.push(`${sessions.length} Sessions (IDs: ${sessionIds.join(', ')})`);
                 await prisma.trainingSession.updateMany({
                     where: { id: { in: sessionIds.map(Number) } },
                     data: { commissionPaid: true }
@@ -168,15 +175,17 @@ const payCommissions = async (req, res) => {
                     id: { in: classHistoryIds.map(Number) },
                     trainerId: Number(trainerId),
                     commissionPaid: false
-                }
+                },
+                include: { class: true }
             });
 
             classes.forEach(cls => {
                 totalCommission += cls.commissionAmount;
+                const className = cls.class?.name || `Class #${cls.classId}`;
+                notes.push(`${className} (${cls.attendeeCount} students = ₱${cls.commissionAmount.toFixed(2)})`);
             });
 
             if (classes.length > 0) {
-                notes.push(`${classes.length} Classes (IDs: ${classHistoryIds.join(', ')})`);
                 await prisma.classHistory.updateMany({
                     where: { id: { in: classHistoryIds.map(Number) } },
                     data: { commissionPaid: true }
@@ -196,7 +205,7 @@ const payCommissions = async (req, res) => {
                 amount: totalCommission,
                 category: 'SALARY',
                 date: new Date(),
-                notes: `Aggregated Commission. ${notes.join('. ')}`,
+                notes: notes.join('; '),
                 recordedBy: req.user.id.toString(),
                 trainerId: Number(trainerId)
             }

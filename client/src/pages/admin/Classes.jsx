@@ -138,6 +138,21 @@ export default function Classes() {
         }
     };
 
+    const handleCompleteClass = async (cls) => {
+        const confirmed = confirm(`Mark "${cls.name}" as completed for today? This will record attendance and calculate trainer commission.`);
+        if (!confirmed) return;
+        try {
+            const token = localStorage.getItem('token');
+            const res = await axios.post(`http://localhost:5000/api/classes/${cls.id}/complete`, {}, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            alert(`Class completed! ${res.data.attendeeCount} attendees — Commission: ₱${res.data.commissionAmount?.toFixed(2)}`);
+            await fetchClasses();
+        } catch (error) {
+            alert(error?.response?.data?.error || 'Failed to complete class.');
+        }
+    };
+
     const filteredClasses = classes.filter(cls => cls.dayOfWeek === activeDay);
 
     if (loading) {
@@ -270,6 +285,22 @@ export default function Classes() {
                                     <Users size={16} className="text-primary" />
                                     View Participants
                                 </button>
+                                {isAdmin && (
+                                    cls.completedToday ? (
+                                        <div className="w-full py-2.5 mt-2 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20 flex items-center justify-center gap-2 text-sm font-medium">
+                                            <CheckCircle2 size={16} />
+                                            Completed Today — {cls.todayCompletion?.attendeeCount || 0} attendees · ₱{cls.todayCompletion?.commissionAmount?.toFixed(2) || '0.00'}
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={() => handleCompleteClass(cls)}
+                                            className="w-full py-2.5 mt-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/20 transition-all flex items-center justify-center gap-2 text-sm font-medium"
+                                        >
+                                            <CheckCircle2 size={16} />
+                                            Complete Class
+                                        </button>
+                                    )
+                                )}
                             </div>
                         );
                     })

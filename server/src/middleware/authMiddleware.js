@@ -1,17 +1,27 @@
-const { createRemoteJWKSet, jwtVerify } = require('jose');
 const prisma = require('../config/prisma');
 
+// jose is ESM-only, so we use a lazy dynamic import
+let _jose = null;
+let _JWKS = null;
+
+// Handle different env variable names and trailing slashes
 const rawNeonAuthUrl = process.env.NEON_AUTH_URL || process.env.NEON_AUTH_API_URL;
 const NEON_AUTH_URL = rawNeonAuthUrl ? rawNeonAuthUrl.replace(/\/+$/, '') : null;
 const NEON_AUTH_JWKS_URL = process.env.NEON_AUTH_JWKS_URL || (NEON_AUTH_URL ? `${NEON_AUTH_URL}/.well-known/jwks.json` : null);
-let JWKS = null;
 
-if (NEON_AUTH_JWKS_URL) {
-    try {
-        JWKS = createRemoteJWKSet(new URL(NEON_AUTH_JWKS_URL));
-    } catch (error) {
-        console.error("[DEBUG] Invalid Neon JWKS URL, JWT verification disabled:", error.message);
+async function getJose() {
+    if (!_jose) {
+        _jose = await import('jose');
+
+        if (NEON_AUTH_JWKS_URL) {
+            try {
+                _JWKS = _jose.createRemoteJWKSet(new URL(NEON_AUTH_JWKS_URL));
+            } catch (error) {
+                console.error("[DEBUG] Invalid Neon JWKS URL, JWT verification disabled:", error.message);
+            }
+        }
     }
+    return { jwtVerify: _jose.jwtVerify, JWKS: _JWKS };
 }
 
 // Middleware to verify Neon Auth Token
@@ -19,13 +29,15 @@ const authenticateToken = async (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
-    if (!token) return res.sendStatus(401); // Unauthorized
+    if (!token) return res.sendStatus(401);
 
     let email = null;
     let neonUserId = null;
 
     try {
-        // 1. Try JWT Verification (Stateless) only if remote JWKS is configured
+        // 1. Try JWT Verification (Stateless)
+        const { jwtVerify, JWKS } = await getJose();
+
         if (JWKS) {
             const { payload } = await jwtVerify(token, JWKS);
             console.log("[DEBUG] JWT Verification Successful");
@@ -35,12 +47,10 @@ const authenticateToken = async (req, res, next) => {
             throw new Error("JWT verification unavailable (missing NEON_AUTH_URL)");
         }
     } catch (jwtError) {
-        // 2. Fallback to Database Session Verification (Stateful for opaque tokens)
+        // 2. Fallback to Database Session Verification
         console.log("[DEBUG] JWT skipped/failed, trying DB Session lookup...");
 
         try {
-            // Query neon_auth.session to find the token
-            // We use $queryRaw because neon_auth schema might not be in the generated client text
             const sessionResults = await prisma.$queryRaw`
                 SELECT s.*, u.email 
                 FROM neon_auth.session s
@@ -69,11 +79,10 @@ const authenticateToken = async (req, res, next) => {
     }
 
     try {
-        // Sync with local database to get Role
-        // We concurrently check both tables as per existing logic
         let userRole = null;
         let userId = null;
         let userName = null;
+        let userTrainerId = null;
 
         // 1. Check User (Admin/Staff/Owner/Trainer)
         const user = await prisma.user.findFirst({
@@ -81,8 +90,6 @@ const authenticateToken = async (req, res, next) => {
             select: { id: true, role: true, name: true, trainerId: true }
         });
         console.log("[DEBUG] User Search Result:", user);
-
-        let userTrainerId = null;
 
         if (user) {
             userId = user.id;
@@ -106,8 +113,6 @@ const authenticateToken = async (req, res, next) => {
 
         if (!userRole) {
             console.log("[DEBUG] User not found in local DB.");
-            // User authenticated with Neon but not found in local DB
-            // This could be a new signup that hasn't synced yet, or a mismatch
             return res.status(403).json({ error: "User not found in system records" });
         }
 
@@ -115,7 +120,7 @@ const authenticateToken = async (req, res, next) => {
         req.user = {
             id: userId,
             email: email,
-            role: userRole,
+            role: userRole, // ← Fixed: removed duplicate
             name: userName,
             trainerId: userTrainerId,
             neonSub: neonUserId

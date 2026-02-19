@@ -26,9 +26,9 @@ const getAnalytics = async (req, res) => {
             products, // Needed for stock info
             members
         ] = await Promise.all([
-            // Current Period Payments
+            // Current Period Payments (exclude voided)
             prisma.payment.findMany({
-                where: { date: { gte: start, lte: end } },
+                where: { date: { gte: start, lte: end }, status: { in: ['COMPLETED', 'RETURNED'] } },
                 include: {
                     member: { select: { id: true, firstName: true, lastName: true } },
                     cashier: { select: { id: true, name: true, role: true } },
@@ -36,10 +36,10 @@ const getAnalytics = async (req, res) => {
                 },
                 orderBy: { date: 'desc' }
             }),
-            // Previous Period Payments
+            // Previous Period Payments (exclude voided)
             prisma.payment.findMany({
-                where: { date: { gte: prevStart, lte: prevEnd } },
-                select: { amount: true, type: true } // Minimal select for comparisons
+                where: { date: { gte: prevStart, lte: prevEnd }, status: { in: ['COMPLETED', 'RETURNED'] } },
+                select: { amount: true, type: true, refundedAmount: true }
             }),
             // Current Expenses
             prisma.expense.findMany({ where: { date: { gte: start, lte: end } } }),
@@ -65,8 +65,9 @@ const getAnalytics = async (req, res) => {
 
         // --- CALCULATIONS ---
 
-        // 1. Revenue & Sources
-        const totalRevenue = payments.reduce((sum, p) => sum + p.amount, 0);
+        // 1. Revenue & Sources (subtract refunded amounts)
+        const totalRefunds = payments.reduce((sum, p) => sum + (p.refundedAmount || 0), 0);
+        const totalRevenue = payments.reduce((sum, p) => sum + p.amount - (p.refundedAmount || 0), 0);
 
         // Dynamic Revenue Sources Calculation
         // Initialize with 0 for all known types to ensure consistent keys
@@ -136,57 +137,90 @@ const getAnalytics = async (req, res) => {
         const totalCommission = Object.values(trainerPerformance).reduce((acc, t) => acc + (t.commissionCost || 0), 0);
 
         // 3. Product Logic (COGS & Margins)
+        const productByName = new Map(products.map(p => [p.name.toLowerCase(), p]));
+
         const productSales = {};
         const categoryPerformance = {};
         let totalSupplyCost = 0;
 
         payments.forEach(payment => {
             payment.items.forEach(item => {
+                const rev = item.unitPrice * item.quantity;
+                let cost = 0;
+                let pid = null;
+                let pName = item.name || 'Unknown Item';
+                let pCat = 'Uncategorized';
+                let pPrice = item.unitPrice;
+                let currentStock = 0;
+                let minStock = 0;
+
+                let originalProd = null;
+
                 if (item.product) {
-                    const pid = item.product.id;
-                    const originalProd = products.find(p => p.id === pid);
-
-                    // Calc COGS
-                    const currentSupplyCost = originalProd ? (originalProd.supplyCost || 0) : 0;
-                    const cost = currentSupplyCost * item.quantity;
-                    totalSupplyCost += cost;
-
-                    const rev = item.unitPrice * item.quantity;
-                    const profit = rev - cost;
-
-                    // Product Stats
-                    if (!productSales[pid]) {
-                        productSales[pid] = {
-                            id: pid,
-                            name: item.product.name,
-                            category: item.product.category,
-                            price: item.product.price,
-                            stock: originalProd ? originalProd.stock : 0,
-                            unitsSold: 0,
-                            totalSales: 0,
-                            totalProfit: 0,
-                        };
-                    }
-                    productSales[pid].totalSales += rev;
-                    productSales[pid].totalProfit += profit;
-                    productSales[pid].unitsSold += item.quantity;
-
-                    // Category Stats
-                    const cat = item.product.category || 'Uncategorized';
-                    if (!categoryPerformance[cat]) {
-                        categoryPerformance[cat] = {
-                            category: cat,
-                            revenue: 0,
-                            profit: 0,
-                            unitsSold: 0,
-                            cogs: 0
-                        };
-                    }
-                    categoryPerformance[cat].revenue += rev;
-                    categoryPerformance[cat].profit += profit;
-                    categoryPerformance[cat].cogs += cost;
-                    categoryPerformance[cat].unitsSold += item.quantity;
+                    pid = item.product.id;
+                    originalProd = products.find(p => p.id === pid);
+                } else if (item.type === 'PRODUCT' && productByName.has(pName.toLowerCase())) {
+                    // Fallback: Try to match by name if productId is missing
+                    originalProd = productByName.get(pName.toLowerCase());
+                    pid = originalProd.id;
                 }
+
+                if (originalProd) {
+                    const supplyCost = originalProd.supplyCost || 0;
+                    cost = supplyCost * item.quantity;
+
+                    pName = originalProd.name;
+                    pCat = originalProd.category || 'Uncategorized';
+                    pPrice = originalProd.price;
+                    currentStock = originalProd.stock;
+                    minStock = originalProd.minStock;
+                } else {
+                    // Handle unlinked items (custom items, deleted products, or non-product types)
+                    if (item.type === 'PLAN') pCat = 'Memberships';
+                    else if (item.type === 'CLASS_PACKAGE') pCat = 'Class Packages';
+                    else if (item.type === 'TRAINING') pCat = 'Training Sessions';
+                    else pCat = 'Uncategorized';
+
+                    // We key them by name to group duplicates
+                    pid = `${item.type.toLowerCase()}-${pName.replace(/\s+/g, '-').toLowerCase()}`;
+                }
+
+                totalSupplyCost += cost;
+                const profit = rev - cost;
+
+                // Product Stats
+                if (!productSales[pid]) {
+                    productSales[pid] = {
+                        id: pid,
+                        name: pName,
+                        category: pCat,
+                        price: pPrice,
+                        stock: currentStock,
+                        minStock: minStock,
+                        unitsSold: 0,
+                        totalSales: 0,
+                        totalProfit: 0,
+                        isCustom: !item.product // Flag for UI
+                    };
+                }
+                productSales[pid].totalSales += rev;
+                productSales[pid].totalProfit += profit;
+                productSales[pid].unitsSold += item.quantity;
+
+                // Category Stats
+                if (!categoryPerformance[pCat]) {
+                    categoryPerformance[pCat] = {
+                        category: pCat,
+                        revenue: 0,
+                        profit: 0,
+                        unitsSold: 0,
+                        cogs: 0
+                    };
+                }
+                categoryPerformance[pCat].revenue += rev;
+                categoryPerformance[pCat].profit += profit;
+                categoryPerformance[pCat].cogs += cost;
+                categoryPerformance[pCat].unitsSold += item.quantity;
             });
         });
 
@@ -195,7 +229,7 @@ const getAnalytics = async (req, res) => {
         const totalExpenses = operatingExpenses + totalSupplyCost + totalCommission;
 
         // Previous period calculations for growth metrics
-        const prevRevenue = prevPayments.reduce((sum, p) => sum + p.amount, 0);
+        const prevRevenue = prevPayments.reduce((sum, p) => sum + p.amount - (p.refundedAmount || 0), 0);
         const prevOperatingExpenses = prevExpenses.reduce((sum, e) => sum + e.amount, 0);
         const revenueGrowth = prevRevenue === 0 ? 100 : ((totalRevenue - prevRevenue) / prevRevenue) * 100;
         // Approximation for prev COGS/Comm to avoid complex query: Scale by revenue ratio? 
@@ -270,7 +304,9 @@ const getAnalytics = async (req, res) => {
 
 
         // ... (Product/Category Logic from above loop) ...
-        const allProductPerformance = products.map(p => {
+        // ... (Product/Category Logic from above loop) ...
+        // 1. Existing Products
+        const existingProductsPerf = products.map(p => {
             const salesData = productSales[p.id] || { totalSales: 0, totalProfit: 0, unitsSold: 0 };
             const realizedMargin = salesData.totalSales > 0 ? ((salesData.totalProfit / salesData.totalSales) * 100) : 0;
             const currentSupplyCost = p.supplyCost || 0;
@@ -290,7 +326,33 @@ const getAnalytics = async (req, res) => {
                 isPotentialMargin: salesData.totalSales === 0,
                 contributionPercent: totalRevenue > 0 ? ((salesData.totalSales / totalRevenue) * 100).toFixed(1) : 0
             };
-        }).sort((a, b) => b.totalSales - a.totalSales);
+        });
+
+        // 2. Custom/Deleted Items (found in productSales with 'custom-' prefix)
+        const customItemsPerf = Object.keys(productSales)
+            .filter(pid => String(pid).startsWith('custom-'))
+            .map(pid => {
+                const salesData = productSales[pid];
+                const realizedMargin = salesData.totalSales > 0 ? ((salesData.totalProfit / salesData.totalSales) * 100) : 0;
+
+                return {
+                    id: pid,
+                    name: salesData.name,
+                    category: salesData.category || 'Uncategorized',
+                    price: salesData.price,
+                    stock: 0,
+                    minStock: 0,
+                    unitsSold: salesData.unitsSold,
+                    totalSales: salesData.totalSales,
+                    totalProfit: salesData.totalProfit,
+                    margin: realizedMargin.toFixed(1),
+                    isPotentialMargin: false,
+                    isCustom: true,
+                    contributionPercent: totalRevenue > 0 ? ((salesData.totalSales / totalRevenue) * 100).toFixed(1) : 0
+                };
+            });
+
+        const allProductPerformance = [...existingProductsPerf, ...customItemsPerf].sort((a, b) => b.totalSales - a.totalSales);
 
         const topProducts = allProductPerformance.slice(0, 10);
         const topCategories = Object.values(categoryPerformance)
@@ -382,7 +444,8 @@ const getAnalytics = async (req, res) => {
             trends: { labels: sortedTrendLabels, revenue: revenueTrends, expenses: expensesTrends },
             peakHours, checkInsByDay, topProducts, allProducts: allProductPerformance, products: allProductPerformance,
             productSales, topCategories, lowStockItems, topTrainers, membershipDistribution: membershipDist,
-            transactions, insights, operations, dateRange: { start, end }
+            transactions, insights, operations, dateRange: { start, end },
+            totalRefunds
         });
 
     } catch (error) {

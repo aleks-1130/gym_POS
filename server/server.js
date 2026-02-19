@@ -32,6 +32,7 @@ app.use('/api/members', require('./src/routes/memberRoutes'));
 // Shop Routes (checkout, orders - mounted at /api/members for compatibility)
 app.use('/api/members', require('./src/routes/shopRoutes'));
 app.use('/api/payments', require('./src/routes/paymentRoutes'));
+app.use('/api/pos', require('./src/routes/paymentRoutes')); // Alias for POS settings frontend
 app.use('/api/access', require('./src/routes/accessRoutes'));
 app.use('/api/products', require('./src/routes/productRoutes'));
 app.use('/api/inventory', require('./src/routes/productRoutes')); // Alias for restock
