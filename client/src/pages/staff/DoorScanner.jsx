@@ -54,6 +54,26 @@ export default function DoorScanner() {
         navigate(`/scan-result/${logId}`);
     };
 
+    const getEntity = (log) => {
+        if (log?.member) {
+            return {
+                name: `${log.member.firstName} ${log.member.lastName}`,
+                initials: `${log.member.firstName?.[0] || ''}${log.member.lastName?.[0] || ''}` || 'M',
+                imageUrl: log.member.imageUrl,
+                type: 'Member'
+            };
+        }
+        if (log?.trainer) {
+            return {
+                name: log.trainer.name || `Trainer #${log.trainer.id}`,
+                initials: (log.trainer.name || 'T').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase(),
+                imageUrl: log.trainer.imageUrl,
+                type: 'Trainer'
+            };
+        }
+        return { name: 'Unknown QR Code', initials: '?', imageUrl: null, type: 'Unknown' };
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -82,7 +102,7 @@ export default function DoorScanner() {
                     </div>
 
                     <h3 className="text-xl font-bold text-white mb-2">QR Code Scanner</h3>
-                    <p className="text-text-muted text-center mb-8 max-w-xs text-sm">Use the button below to simulate a member QR code being scanned at the entrance.</p>
+                    <p className="text-text-muted text-center mb-8 max-w-xs text-sm">Use the button below to simulate an access QR code being scanned at the entrance.</p>
 
                     <div className="flex gap-4 w-full">
                         <button
@@ -119,7 +139,9 @@ export default function DoorScanner() {
                 <div className="bg-surface rounded-3xl border border-white/5 p-6 overflow-hidden flex flex-col h-[calc(100vh-10rem)] shadow-sm">
                     <h3 className="text-lg font-bold text-white mb-4">Live Access Feed</h3>
                     <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-thin">
-                        {logs.map((log, i) => (
+                        {logs.map((log, i) => {
+                            const entity = getEntity(log);
+                            return (
                             <div
                                 key={i}
                                 onClick={() => handleLogClick(log.id)}
@@ -129,27 +151,27 @@ export default function DoorScanner() {
                                     }`}
                             >
                                 <div className="flex items-center gap-3">
-                                    {log.member?.imageUrl ? (
+                                    {entity.imageUrl ? (
                                         <div className="w-10 h-10 rounded-full overflow-hidden border border-white/10">
-                                            <img src={log.member.imageUrl} className="w-full h-full object-cover" alt="" />
+                                            <img src={entity.imageUrl} className="w-full h-full object-cover" alt="" />
                                         </div>
                                     ) : (
                                         <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs ${log.status === 'ALLOWED'
                                             ? 'bg-emerald-500/10 text-emerald-400'
                                             : 'bg-red-500/10 text-red-400'
                                             }`}>
-                                            {log.member ? `${log.member.firstName[0]}${log.member.lastName[0]}` : <span className="material-icons-round">person</span>}
+                                            {entity.initials}
                                         </div>
                                     )}
                                     <div>
                                         <p className="text-white font-bold text-sm">
-                                            {log.member ? `${log.member.firstName} ${log.member.lastName}` : 'Unknown QR Code'}
+                                            {entity.name}
                                         </p>
                                         <div className="flex items-center gap-1.5 mt-0.5">
                                             <span className={`w-1.5 h-1.5 rounded-full ${log.status === 'ALLOWED' ? 'bg-emerald-500' : 'bg-red-500'
                                                 }`}></span>
                                             <p className="text-[10px] text-text-muted uppercase tracking-wider font-bold">
-                                                Entrance • {log.status}
+                                                Entrance - {entity.type} - {log.status}
                                             </p>
                                         </div>
                                     </div>
@@ -161,7 +183,8 @@ export default function DoorScanner() {
                                     <span className="material-icons-round text-text-muted text-sm">chevron_right</span>
                                 </div>
                             </div>
-                        ))}
+                            );
+                        })}
                         {logs.length === 0 && (
                             <div className="flex flex-col items-center justify-center h-full text-text-muted">
                                 <span className="material-icons-round text-4xl mb-2">history</span>
@@ -184,3 +207,4 @@ export default function DoorScanner() {
         </div>
     );
 }
+

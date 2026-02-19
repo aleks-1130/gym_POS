@@ -100,11 +100,13 @@ export default function ProfileResult({ logId: propLogId, showHistory = false, s
         );
     }
 
-    const { member, status, checkIn } = log;
+    const { member, trainer, status, checkIn } = log;
+    const profile = member || trainer || null;
+    const isTrainer = Boolean(trainer && !member);
     const isAllowed = status === 'ALLOWED';
-    const joinedDate = member?.startDate || member?.createdAt || member?.joinDate;
+    const joinedDate = profile?.startDate || profile?.createdAt || profile?.joinDate;
     const expiryDate = member?.expiryDate;
-    const planName = member?.plan?.name || member?.membershipType || 'Standard';
+    const planName = member?.plan?.name || member?.membershipType || trainer?.specialty || 'Standard';
 
     return (
         <div className="bg-surface rounded-3xl border border-white/5 overflow-hidden shadow-sm h-[calc(100vh-390px)] flex flex-col">
@@ -127,48 +129,52 @@ export default function ProfileResult({ logId: propLogId, showHistory = false, s
                 </div>
             </div>
 
-            {/* Member Profile - Scrollable Content */}
-            {member ? (
+            {/* Profile - Scrollable Content */}
+            {profile ? (
                 <>
                     <div className="flex-1 overflow-y-auto">
                         {/* Profile Header */}
                         <div className="p-5 bg-white/5 border-b border-white/5">
                             <div className="flex items-center gap-4">
-                                {member.imageUrl ? (
+                                {profile.imageUrl ? (
                                     <div className="w-20 h-20 rounded-2xl overflow-hidden border border-white/10 flex-shrink-0">
                                         <img
-                                            src={member.imageUrl}
-                                            alt={`${member.firstName} ${member.lastName}`}
+                                            src={profile.imageUrl}
+                                            alt={isTrainer ? profile.name : `${profile.firstName} ${profile.lastName}`}
                                             className="w-full h-full object-cover"
                                         />
                                     </div>
                                 ) : (
                                     <div className="w-20 h-20 rounded-2xl bg-surfaceHighlight border border-white/10 flex items-center justify-center flex-shrink-0">
                                         <span className="text-3xl font-bold text-primary">
-                                            {member.firstName[0]}{member.lastName[0]}
+                                            {isTrainer
+                                                ? (profile.name || 'T').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+                                                : `${profile.firstName?.[0] || ''}${profile.lastName?.[0] || ''}`}
                                         </span>
                                     </div>
                                 )}
                                 <div className="min-w-0 flex-1">
                                     <h3 className="text-2xl font-bold text-white truncate">
-                                        {member.firstName} {member.lastName}
+                                        {isTrainer ? profile.name : `${profile.firstName} ${profile.lastName}`}
                                     </h3>
                                     <div className="flex items-center gap-2 mt-2 flex-wrap">
-                                        <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${(member.membershipStatus || member.status) === 'ACTIVE'
-                                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                            : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                        <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${isTrainer
+                                            ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                                            : ((member?.membershipStatus || member?.status) === 'ACTIVE'
+                                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                                : 'bg-red-500/20 text-red-400 border border-red-500/30')
                                         }`}>
-                                            {member.membershipStatus || member.status}
+                                            {isTrainer ? 'TRAINER' : (member.membershipStatus || member.status)}
                                         </span>
                                         <span className="px-3 py-1 rounded-full text-xs font-bold bg-white/10 text-text-secondary border border-white/10">
-                                            ID: {member.id}
+                                            ID: {profile.id}
                                         </span>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Member Details Grid */}
+                        {/* Profile Details Grid */}
                         <div className="p-5 space-y-3">
                             {/* Contact Information */}
                             <div className="grid md:grid-cols-2 gap-3">
@@ -179,7 +185,7 @@ export default function ProfileResult({ logId: propLogId, showHistory = false, s
                                         </div>
                                         <div className="min-w-0 flex-1">
                                             <p className="text-[10px] text-text-muted uppercase tracking-widest font-bold mb-0.5">Email</p>
-                                            <p className="text-white font-bold text-sm truncate">{member.email}</p>
+                                            <p className="text-white font-bold text-sm truncate">{profile.email || 'Not provided'}</p>
                                         </div>
                                     </div>
                                 </div>
@@ -190,42 +196,43 @@ export default function ProfileResult({ logId: propLogId, showHistory = false, s
                                         </div>
                                         <div className="min-w-0 flex-1">
                                             <p className="text-[10px] text-text-muted uppercase tracking-widest font-bold mb-0.5">Phone</p>
-                                            <p className="text-white font-bold text-sm truncate">{member.phone || 'Not provided'}</p>
+                                            <p className="text-white font-bold text-sm truncate">{profile.phone || 'Not provided'}</p>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* Membership Details */}
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                <div className="bg-white/5 rounded-xl p-3.5 border border-white/10 md:col-span-1">
-                                    <div className="flex items-center gap-2 mb-1.5">
-                                        <span className="material-icons-round text-primary text-sm">fitness_center</span>
-                                        <p className="text-xs text-text-muted uppercase tracking-widest font-bold">Plan</p>
+                            {!isTrainer && (
+                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                    <div className="bg-white/5 rounded-xl p-3.5 border border-white/10 md:col-span-1">
+                                        <div className="flex items-center gap-2 mb-1.5">
+                                            <span className="material-icons-round text-primary text-sm">fitness_center</span>
+                                            <p className="text-xs text-text-muted uppercase tracking-widest font-bold">Plan</p>
+                                        </div>
+                                        <p className="text-white font-bold text-sm truncate" title={planName}>
+                                            {planName}
+                                        </p>
                                     </div>
-                                    <p className="text-white font-bold text-sm truncate" title={planName}>
-                                        {planName}
-                                    </p>
-                                </div>
-                                <div className="bg-white/5 rounded-xl p-3.5 border border-white/10">
-                                    <div className="flex items-center gap-2 mb-1.5">
-                                        <span className="material-icons-round text-primary text-sm">cake</span>
-                                        <p className="text-[10px] text-text-muted uppercase tracking-widest font-bold">Birthday</p>
+                                    <div className="bg-white/5 rounded-xl p-3.5 border border-white/10">
+                                        <div className="flex items-center gap-2 mb-1.5">
+                                            <span className="material-icons-round text-primary text-sm">cake</span>
+                                            <p className="text-[10px] text-text-muted uppercase tracking-widest font-bold">Birthday</p>
+                                        </div>
+                                        <p className="text-white font-bold text-sm">
+                                            {member?.birthDate ? new Date(member.birthDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
+                                        </p>
                                     </div>
-                                    <p className="text-white font-bold text-sm">
-                                        {member?.birthDate ? new Date(member.birthDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
-                                    </p>
-                                </div>
-                                <div className="bg-white/5 rounded-xl p-3.5 border border-white/10">
-                                    <div className="flex items-center gap-2 mb-1.5">
-                                        <span className="material-icons-round text-primary text-sm">wc</span>
-                                        <p className="text-[10px] text-text-muted uppercase tracking-widest font-bold">Sex</p>
+                                    <div className="bg-white/5 rounded-xl p-3.5 border border-white/10">
+                                        <div className="flex items-center gap-2 mb-1.5">
+                                            <span className="material-icons-round text-primary text-sm">wc</span>
+                                            <p className="text-[10px] text-text-muted uppercase tracking-widest font-bold">Sex</p>
+                                        </div>
+                                        <p className="text-white font-bold text-sm">
+                                            {member?.sex || 'N/A'}
+                                        </p>
                                     </div>
-                                    <p className="text-white font-bold text-sm">
-                                        {member?.sex || 'N/A'}
-                                    </p>
                                 </div>
-                            </div>
+                            )}
 
                             <div className="grid md:grid-cols-2 gap-3 mt-4">
                                 <div className="rounded-2xl p-5 border border-emerald-500/30 bg-emerald-500/10">
@@ -240,16 +247,16 @@ export default function ProfileResult({ logId: propLogId, showHistory = false, s
                                 <div className="rounded-2xl p-5 border border-red-500/30 bg-red-500/10">
                                     <div className="flex items-center gap-2 mb-2">
                                         <span className="material-icons-round text-red-400 text-base">event</span>
-                                        <p className="text-sm text-red-300 uppercase tracking-widest font-bold">Expiry</p>
+                                        <p className="text-sm text-red-300 uppercase tracking-widest font-bold">{isTrainer ? 'Role' : 'Expiry'}</p>
                                     </div>
                                     <p className="text-white font-black text-lg">
-                                        {expiryDate ? new Date(expiryDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
+                                        {isTrainer ? 'Trainer Access' : (expiryDate ? new Date(expiryDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A')}
                                     </p>
                                 </div>
                             </div>
 
                             {/* Additional Info */}
-                            {member.emergencyContact && (
+                            {!isTrainer && member.emergencyContact && (
                                 <div className="bg-white/5 rounded-xl p-3.5 border border-white/10">
                                     <p className="text-[10px] text-text-muted uppercase tracking-widest font-bold mb-2">Emergency Contact</p>
                                     <p className="text-white font-bold text-sm">{member.emergencyContact}</p>
@@ -270,11 +277,11 @@ export default function ProfileResult({ logId: propLogId, showHistory = false, s
                                     Scan Next
                                 </button>
                                 <button
-                                    onClick={() => navigate(`/members/${member.id}`)}
+                                    onClick={() => navigate(isTrainer ? '/admin/trainers' : `/members/${member.id}`)}
                                     className="flex-1 bg-white/5 hover:bg-white/10 text-white px-4 py-3 rounded-xl font-bold text-sm border border-white/10 transition-all flex items-center justify-center gap-2"
                                 >
                                     <span className="material-icons-round text-lg">person</span>
-                                    View Profile
+                                    {isTrainer ? 'Trainer List' : 'View Profile'}
                                 </button>
                             </div>
                         </div>

@@ -328,6 +328,34 @@ const cancelSession = async (req, res) => {
     }
 };
 
+const declineSession = async (req, res) => {
+    const sessionId = Number(req.params.id);
+    const { reason } = req.body || {};
+
+    try {
+        const session = await prisma.trainingSession.findUnique({
+            where: { id: sessionId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: "Session not found" });
+        }
+
+        const updated = await prisma.trainingSession.update({
+            where: { id: sessionId },
+            data: {
+                status: 'DECLINED',
+                notes: reason ? `Declined: ${reason}` : session.notes
+            }
+        });
+
+        res.json(updated);
+    } catch (e) {
+        console.error("Decline Session Error:", e);
+        res.status(500).json({ error: "Failed to decline session" });
+    }
+};
+
 
 module.exports = {
     getAllSessions,
@@ -336,5 +364,6 @@ module.exports = {
     updateSession,
     getTrainerSessions,
     getMySessions,
-    cancelSession
+    cancelSession,
+    declineSession
 };

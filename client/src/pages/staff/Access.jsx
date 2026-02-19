@@ -15,6 +15,35 @@ export default function Access() {
     const scanBufferRef = useRef('');
     const scanTimerRef = useRef(null);
     const [scanInput, setScanInput] = useState('');
+    const [scanError, setScanError] = useState('');
+
+    const getEntity = (log) => {
+        if (log?.member) {
+            return {
+                type: 'Member',
+                name: `${log.member.firstName} ${log.member.lastName}`,
+                subtitle: log.member?.membershipType || 'Member',
+                initials: `${log.member?.firstName?.[0] || ''}${log.member?.lastName?.[0] || ''}` || 'M',
+                imageUrl: log.member?.imageUrl
+            };
+        }
+        if (log?.trainer) {
+            return {
+                type: 'Trainer',
+                name: log.trainer.name || `Trainer #${log.trainer.id}`,
+                subtitle: log.trainer.specialty || 'Trainer',
+                initials: (log.trainer?.name || 'T').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase(),
+                imageUrl: log.trainer?.imageUrl
+            };
+        }
+        return {
+            type: 'Unknown',
+            name: 'Unknown QR',
+            subtitle: 'Unrecognized',
+            initials: '?',
+            imageUrl: null
+        };
+    };
 
     useEffect(() => {
         if (!user || user.role === ROLES.MEMBER) return;
@@ -34,6 +63,7 @@ export default function Access() {
                         lastScanId.current = latest.id;
                     } else if (latest.id !== lastScanId.current) {
                         lastScanId.current = latest.id;
+                        setScanError('');
                         setScanning(true);
                         setTimeout(() => {
                             setLatestLogId(latest.id);
@@ -97,6 +127,7 @@ export default function Access() {
             });
 
             setTimeout(() => {
+                setScanError('');
                 setLatestLogId(res.data.id);
                 lastScanId.current = res.data.id;
                 setScanning(false);
@@ -110,31 +141,65 @@ export default function Access() {
     };
 
     const processScan = async (raw) => {
-        const match = raw.match(/member\s*:\s*(\d+)/i) || raw.match(/(\d+)/);
-        if (!match) {
+        const accessTokenMatch = raw.match(/^access\s*:\s*(.+)$/i);
+        if (accessTokenMatch?.[1]) {
+            setScanning(true);
+            try {
+                const token = localStorage.getItem('token');
+                const res = await axios.post(
+                    'http://localhost:5000/api/access/checkin',
+                    { qrToken: accessTokenMatch[1].trim() },
+                    { headers: { Authorization: `Bearer ${token}` } }
+                );
+
+                if (res.data?.id) {
+                    setScanError('');
+                    lastScanId.current = res.data.id;
+                    setLatestLogId(res.data.id);
+                    setHistory((prev) => [res.data, ...prev].slice(0, 10));
+                }
+            } catch (err) {
+                console.error('Token scan failed', err);
+                setScanError(err?.response?.data?.error || 'Access denied. QR is invalid or expired.');
+                setLatestLogId(null);
+            } finally {
+                setScanning(false);
+            }
+            return;
+        }
+
+        const memberMatch = raw.match(/member\s*:\s*(\d+)/i);
+        const trainerMatch = raw.match(/trainer\s*:\s*(\d+)/i);
+        const genericMatch = raw.match(/(\d+)/);
+        if (!memberMatch && !trainerMatch && !genericMatch) {
             console.warn('Invalid QR payload:', raw);
             return;
         }
 
-        const memberId = Number(match[1]);
-        if (!memberId) return;
+        const payload = trainerMatch
+            ? { trainerId: Number(trainerMatch[1]) }
+            : { memberId: Number((memberMatch || genericMatch)[1]) };
+        if ((!payload.memberId && !payload.trainerId) || payload.memberId === 0 || payload.trainerId === 0) return;
 
         setScanning(true);
         try {
             const token = localStorage.getItem('token');
             const res = await axios.post(
                 'http://localhost:5000/api/access/checkin',
-                { memberId },
+                payload,
                 { headers: { Authorization: `Bearer ${token}` } }
             );
 
             if (res.data?.id) {
+                setScanError('');
                 lastScanId.current = res.data.id;
                 setLatestLogId(res.data.id);
                 setHistory((prev) => [res.data, ...prev].slice(0, 10));
             }
         } catch (err) {
             console.error('Scan failed', err);
+            setScanError(err?.response?.data?.error || 'Access denied.');
+            setLatestLogId(null);
         } finally {
             setScanning(false);
         }
@@ -156,7 +221,7 @@ export default function Access() {
             <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-white">Access Control</h1>
-                    <p className="text-text-muted mt-1">Monitor scans and verify member access</p>
+                    <p className="text-text-muted mt-1">Monitor scans and verify member or trainer access</p>
                 </div>
                 <div className="flex items-center gap-3">
                     <a
@@ -194,14 +259,14 @@ export default function Access() {
                             <div className="flex-1 space-y-4 w-full">
                                 <div>
                                     <h3 className="text-xl font-bold text-white">Scanner Ready</h3>
-                                    <p className="text-sm text-text-muted">Scan a member QR or type the code to verify access.</p>
+                                    <p className="text-sm text-text-muted">Scan the latest dynamic QR from member/trainer app.</p>
                                 </div>
 
                                 <form onSubmit={handleManualScan} className="flex flex-col sm:flex-row gap-3">
                                     <input
                                         value={scanInput}
                                         onChange={(e) => setScanInput(e.target.value)}
-                                        placeholder="Member: 40"
+                                        placeholder="ACCESS:<dynamic-token>"
                                         className="flex-1 bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/20 focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none transition-all"
                                     />
                                     <button
@@ -226,18 +291,37 @@ export default function Access() {
                                     >
                                         Clear Result
                                     </button>
+                                    {scanError && (
+                                        <button
+                                            onClick={() => setScanError('')}
+                                            className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-300 rounded-xl font-bold text-xs uppercase tracking-widest border border-red-500/20 transition-all"
+                                        >
+                                            Clear Error
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         </div>
                     </div>
 
                     <div className="relative min-h-[420px]">
-                        <ProfileResult
-                            logId={latestLogId}
-                            showHistory={false}
-                            showToolbar={true}
-                            compact={false}
-                        />
+                        {scanError ? (
+                            <div className="bg-surface rounded-3xl border border-red-500/30 p-8 h-[calc(100vh-390px)] flex flex-col items-center justify-center text-center">
+                                <div className="w-16 h-16 rounded-2xl bg-red-500/20 border border-red-500/40 flex items-center justify-center mb-4">
+                                    <span className="material-icons-round text-red-400 text-3xl">block</span>
+                                </div>
+                                <h3 className="text-2xl font-bold text-red-300 mb-2">Scan Denied</h3>
+                                <p className="text-text-secondary text-sm max-w-md">{scanError}</p>
+                                <p className="text-text-muted text-xs mt-3 uppercase tracking-widest">Use latest dynamic QR and rescan</p>
+                            </div>
+                        ) : (
+                            <ProfileResult
+                                logId={latestLogId}
+                                showHistory={false}
+                                showToolbar={true}
+                                compact={false}
+                            />
+                        )}
                     </div>
                 </div>
 
@@ -259,7 +343,9 @@ export default function Access() {
                     </div>
 
                     <div className="max-h-[calc(100vh-260px)] overflow-y-auto p-4 space-y-3">
-                        {history.map((log) => (
+                        {history.map((log) => {
+                            const entity = getEntity(log);
+                            return (
                             <button
                                 key={log.id}
                                 onClick={() => setLatestLogId(log.id)}
@@ -269,14 +355,14 @@ export default function Access() {
                                     }`}
                             >
                                 <div className="relative flex-shrink-0">
-                                    {log.member?.imageUrl ? (
+                                    {entity.imageUrl ? (
                                         <div className="w-12 h-12 rounded-2xl overflow-hidden border border-white/10">
-                                            <img src={log.member.imageUrl} className="w-full h-full object-cover" alt="" />
+                                            <img src={entity.imageUrl} className="w-full h-full object-cover" alt="" />
                                         </div>
                                     ) : (
                                         <div className="w-12 h-12 rounded-2xl bg-surfaceHighlight flex items-center justify-center border border-white/10">
                                             <span className="text-lg font-bold text-text-muted">
-                                                {log.member?.firstName?.[0]}
+                                                {entity.initials}
                                             </span>
                                         </div>
                                     )}
@@ -290,16 +376,17 @@ export default function Access() {
 
                                 <div className="min-w-0 flex-1">
                                     <h4 className="text-white font-bold text-sm truncate">
-                                        {log.member ? `${log.member.firstName} ${log.member.lastName}` : 'Guest User'}
+                                        {entity.name}
                                     </h4>
                                     <p className="text-text-secondary text-[10px] font-bold uppercase tracking-widest mt-0.5">
-                                        {new Date(log.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {log.member?.membershipType || 'Standard'}
+                                        {new Date(log.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {entity.type} - {entity.subtitle}
                                     </p>
                                 </div>
 
                                 <span className="material-icons-round text-text-muted/40">chevron_right</span>
                             </button>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             </div>
@@ -313,3 +400,4 @@ export default function Access() {
         </div>
     );
 }
+

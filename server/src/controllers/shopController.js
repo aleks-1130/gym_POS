@@ -3,7 +3,12 @@ const prisma = require('../config/prisma');
 // Checkout (Member Shop)
 const checkout = async (req, res) => {
     const { items, paymentMethod, paymentType, paymentMethodId, gcashReference, gcashDate } = req.body;
-    const memberId = req.user.id; // Authenticated member
+    const isMember = req.user?.role === 'MEMBER';
+    const isTrainer = req.user?.role === 'TRAINER';
+    if (!isMember && !isTrainer) {
+        return res.status(403).json({ error: "Only members and trainers can checkout from this shop" });
+    }
+    const memberId = isMember ? Number(req.user.id) : null;
 
     if (!Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: "No items in cart" });
@@ -18,7 +23,6 @@ const checkout = async (req, res) => {
         if (!allowedMethods.includes(method)) {
             return res.status(400).json({ error: "Invalid payment method" });
         }
-
         const normalizedItems = items.map((item) => ({
             productId: Number(item.productId || item.id),
             quantity: Number(item.quantity)
@@ -52,7 +56,7 @@ const checkout = async (req, res) => {
             computedTotal += Number(product.price) * item.quantity;
         }
 
-        if (method !== 'CASH') {
+        if (method !== 'CASH' && isMember) {
             const parsedMethodId = paymentMethodId !== undefined && paymentMethodId !== null ? Number(paymentMethodId) : null;
             if (!Number.isInteger(parsedMethodId) || parsedMethodId <= 0) {
                 return res.status(400).json({ error: "Saved payment method is required for non-cash checkout" });
@@ -70,14 +74,15 @@ const checkout = async (req, res) => {
         }
 
         const result = await prisma.$transaction(async (tx) => {
-            const pointsAwarded = status === 'COMPLETED' ? Math.floor(computedTotal / 100) : 0;
+            const pointsAwarded = memberId && status === 'COMPLETED' ? Math.floor(computedTotal / 100) : 0;
 
             const payment = await tx.payment.create({
                 data: {
                     amount: computedTotal,
                     type: isPendingCash ? 'IN_APP_PURCHASE' : 'STORE_SALE',
                     method,
-                    member: { connect: { id: Number(memberId) } },
+                    ...(memberId ? { member: { connect: { id: memberId } } } : {}),
+                    ...(isTrainer ? { cashier: { connect: { id: Number(req.user.id) } } } : {}),
                     pointsAwarded,
                     status,
                     externalRef: method === 'GCASH' ? (gcashReference || null) : null,
@@ -113,7 +118,7 @@ const checkout = async (req, res) => {
                 }
             }
 
-            if (pointsAwarded > 0) {
+            if (memberId && pointsAwarded > 0) {
                 await tx.member.update({
                     where: { id: memberId },
                     data: { points: { increment: pointsAwarded } }
@@ -133,6 +138,18 @@ const checkout = async (req, res) => {
 // Get Member Orders
 const getMemberOrders = async (req, res) => {
     try {
+        if (req.user?.role === 'TRAINER') {
+            const trainerPayments = await prisma.payment.findMany({
+                where: {
+                    cashierId: Number(req.user.id),
+                    type: { in: ['STORE_SALE', 'IN_APP_PURCHASE'] }
+                },
+                include: { items: true },
+                orderBy: { date: 'desc' }
+            });
+            return res.json(trainerPayments);
+        }
+
         const payments = await prisma.payment.findMany({
             where: {
                 memberId: req.user.id,

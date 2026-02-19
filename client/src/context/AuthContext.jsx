@@ -7,8 +7,10 @@ const AuthContext = createContext();
 
 // Initialize Neon Auth Client
 // We use the URL from environment variables
-const neonAuthUrl = import.meta.env.VITE_NEON_AUTH_API_URL;
-console.log("Neon Auth URL from Env:", neonAuthUrl);
+const neonAuthUrl = import.meta.env.VITE_NEON_AUTH_API_URL || import.meta.env.VITE_NEON_AUTH_URL;
+if (!neonAuthUrl) {
+    console.error("Missing Neon Auth URL. Set VITE_NEON_AUTH_API_URL or VITE_NEON_AUTH_URL.");
+}
 
 const authClient = createAuthClient(neonAuthUrl);
 

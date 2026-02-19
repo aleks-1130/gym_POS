@@ -67,6 +67,121 @@ const getMe = async (req, res) => {
     }
 };
 
+const getMyCommissions = async (req, res) => {
+    try {
+        const trainerId = Number(req.user?.trainerId);
+        if (!trainerId) {
+            return res.status(400).json({ error: "Trainer account is not linked" });
+        }
+
+        const trainer = await prisma.trainer.findUnique({
+            where: { id: trainerId },
+            select: { id: true, name: true, commissionRate: true }
+        });
+        if (!trainer) {
+            return res.status(404).json({ error: "Trainer not found" });
+        }
+
+        const [completedSessions, classHistory, payoutExpenses] = await Promise.all([
+            prisma.trainingSession.findMany({
+                where: { trainerId, status: 'COMPLETED' },
+                select: {
+                    id: true,
+                    date: true,
+                    duration: true,
+                    price: true,
+                    commissionPaid: true,
+                    member: { select: { id: true, firstName: true, lastName: true } }
+                },
+                orderBy: { date: 'desc' }
+            }),
+            prisma.classHistory.findMany({
+                where: { trainerId },
+                select: {
+                    id: true,
+                    date: true,
+                    attendeeCount: true,
+                    commissionAmount: true,
+                    commissionPaid: true,
+                    class: { select: { id: true, name: true, dayOfWeek: true, time: true } }
+                },
+                orderBy: { date: 'desc' }
+            }),
+            prisma.expense.findMany({
+                where: {
+                    trainerId,
+                    category: 'SALARY',
+                    title: { startsWith: 'Commission Payout:' }
+                },
+                select: { id: true, title: true, amount: true, date: true, notes: true },
+                orderBy: { date: 'desc' }
+            })
+        ]);
+
+        const sessionHistory = completedSessions.map((session) => ({
+            id: `session-${session.id}`,
+            source: 'SESSION',
+            referenceId: session.id,
+            date: session.date,
+            label: `1-on-1 with ${session.member?.firstName || ''} ${session.member?.lastName || ''}`.trim(),
+            grossAmount: Number(session.price || 0),
+            commissionAmount: Number(session.price || 0) * Number(trainer.commissionRate || 0),
+            commissionPaid: Boolean(session.commissionPaid)
+        }));
+
+        const classHistoryItems = classHistory.map((entry) => ({
+            id: `class-${entry.id}`,
+            source: 'CLASS',
+            referenceId: entry.id,
+            date: entry.date,
+            label: entry.class?.name || 'Class Session',
+            attendees: Number(entry.attendeeCount || 0),
+            grossAmount: null,
+            commissionAmount: Number(entry.commissionAmount || 0),
+            commissionPaid: Boolean(entry.commissionPaid)
+        }));
+
+        const allCommissionHistory = [...sessionHistory, ...classHistoryItems]
+            .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        const sessionsEarned = sessionHistory.reduce((sum, item) => sum + item.commissionAmount, 0);
+        const classesEarned = classHistoryItems.reduce((sum, item) => sum + item.commissionAmount, 0);
+        const totalEarned = sessionsEarned + classesEarned;
+        const totalPaidMarked = allCommissionHistory
+            .filter((item) => item.commissionPaid)
+            .reduce((sum, item) => sum + item.commissionAmount, 0);
+        const totalPayoutRecorded = payoutExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+        const totalUnpaid = allCommissionHistory
+            .filter((item) => !item.commissionPaid)
+            .reduce((sum, item) => sum + item.commissionAmount, 0);
+
+        return res.json({
+            trainer: {
+                id: trainer.id,
+                name: trainer.name,
+                commissionRate: Number(trainer.commissionRate || 0)
+            },
+            summary: {
+                totalEarned,
+                sessionsEarned,
+                classesEarned,
+                totalPaidMarked,
+                totalPayoutRecorded,
+                totalUnpaid,
+                completedSessions: sessionHistory.length,
+                completedClasses: classHistoryItems.length
+            },
+            history: {
+                commissions: allCommissionHistory,
+                payouts: payoutExpenses
+            }
+        });
+    } catch (e) {
+        console.error("Failed to fetch trainer commissions:", e);
+        return res.status(500).json({ error: "Failed to fetch trainer commissions" });
+    }
+};
+
 const createTrainer = async (req, res) => {
     try {
         const {
@@ -256,6 +371,7 @@ module.exports = {
     getAllTrainers,
     getTrainerById,
     getMe,
+    getMyCommissions,
     createTrainer,
     updateTrainer,
     deleteTrainer,

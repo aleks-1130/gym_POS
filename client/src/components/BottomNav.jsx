@@ -25,7 +25,15 @@ export default function BottomNav() {
         { to: "/dashboard", icon: Home, label: "Home" },
         { to: "/trainer/sessions", icon: Dumbbell, label: "Sessions" },
         { to: "/trainer/classes", icon: Calendar, label: "Classes" },
+        { to: "/trainer/shop", icon: ShoppingBag, label: "Shop" },
         { to: "/trainer/profile", icon: User, label: "Profile" },
+    ];
+    const trainerSecondaryNav = [
+        { to: "/trainer/gym-traffic", icon: Activity, label: "Traffic" },
+        { to: "/trainer/loyalty", icon: Gift, label: "Rewards" },
+        { to: "/trainer/commission-history", icon: Gift, label: "Commissions" },
+        { to: "/trainer/payment-methods", icon: CreditCard, label: "Payment Methods" },
+        { to: "/trainer/purchase-history", icon: History, label: "Purchase History" },
     ];
 
     // Secondary navigation items (hamburger menu)
@@ -50,9 +58,14 @@ export default function BottomNav() {
         : user?.role === ROLES.TRAINER
             ? trainerPrimaryNav
             : staffPrimaryNav;
-    const secondaryNavItems = user?.role === ROLES.MEMBER ? memberSecondaryNav : [];
+    const secondaryNavItems = user?.role === ROLES.MEMBER
+        ? memberSecondaryNav
+        : user?.role === ROLES.TRAINER
+            ? trainerSecondaryNav
+            : [];
     const isMember = user?.role === ROLES.MEMBER;
     const isTrainer = user?.role === ROLES.TRAINER;
+    const hasMoreMenu = isMember || isTrainer;
 
     // Update active index based on current location
     useEffect(() => {
@@ -74,7 +87,7 @@ export default function BottomNav() {
     }, [location.pathname]);
 
     // Calculate item width percentage - include "More" button for members
-    const totalItems = isMember ? primaryNavItems.length + 1 : primaryNavItems.length;
+    const totalItems = hasMoreMenu ? primaryNavItems.length + 1 : primaryNavItems.length;
     const itemWidthPercent = 100 / totalItems;
 
     const handleSecondaryNavClick = (path) => {
@@ -85,7 +98,7 @@ export default function BottomNav() {
     return (
         <>
             {/* Hamburger Menu Overlay */}
-            {showMenu && isMember && (
+            {showMenu && hasMoreMenu && (
                 <div
                     className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 animate-fade-in"
                     onClick={() => setShowMenu(false)}
@@ -232,7 +245,7 @@ export default function BottomNav() {
                             })}
 
                             {/* Hamburger Menu Button (Members only) */}
-                            {isMember && (
+                            {hasMoreMenu && (
                                 <button
                                     onClick={() => setShowMenu(!showMenu)}
                                     className="flex-1 h-full transition-all duration-200 relative group"

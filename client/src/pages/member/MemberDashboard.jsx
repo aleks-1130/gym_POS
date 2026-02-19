@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import QRCode from 'react-qr-code';
+import axios from 'axios';
 
 const MemberDashboard = ({ stats, user }) => {
     const member = stats?.memberData || {};
@@ -13,9 +14,36 @@ const MemberDashboard = ({ stats, user }) => {
     const expiryDate = member.expiryDate ? new Date(member.expiryDate).toLocaleDateString() : "N/A";
     const isExpired = member.expiryDate && new Date(member.expiryDate) < new Date();
     const memberId = member.id || user?.id;
-    const qrValue = memberId ? `MEMBER:${memberId}` : '';
+    const [dynamicQr, setDynamicQr] = useState({ qrValue: '', expiresAt: null, loading: false });
     const loyaltyPoints = stats?.loyaltyPoints ?? member.points ?? 0;
     const checkIns = stats?.checkIns ?? (member.accessLogs?.filter((log) => log.status !== 'DENIED').length || 0);
+
+    useEffect(() => {
+        const fetchDynamicQr = async () => {
+            try {
+                setDynamicQr((prev) => ({ ...prev, loading: true }));
+                const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+                if (!token) {
+                    setDynamicQr({ qrValue: '', expiresAt: null, loading: false });
+                    return;
+                }
+                const res = await axios.get('http://localhost:5000/api/access/qr-token', {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                setDynamicQr({
+                    qrValue: res.data?.qrValue || '',
+                    expiresAt: res.data?.expiresAt || null,
+                    loading: false
+                });
+            } catch (e) {
+                setDynamicQr((prev) => ({ ...prev, loading: false }));
+            }
+        };
+
+        fetchDynamicQr();
+        const interval = setInterval(fetchDynamicQr, 20000);
+        return () => clearInterval(interval);
+    }, []);
 
     return (
         <div className="space-y-4 pb-20 px-4 max-w-2xl mx-auto">
@@ -29,17 +57,22 @@ const MemberDashboard = ({ stats, user }) => {
                         <h3 className="text-base font-bold text-white">Digital Member Pass</h3>
                     </div>
                     <div className="bg-white p-4 rounded-xl inline-block shadow-md mb-3">
-                        {qrValue ? (
-                            <QRCode value={qrValue} size={192} />
+                        {dynamicQr.qrValue ? (
+                            <QRCode value={dynamicQr.qrValue} size={192} />
                         ) : (
                             <div className="w-48 h-48 bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-sm text-gray-600 rounded-lg font-medium">
-                                QR Code Unavailable
+                                {dynamicQr.loading ? 'Refreshing QR...' : 'QR Code Unavailable'}
                             </div>
                         )}
                     </div>
-                    <p className="text-text-muted text-xs">Scan at front desk to check in</p>
+                    <p className="text-text-muted text-xs">Scan at front desk to check in (auto-refreshing secure QR)</p>
                     <div className="mt-3 pt-3 border-t border-white/10">
                         <p className="text-xs text-text-muted">Member ID: <span className="text-white font-mono">{memberId || 'N/A'}</span></p>
+                        {dynamicQr.expiresAt && (
+                            <p className="text-xs text-text-muted mt-1">
+                                Expires: <span className="text-white">{new Date(dynamicQr.expiresAt).toLocaleTimeString()}</span>
+                            </p>
+                        )}
                     </div>
                 </div>
             </div>

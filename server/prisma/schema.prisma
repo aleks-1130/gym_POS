@@ -96,14 +96,17 @@ model Payment {
 }
 
 model AccessLog {
-  id       Int      @id @default(autoincrement())
-  memberId Int
-  checkIn  DateTime @default(now())
-  status   String   @default("ALLOWED")
-  member   Member   @relation(fields: [memberId], references: [id])
+  id        Int      @id @default(autoincrement())
+  memberId  Int?
+  trainerId Int?
+  checkIn   DateTime @default(now())
+  status    String   @default("ALLOWED")
+  member    Member?  @relation(fields: [memberId], references: [id])
+  trainer   Trainer? @relation(fields: [trainerId], references: [id])
 
   @@index([checkIn])
   @@index([memberId])
+  @@index([trainerId])
 }
 
 model Expense {
@@ -246,6 +249,7 @@ model Trainer {
   trainingSessions TrainingSession[]
   user             User?             @relation("TrainerUser")
   expenses         Expense[]
+  accessLogs       AccessLog[]
 }
 
 model SessionMaterial {

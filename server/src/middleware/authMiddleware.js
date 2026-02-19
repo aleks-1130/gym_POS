@@ -1,8 +1,18 @@
 const { createRemoteJWKSet, jwtVerify } = require('jose');
 const prisma = require('../config/prisma');
 
-const NEON_AUTH_URL = process.env.NEON_AUTH_URL;
-const JWKS = createRemoteJWKSet(new URL(`${NEON_AUTH_URL}/.well-known/jwks.json`));
+const rawNeonAuthUrl = process.env.NEON_AUTH_URL || process.env.NEON_AUTH_API_URL;
+const NEON_AUTH_URL = rawNeonAuthUrl ? rawNeonAuthUrl.replace(/\/+$/, '') : null;
+const NEON_AUTH_JWKS_URL = process.env.NEON_AUTH_JWKS_URL || (NEON_AUTH_URL ? `${NEON_AUTH_URL}/.well-known/jwks.json` : null);
+let JWKS = null;
+
+if (NEON_AUTH_JWKS_URL) {
+    try {
+        JWKS = createRemoteJWKSet(new URL(NEON_AUTH_JWKS_URL));
+    } catch (error) {
+        console.error("[DEBUG] Invalid Neon JWKS URL, JWT verification disabled:", error.message);
+    }
+}
 
 // Middleware to verify Neon Auth Token
 const authenticateToken = async (req, res, next) => {
@@ -15,14 +25,18 @@ const authenticateToken = async (req, res, next) => {
     let neonUserId = null;
 
     try {
-        // 1. Try JWT Verification (Stateless)
-        const { payload } = await jwtVerify(token, JWKS);
-        console.log("[DEBUG] JWT Verification Successful");
-        email = payload.email;
-        neonUserId = payload.sub;
+        // 1. Try JWT Verification (Stateless) only if remote JWKS is configured
+        if (JWKS) {
+            const { payload } = await jwtVerify(token, JWKS);
+            console.log("[DEBUG] JWT Verification Successful");
+            email = payload.email;
+            neonUserId = payload.sub;
+        } else {
+            throw new Error("JWT verification unavailable (missing NEON_AUTH_URL)");
+        }
     } catch (jwtError) {
-        // 2. Fallback to Database Session Verification (Stateful for Opaque Tokens)
-        console.log("[DEBUG] JWT Failed, trying DB Session lookup...");
+        // 2. Fallback to Database Session Verification (Stateful for opaque tokens)
+        console.log("[DEBUG] JWT skipped/failed, trying DB Session lookup...");
 
         try {
             // Query neon_auth.session to find the token
@@ -101,7 +115,6 @@ const authenticateToken = async (req, res, next) => {
         req.user = {
             id: userId,
             email: email,
-            role: userRole,
             role: userRole,
             name: userName,
             trainerId: userTrainerId,

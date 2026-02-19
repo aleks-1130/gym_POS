@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { User, Star, History, X, Info, Pencil, Trash2, Plus } from 'lucide-react';
+import { User, Star, History, X, Info, Pencil, Trash2, Plus, QrCode } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { ROLES } from '../../constants/roles';
 import DataTable from '../../components/common/DataTable';
+import QRCode from 'react-qr-code';
 
 const WEEKDAY_OPTIONS = [
     { label: 'Sun', value: 0 },
@@ -30,6 +31,7 @@ export default function Trainers() {
     const [loginTrainer, setLoginTrainer] = useState(null);
     const [loginEmail, setLoginEmail] = useState('');
     const [loginPassword, setLoginPassword] = useState('');
+    const [qrTrainer, setQrTrainer] = useState(null);
 
     const [formData, setFormData] = useState({
         name: '',
@@ -316,6 +318,13 @@ export default function Trainers() {
                         <div className="absolute top-4 right-4 flex gap-2 z-20 pointer-events-auto">
                             {isAdmin && (
                                 <>
+                                    <button
+                                        onClick={() => setQrTrainer(trainer)}
+                                        className="w-9 h-9 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-blue-300 transition-all"
+                                        title="View trainer QR"
+                                    >
+                                        <QrCode size={16} />
+                                    </button>
                                     <button
                                         onClick={() => openEditForm(trainer)}
                                         className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-text-muted hover:text-white transition-all"
@@ -987,6 +996,36 @@ export default function Trainers() {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {qrTrainer && (
+                <div className="fixed inset-0 z-[120] overflow-y-auto">
+                    <div className="absolute inset-0 bg-background/80 backdrop-blur-md" onClick={() => setQrTrainer(null)}></div>
+                    <div className="relative min-h-full w-full flex items-center justify-center p-4 sm:p-6">
+                        <div className="bg-[#1a1d24] w-full max-w-md rounded-2xl border border-white/10 shadow-2xl overflow-hidden">
+                            <div className="p-5 border-b border-white/10 flex items-center justify-between">
+                                <div>
+                                    <h2 className="text-xl font-semibold text-white">Trainer QR Code</h2>
+                                    <p className="text-text-muted text-sm mt-1">{qrTrainer.name}</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setQrTrainer(null)}
+                                    className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center text-white transition-all"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+                            <div className="p-6 bg-[#13151a] flex flex-col items-center">
+                                <div className="bg-white p-4 rounded-2xl">
+                                    <QRCode value={`TRAINER:${qrTrainer.id}`} size={190} />
+                                </div>
+                                <p className="mt-4 text-white font-mono text-sm">TRAINER:{qrTrainer.id}</p>
+                                <p className="mt-1 text-text-muted text-xs uppercase tracking-widest">Scan at access control</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}

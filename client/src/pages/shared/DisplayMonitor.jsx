@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 
 export default function DisplayMonitor() {
-    const [latestLog, setLatestLog] = useState(null);
+    const [latestEvent, setLatestEvent] = useState(null);
     const lastScanId = useRef(null);
     const clearTimerRef = useRef(null);
 
@@ -15,16 +15,16 @@ export default function DisplayMonitor() {
                     return;
                 }
 
-                const res = await axios.get('http://localhost:5000/api/access/logs', {
+                const res = await axios.get('http://localhost:5000/api/access/latest-event', {
                     headers: { Authorization: `Bearer ${token}` }
                 });
 
-                if (res.data && res.data.length > 0) {
-                    const latest = res.data[0];
+                if (res.data) {
+                    const latest = res.data;
 
                     if (lastScanId.current !== latest.id) {
                         lastScanId.current = latest.id;
-                        setLatestLog(latest);
+                        setLatestEvent(latest);
 
                         // Reset the 5-second auto-clear timer
                         if (clearTimerRef.current) {
@@ -32,7 +32,7 @@ export default function DisplayMonitor() {
                         }
 
                         clearTimerRef.current = setTimeout(() => {
-                            setLatestLog(null);
+                            setLatestEvent(null);
                         }, 5000);
                     }
                 }
@@ -80,7 +80,32 @@ export default function DisplayMonitor() {
         }
     };
 
+    const latestLog = latestEvent?.log || null;
+    const isErrorEvent = latestEvent?.type === 'ERROR';
     const joinedDate = latestLog?.member?.startDate || latestLog?.member?.createdAt || latestLog?.member?.joinDate || latestLog?.member?.joinedDate;
+    const scannedEntity = latestLog?.member
+        ? {
+            kind: 'Member',
+            name: `${latestLog.member.firstName} ${latestLog.member.lastName}`,
+            id: latestLog.member.id,
+            imageUrl: latestLog.member.imageUrl,
+            initials: getInitials(`${latestLog.member.firstName} ${latestLog.member.lastName}`),
+            primary: latestLog.member.membershipType || 'Standard',
+            secondary: joinedDate ? new Date(joinedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A',
+            tertiary: latestLog.member.expiryDate ? new Date(latestLog.member.expiryDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'
+        }
+        : latestLog?.trainer
+            ? {
+                kind: 'Trainer',
+                name: latestLog.trainer.name || `Trainer #${latestLog.trainer.id}`,
+                id: latestLog.trainer.id,
+                imageUrl: latestLog.trainer.imageUrl,
+                initials: getInitials(latestLog.trainer.name || 'Trainer'),
+                primary: latestLog.trainer.specialty || 'Trainer',
+                secondary: latestLog.trainer.email || 'N/A',
+                tertiary: 'Trainer Access'
+            }
+            : null;
 
     return (
         <div className="bg-background min-h-screen w-full flex items-center justify-center p-0 m-0 overflow-hidden">
@@ -112,32 +137,46 @@ export default function DisplayMonitor() {
             </div>
 
             <div className="w-full max-w-[90rem] relative z-10 px-4">
-                {latestLog && latestLog.member ? (
+                {latestEvent && (scannedEntity || isErrorEvent) ? (
                     <div className="animate-pop">
-
+                        {isErrorEvent ? (
+                            <div className="bg-white/5 backdrop-blur-xl rounded-[4rem] p-16 border-2 border-red-500/30 shadow-[0_0_80px_rgba(80,0,0,0.5)] text-center">
+                                <div className="w-48 h-48 bg-red-500/15 rounded-[3rem] border-4 border-red-500/30 flex items-center justify-center mx-auto mb-10">
+                                    <span className="material-icons-round text-[120px] text-red-400">block</span>
+                                </div>
+                                <p className="text-red-300 text-lg font-black uppercase tracking-[0.4em] mb-4">Scan Denied</p>
+                                <h2 className="text-5xl font-black text-white italic tracking-tight leading-tight mb-6">
+                                    {latestEvent?.reason || 'Invalid or expired QR'}
+                                </h2>
+                                <p className="text-text-muted text-xl font-bold uppercase tracking-[0.3em]">
+                                    Please use the latest dynamic QR
+                                </p>
+                            </div>
+                        ) : (
+                        <>
                         {/* Giant Member Card */}
                         <div className="bg-white/5 backdrop-blur-xl rounded-[4rem] p-16 border-2 border-white/10 shadow-[0_0_80px_rgba(0,0,0,0.5)]">
                             {/* Massive Member Header */}
                             <div className="flex items-center gap-12 mb-14">
-                                {latestLog.member.imageUrl ? (
+                                {scannedEntity.imageUrl ? (
                                     <div className="w-56 h-56 rounded-[3rem] overflow-hidden shadow-2xl flex-shrink-0 border-4 border-white/20 ring-4 ring-primary/20">
-                                        <img src={latestLog.member.imageUrl} className="w-full h-full object-cover" alt="" />
+                                        <img src={scannedEntity.imageUrl} className="w-full h-full object-cover" alt="" />
                                     </div>
                                 ) : (
                                     <div className="w-56 h-56 bg-gradient-to-br from-primary to-orange-600 rounded-[3rem] flex items-center justify-center shadow-2xl shadow-primary/40 flex-shrink-0 ring-4 ring-primary/30">
                                         <span className="text-9xl font-black text-white drop-shadow-2xl">
-                                            {getInitials(`${latestLog.member.firstName} ${latestLog.member.lastName}`)}
+                                            {scannedEntity.initials}
                                         </span>
                                     </div>
                                 )}
                                 <div className="flex-1 min-w-0">
-                                    <div className="text-text-muted text-lg font-black uppercase tracking-[0.4em] mb-4 drop-shadow">Member</div>
+                                    <div className="text-text-muted text-lg font-black uppercase tracking-[0.4em] mb-4 drop-shadow">{scannedEntity.kind}</div>
                                     <h2 className="text-8xl font-black text-white italic tracking-tighter leading-none mb-6 drop-shadow-2xl">
-                                        {latestLog.member.firstName} {latestLog.member.lastName}
+                                        {scannedEntity.name}
                                     </h2>
                                     <div className="inline-flex items-center gap-3 bg-white/10 px-6 py-3 rounded-2xl border border-white/20">
                                         <span className="material-icons-round text-primary text-2xl">badge</span>
-                                        <span className="text-white text-2xl font-black">ID: {latestLog.member.id}</span>
+                                        <span className="text-white text-2xl font-black">ID: {scannedEntity.id}</span>
                                     </div>
                                 </div>
                             </div>
@@ -149,11 +188,11 @@ export default function DisplayMonitor() {
                                     <div className="flex items-center gap-3 mb-5">
                                         <span className="material-icons-round text-primary text-4xl">workspace_premium</span>
                                         <div className="text-text-muted text-sm font-black uppercase tracking-[0.3em]">
-                                            Plan
+                                            {scannedEntity.kind === 'Member' ? 'Plan' : 'Specialty'}
                                         </div>
                                     </div>
                                     <div className="text-white text-5xl font-black italic tracking-tight leading-tight">
-                                        {latestLog.member.membershipType || 'Standard'}
+                                        {scannedEntity.primary}
                                     </div>
                                 </div>
 
@@ -162,11 +201,11 @@ export default function DisplayMonitor() {
                                     <div className="flex items-center gap-3 mb-5">
                                         <span className="material-icons-round text-emerald-400 text-4xl">event_available</span>
                                         <div className="text-text-muted text-sm font-black uppercase tracking-[0.3em]">
-                                            Joined
+                                            {scannedEntity.kind === 'Member' ? 'Joined' : 'Contact'}
                                         </div>
                                     </div>
                                     <div className="text-white text-5xl font-black italic tracking-tight leading-tight">
-                                        {joinedDate ? new Date(joinedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
+                                        {scannedEntity.secondary}
                                     </div>
                                 </div>
 
@@ -175,11 +214,11 @@ export default function DisplayMonitor() {
                                     <div className="flex items-center gap-3 mb-5">
                                         <span className="material-icons-round text-orange-400 text-4xl">schedule</span>
                                         <div className="text-text-muted text-sm font-black uppercase tracking-[0.3em]">
-                                            Expires
+                                            {scannedEntity.kind === 'Member' ? 'Expires' : 'Access'}
                                         </div>
                                     </div>
                                     <div className="text-white text-5xl font-black italic tracking-tight leading-tight">
-                                        {latestLog.member.expiryDate ? new Date(latestLog.member.expiryDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
+                                        {scannedEntity.tertiary}
                                     </div>
                                 </div>
                             </div>
@@ -189,11 +228,13 @@ export default function DisplayMonitor() {
                                 <div className="inline-flex items-center gap-3 bg-white/5 px-8 py-4 rounded-2xl border border-white/10">
                                     <span className="material-icons-round text-text-muted text-2xl">access_time</span>
                                     <div className="text-text-muted text-xl font-bold uppercase tracking-[0.3em]">
-                                        Scanned at {new Date(latestLog.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                        Scanned at {new Date(latestEvent?.checkIn || latestLog.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                                     </div>
                                 </div>
                             </div>
                         </div>
+                        </>
+                        )}
                     </div>
                 ) : (
                     <div className="text-center animate-fade-in pointer-events-none select-none">
@@ -203,7 +244,7 @@ export default function DisplayMonitor() {
                             <div className="absolute inset-12 border-2 border-primary/10 rounded-[2rem] animate-pulse-slow animation-delay-150"></div>
                         </div>
                         <h2 className="text-9xl font-black text-white/10 uppercase tracking-tighter italic leading-none mb-6 drop-shadow-2xl">Ready to Scan</h2>
-                        <p className="text-text-muted/40 text-4xl font-bold uppercase tracking-[0.4em]">Awaiting Member</p>
+                        <p className="text-text-muted/40 text-4xl font-bold uppercase tracking-[0.4em]">Awaiting Scan</p>
                         
                         {/* Decorative accent */}
                         <div className="mt-12 flex items-center justify-center gap-4">

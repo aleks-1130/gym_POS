@@ -1,6 +1,7 @@
 const axios = require('axios');
 
-const NEON_AUTH_URL = process.env.NEON_AUTH_URL;
+const rawNeonAuthUrl = process.env.NEON_AUTH_URL || process.env.NEON_AUTH_API_URL;
+const NEON_AUTH_URL = rawNeonAuthUrl ? rawNeonAuthUrl.replace(/\/+$/, '') : null;
 
 /**
  * Syncs a new user to Neon Auth by calling the sign-up endpoint.

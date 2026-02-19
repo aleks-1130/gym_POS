@@ -52,6 +52,12 @@ import DoorScanner from './pages/staff/DoorScanner';
 import TrainerSessions from './pages/trainer/TrainerSessions';
 import TrainerClasses from './pages/trainer/TrainerClasses';
 import TrainerProfile from './pages/trainer/TrainerProfile';
+import TrainerShop from './pages/trainer/TrainerShop';
+import TrainerPaymentMethods from './pages/trainer/TrainerPaymentMethods';
+import TrainerPurchaseHistory from './pages/trainer/TrainerPurchaseHistory';
+import TrainerGymTraffic from './pages/trainer/TrainerGymTraffic';
+import TrainerCommissionHistory from './pages/trainer/TrainerCommissionHistory';
+import TrainerLoyalty from './pages/trainer/TrainerLoyalty';
 
 // Member Pages
 import Schedule from './pages/member/Schedule';
@@ -288,6 +294,54 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
               <TrainerProfile />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trainer/shop"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+              <TrainerShop />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trainer/payment-methods"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+              <TrainerPaymentMethods />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trainer/purchase-history"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+              <TrainerPurchaseHistory />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trainer/gym-traffic"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+              <TrainerGymTraffic />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trainer/commission-history"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+              <TrainerCommissionHistory />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trainer/loyalty"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+              <TrainerLoyalty />
             </ProtectedRoute>
           }
         />

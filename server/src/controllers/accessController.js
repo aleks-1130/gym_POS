@@ -1,46 +1,251 @@
 const prisma = require('../config/prisma');
 const { logAudit } = require('../services/auditService');
+const jwt = require('jsonwebtoken');
+const { randomUUID } = require('crypto');
+
+const ACCESS_QR_SECRET = process.env.ACCESS_QR_SECRET || process.env.JWT_SECRET;
+const ACCESS_QR_TTL_SECONDS = Number(process.env.ACCESS_QR_TTL_SECONDS || 45);
+const ACCESS_ALLOW_STATIC_IDS = String(process.env.ACCESS_ALLOW_STATIC_IDS || '').toLowerCase() === 'true';
+const usedQrJti = new Map();
+let latestAccessEvent = null;
+
+const accessLogInclude = {
+    member: true,
+    trainer: true
+};
+
+const pruneUsedQrTokens = () => {
+    const now = Date.now();
+    for (const [jti, expMs] of usedQrJti.entries()) {
+        if (!Number.isFinite(expMs) || expMs <= now) usedQrJti.delete(jti);
+    }
+};
+
+const setLatestAccessEvent = ({ status = 'DENIED', reason = null, log = null }) => {
+    latestAccessEvent = {
+        id: log?.id ? `log-${log.id}` : `evt-${Date.now()}`,
+        type: log ? 'LOG' : 'ERROR',
+        status,
+        reason,
+        checkIn: log?.checkIn || new Date().toISOString(),
+        log
+    };
+};
+
+const issueDynamicQrToken = ({ entity, id }) => {
+    const jti = randomUUID();
+    const token = jwt.sign(
+        { typ: 'ACCESS_QR', entity, id: Number(id), jti },
+        ACCESS_QR_SECRET,
+        { expiresIn: ACCESS_QR_TTL_SECONDS }
+    );
+    const decoded = jwt.decode(token);
+    const expMs = Number(decoded?.exp) * 1000;
+
+    return {
+        token,
+        qrValue: `ACCESS:${token}`,
+        expiresAt: Number.isFinite(expMs) ? new Date(expMs).toISOString() : null,
+        refreshAfterSeconds: Math.max(5, ACCESS_QR_TTL_SECONDS - 10)
+    };
+};
+
+const resolveIdsFromQrToken = (rawToken) => {
+    const clean = String(rawToken || '').trim().replace(/^ACCESS:/i, '');
+    if (!clean) {
+        throw new Error('INVALID_QR_TOKEN');
+    }
+    if (!ACCESS_QR_SECRET) {
+        throw new Error('MISSING_QR_SECRET');
+    }
+
+    const payload = jwt.verify(clean, ACCESS_QR_SECRET, { algorithms: ['HS256'] });
+    if (payload?.typ !== 'ACCESS_QR' || !payload?.entity || !payload?.id || !payload?.jti) {
+        throw new Error('INVALID_QR_TOKEN');
+    }
+
+    pruneUsedQrTokens();
+    if (usedQrJti.has(payload.jti)) {
+        throw new Error('QR_TOKEN_ALREADY_USED');
+    }
+
+    const expMs = Number(payload?.exp) * 1000;
+    usedQrJti.set(payload.jti, Number.isFinite(expMs) ? expMs : Date.now() + 60_000);
+
+    if (payload.entity === 'MEMBER') {
+        return { memberId: Number(payload.id), trainerId: null };
+    }
+    if (payload.entity === 'TRAINER') {
+        return { memberId: null, trainerId: Number(payload.id) };
+    }
+    throw new Error('INVALID_QR_ENTITY');
+};
+
+const createMemberAccessLog = async (parsedMemberId) => {
+    const member = await prisma.member.findUnique({
+        where: { id: parsedMemberId },
+        select: { id: true, status: true, expiryDate: true, freezeStartDate: true, freezeEndDate: true }
+    });
+    if (!member) {
+        return { error: { status: 404, payload: { error: "Member not found" } } };
+    }
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const expiry = member.expiryDate ? new Date(member.expiryDate) : null;
+    const isExpired = expiry ? expiry < today : false;
+    const isFrozen = member.freezeStartDate && member.freezeEndDate
+        ? (now >= new Date(member.freezeStartDate) && now <= new Date(member.freezeEndDate))
+        : false;
+    const isAllowed = member.status === 'ACTIVE' && !isExpired && !isFrozen;
+
+    const log = await prisma.accessLog.create({
+        data: {
+            memberId: parsedMemberId,
+            status: isAllowed ? 'ALLOWED' : 'DENIED',
+            checkIn: new Date()
+        },
+        include: accessLogInclude
+    });
+
+    if (!isAllowed) {
+        return { error: { status: 403, payload: { ...log, reason: "Membership is not eligible for access" } } };
+    }
+    return { log };
+};
+
+const createTrainerAccessLog = async (parsedTrainerId) => {
+    const trainer = await prisma.trainer.findUnique({
+        where: { id: parsedTrainerId },
+        select: { id: true }
+    });
+    if (!trainer) {
+        return { error: { status: 404, payload: { error: "Trainer not found" } } };
+    }
+
+    const log = await prisma.accessLog.create({
+        data: {
+            trainerId: parsedTrainerId,
+            status: 'ALLOWED',
+            checkIn: new Date()
+        },
+        include: accessLogInclude
+    });
+
+    return { log };
+};
+
+const getDynamicQrToken = async (req, res) => {
+    try {
+        if (!ACCESS_QR_SECRET) {
+            return res.status(500).json({ error: "QR token secret is not configured" });
+        }
+
+        if (req.user?.role === 'MEMBER') {
+            return res.json({
+                entity: 'MEMBER',
+                id: Number(req.user.id),
+                ...issueDynamicQrToken({ entity: 'MEMBER', id: req.user.id })
+            });
+        }
+
+        if (req.user?.role === 'TRAINER') {
+            if (!req.user?.trainerId) {
+                return res.status(400).json({ error: "Trainer account is not linked" });
+            }
+            return res.json({
+                entity: 'TRAINER',
+                id: Number(req.user.trainerId),
+                ...issueDynamicQrToken({ entity: 'TRAINER', id: req.user.trainerId })
+            });
+        }
+
+        return res.status(403).json({ error: "Only member and trainer roles can request dynamic QR" });
+    } catch (e) {
+        return res.status(500).json({ error: "Failed to generate dynamic QR token" });
+    }
+};
+
+const getLatestAccessEvent = async (req, res) => {
+    try {
+        if (latestAccessEvent) {
+            return res.json(latestAccessEvent);
+        }
+        return res.json(null);
+    } catch (e) {
+        return res.status(500).json({ error: "Failed to fetch latest access event" });
+    }
+};
 
 // Check-in (Manual/Kiosk)
 const checkIn = async (req, res) => {
-    const { memberId } = req.body;
+    let { memberId, trainerId, qrToken, qrData } = req.body;
     try {
-        const parsedMemberId = Number(memberId);
-        if (!Number.isInteger(parsedMemberId) || parsedMemberId <= 0) {
-            return res.status(400).json({ error: "Valid memberId is required" });
+        const inboundQr = qrToken || qrData;
+        if (inboundQr) {
+            const resolved = resolveIdsFromQrToken(inboundQr);
+            memberId = resolved.memberId;
+            trainerId = resolved.trainerId;
+        } else if (!ACCESS_ALLOW_STATIC_IDS) {
+            return res.status(403).json({ error: "Static QR IDs are disabled. Please scan the latest dynamic QR." });
         }
 
-        const member = await prisma.member.findUnique({
-            where: { id: parsedMemberId },
-            select: { id: true, status: true, expiryDate: true, freezeStartDate: true, freezeEndDate: true }
-        });
-        if (!member) {
-            return res.status(404).json({ error: "Member not found" });
+        const hasMemberId = memberId !== undefined && memberId !== null && memberId !== '';
+        const hasTrainerId = trainerId !== undefined && trainerId !== null && trainerId !== '';
+
+        if ((hasMemberId && hasTrainerId) || (!hasMemberId && !hasTrainerId)) {
+            return res.status(400).json({ error: "Provide exactly one of memberId or trainerId" });
         }
 
-        const now = new Date();
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const expiry = member.expiryDate ? new Date(member.expiryDate) : null;
-        const isExpired = expiry ? expiry < today : false;
-        const isFrozen = member.freezeStartDate && member.freezeEndDate
-            ? (now >= new Date(member.freezeStartDate) && now <= new Date(member.freezeEndDate))
-            : false;
-        const isAllowed = member.status === 'ACTIVE' && !isExpired && !isFrozen;
-
-        const log = await prisma.accessLog.create({
-            data: {
-                memberId: parsedMemberId,
-                status: isAllowed ? 'ALLOWED' : 'DENIED',
-                checkIn: new Date()
+        if (hasMemberId) {
+            const parsedMemberId = Number(memberId);
+            if (!Number.isInteger(parsedMemberId) || parsedMemberId <= 0) {
+                return res.status(400).json({ error: "Valid memberId is required" });
             }
-        });
 
-        if (!isAllowed) {
-            return res.status(403).json({ ...log, reason: "Membership is not eligible for access" });
+            const { log, error } = await createMemberAccessLog(parsedMemberId);
+            if (error) {
+                setLatestAccessEvent({ status: 'DENIED', reason: error.payload?.error || error.payload?.reason || 'Access denied' });
+                return res.status(error.status).json(error.payload);
+            }
+            setLatestAccessEvent({ status: log.status, log });
+            return res.json(log);
         }
 
-        res.json(log);
+        const parsedTrainerId = Number(trainerId);
+        if (!Number.isInteger(parsedTrainerId) || parsedTrainerId <= 0) {
+            return res.status(400).json({ error: "Valid trainerId is required" });
+        }
+
+        const { log, error } = await createTrainerAccessLog(parsedTrainerId);
+        if (error) {
+            setLatestAccessEvent({ status: 'DENIED', reason: error.payload?.error || 'Access denied' });
+            return res.status(error.status).json(error.payload);
+        }
+        setLatestAccessEvent({ status: log.status, log });
+        return res.json(log);
     } catch (e) {
+        if (e?.name === 'TokenExpiredError') {
+            const error = "QR token expired. Please refresh QR and try again.";
+            setLatestAccessEvent({ status: 'DENIED', reason: error });
+            return res.status(403).json({ error });
+        }
+        if (e?.name === 'JsonWebTokenError' || e?.message === 'INVALID_QR_TOKEN' || e?.message === 'INVALID_QR_ENTITY') {
+            const error = "Invalid QR token";
+            setLatestAccessEvent({ status: 'DENIED', reason: error });
+            return res.status(403).json({ error });
+        }
+        if (e?.message === 'QR_TOKEN_ALREADY_USED') {
+            const error = "QR token was already used. Please use the latest QR code.";
+            setLatestAccessEvent({ status: 'DENIED', reason: error });
+            return res.status(403).json({ error });
+        }
+        if (e?.message === 'MISSING_QR_SECRET') {
+            const error = "QR token secret is not configured";
+            setLatestAccessEvent({ status: 'DENIED', reason: error });
+            return res.status(500).json({ error });
+        }
+        setLatestAccessEvent({ status: 'DENIED', reason: "Check-in failed" });
         res.status(500).json({ error: "Check-in failed" });
     }
 };
@@ -72,7 +277,7 @@ const getAccessLogs = async (req, res) => {
                     where,
                     skip,
                     take: limitNum,
-                    include: { member: true },
+                    include: accessLogInclude,
                     orderBy: { checkIn: 'desc' }
                 }),
                 prisma.accessLog.count({ where })
@@ -91,7 +296,7 @@ const getAccessLogs = async (req, res) => {
 
         const logs = await prisma.accessLog.findMany({
             where,
-            include: { member: true },
+            include: accessLogInclude,
             orderBy: { checkIn: 'desc' },
             take: req.user?.role === 'MEMBER' ? 1000 : 100
         });
@@ -149,7 +354,7 @@ const getAccessLogDetails = async (req, res) => {
     try {
         const log = await prisma.accessLog.findUnique({
             where: { id: Number(id) },
-            include: { member: true }
+            include: accessLogInclude
         });
         if (!log) return res.status(404).json({ error: "Log not found" });
         res.json(log);
@@ -187,8 +392,9 @@ const simulateAccess = async (req, res) => {
                 status,
                 checkIn: new Date()
             },
-            include: { member: true }
+            include: accessLogInclude
         });
+        setLatestAccessEvent({ status: log.status, log });
 
         res.json(log);
     } catch (e) {
@@ -197,6 +403,8 @@ const simulateAccess = async (req, res) => {
 };
 
 module.exports = {
+    getDynamicQrToken,
+    getLatestAccessEvent,
     checkIn,
     getAccessLogs,
     getTrafficStats,

@@ -7,6 +7,7 @@ const { authenticateToken, authorize } = require('../middleware/authMiddleware')
 
 // Trainer Self-Service
 router.get('/me', authenticateToken, authorize(['TRAINER']), trainerController.getMe);
+router.get('/me/commissions', authenticateToken, authorize(['TRAINER']), trainerController.getMyCommissions);
 router.get('/me/sessions', authenticateToken, authorize(['TRAINER']), trainingSessionController.getMySessions);
 router.post('/me/sessions/:id/complete', authenticateToken, authorize(['TRAINER']), trainingSessionController.completeSession);
 router.post('/me/sessions/:id/cancel', authenticateToken, authorize(['TRAINER']), trainingSessionController.cancelSession);
