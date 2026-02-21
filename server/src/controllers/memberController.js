@@ -437,9 +437,16 @@ const checkBookingConflict = async (trainerId, startDateTime, durationMinutes) =
     });
 };
 
+const appendBookingBatchNote = (notes, bookingBatchId) => {
+    const normalizedBatchId = String(bookingBatchId || '').trim();
+    if (!normalizedBatchId) return notes || null;
+    const line = `BOOKING_BATCH_ID=${normalizedBatchId}`;
+    return [String(notes || '').trim(), line].filter(Boolean).join('\n');
+};
+
 // Book a Trainer Session (Member)
 const bookTraining = async (req, res) => {
-    const { trainerId, date, time, duration, notes, method } = req.body;
+    const { trainerId, date, time, duration, notes, method, bookingBatchId } = req.body;
     const memberId = req.user.id;
 
     if (req.user.role !== 'MEMBER') {
@@ -449,7 +456,7 @@ const bookTraining = async (req, res) => {
     if (!trainerId || !date || !time || !duration || !method) {
         return res.status(400).json({ error: "Missing required booking details" });
     }
-    const allowedMethods = ['CASH', 'CARD', 'GCASH'];
+    const allowedMethods = ['CASH', 'CARD', 'GCASH', 'MAYA'];
     if (!allowedMethods.includes(method)) {
         return res.status(400).json({ error: "Invalid payment method" });
     }
@@ -499,7 +506,7 @@ const bookTraining = async (req, res) => {
                     paymentStatus: method === 'CASH' ? 'UNPAID' : 'PAID',
                     paymentMethod: method,
                     paidAt: method === 'CASH' ? null : new Date(),
-                    notes: notes || null
+                    notes: appendBookingBatchNote(notes, bookingBatchId)
                 }
             });
 
@@ -523,7 +530,7 @@ const bookTraining = async (req, res) => {
 
 // Book a Trainer Session (Cash, Unpaid) - Authenticated members only
 const bookTrainingCash = async (req, res) => {
-    const { trainerId, date, time, duration, notes } = req.body;
+    const { trainerId, date, time, duration, notes, bookingBatchId } = req.body;
     const resolvedMemberId = req.user.id;
 
     if (req.user.role !== 'MEMBER') {
@@ -579,7 +586,7 @@ const bookTrainingCash = async (req, res) => {
                     paymentStatus: 'UNPAID',
                     paymentMethod: 'CASH',
                     paidAt: null,
-                    notes: notes || null
+                    notes: appendBookingBatchNote(notes, bookingBatchId)
                 }
             });
 
@@ -639,6 +646,29 @@ const getMyTrainingSessions = async (req, res) => {
 };
 
 // Member Payment Methods
+const toClientPaymentMethod = (method) => {
+    const rawType = String(method?.type || '').toUpperCase();
+    const normalizedType = rawType === 'GCASH' || rawType === 'MAYA'
+        ? rawType
+        : 'CARD';
+    const expiry = String(method?.expiry || '');
+    const [expMonth = '', expYear = ''] = expiry.includes('/') ? expiry.split('/') : ['', ''];
+    const walletLabel = normalizedType === 'MAYA' ? 'Maya Wallet' : 'GCash Wallet';
+    const walletName = normalizedType === 'MAYA' ? 'Maya Wallet' : 'GCash Wallet';
+
+    return {
+        ...method,
+        type: normalizedType,
+        label: normalizedType === 'GCASH' || normalizedType === 'MAYA'
+            ? walletLabel
+            : `${method?.brand || 'Card'} Card`,
+        name: normalizedType === 'GCASH' || normalizedType === 'MAYA' ? walletName : (method?.brand || 'Card'),
+        phone: normalizedType === 'GCASH' || normalizedType === 'MAYA' ? `****${method?.last4 || ''}` : null,
+        expMonth,
+        expYear
+    };
+};
+
 const getPaymentMethods = async (req, res) => {
     const memberId = Number(req.params.id);
     if (req.user.role === 'MEMBER' && req.user.id !== memberId) return res.sendStatus(403);
@@ -648,7 +678,7 @@ const getPaymentMethods = async (req, res) => {
             where: { memberId },
             orderBy: { createdAt: 'desc' }
         });
-        res.json(methods);
+        res.json(methods.map(toClientPaymentMethod));
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -658,35 +688,52 @@ const addPaymentMethod = async (req, res) => {
     const memberId = Number(req.params.id);
     if (req.user.role === 'MEMBER' && req.user.id !== memberId) return res.sendStatus(403);
 
-    const { type, label, name, phone, brand, last4, expMonth, expYear, isDefault } = req.body;
-    if (!type || !label) return res.status(400).json({ error: "Type and label are required" });
-    if (!['GCASH', 'CARD'].includes(type)) return res.status(400).json({ error: "Invalid payment method type" });
+    const { type, phone, brand, last4, expMonth, expYear, expiry, isDefault } = req.body;
+    const normalizedType = String(type || '').toUpperCase();
+    if (!['GCASH', 'MAYA', 'CARD'].includes(normalizedType)) return res.status(400).json({ error: "Invalid payment method type" });
 
     try {
         const existingCount = await prisma.paymentMethod.count({ where: { memberId } });
-        const makeDefault = isDefault || existingCount === 0;
+        const makeDefault = Boolean(isDefault) || existingCount === 0;
 
-        const [method] = await prisma.$transaction([
-            ...(makeDefault
-                ? [prisma.paymentMethod.updateMany({ where: { memberId }, data: { isDefault: false } })]
-                : []),
-            prisma.paymentMethod.create({
+        const phoneDigits = String(phone || '').replace(/\D/g, '');
+        const cardDigits = String(last4 || '').replace(/\D/g, '');
+        const computedLast4 = (normalizedType === 'GCASH' || normalizedType === 'MAYA')
+            ? phoneDigits.slice(-4)
+            : cardDigits.slice(-4);
+        if (!computedLast4 || computedLast4.length !== 4) {
+            return res.status(400).json({ error: "A valid 4-digit tail is required" });
+        }
+
+        let computedExpiry = String(expiry || '').trim();
+        if (!computedExpiry && (expMonth || expYear)) {
+            computedExpiry = `${String(expMonth || '').trim()}/${String(expYear || '').trim()}`;
+        }
+        if (normalizedType === 'CARD' && !computedExpiry) {
+            return res.status(400).json({ error: "Card expiry is required" });
+        }
+
+        const method = await prisma.$transaction(async (tx) => {
+            if (makeDefault) {
+                await tx.paymentMethod.updateMany({
+                    where: { memberId },
+                    data: { isDefault: false }
+                });
+            }
+            return tx.paymentMethod.create({
                 data: {
                     memberId,
-                    type,
-                    label,
-                    name: name || null,
-                    phone: phone || null,
-                    brand: brand || null,
-                    last4: last4 || null,
-                    expMonth: expMonth || null,
-                    expYear: expYear || null,
+                    type: normalizedType,
+                    brand: normalizedType === 'CARD' ? (brand || 'Card') : normalizedType,
+                    last4: computedLast4,
+                    expiry: computedExpiry || null,
+                    token: `pm_${Math.random().toString(36).slice(2, 14)}`,
                     isDefault: makeDefault
                 }
-            })
-        ]);
+            });
+        });
 
-        res.json(method);
+        res.json(toClientPaymentMethod(method));
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -697,7 +744,7 @@ const updatePaymentMethod = async (req, res) => {
     const methodId = Number(req.params.methodId);
     if (req.user.role === 'MEMBER' && req.user.id !== memberId) return res.sendStatus(403);
 
-    const { isDefault, label } = req.body;
+    const { isDefault } = req.body;
     try {
         const method = await prisma.paymentMethod.findUnique({ where: { id: methodId } });
         if (!method || method.memberId !== memberId) return res.status(404).json({ error: "Payment method not found" });
@@ -708,14 +755,9 @@ const updatePaymentMethod = async (req, res) => {
                 prisma.paymentMethod.update({ where: { id: methodId }, data: { isDefault: true } })
             ]);
             const updated = await prisma.paymentMethod.findUnique({ where: { id: methodId } });
-            return res.json(updated);
+            return res.json(toClientPaymentMethod(updated));
         }
-
-        const updated = await prisma.paymentMethod.update({
-            where: { id: methodId },
-            data: { label: label || method.label }
-        });
-        res.json(updated);
+        res.json(toClientPaymentMethod(method));
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -746,7 +788,7 @@ const createMember = async (req, res) => {
         if (!firstName || !lastName || !planId || !paymentMethod) {
             return res.status(400).json({ error: "firstName, lastName, planId, and paymentMethod are required" });
         }
-        if (!['CASH', 'CARD', 'GCASH'].includes(String(paymentMethod).toUpperCase())) {
+        if (!['CASH', 'CARD', 'GCASH', 'MAYA'].includes(String(paymentMethod).toUpperCase())) {
             return res.status(400).json({ error: "Invalid payment method" });
         }
 
@@ -770,8 +812,8 @@ const createMember = async (req, res) => {
         if (method === 'CASH' && !Number.isFinite(normalizedChangeDue)) {
             return res.status(400).json({ error: "Invalid change due" });
         }
-        if (method === 'GCASH' && !gcashReference) {
-            return res.status(400).json({ error: "GCash reference is required for GCash payments" });
+        if ((method === 'GCASH' || method === 'MAYA') && !gcashReference) {
+            return res.status(400).json({ error: `${method} reference is required for e-wallet payments` });
         }
 
         const { member, payment } = await prisma.$transaction(async (tx) => {
@@ -803,8 +845,8 @@ const createMember = async (req, res) => {
                     pointsAwarded,
                     cashTendered: method === 'CASH' ? normalizedCashTendered : null,
                     changeDue: method === 'CASH' ? normalizedChangeDue : null,
-                    externalRef: method === 'GCASH' ? (gcashReference || null) : null,
-                    externalDate: method === 'GCASH' ? externalDate : null
+                    externalRef: (method === 'GCASH' || method === 'MAYA') ? (gcashReference || null) : null,
+                    externalDate: (method === 'GCASH' || method === 'MAYA') ? externalDate : null
                 }
             });
 
@@ -854,7 +896,7 @@ const renewMembership = async (req, res) => {
         if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
             return res.status(400).json({ error: "Amount must be greater than zero" });
         }
-        if (!['CASH', 'CARD', 'GCASH'].includes(normalizedMethod)) {
+        if (!['CASH', 'CARD', 'GCASH', 'MAYA'].includes(normalizedMethod)) {
             return res.status(400).json({ error: "Invalid payment method" });
         }
 
@@ -870,8 +912,8 @@ const renewMembership = async (req, res) => {
         if (normalizedMethod === 'CASH' && !Number.isFinite(normalizedChangeDue)) {
             return res.status(400).json({ error: "Invalid change due" });
         }
-        if (normalizedMethod === 'GCASH' && !gcashReference) {
-            return res.status(400).json({ error: "GCash reference is required for GCash renewals" });
+        if ((normalizedMethod === 'GCASH' || normalizedMethod === 'MAYA') && !gcashReference) {
+            return res.status(400).json({ error: `${normalizedMethod} reference is required for e-wallet renewals` });
         }
 
         const member = await prisma.member.findUnique({ where: { id: Number(id) } });
@@ -938,8 +980,8 @@ const renewMembership = async (req, res) => {
                 pointsAwarded,
                 cashTendered: normalizedMethod === 'CASH' ? normalizedCashTendered : null,
                 changeDue: normalizedMethod === 'CASH' ? normalizedChangeDue : null,
-                externalRef: normalizedMethod === 'GCASH' ? (gcashReference || null) : null,
-                externalDate: normalizedMethod === 'GCASH' ? externalDate : null
+                externalRef: (normalizedMethod === 'GCASH' || normalizedMethod === 'MAYA') ? (gcashReference || null) : null,
+                externalDate: (normalizedMethod === 'GCASH' || normalizedMethod === 'MAYA') ? externalDate : null
             }
         });
 
@@ -985,7 +1027,7 @@ const purchaseClassSessionPackage = async (req, res) => {
     } = req.body;
 
     const normalizedMethod = String(method || '').toUpperCase();
-    if (!['CASH', 'CARD', 'GCASH'].includes(normalizedMethod)) {
+    if (!['CASH', 'CARD', 'GCASH', 'MAYA'].includes(normalizedMethod)) {
         return res.status(400).json({ error: "Invalid payment method" });
     }
 
@@ -1014,8 +1056,8 @@ const purchaseClassSessionPackage = async (req, res) => {
         if (normalizedMethod === 'CASH' && !Number.isFinite(normalizedChangeDue)) {
             return res.status(400).json({ error: "Invalid change due" });
         }
-        if (normalizedMethod === 'GCASH' && !gcashReference) {
-            return res.status(400).json({ error: "GCash reference is required for GCash payments" });
+        if ((normalizedMethod === 'GCASH' || normalizedMethod === 'MAYA') && !gcashReference) {
+            return res.status(400).json({ error: `${normalizedMethod} reference is required for e-wallet payments` });
         }
 
         const externalDate = (gcashDate && gcashTime) ? new Date(`${gcashDate}T${gcashTime}`) : null;
@@ -1033,8 +1075,8 @@ const purchaseClassSessionPackage = async (req, res) => {
                     pointsAwarded,
                     cashTendered: normalizedMethod === 'CASH' ? normalizedCashTendered : null,
                     changeDue: normalizedMethod === 'CASH' ? normalizedChangeDue : null,
-                    externalRef: normalizedMethod === 'GCASH' ? (gcashReference || null) : null,
-                    externalDate: normalizedMethod === 'GCASH' ? externalDate : null
+                    externalRef: (normalizedMethod === 'GCASH' || normalizedMethod === 'MAYA') ? (gcashReference || null) : null,
+                    externalDate: (normalizedMethod === 'GCASH' || normalizedMethod === 'MAYA') ? externalDate : null
                 }
             });
 

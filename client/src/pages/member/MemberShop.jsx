@@ -19,8 +19,7 @@ export default function MemberShop() {
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [paymentMethods, setPaymentMethods] = useState([]);
     const [selectedMethodId, setSelectedMethodId] = useState(null);
-    const [selectedPaymentType, setSelectedPaymentType] = useState(isTrainer ? 'CASH' : 'CARD'); // 'CARD' or 'GCASH' or 'CASH'
-    const [gcashDetails, setGcashDetails] = useState({ reference: '', date: '', time: '' });
+    const [selectedPaymentType, setSelectedPaymentType] = useState('CASH'); // CASH | E_WALLET | CARD
     const [isCheckingOut, setIsCheckingOut] = useState(false);
 
     const cartStorageKey = `gymCart_${user?.role || 'guest'}`;
@@ -32,10 +31,24 @@ export default function MemberShop() {
     }, [user?.role]);
 
     useEffect(() => {
-        if (isTrainer) {
-            setSelectedPaymentType('CASH');
-        }
+        setSelectedPaymentType('CASH');
     }, [isTrainer]);
+
+    useEffect(() => {
+        if (selectedPaymentType === 'CARD') {
+            const cards = paymentMethods.filter((m) => ['CARD', 'CREDIT_CARD'].includes(String(m.type || '').toUpperCase()));
+            const preferred = cards.find((m) => m.isDefault) || cards[0] || null;
+            setSelectedMethodId(preferred?.id || null);
+            return;
+        }
+        if (selectedPaymentType === 'E_WALLET') {
+            const wallets = paymentMethods.filter((m) => ['GCASH', 'MAYA'].includes(String(m.type || '').toUpperCase()));
+            const preferred = wallets.find((m) => m.isDefault) || wallets[0] || null;
+            setSelectedMethodId(preferred?.id || null);
+            return;
+        }
+        setSelectedMethodId(null);
+    }, [selectedPaymentType, paymentMethods]);
 
     const fetchPaymentMethods = async () => {
         try {
@@ -44,13 +57,13 @@ export default function MemberShop() {
                 setSelectedMethodId(null);
                 return;
             }
-            const token = localStorage.getItem('token');
+            if (!user?.id) return;
+            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
             if (token) {
-                const res = await axios.get('http://localhost:5000/api/payment-methods', {
+                const res = await axios.get(`http://localhost:5000/api/members/${user?.id}/payment-methods`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
                 setPaymentMethods(res.data);
-                // Default to first card if exists
                 if (res.data.length > 0) setSelectedMethodId(res.data[0].id);
             }
         } catch (error) {
@@ -149,13 +162,17 @@ export default function MemberShop() {
             return;
         }
 
-        if (selectedPaymentType === 'CARD' && !selectedMethodId && paymentMethods.length > 0) {
-            alert("Please select a card");
+        const selectedMethod = paymentMethods.find((m) => Number(m.id) === Number(selectedMethodId));
+        const cardMethods = paymentMethods.filter((m) => ['CARD', 'CREDIT_CARD'].includes(String(m.type || '').toUpperCase()));
+        const walletMethods = paymentMethods.filter((m) => ['GCASH', 'MAYA'].includes(String(m.type || '').toUpperCase()));
+
+        if (selectedPaymentType === 'CARD' && (!selectedMethodId || !selectedMethod || !cardMethods.some((m) => Number(m.id) === Number(selectedMethodId)))) {
+            alert("Please select a card method");
             return;
         }
 
-        if (selectedPaymentType === 'GCASH' && (!gcashDetails.reference || !gcashDetails.date || !gcashDetails.time)) {
-            alert("Please enter GCash details");
+        if (selectedPaymentType === 'E_WALLET' && (!selectedMethodId || !selectedMethod || !walletMethods.some((m) => Number(m.id) === Number(selectedMethodId)))) {
+            alert("Please select an e-wallet method");
             return;
         }
 
@@ -165,10 +182,12 @@ export default function MemberShop() {
             const payload = {
                 items: cart.map(i => ({ productId: i.id, quantity: i.quantity, price: i.price, name: i.name })),
                 total: getCartTotal(),
-                paymentType: selectedPaymentType === 'CASH' ? 'CASH_PENDING' : selectedPaymentType,
-                paymentMethodId: selectedPaymentType === 'CARD' ? selectedMethodId : null,
-                gcashReference: selectedPaymentType === 'GCASH' ? gcashDetails.reference : null,
-                gcashDate: selectedPaymentType === 'GCASH' ? `${gcashDetails.date}T${gcashDetails.time}` : null
+                paymentType: selectedPaymentType === 'CASH'
+                    ? 'CASH_PENDING'
+                    : (selectedPaymentType === 'E_WALLET' ? String(selectedMethod?.type || '').toUpperCase() : 'CARD'),
+                paymentMethodId: selectedPaymentType === 'CASH' ? null : selectedMethodId,
+                gcashReference: null,
+                gcashDate: null
             };
 
             await axios.post('http://localhost:5000/api/members/checkout', payload, {
@@ -531,7 +550,7 @@ export default function MemberShop() {
                             </div>
 
                             <div className="flex gap-2 p-1 bg-black/40 rounded-xl border border-white/5">
-                                {(isTrainer ? ['CASH'] : ['CARD', 'GCASH', 'CASH']).map(type => (
+                                {(isTrainer ? ['CASH'] : ['CASH', 'E_WALLET', 'CARD']).map(type => (
                                     <button
                                         key={type}
                                         onClick={() => setSelectedPaymentType(type)}
@@ -540,7 +559,7 @@ export default function MemberShop() {
                                             : 'text-text-muted hover:text-white hover:bg-white/5'
                                             }`}
                                     >
-                                        {type === 'CARD' ? 'Saved Cards' : type === 'GCASH' ? 'GCash' : 'Cash'}
+                                        {type === 'CARD' ? 'Card' : type === 'E_WALLET' ? 'E-Wallet' : 'Cash'}
                                     </button>
                                 ))}
                             </div>
@@ -557,14 +576,14 @@ export default function MemberShop() {
                                 )}
 
                                 {selectedPaymentType === 'CARD' && (
-                                    paymentMethods.length === 0 ? (
+                                    paymentMethods.filter((method) => ['CARD', 'CREDIT_CARD'].includes(String(method.type || '').toUpperCase())).length === 0 ? (
                                         <div className="text-center py-6 border border-white/5 rounded-xl bg-black/20">
                                             <p className="text-white text-xs mb-1">No linked cards found</p>
                                             <p className="text-text-muted text-[10px]">Please go to Profile to add a card.</p>
                                         </div>
                                     ) : (
                                         <div className="space-y-2">
-                                            {paymentMethods.map(method => (
+                                            {paymentMethods.filter((method) => ['CARD', 'CREDIT_CARD'].includes(String(method.type || '').toUpperCase())).map(method => (
                                                 <label
                                                     key={method.id}
                                                     className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${selectedMethodId === method.id
@@ -588,10 +607,10 @@ export default function MemberShop() {
 
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-center gap-2">
-                                                            <span className="font-bold text-white text-xs uppercase tracking-tight">{method.brand}</span>
+                                                            <span className="font-bold text-white text-xs uppercase tracking-tight">{method.brand || 'CARD'}</span>
                                                             {method.isDefault && <span className="text-[8px] bg-primary/20 text-primary px-1.5 py-0.5 rounded font-black uppercase">Default</span>}
                                                         </div>
-                                                        <span className="text-text-muted text-[10px] block mt-0.5 tracking-wider">VISA - •••• {method.last4}</span>
+                                                        <span className="text-text-muted text-[10px] block mt-0.5 tracking-wider">**** {method.last4}</span>
                                                     </div>
                                                 </label>
                                             ))}
@@ -599,39 +618,50 @@ export default function MemberShop() {
                                     )
                                 )}
 
-                                {selectedPaymentType === 'GCASH' && (
-                                    <div className="space-y-3">
-                                        <div>
-                                            <label className="block text-text-muted text-[10px] font-bold uppercase mb-1 tracking-wider">GCash Reference No.</label>
-                                            <input
-                                                type="text"
-                                                className="w-full bg-black/40 border border-white/5 rounded-xl p-3 text-white text-sm focus:border-primary outline-none transition-all"
-                                                placeholder="Enter Transaction Ref No."
-                                                value={gcashDetails.reference}
-                                                onChange={e => setGcashDetails({ ...gcashDetails, reference: e.target.value })}
-                                            />
+                                {selectedPaymentType === 'E_WALLET' && (
+                                    paymentMethods.filter((method) => ['GCASH', 'MAYA'].includes(String(method.type || '').toUpperCase())).length === 0 ? (
+                                        <div className="text-center py-6 border border-white/5 rounded-xl bg-black/20">
+                                            <p className="text-white text-xs mb-1">No linked e-wallets found</p>
+                                            <p className="text-text-muted text-[10px]">Please go to Profile to add GCash or Maya.</p>
                                         </div>
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <div>
-                                                <label className="block text-text-muted text-[10px] font-bold uppercase mb-1 tracking-wider">Date</label>
-                                                <input
-                                                    type="date"
-                                                    className="w-full bg-black/40 border border-white/5 rounded-xl p-3 text-white text-sm focus:border-primary outline-none transition-all"
-                                                    value={gcashDetails.date}
-                                                    onChange={e => setGcashDetails({ ...gcashDetails, date: e.target.value })}
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-text-muted text-[10px] font-bold uppercase mb-1 tracking-wider">Time</label>
-                                                <input
-                                                    type="time"
-                                                    className="w-full bg-black/40 border border-white/5 rounded-xl p-3 text-white text-sm focus:border-primary outline-none transition-all"
-                                                    value={gcashDetails.time}
-                                                    onChange={e => setGcashDetails({ ...gcashDetails, time: e.target.value })}
-                                                />
-                                            </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {paymentMethods
+                                                .filter((method) => ['GCASH', 'MAYA'].includes(String(method.type || '').toUpperCase()))
+                                                .map((method) => (
+                                                    <label
+                                                        key={method.id}
+                                                        className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${selectedMethodId === method.id
+                                                            ? 'bg-primary/5 border-primary/40'
+                                                            : 'bg-black/20 border-white/5 hover:border-white/10'
+                                                            }`}
+                                                    >
+                                                        <input
+                                                            type="radio"
+                                                            name="paymentMethod"
+                                                            className="hidden"
+                                                            checked={selectedMethodId === method.id}
+                                                            onChange={() => setSelectedMethodId(method.id)}
+                                                        />
+                                                        <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${selectedMethodId === method.id
+                                                            ? 'border-primary ring-2 ring-primary/20'
+                                                            : 'border-white/20'
+                                                            }`}>
+                                                            {selectedMethodId === method.id && <div className="w-2 h-2 bg-primary rounded-full" />}
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-bold text-white text-xs uppercase tracking-tight">
+                                                                    {String(method.type || '').toUpperCase() === 'MAYA' ? 'Maya' : 'GCash'}
+                                                                </span>
+                                                                {method.isDefault && <span className="text-[8px] bg-primary/20 text-primary px-1.5 py-0.5 rounded font-black uppercase">Default</span>}
+                                                            </div>
+                                                            <span className="text-text-muted text-[10px] block mt-0.5 tracking-wider">**** {method.last4}</span>
+                                                        </div>
+                                                    </label>
+                                                ))}
                                         </div>
-                                    </div>
+                                    )
                                 )}
                             </div>
                         </div>
@@ -642,8 +672,7 @@ export default function MemberShop() {
                                 onClick={handleConfirmCheckout}
                                 disabled={
                                     isCheckingOut ||
-                                    (selectedPaymentType === 'CARD' && paymentMethods.length > 0 && !selectedMethodId) ||
-                                    (selectedPaymentType === 'GCASH' && (!gcashDetails.reference || !gcashDetails.date || !gcashDetails.time))
+                                    ((selectedPaymentType === 'CARD' || selectedPaymentType === 'E_WALLET') && !selectedMethodId)
                                 }
                                 className="w-full bg-primary hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl transition-all shadow-xl shadow-primary/20 active:scale-95 flex items-center justify-center gap-2 text-base"
                             >

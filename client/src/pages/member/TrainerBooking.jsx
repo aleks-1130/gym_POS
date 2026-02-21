@@ -25,6 +25,7 @@ export default function TrainerBooking() {
     const [filterView, setFilterView] = useState('all'); // all, available, top-rated
     const [paymentMethods, setPaymentMethods] = useState([]);
     const [selectedMethodId, setSelectedMethodId] = useState('');
+    const [paymentSelection, setPaymentSelection] = useState('CASH'); // CASH | E_WALLET | CARD
     const [rescheduleSession, setRescheduleSession] = useState(null);
     const [rescheduleForm, setRescheduleForm] = useState({ date: '', time: '', reason: '' });
     const [rescheduleLoading, setRescheduleLoading] = useState(false);
@@ -60,9 +61,12 @@ export default function TrainerBooking() {
                 const defaultMethod = methods.find((m) => m.isDefault);
                 if (defaultMethod) {
                     setSelectedMethodId(defaultMethod.id);
+                    const defaultType = String(defaultMethod.type || '').toUpperCase();
+                    const isWallet = ['GCASH', 'MAYA'].includes(defaultType);
+                    setPaymentSelection(isWallet ? 'E_WALLET' : 'CARD');
                     setBookingData((prev) => ({
                         ...prev,
-                        paymentMethod: defaultMethod.type === 'GCASH' ? 'GCASH' : 'CARD'
+                        paymentMethod: isWallet ? defaultType : 'CARD'
                     }));
                 }
             } catch (error) {
@@ -239,6 +243,7 @@ export default function TrainerBooking() {
             const token = sessionStorage.getItem('token') || localStorage.getItem('token');
             const endpoint = 'http://localhost:5000/api/members/book-training';
             const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+            const bookingBatchId = `MBR-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 
             for (const date of selectedDates) {
                 const payload = {
@@ -247,7 +252,8 @@ export default function TrainerBooking() {
                     time: selectedTimesByDate[date],
                     duration: bookingData.duration,
                     notes: bookingData.notes,
-                    method: bookingData.paymentMethod
+                    method: bookingData.paymentMethod,
+                    bookingBatchId
                 };
                 await axios.post(endpoint, payload, { headers });
             }
@@ -275,6 +281,7 @@ export default function TrainerBooking() {
         setSelectedDates([]);
         setSelectedTimesByDate({});
         setSelectedMethodId('');
+        setPaymentSelection('CASH');
         setCalendarMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
     }, []);
 
@@ -283,6 +290,12 @@ export default function TrainerBooking() {
         if (filterView === 'top-rated') return trainer.rating >= 4.5;
         return true;
     });
+    const walletPaymentMethods = paymentMethods.filter((method) =>
+        ['GCASH', 'MAYA'].includes(String(method.type || '').toUpperCase())
+    );
+    const cardPaymentMethods = paymentMethods.filter((method) =>
+        !['GCASH', 'MAYA'].includes(String(method.type || '').toUpperCase())
+    );
     const now = new Date();
     const upcomingSessions = memberSessions.filter((session) => new Date(session.date) >= now);
 
@@ -826,6 +839,21 @@ export default function TrainerBooking() {
                                         {/* Book Button - Touch Optimized */}
                                         <button
                                             onClick={() => {
+                                                const defaultMethod = paymentMethods.find((m) => m.isDefault) || paymentMethods[0] || null;
+                                                if (defaultMethod) {
+                                                    const methodType = String(defaultMethod.type || '').toUpperCase();
+                                                    const isWallet = ['GCASH', 'MAYA'].includes(methodType);
+                                                    setPaymentSelection(isWallet ? 'E_WALLET' : 'CARD');
+                                                    setSelectedMethodId(defaultMethod.id);
+                                                    setBookingData((prev) => ({
+                                                        ...prev,
+                                                        paymentMethod: isWallet ? methodType : 'CARD'
+                                                    }));
+                                                } else {
+                                                    setPaymentSelection('CASH');
+                                                    setSelectedMethodId('');
+                                                    setBookingData((prev) => ({ ...prev, paymentMethod: 'CASH' }));
+                                                }
                                                 setSelectedTrainer(trainer);
                                                 setCalendarMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
                                                 setShowBookingModal(true);
@@ -1051,9 +1079,8 @@ export default function TrainerBooking() {
                                         <p className="text-xs text-text-muted mt-0.5">Choose how you want to pay for this booking</p>
                                     </div>
 
-                                    {/* Payment Method - ShopCheckout style */}
-                                    <div>
-                                        <div className="flex items-center justify-between mb-2">
+                                    <div className="bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 space-y-3">
+                                        <div className="flex items-center justify-between mb-1">
                                             <label className="block text-sm font-bold text-white">Payment Method *</label>
                                             <button
                                                 type="button"
@@ -1064,87 +1091,103 @@ export default function TrainerBooking() {
                                             </button>
                                         </div>
 
-                                        <div className="space-y-2">
-                                            <label
-                                                className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${bookingData.paymentMethod === 'CASH'
-                                                    ? 'bg-primary/10 border-primary/40'
-                                                    : 'bg-white/5 border-white/10 hover:border-white/20'
-                                                    }`}
-                                            >
-                                                <input
-                                                    type="radio"
-                                                    name="trainerPaymentMethod"
-                                                    checked={bookingData.paymentMethod === 'CASH'}
-                                                    onChange={() => {
-                                                        setSelectedMethodId('');
-                                                        setBookingData((prev) => ({ ...prev, paymentMethod: 'CASH' }));
+                                        <div className="flex gap-2 p-1 bg-white/5 rounded-xl border border-white/10">
+                                            {['CASH', 'E_WALLET', 'CARD'].map((type) => (
+                                                <button
+                                                    key={type}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setPaymentSelection(type);
+                                                        if (type === 'CASH') {
+                                                            setSelectedMethodId('');
+                                                            setBookingData((prev) => ({ ...prev, paymentMethod: 'CASH' }));
+                                                            return;
+                                                        }
+                                                        const source = type === 'E_WALLET' ? walletPaymentMethods : cardPaymentMethods;
+                                                        const preferred = source.find((m) => m.isDefault) || source[0] || null;
+                                                        if (!preferred) {
+                                                            setSelectedMethodId('');
+                                                            setBookingData((prev) => ({ ...prev, paymentMethod: type === 'E_WALLET' ? 'GCASH' : 'CARD' }));
+                                                            return;
+                                                        }
+                                                        const selectedType = String(preferred.type || '').toUpperCase();
+                                                        setSelectedMethodId(preferred.id);
+                                                        setBookingData((prev) => ({
+                                                            ...prev,
+                                                            paymentMethod: type === 'E_WALLET' ? selectedType : 'CARD'
+                                                        }));
                                                     }}
-                                                    className="accent-orange-500"
-                                                />
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="text-white text-sm font-semibold truncate">Cash</p>
-                                                    <p className="text-text-muted text-xs">Pay at the front desk after booking</p>
-                                                </div>
-                                            </label>
-                                            {bookingData.paymentMethod === 'CASH' && (
-                                                <div className="text-xs text-text-muted bg-white/5 border border-white/10 rounded-lg px-3 py-2">
-                                                    This booking will be marked as unpaid. Please settle the amount at the front desk.
-                                                </div>
-                                            )}
+                                                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${paymentSelection === type
+                                                        ? 'bg-primary text-background'
+                                                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                                                        }`}
+                                                >
+                                                    {type === 'E_WALLET' ? 'E-Wallet' : type === 'CARD' ? 'Card' : 'Cash'}
+                                                </button>
+                                            ))}
                                         </div>
 
-                                        {paymentMethods.length === 0 ? (
-                                            <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-text-muted">
-                                                No saved payment methods. Please add a GCash or card first.
-                                                <div className="mt-3">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => window.location.assign('/payment-methods')}
-                                                        className="px-3 py-2 rounded-lg bg-primary text-background text-xs font-bold"
-                                                    >
-                                                        Add Payment Method
-                                                    </button>
+                                        {paymentSelection === 'CASH' && (
+                                            <div className="text-xs text-text-muted bg-black/20 border border-white/5 rounded-xl px-3 py-3 mt-2">
+                                                This booking will be marked as unpaid. Please settle the amount at the front desk.
+                                            </div>
+                                        )}
+
+                                        {paymentSelection !== 'CASH' && (
+                                            (paymentSelection === 'E_WALLET' ? walletPaymentMethods.length === 0 : cardPaymentMethods.length === 0) ? (
+                                                <div className="bg-black/20 border border-white/5 rounded-xl p-4 text-sm text-text-muted mt-2">
+                                                    No saved {paymentSelection === 'E_WALLET' ? 'e-wallet' : 'card'} methods. Please add one first.
+                                                    <div className="mt-3">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => window.location.assign('/payment-methods')}
+                                                            className="px-3 py-2 rounded-lg bg-primary text-background text-xs font-bold"
+                                                        >
+                                                            Add Payment Method
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-2 mt-2">
-                                                {paymentMethods.map((method) => (
-                                                    <label
-                                                        key={method.id}
-                                                        className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${selectedMethodId === method.id
-                                                            ? 'bg-primary/10 border-primary/40'
-                                                            : 'bg-white/5 border-white/10 hover:border-white/20'
-                                                            }`}
-                                                    >
-                                                        <input
-                                                            type="radio"
-                                                            name="trainerPaymentMethod"
-                                                            checked={selectedMethodId === method.id}
-                                                            onChange={() => {
-                                                                setSelectedMethodId(method.id);
-                                                                setBookingData((prev) => ({
-                                                                    ...prev,
-                                                                    paymentMethod: method.type === 'GCASH' ? 'GCASH' : 'CARD'
-                                                                }));
-                                                            }}
-                                                            className="accent-orange-500"
-                                                        />
-                                                        <div className="flex-1 min-w-0">
-                                                            <p className="text-white text-sm font-semibold truncate">
-                                                                {method.label}
-                                                                {method.isDefault && (
-                                                                    <span className="ml-2 text-[10px] uppercase tracking-wider text-emerald-400 font-bold">Default</span>
-                                                                )}
-                                                            </p>
-                                                            <p className="text-text-muted text-xs">
-                                                                {method.type === 'GCASH'
-                                                                    ? `${method.name} - ${method.phone}`
-                                                                    : `${method.brand || 'Card'} - **** ${method.last4} - ${method.expMonth}/${method.expYear}`}
-                                                            </p>
-                                                        </div>
-                                                    </label>
-                                                ))}
-                                            </div>
+                                            ) : (
+                                                <div className="space-y-2 mt-2">
+                                                    {(paymentSelection === 'E_WALLET' ? walletPaymentMethods : cardPaymentMethods).map((method) => (
+                                                        <label
+                                                            key={method.id}
+                                                            className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${selectedMethodId === method.id
+                                                                ? 'bg-primary/10 border-primary/40'
+                                                                : 'bg-black/20 border-white/5 hover:border-white/15'
+                                                                }`}
+                                                        >
+                                                            <input
+                                                                type="radio"
+                                                                name="trainerPaymentMethod"
+                                                                checked={selectedMethodId === method.id}
+                                                                onChange={() => {
+                                                                    const methodType = String(method.type || '').toUpperCase();
+                                                                    setSelectedMethodId(method.id);
+                                                                    setBookingData((prev) => ({
+                                                                        ...prev,
+                                                                        paymentMethod: paymentSelection === 'E_WALLET' ? methodType : 'CARD'
+                                                                    }));
+                                                                }}
+                                                                className="accent-orange-500"
+                                                            />
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className="text-white text-sm font-semibold truncate">
+                                                                    {method.label}
+                                                                    {method.isDefault && (
+                                                                        <span className="ml-2 text-[10px] uppercase tracking-wider text-emerald-400 font-bold">Default</span>
+                                                                    )}
+                                                                </p>
+                                                                <p className="text-text-muted text-xs">
+                                                                    {['GCASH', 'MAYA'].includes(String(method.type || '').toUpperCase())
+                                                                        ? `${String(method.type || '').toUpperCase() === 'MAYA' ? 'Maya' : 'GCash'} - ${method.phone}`
+                                                                        : `${method.brand || 'Card'} - **** ${method.last4} - ${method.expMonth}/${method.expYear}`}
+                                                                </p>
+                                                            </div>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            )
                                         )}
                                     </div>
 
@@ -1165,8 +1208,8 @@ export default function TrainerBooking() {
                                     </div>
 
                                     {/* Booking Summary */}
-                                    <div className="bg-primary/10 border border-primary/30 rounded-xl p-4 space-y-3">
-                                        <h4 className="text-sm font-bold text-white">Step 4: Review</h4>
+                                    <div className="bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 space-y-3">
+                                        <h4 className="text-sm font-bold text-white">Step 4: Order Details</h4>
                                         <div className="space-y-2 text-sm">
                                             <div className="flex items-center justify-between">
                                                 <span className="text-text-muted">Dates</span>
@@ -1189,7 +1232,7 @@ export default function TrainerBooking() {
                                                 </span>
                                             </div>
                                         </div>
-                                        <div className="border-t border-primary/20 pt-3 flex items-center justify-between">
+                                        <div className="border-t border-white/10 pt-3 flex items-center justify-between">
                                             <span className="text-text-muted text-sm">Total ({selectedDates.length} session{selectedDates.length > 1 ? 's' : ''})</span>
                                             <span className="text-primary font-bold text-2xl">
                                                 {formatPrice((((selectedTrainer.sessionPrice ?? 300) / 60) * bookingData.duration) * Math.max(selectedDates.length, 1))}

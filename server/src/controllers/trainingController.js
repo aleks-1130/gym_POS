@@ -191,7 +191,7 @@ const bookTraining = async (req, res) => {
     if (!memberId || !trainerId || !date || !time || !duration || !method) {
         return res.status(400).json({ error: "Missing required booking details" });
     }
-    const allowedMethods = ['CASH', 'CARD', 'GCASH'];
+    const allowedMethods = ['CASH', 'CARD', 'GCASH', 'MAYA'];
     if (!allowedMethods.includes(method)) {
         return res.status(400).json({ error: "Invalid payment method" });
     }
@@ -266,7 +266,7 @@ const getTrainingSessions = async (req, res) => {
 const collectSessionPayment = async (req, res) => {
     const sessionId = Number(req.params.id);
     const { method = 'CASH', cashTendered } = req.body;
-    const allowedMethods = ['CASH', 'CARD', 'GCASH'];
+    const allowedMethods = ['CASH', 'CARD', 'GCASH', 'MAYA'];
     if (!allowedMethods.includes(method)) {
         return res.status(400).json({ error: "Invalid payment method" });
     }
@@ -310,6 +310,92 @@ const collectSessionPayment = async (req, res) => {
         res.json(payment);
     } catch (e) {
         res.status(500).json({ error: "Failed to collect payment", detail: e?.message });
+    }
+};
+
+// Staff collect payment for multiple unpaid trainer bookings at once
+const collectSessionBatchPayment = async (req, res) => {
+    const sessionIdsRaw = Array.isArray(req.body?.sessionIds) ? req.body.sessionIds : [];
+    const { method = 'CASH', cashTendered } = req.body || {};
+    const allowedMethods = ['CASH', 'CARD', 'GCASH', 'MAYA'];
+    if (!allowedMethods.includes(method)) {
+        return res.status(400).json({ error: "Invalid payment method" });
+    }
+
+    const sessionIds = [...new Set(
+        sessionIdsRaw
+            .map((id) => Number(id))
+            .filter((id) => Number.isInteger(id) && id > 0)
+    )];
+    if (sessionIds.length === 0) {
+        return res.status(400).json({ error: "At least one valid session ID is required" });
+    }
+
+    try {
+        const sessions = await prisma.trainingSession.findMany({
+            where: { id: { in: sessionIds } },
+            include: { member: true }
+        });
+        if (sessions.length !== sessionIds.length) {
+            return res.status(404).json({ error: "One or more training sessions were not found" });
+        }
+        if (sessions.some((session) => session.paymentStatus === 'PAID')) {
+            return res.status(400).json({ error: "One or more sessions are already paid" });
+        }
+        if (sessions.some((session) => String(session.status || '').toUpperCase() === 'CANCELLED')) {
+            return res.status(400).json({ error: "Cannot collect payment for cancelled sessions" });
+        }
+
+        const memberIds = [...new Set(sessions.map((session) => Number(session.memberId)))];
+        if (memberIds.length !== 1) {
+            return res.status(400).json({ error: "Batch collection requires sessions from the same member" });
+        }
+
+        const amount = sessions.reduce((sum, session) => sum + Number(session.price || 0), 0);
+        const tendered = method === 'CASH' && cashTendered !== undefined ? Number(cashTendered) : null;
+        if (method === 'CASH' && (!Number.isFinite(tendered) || tendered < amount)) {
+            return res.status(400).json({ error: "Cash tendered is invalid or less than amount" });
+        }
+        const changeDue = method === 'CASH' ? Math.max(0, Number(tendered || 0) - amount) : null;
+        const paidAt = new Date();
+
+        const result = await prisma.$transaction(async (tx) => {
+            const updated = await tx.trainingSession.updateMany({
+                where: {
+                    id: { in: sessionIds },
+                    paymentStatus: 'UNPAID'
+                },
+                data: {
+                    paymentStatus: 'PAID',
+                    paymentMethod: method,
+                    paidAt
+                }
+            });
+            if (updated.count !== sessionIds.length) {
+                throw new Error("Some sessions were modified before collection. Please refresh and try again.");
+            }
+
+            const payment = await createPaymentCompat(tx, {
+                amount,
+                type: 'TRAINING',
+                method,
+                status: 'COMPLETED',
+                memberId: memberIds[0],
+                cashierId: req.user.id,
+                cashTendered: method === 'CASH' ? tendered : null,
+                changeDue: method === 'CASH' ? changeDue : null
+            });
+
+            return { updatedCount: updated.count, payment };
+        });
+
+        res.json({
+            message: "Collected payment for training booking batch",
+            ...result,
+            sessionIds
+        });
+    } catch (e) {
+        res.status(500).json({ error: "Failed to collect batch payment", detail: e?.message });
     }
 };
 
@@ -547,6 +633,7 @@ module.exports = {
     bookTraining,
     getTrainingSessions,
     collectSessionPayment,
+    collectSessionBatchPayment,
     declineSessionBooking,
     getRefundExceptionRequests,
     resolveRefundException,

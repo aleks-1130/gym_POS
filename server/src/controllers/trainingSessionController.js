@@ -45,6 +45,15 @@ const checkBookingConflict = async (trainerId, startDateTime, durationMinutes, e
     });
 };
 
+const getTrainerUserId = async (trainerId) => {
+    if (!Number.isInteger(Number(trainerId))) return null;
+    const trainerUser = await prisma.user.findFirst({
+        where: { trainerId: Number(trainerId) },
+        select: { id: true }
+    });
+    return trainerUser ? Number(trainerUser.id) : null;
+};
+
 const getAllSessions = async (req, res) => {
     try {
         const sessions = await prisma.trainingSession.findMany({
@@ -148,39 +157,93 @@ const completeSession = async (req, res) => {
         // Calculate total material cost if not provided manually
         let calculatedMatCost = parseFloat(materialsCost) || 0;
 
+        const trainerUserId = await getTrainerUserId(session.trainerId);
+
         // Process Materials (Inventory & Expense)
         if (materials && Array.isArray(materials) && materials.length > 0) {
             calculatedMatCost = 0; // Recalculate based on items
 
             for (const item of materials) {
-                const itemCost = (parseFloat(item.cost) || 0) * (Number(item.quantity) || 1);
+                const sourcePaymentItemId = item.sourcePaymentItemId ? Number(item.sourcePaymentItemId) : null;
+                const requestedQty = Number(item.quantity) || 1;
+                if (!Number.isInteger(requestedQty) || requestedQty <= 0) {
+                    return res.status(400).json({ error: "Invalid material quantity" });
+                }
+
+                let resolvedProductId = item.productId ? Number(item.productId) : null;
+                let resolvedName = item.name;
+                let resolvedCategory = item.category || 'OTHER';
+                let resolvedCostPerUnit = parseFloat(item.cost) || 0;
+                let shouldDecrementStock = Boolean(resolvedProductId);
+
+                if (sourcePaymentItemId) {
+                    const sourcePaymentItem = await prisma.paymentItem.findUnique({
+                        where: { id: sourcePaymentItemId },
+                        include: {
+                            product: { select: { category: true, supplyCost: true } },
+                            payment: { select: { cashierId: true, status: true } }
+                        }
+                    });
+                    if (!sourcePaymentItem || !sourcePaymentItem.intendedForSessionMaterial) {
+                        return res.status(400).json({ error: "Selected material source is invalid" });
+                    }
+                    const sourcePaymentStatus = String(sourcePaymentItem.payment?.status || '').toUpperCase();
+                    const sourcePaymentMethod = String(sourcePaymentItem.payment?.method || '').toUpperCase();
+                    const canUseDeferredMaterial = sourcePaymentMethod === 'COMMISSION_DEDUCTION' && sourcePaymentStatus === 'PENDING';
+                    if (sourcePaymentStatus !== 'COMPLETED' && !canUseDeferredMaterial) {
+                        return res.status(400).json({ error: "Only completed purchases or deferred commission-deduction purchases can be used as materials" });
+                    }
+                    if (!trainerUserId || Number(sourcePaymentItem.payment?.cashierId) !== Number(trainerUserId)) {
+                        return res.status(403).json({ error: "Material source does not belong to this trainer" });
+                    }
+
+                    const availableFromSource = Number(sourcePaymentItem.quantity || 0) - Number(sourcePaymentItem.returnedQuantity || 0) - Number(sourcePaymentItem.materialUsedQuantity || 0);
+                    if (requestedQty > availableFromSource) {
+                        return res.status(400).json({ error: `Only ${Math.max(availableFromSource, 0)} unit(s) available from selected purchase` });
+                    }
+
+                    resolvedProductId = sourcePaymentItem.productId ? Number(sourcePaymentItem.productId) : null;
+                    resolvedName = sourcePaymentItem.name || resolvedName;
+                    resolvedCategory = sourcePaymentItem.product?.category || resolvedCategory;
+                    resolvedCostPerUnit = Number(sourcePaymentItem.product?.supplyCost || 0) > 0
+                        ? Number(sourcePaymentItem.product.supplyCost)
+                        : Number(sourcePaymentItem.unitPrice || resolvedCostPerUnit || 0);
+                    shouldDecrementStock = false; // Stock already decremented at purchase time
+
+                    await prisma.paymentItem.update({
+                        where: { id: sourcePaymentItemId },
+                        data: { materialUsedQuantity: { increment: requestedQty } }
+                    });
+                }
+
+                const itemCost = (resolvedCostPerUnit || 0) * requestedQty;
                 calculatedMatCost += itemCost;
 
                 // 1. Record Session Material Link
                 await prisma.sessionMaterial.create({
                     data: {
                         sessionId: session.id,
-                        productId: item.productId ? Number(item.productId) : null,
-                        name: item.name,
-                        category: item.category || 'OTHER',
-                        quantity: Number(item.quantity) || 1,
-                        costPerUnit: parseFloat(item.cost) || 0,
+                        productId: resolvedProductId,
+                        name: resolvedName,
+                        category: resolvedCategory,
+                        quantity: requestedQty,
+                        costPerUnit: resolvedCostPerUnit || 0,
                         totalCost: itemCost
                     }
                 });
 
                 // 2. Decrement Stock if Product ID exists
-                if (item.productId) {
+                if (shouldDecrementStock && resolvedProductId) {
                     await prisma.product.update({
-                        where: { id: Number(item.productId) },
-                        data: { stock: { decrement: Number(item.quantity) || 1 } }
+                        where: { id: Number(resolvedProductId) },
+                        data: { stock: { decrement: requestedQty } }
                     });
                 }
 
                 // 3. Create Expense Record
                 await prisma.expense.create({
                     data: {
-                        title: `Session Material: ${item.name}`,
+                        title: `Session Material: ${resolvedName}`,
                         amount: itemCost,
                         category: 'SESSION_MATERIAL',
                         date: new Date(),
@@ -451,6 +514,83 @@ const declineSession = async (req, res) => {
     }
 };
 
+const getSessionMaterialCandidates = async (req, res) => {
+    const sessionId = Number(req.params.id);
+    if (!Number.isInteger(sessionId)) {
+        return res.status(400).json({ error: "Invalid session ID" });
+    }
+
+    try {
+        const session = await prisma.trainingSession.findUnique({
+            where: { id: sessionId },
+            select: { id: true, trainerId: true }
+        });
+        if (!session) {
+            return res.status(404).json({ error: "Session not found" });
+        }
+
+        if (req.user.role === 'TRAINER' && Number(req.user.trainerId) !== Number(session.trainerId)) {
+            return res.status(403).json({ error: "Access denied" });
+        }
+
+        const trainerUserId = await getTrainerUserId(session.trainerId);
+        if (!trainerUserId) {
+            return res.json([]);
+        }
+
+        const items = await prisma.paymentItem.findMany({
+            where: {
+                type: 'PRODUCT',
+                intendedForSessionMaterial: true,
+                payment: {
+                    cashierId: trainerUserId,
+                    OR: [
+                        { status: 'COMPLETED' },
+                        { status: 'PENDING', method: 'COMMISSION_DEDUCTION' }
+                    ],
+                    type: { in: ['STORE_SALE', 'IN_APP_PURCHASE'] }
+                }
+            },
+            include: {
+                product: { select: { category: true, supplyCost: true } },
+                payment: {
+                    select: {
+                        id: true,
+                        date: true,
+                        method: true,
+                        status: true
+                    }
+                }
+            },
+            orderBy: [{ payment: { date: 'desc' } }, { id: 'desc' }]
+        });
+
+        const candidates = items
+            .map((item) => {
+                const availableQuantity = Number(item.quantity || 0) - Number(item.returnedQuantity || 0) - Number(item.materialUsedQuantity || 0);
+                const derivedCost = Number(item.product?.supplyCost || 0) > 0
+                    ? Number(item.product.supplyCost)
+                    : Number(item.unitPrice || 0);
+                return {
+                    paymentItemId: item.id,
+                    paymentId: item.paymentId,
+                    name: item.name,
+                    productId: item.productId,
+                    category: item.product?.category || 'OTHER',
+                    costPerUnit: derivedCost,
+                    availableQuantity,
+                    purchasedAt: item.payment?.date || null,
+                    paymentMethod: item.payment?.method || null
+                };
+            })
+            .filter((item) => item.availableQuantity > 0);
+
+        return res.json(candidates);
+    } catch (e) {
+        return res.status(500).json({ error: "Failed to fetch material candidates", detail: e?.message });
+    }
+};
+
 const memberRescheduleSession = async (req, res) => {
     const sessionId = Number(req.params.id);
     const { date, time, reason } = req.body || {};
@@ -692,6 +832,7 @@ const requestUnableToAttend = async (req, res) => {
 module.exports = {
     getAllSessions,
     getSessionById,
+    getSessionMaterialCandidates,
     completeSession,
     updateSession,
     getTrainerSessions,

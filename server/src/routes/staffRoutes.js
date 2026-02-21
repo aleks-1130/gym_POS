@@ -10,6 +10,7 @@ router.post('/training-sessions/:id/refund-exception/resolve', authenticateToken
 router.get('/training-sessions/trainer-change-requests', authenticateToken, authorize(['ADMIN', 'STAFF']), trainingController.getTrainerChangeRequests);
 router.post('/training-sessions/:id/trainer-change-request/resolve', authenticateToken, authorize(['ADMIN', 'STAFF']), trainingController.resolveTrainerChangeRequest);
 router.post('/training-sessions/:id/collect', authenticateToken, authorize(['ADMIN', 'STAFF']), trainingController.collectSessionPayment);
+router.post('/training-sessions/collect-batch', authenticateToken, authorize(['ADMIN', 'STAFF']), trainingController.collectSessionBatchPayment);
 router.post('/training-sessions/:id/decline', authenticateToken, authorize(['ADMIN', 'STAFF']), trainingController.declineSessionBooking);
 
 module.exports = router;

@@ -18,6 +18,7 @@ model User {
   password    String
   name        String?
   role        String       @default("STAFF")
+  loyaltyPoints Int        @default(0)
   baseSalary  Float        @default(0.0)
   trainerId   Int?         @unique
   createdAt   DateTime     @default(now())
@@ -208,6 +209,9 @@ model PaymentItem {
   quantity         Int
   unitPrice        Float
   returnedQuantity Int      @default(0)
+  intendedForSessionMaterial Boolean @default(false)
+  materialUsedQuantity Int   @default(0)
+  materialSettledQuantity Int @default(0)
   payment          Payment  @relation(fields: [paymentId], references: [id])
   product          Product? @relation(fields: [productId], references: [id])
 }

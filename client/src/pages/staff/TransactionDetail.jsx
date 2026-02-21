@@ -129,11 +129,25 @@ export default function TransactionDetail() {
         return <div className="text-white p-8">Transaction not found.</div>;
     }
 
-    const receiptItems = payment.items.map((item) => ({
-        name: item.name,
-        price: item.unitPrice,
-        quantity: item.quantity
-    }));
+    const explicitItems = Array.isArray(payment.items) ? payment.items : [];
+    const trainingSessions = Array.isArray(payment.trainingSessions) ? payment.trainingSessions : [];
+    const receiptItems = explicitItems.length > 0
+        ? explicitItems.map((item) => ({
+            name: item.name,
+            price: item.unitPrice,
+            quantity: item.quantity
+        }))
+        : trainingSessions.length > 0
+            ? trainingSessions.map((session, index) => ({
+                name: `${session.trainer?.name || 'Trainer'} Session #${index + 1} (${new Date(session.date).toLocaleDateString()} ${new Date(session.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`,
+                price: Number(session.price || 0),
+                quantity: 1
+            }))
+            : [{
+                name: String(payment.type || 'Transaction').replaceAll('_', ' '),
+                price: Number(payment.amount || 0),
+                quantity: 1
+            }];
 
     return (
         <div className="space-y-6">
@@ -178,16 +192,16 @@ export default function TransactionDetail() {
                 <div className="lg:col-span-7 bg-surface rounded-3xl border border-white/5 p-6 shadow-sm">
                     <h3 className="text-lg font-bold text-white mb-4">Items</h3>
                     <div className="space-y-2">
-                        {payment.items.map((item) => (
-                            <div key={item.id} className="flex items-center justify-between gap-4 p-3 rounded-2xl bg-white/5 border border-white/5">
+                        {receiptItems.map((item, index) => (
+                            <div key={`${item.name}-${index}`} className="flex items-center justify-between gap-4 p-3 rounded-2xl bg-white/5 border border-white/5">
                                 <div className="min-w-0">
                                     <p className="text-white font-semibold truncate">{item.name}</p>
                                     <p className="text-xs text-text-muted">
-                                        {item.quantity} x {formatPrice(item.unitPrice)}
+                                        {item.quantity} x {formatPrice(item.price)}
                                     </p>
                                 </div>
                                 <div className="text-right">
-                                    <p className="text-sm font-bold text-white">{formatPrice(item.unitPrice * item.quantity)}</p>
+                                    <p className="text-sm font-bold text-white">{formatPrice(item.price * item.quantity)}</p>
                                     {item.returnedQuantity > 0 && (
                                         <p className="text-[10px] text-amber-400">Returned: {item.returnedQuantity}</p>
                                     )}

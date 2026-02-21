@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { POS_VIEWS } from '../../constants/categories'; // Added import
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
@@ -73,6 +73,57 @@ export default function POS() {
         if (Array.isArray(payload?.data)) return payload.data;
         return [];
     };
+
+    const extractBookingBatchId = (notes) => {
+        const match = String(notes || '').match(/BOOKING_BATCH_ID=([A-Za-z0-9_-]+)/);
+        return match ? match[1] : null;
+    };
+
+    const groupedTrainingBookings = useMemo(() => {
+        const groups = new Map();
+
+        for (const session of trainingBookings) {
+            const batchId = extractBookingBatchId(session?.notes);
+            const createdDate = session?.createdAt ? new Date(session.createdAt) : null;
+            const legacyCreatedBucket = createdDate && !Number.isNaN(createdDate.getTime())
+                ? createdDate.toISOString().slice(0, 16)
+                : null;
+            const legacyKey = legacyCreatedBucket
+                ? `legacy:${session.memberId || 0}:${session.trainerId || 0}:${legacyCreatedBucket}`
+                : `single:${session.id}`;
+            const key = batchId ? `batch:${batchId}` : legacyKey;
+
+            if (!groups.has(key)) {
+                groups.set(key, {
+                    key,
+                    batchId,
+                    sessionIds: [],
+                    member: session.member || null,
+                    trainer: session.trainer || null,
+                    firstDate: new Date(session.date),
+                    totalDuration: 0,
+                    totalAmount: 0,
+                    count: 0
+                });
+            }
+
+            const group = groups.get(key);
+            group.sessionIds.push(session.id);
+            group.count += 1;
+            group.totalDuration += Number(session.duration || 0);
+            group.totalAmount += Number(session.price || 0);
+            const currentDate = new Date(session.date);
+            if (currentDate < group.firstDate) group.firstDate = currentDate;
+
+            const currentTrainerId = Number(group.trainer?.id || 0);
+            const sessionTrainerId = Number(session.trainer?.id || 0);
+            if (currentTrainerId && sessionTrainerId && currentTrainerId !== sessionTrainerId) {
+                group.trainer = { ...group.trainer, name: 'Multiple Trainers' };
+            }
+        }
+
+        return Array.from(groups.values()).sort((a, b) => a.firstDate - b.firstDate);
+    }, [trainingBookings]);
 
     const handlePrint = useReactToPrint({
         content: () => receiptRef.current,
@@ -536,6 +587,27 @@ export default function POS() {
         return <span className={`${base} bg-emerald-500/10 text-emerald-400 border border-emerald-500/20`}>COMPLETED</span>;
     };
 
+    const getBuyerLabel = (payment) => {
+        if (payment?.member) {
+            return `${payment.member.firstName} ${payment.member.lastName}`;
+        }
+        const cashierRole = String(payment?.cashier?.role || '').toUpperCase();
+        if (cashierRole === 'TRAINER' && payment?.cashier?.name) {
+            return `${payment.cashier.name} (Trainer)`;
+        }
+        return 'Walk-in';
+    };
+
+    const getMethodLabel = (method) => {
+        const normalized = String(method || '').toUpperCase();
+        if (normalized === 'COMMISSION_DEDUCTION') return 'Commission Deduction';
+        if (normalized === 'GCASH') return 'GCash';
+        if (normalized === 'MAYA') return 'Maya';
+        if (normalized === 'CARD') return 'Card';
+        if (normalized === 'CASH') return 'Cash';
+        return method || '-';
+    };
+
     const toIsoDate = (date) => {
         const y = date.getFullYear();
         const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -712,8 +784,8 @@ export default function POS() {
                                     <td className="px-6 py-4 text-white font-medium">{new Date(pay.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(pay.date).toLocaleTimeString()}</span></td>
                                     <td className="px-6 py-4"><span className="bg-white/10 text-text-secondary px-2 py-1 rounded text-xs font-bold">{pay.type}</span></td>
                                     <td className="px-6 py-4 text-white font-bold">{formatPrice(pay.amount)}</td>
-                                    <td className="px-6 py-4 text-text-secondary">{pay.method}</td>
-                                    <td className="px-6 py-4 text-white">{pay.member ? `${pay.member.firstName} ${pay.member.lastName}` : 'Walk-in'}</td>
+                                      <td className="px-6 py-4 text-text-secondary">{getMethodLabel(pay.method)}</td>
+                                    <td className="px-6 py-4 text-white">{getBuyerLabel(pay)}</td>
                                     <td className="px-6 py-4 text-white">{pay.cashier?.name || 'N/A'}</td>
                                     <td className="px-6 py-4 text-white">
                                         {pay.method === 'CASH' ? formatPrice(pay.changeDue || 0) : '-'}
@@ -769,23 +841,13 @@ export default function POS() {
                     </button>
                     <button
                         type="button"
-                        onClick={() => setCollectCashTab('REFUND_EXCEPTIONS')}
-                        className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${collectCashTab === 'REFUND_EXCEPTIONS'
+                        onClick={() => setCollectCashTab('EXCEPTIONS')}
+                        className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${collectCashTab === 'EXCEPTIONS'
                             ? 'bg-primary text-background'
                             : 'text-text-secondary hover:text-white bg-white/5'
                             }`}
                     >
-                        Refund Exceptions
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setCollectCashTab('TRAINER_CHANGE_REQUESTS')}
-                        className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${collectCashTab === 'TRAINER_CHANGE_REQUESTS'
-                            ? 'bg-primary text-background'
-                            : 'text-text-secondary hover:text-white bg-white/5'
-                            }`}
-                    >
-                        Trainer Change Requests
+                        Exceptions
                     </button>
                 </div>
 
@@ -795,7 +857,7 @@ export default function POS() {
                             <thead className="bg-white/5 text-text-muted uppercase text-xs font-bold tracking-wider">
                                 <tr>
                                     <th className="px-6 py-4">Date</th>
-                                    <th className="px-6 py-4">Member</th>
+                                    <th className="px-6 py-4">Buyer</th>
                                     <th className="px-6 py-4">Trainer</th>
                                     <th className="px-6 py-4">Duration</th>
                                     <th className="px-6 py-4">Amount</th>
@@ -804,20 +866,20 @@ export default function POS() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-white/5">
-                                {trainingBookings.length === 0 && (
+                                {groupedTrainingBookings.length === 0 && (
                                     <tr><td colSpan="7" className="p-6 text-center text-text-muted">No unpaid bookings found.</td></tr>
                                 )}
-                                {trainingBookings.map(session => (
-                                    <tr key={session.id} className="hover:bg-white/5 transition-colors">
+                                {groupedTrainingBookings.map((bookingGroup) => (
+                                    <tr key={bookingGroup.key} className="hover:bg-white/5 transition-colors">
                                         <td className="px-6 py-4 text-white font-medium">
-                                            {new Date(session.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(session.date).toLocaleTimeString()}</span>
+                                            {bookingGroup.firstDate.toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{bookingGroup.firstDate.toLocaleTimeString()}</span>
                                         </td>
                                         <td className="px-6 py-4 text-white">
-                                            {session.member ? `${session.member.firstName} ${session.member.lastName}` : 'N/A'}
+                                            {bookingGroup.member ? `${bookingGroup.member.firstName} ${bookingGroup.member.lastName}` : 'N/A'}
                                         </td>
-                                        <td className="px-6 py-4 text-white">{session.trainer?.name || 'N/A'}</td>
-                                        <td className="px-6 py-4 text-white">{session.duration} min</td>
-                                        <td className="px-6 py-4 text-white font-bold">{formatPrice(session.price)}</td>
+                                        <td className="px-6 py-4 text-white">{bookingGroup.trainer?.name || 'N/A'}</td>
+                                        <td className="px-6 py-4 text-white">{bookingGroup.count} session(s) • {bookingGroup.totalDuration} min</td>
+                                        <td className="px-6 py-4 text-white font-bold">{formatPrice(bookingGroup.totalAmount)}</td>
                                         <td className="px-6 py-4">
                                             <span className="px-2 py-1 rounded text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">UNPAID</span>
                                         </td>
@@ -825,7 +887,7 @@ export default function POS() {
                                             <div className="flex items-center gap-2">
                                                 <button
                                                     onClick={() => {
-                                                        setCollectSession(session);
+                                                        setCollectSession(bookingGroup);
                                                         setCollectTendered('');
                                                         setShowCollectModal(true);
                                                     }}
@@ -835,9 +897,13 @@ export default function POS() {
                                                 </button>
                                                 <button
                                                     onClick={async () => {
-                                                        if (!window.confirm('Decline this booking?')) return;
+                                                        if (!window.confirm(`Decline ${bookingGroup.count} booking(s)?`)) return;
                                                         try {
-                                                            await axios.post(withApiBase(`/api/training-sessions/${session.id}/decline`), {}, { headers: authHeaders() });
+                                                            await Promise.all(
+                                                                bookingGroup.sessionIds.map((sessionId) =>
+                                                                    axios.post(withApiBase(`/api/training-sessions/${sessionId}/decline`), {}, { headers: authHeaders() })
+                                                                )
+                                                            );
                                                             await fetchTrainingBookings();
                                                         } catch (e) {
                                                             const message = e.response?.data?.error || "Failed to decline booking";
@@ -880,9 +946,7 @@ export default function POS() {
                                         <td className="px-6 py-4 text-white font-medium">
                                             {new Date(payment.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(payment.date).toLocaleTimeString()}</span>
                                         </td>
-                                        <td className="px-6 py-4 text-white">
-                                            {payment.member ? `${payment.member.firstName} ${payment.member.lastName}` : 'Walk-in'}
-                                        </td>
+                                        <td className="px-6 py-4 text-white">{getBuyerLabel(payment)}</td>
                                         <td className="px-6 py-4 text-white">{payment.type}</td>
                                         <td className="px-6 py-4 text-white font-bold">{formatPrice(payment.amount)}</td>
                                         <td className="px-6 py-4">{renderStatusBadge(payment.status)}</td>
@@ -921,126 +985,132 @@ export default function POS() {
                     </div>
                 )}
 
-                {collectCashTab === 'REFUND_EXCEPTIONS' && (
-                    <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
-                        <table className="w-full text-left text-sm text-text-secondary">
-                            <thead className="bg-white/5 text-text-muted uppercase text-xs font-bold tracking-wider">
-                                <tr>
-                                    <th className="px-6 py-4">Session</th>
-                                    <th className="px-6 py-4">Member</th>
-                                    <th className="px-6 py-4">Trainer</th>
-                                    <th className="px-6 py-4">Reason</th>
-                                    <th className="px-6 py-4">Requested</th>
-                                    <th className="px-6 py-4">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-white/5">
-                                {refundExceptionRequests.length === 0 && (
-                                    <tr><td colSpan="6" className="p-6 text-center text-text-muted">No pending refund exception requests.</td></tr>
-                                )}
-                                {refundExceptionRequests.map((session) => (
-                                    <tr key={session.id} className="hover:bg-white/5 transition-colors">
-                                        <td className="px-6 py-4 text-white font-medium">
-                                            {new Date(session.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(session.date).toLocaleTimeString()}</span>
-                                        </td>
-                                        <td className="px-6 py-4 text-white">
-                                            {session.member ? `${session.member.firstName} ${session.member.lastName}` : 'N/A'}
-                                        </td>
-                                        <td className="px-6 py-4 text-white">{session.trainer?.name || 'N/A'}</td>
-                                        <td className="px-6 py-4 text-white">
-                                            <div className="space-y-1">
-                                                <span className="px-2 py-1 rounded text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                                                    {session.refundException?.request?.reason || 'OTHER'}
-                                                </span>
-                                                {session.refundException?.request?.details && (
-                                                    <p className="text-xs text-text-muted max-w-[220px] truncate" title={session.refundException.request.details}>
-                                                        {session.refundException.request.details}
-                                                    </p>
-                                                )}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 text-white">
-                                            {session.refundException?.request?.requestedAt
-                                                ? new Date(session.refundException.request.requestedAt).toLocaleString()
-                                                : 'Unknown'}
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-2">
-                                                <button
-                                                    onClick={() => resolveRefundException(session, 'APPROVE')}
-                                                    className="text-xs font-bold px-3 py-1 rounded-lg border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
-                                                >
-                                                    Approve
-                                                </button>
-                                                <button
-                                                    onClick={() => resolveRefundException(session, 'REJECT')}
-                                                    className="text-xs font-bold px-3 py-1 rounded-lg border border-red-500/30 text-red-300 hover:bg-red-500/10"
-                                                >
-                                                    Reject
-                                                </button>
-                                            </div>
-                                        </td>
+                {collectCashTab === 'EXCEPTIONS' && (
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                        <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
+                            <div className="px-6 py-4 border-b border-white/10">
+                                <h3 className="text-white font-bold">Refund Exceptions</h3>
+                            </div>
+                            <table className="w-full text-left text-sm text-text-secondary">
+                                <thead className="bg-white/5 text-text-muted uppercase text-xs font-bold tracking-wider">
+                                    <tr>
+                                        <th className="px-6 py-4">Session</th>
+                                        <th className="px-6 py-4">Member</th>
+                                        <th className="px-6 py-4">Trainer</th>
+                                        <th className="px-6 py-4">Reason</th>
+                                        <th className="px-6 py-4">Requested</th>
+                                        <th className="px-6 py-4">Actions</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
+                                </thead>
+                                <tbody className="divide-y divide-white/5">
+                                    {refundExceptionRequests.length === 0 && (
+                                        <tr><td colSpan="6" className="p-6 text-center text-text-muted">No pending refund exception requests.</td></tr>
+                                    )}
+                                    {refundExceptionRequests.map((session) => (
+                                        <tr key={session.id} className="hover:bg-white/5 transition-colors">
+                                            <td className="px-6 py-4 text-white font-medium">
+                                                {new Date(session.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(session.date).toLocaleTimeString()}</span>
+                                            </td>
+                                            <td className="px-6 py-4 text-white">
+                                                {session.member ? `${session.member.firstName} ${session.member.lastName}` : 'N/A'}
+                                            </td>
+                                            <td className="px-6 py-4 text-white">{session.trainer?.name || 'N/A'}</td>
+                                            <td className="px-6 py-4 text-white">
+                                                <div className="space-y-1">
+                                                    <span className="px-2 py-1 rounded text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                                        {session.refundException?.request?.reason || 'OTHER'}
+                                                    </span>
+                                                    {session.refundException?.request?.details && (
+                                                        <p className="text-xs text-text-muted max-w-[220px] truncate" title={session.refundException.request.details}>
+                                                            {session.refundException.request.details}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4 text-white">
+                                                {session.refundException?.request?.requestedAt
+                                                    ? new Date(session.refundException.request.requestedAt).toLocaleString()
+                                                    : 'Unknown'}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        onClick={() => resolveRefundException(session, 'APPROVE')}
+                                                        className="text-xs font-bold px-3 py-1 rounded-lg border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
+                                                    >
+                                                        Approve
+                                                    </button>
+                                                    <button
+                                                        onClick={() => resolveRefundException(session, 'REJECT')}
+                                                        className="text-xs font-bold px-3 py-1 rounded-lg border border-red-500/30 text-red-300 hover:bg-red-500/10"
+                                                    >
+                                                        Reject
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
 
-                {collectCashTab === 'TRAINER_CHANGE_REQUESTS' && (
-                    <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
-                        <table className="w-full text-left text-sm text-text-secondary">
-                            <thead className="bg-white/5 text-text-muted uppercase text-xs font-bold tracking-wider">
-                                <tr>
-                                    <th className="px-6 py-4">Session</th>
-                                    <th className="px-6 py-4">Member</th>
-                                    <th className="px-6 py-4">Trainer</th>
-                                    <th className="px-6 py-4">Reason</th>
-                                    <th className="px-6 py-4">Preferred</th>
-                                    <th className="px-6 py-4">Requested</th>
-                                    <th className="px-6 py-4">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-white/5">
-                                {trainerChangeRequests.length === 0 && (
-                                    <tr><td colSpan="7" className="p-6 text-center text-text-muted">No pending trainer change requests.</td></tr>
-                                )}
-                                {trainerChangeRequests.map((session) => (
-                                    <tr key={session.id} className="hover:bg-white/5 transition-colors">
-                                        <td className="px-6 py-4 text-white font-medium">
-                                            {new Date(session.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(session.date).toLocaleTimeString()}</span>
-                                        </td>
-                                        <td className="px-6 py-4 text-white">
-                                            {session.member ? `${session.member.firstName} ${session.member.lastName}` : 'N/A'}
-                                        </td>
-                                        <td className="px-6 py-4 text-white">{session.trainer?.name || 'N/A'}</td>
-                                        <td className="px-6 py-4 text-white">
-                                            <p className="text-xs max-w-[220px] truncate" title={session.trainerChangeRequest?.request?.reason || ''}>
-                                                {session.trainerChangeRequest?.request?.reason || 'No reason provided'}
-                                            </p>
-                                        </td>
-                                        <td className="px-6 py-4 text-white">
-                                            {session.trainerChangeRequest?.request?.preferred
-                                                ? new Date(session.trainerChangeRequest.request.preferred).toLocaleString()
-                                                : <span className="text-text-muted">None</span>}
-                                        </td>
-                                        <td className="px-6 py-4 text-white">
-                                            {session.trainerChangeRequest?.request?.requestedAt
-                                                ? new Date(session.trainerChangeRequest.request.requestedAt).toLocaleString()
-                                                : 'Unknown'}
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <button
-                                                onClick={() => openTrainerChangeResolutionModal(session)}
-                                                className="text-xs font-bold px-3 py-1 rounded-lg border border-blue-500/30 text-blue-300 hover:bg-blue-500/10"
-                                            >
-                                                Resolve
-                                            </button>
-                                        </td>
+                        <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
+                            <div className="px-6 py-4 border-b border-white/10">
+                                <h3 className="text-white font-bold">Trainer Change Requests</h3>
+                            </div>
+                            <table className="w-full text-left text-sm text-text-secondary">
+                                <thead className="bg-white/5 text-text-muted uppercase text-xs font-bold tracking-wider">
+                                    <tr>
+                                        <th className="px-6 py-4">Session</th>
+                                        <th className="px-6 py-4">Member</th>
+                                        <th className="px-6 py-4">Trainer</th>
+                                        <th className="px-6 py-4">Reason</th>
+                                        <th className="px-6 py-4">Preferred</th>
+                                        <th className="px-6 py-4">Requested</th>
+                                        <th className="px-6 py-4">Actions</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody className="divide-y divide-white/5">
+                                    {trainerChangeRequests.length === 0 && (
+                                        <tr><td colSpan="7" className="p-6 text-center text-text-muted">No pending trainer change requests.</td></tr>
+                                    )}
+                                    {trainerChangeRequests.map((session) => (
+                                        <tr key={session.id} className="hover:bg-white/5 transition-colors">
+                                            <td className="px-6 py-4 text-white font-medium">
+                                                {new Date(session.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(session.date).toLocaleTimeString()}</span>
+                                            </td>
+                                            <td className="px-6 py-4 text-white">
+                                                {session.member ? `${session.member.firstName} ${session.member.lastName}` : 'N/A'}
+                                            </td>
+                                            <td className="px-6 py-4 text-white">{session.trainer?.name || 'N/A'}</td>
+                                            <td className="px-6 py-4 text-white">
+                                                <p className="text-xs max-w-[220px] truncate" title={session.trainerChangeRequest?.request?.reason || ''}>
+                                                    {session.trainerChangeRequest?.request?.reason || 'No reason provided'}
+                                                </p>
+                                            </td>
+                                            <td className="px-6 py-4 text-white">
+                                                {session.trainerChangeRequest?.request?.preferred
+                                                    ? new Date(session.trainerChangeRequest.request.preferred).toLocaleString()
+                                                    : <span className="text-text-muted">None</span>}
+                                            </td>
+                                            <td className="px-6 py-4 text-white">
+                                                {session.trainerChangeRequest?.request?.requestedAt
+                                                    ? new Date(session.trainerChangeRequest.request.requestedAt).toLocaleString()
+                                                    : 'Unknown'}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <button
+                                                    onClick={() => openTrainerChangeResolutionModal(session)}
+                                                    className="text-xs font-bold px-3 py-1 rounded-lg border border-blue-500/30 text-blue-300 hover:bg-blue-500/10"
+                                                >
+                                                    Resolve
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 )}
 
@@ -1051,12 +1121,13 @@ export default function POS() {
                                 <h2 className="text-xl font-bold text-white">Collect Cash</h2>
                                 <p className="text-text-muted text-sm">
                                     {collectSession.member?.firstName} {collectSession.member?.lastName} • {collectSession.trainer?.name}
+                                    {collectSession.count > 1 ? ` (${collectSession.count} sessions)` : ''}
                                 </p>
                             </div>
                             <div className="space-y-4">
                                 <div className="flex justify-between items-center">
                                     <span className="text-text-muted">Amount Due</span>
-                                    <span className="text-white font-bold text-lg">{formatPrice(collectSession.price)}</span>
+                                    <span className="text-white font-bold text-lg">{formatPrice(collectSession.totalAmount || collectSession.price || 0)}</span>
                                 </div>
                                 <div>
                                     <label className="block text-text-muted text-sm font-medium mb-2">Cash Tendered</label>
@@ -1070,7 +1141,7 @@ export default function POS() {
                                 </div>
                                 <div className="bg-white/5 rounded-xl p-4 flex justify-between items-center">
                                     <span className="text-text-secondary">Change Due:</span>
-                                    {formatPrice(Math.max(0, (parseFloat(collectTendered) || 0) - collectSession.price))}
+                                    {formatPrice(Math.max(0, (parseFloat(collectTendered) || 0) - (collectSession.totalAmount || collectSession.price || 0)))}
                                 </div>
                                 <div className="flex gap-3">
                                     <button
@@ -1081,10 +1152,12 @@ export default function POS() {
                                     </button>
                                     <button
                                         onClick={async () => {
-                                            if ((parseFloat(collectTendered) || 0) < collectSession.price) return;
+                                            const amountDue = collectSession.totalAmount || collectSession.price || 0;
+                                            if ((parseFloat(collectTendered) || 0) < amountDue) return;
                                             setCollectLoading(true);
                                             try {
-                                                await axios.post(withApiBase(`/api/staff/training-sessions/${collectSession.id}/collect`), {
+                                                await axios.post(withApiBase('/api/staff/training-sessions/collect-batch'), {
+                                                    sessionIds: collectSession.sessionIds || [collectSession.id],
                                                     method: 'CASH',
                                                     cashTendered: parseFloat(collectTendered)
                                                 }, { headers: authHeaders() });
@@ -1097,7 +1170,7 @@ export default function POS() {
                                                 setCollectLoading(false);
                                             }
                                         }}
-                                        disabled={collectLoading || (parseFloat(collectTendered) || 0) < collectSession.price}
+                                        disabled={collectLoading || (parseFloat(collectTendered) || 0) < (collectSession.totalAmount || collectSession.price || 0)}
                                         className="flex-1 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl"
                                     >
                                         {collectLoading ? 'Collecting...' : 'Collect'}
@@ -1396,7 +1469,7 @@ export default function POS() {
                                         <div>
                                             <label className="block text-text-muted text-sm font-medium mb-2">Amount Tendered</label>
                                             <div className="relative">
-                                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white font-bold">₱</span>
+                                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white font-bold">â‚±</span>
                                                 <input
                                                     type="number"
                                                     autoFocus
@@ -1866,3 +1939,6 @@ export default function POS() {
         </div>
     );
 }
+
+
+

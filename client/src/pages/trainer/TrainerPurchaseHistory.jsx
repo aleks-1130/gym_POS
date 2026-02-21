@@ -27,10 +27,26 @@ export default function TrainerPurchaseHistory() {
 
     const filteredOrders = useMemo(() => {
         if (activeTab === 'all') return orders;
+        if (activeTab === 'MATERIAL') {
+            return orders.filter((o) =>
+                String(o.method || '').toUpperCase() === 'COMMISSION_DEDUCTION' ||
+                (Array.isArray(o.items) && o.items.some((i) => i.intendedForSessionMaterial))
+            );
+        }
         return orders.filter((o) => String(o.status || '').toUpperCase() === activeTab);
     }, [orders, activeTab]);
 
     const totalSpent = useMemo(() => orders.reduce((sum, o) => sum + Number(o.amount || 0), 0), [orders]);
+
+    const getMethodLabel = (method) => {
+        const normalized = String(method || '').toUpperCase();
+        if (normalized === 'COMMISSION_DEDUCTION') return 'Commission Deduction';
+        if (normalized === 'GCASH') return 'GCash';
+        if (normalized === 'MAYA') return 'Maya';
+        if (normalized === 'CARD') return 'Card';
+        if (normalized === 'CASH') return 'Cash';
+        return method || '-';
+    };
 
     const getStatusBadge = (status) => {
         const normalized = String(status || 'COMPLETED').toUpperCase();
@@ -64,6 +80,7 @@ export default function TrainerPurchaseHistory() {
             <div className="flex gap-2 overflow-x-auto pb-1">
                 {[
                     { key: 'all', label: 'All' },
+                    { key: 'MATERIAL', label: 'Session Material' },
                     { key: 'COMPLETED', label: 'Completed' },
                     { key: 'PENDING', label: 'Pending' }
                 ].map((tab) => (
@@ -109,12 +126,17 @@ export default function TrainerPurchaseHistory() {
                                                         <div key={i.id} className="text-xs">{i.quantity}x {i.name}</div>
                                                     ))}
                                                     {item.items.length > 2 && <div className="text-text-muted text-xs">+{item.items.length - 2} more</div>}
+                                                    {item.items.some((i) => i.intendedForSessionMaterial) && (
+                                                        <div className="mt-1 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300">
+                                                            Session Material
+                                                        </div>
+                                                    )}
                                                 </div>
                                             ) : (
                                                 <span className="text-text-muted text-xs">-</span>
                                             )}
                                         </td>
-                                        <td className="px-4 sm:px-6 py-4"><span className="text-white text-sm">{item.method}</span></td>
+                                        <td className="px-4 sm:px-6 py-4"><span className="text-white text-sm">{getMethodLabel(item.method)}</span></td>
                                         <td className="px-4 sm:px-6 py-4"><span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-bold ${getStatusBadge(item.status)}`}>{item.status || 'COMPLETED'}</span></td>
                                         <td className="px-4 sm:px-6 py-4 text-right"><span className="text-primary font-bold text-sm">{formatPrice(item.amount)}</span></td>
                                     </tr>
@@ -129,7 +151,7 @@ export default function TrainerPurchaseHistory() {
                                 <div className="flex items-start justify-between">
                                     <div className="flex-1">
                                         <div className="text-text-muted text-xs">{new Date(item.date).toLocaleDateString()} - {new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-                                        <div className="text-text-muted text-xs mt-1">Method: <span className="text-white">{item.method}</span></div>
+                                        <div className="text-text-muted text-xs mt-1">Method: <span className="text-white">{getMethodLabel(item.method)}</span></div>
                                     </div>
                                     <div className="text-right">
                                         <div className="text-primary font-bold text-lg">{formatPrice(item.amount)}</div>
@@ -143,6 +165,11 @@ export default function TrainerPurchaseHistory() {
                                         {item.items.slice(0, 3).map((i) => (
                                             <div key={i.id} className="text-white text-xs">{i.quantity}x {i.name}</div>
                                         ))}
+                                        {item.items.some((i) => i.intendedForSessionMaterial) && (
+                                            <div className="mt-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300">
+                                                Session Material
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>

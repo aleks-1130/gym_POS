@@ -154,7 +154,7 @@ export default function TrainerDashboard() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
                     <div className="flex flex-col h-full">
                         <span className="material-icons-round text-emerald-400 text-2xl mb-2">payments</span>
@@ -174,6 +174,13 @@ export default function TrainerDashboard() {
                         <span className="material-icons-round text-blue-300 text-2xl mb-2">account_balance_wallet</span>
                         <p className="text-text-muted text-xs font-medium mb-1">Paid Out</p>
                         <p className="text-lg font-bold text-blue-300">{formatMoney(commissionSummary.totalPayoutRecorded)}</p>
+                    </div>
+                </div>
+                <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
+                    <div className="flex flex-col h-full">
+                        <span className="material-icons-round text-rose-300 text-2xl mb-2">inventory_2</span>
+                        <p className="text-text-muted text-xs font-medium mb-1">Item Deductions</p>
+                        <p className="text-lg font-bold text-rose-300">-{formatMoney(commissionSummary.materialPendingDeduction)}</p>
                     </div>
                 </div>
             </div>

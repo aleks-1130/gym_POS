@@ -6,7 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 const Payroll = () => {
     const { formatPrice } = useCurrency();
     const { user: currentUser } = useAuth();
-    const [stats, setStats] = useState({ totalPayrollThisMonth: 0, pendingCommissions: 0 });
+    const [stats, setStats] = useState({ totalPayrollThisMonth: 0, pendingCommissions: 0, pendingMaterialDeductions: 0 });
     const [trainers, setTrainers] = useState([]);
     const [staff, setStaff] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -163,6 +163,24 @@ const Payroll = () => {
         }
     };
 
+    const submitAutoCommissionPayment = async (trainerId, trainerName) => {
+        try {
+            const token = localStorage.getItem('token');
+            await axios.post('http://localhost:5000/api/admin/payroll/pay-commissions-auto', {
+                trainerId
+            }, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            alert(`Auto payout completed for ${trainerName}.`);
+            setShowModal(false);
+            fetchData();
+        } catch (error) {
+            console.error("Auto Commission Payment Error:", error);
+            alert(error.response?.data?.error || "Failed to auto pay commissions");
+        }
+    };
+
     // Helper to calculate total of selected sessions
     const calculateSelectedTotal = () => {
         if (!selectedUser) return 0;
@@ -178,12 +196,25 @@ const Payroll = () => {
         return sessionsTotal + classesTotal;
     };
 
+    const calculateNetSelectedPayout = () => {
+        if (!selectedUser) return 0;
+        return calculateSelectedTotal() - Number(selectedUser.outstandingMaterialDeductions || 0);
+    };
+
+    const calculateTaggedMaterialTotal = () => {
+        if (!selectedUser) return 0;
+        return (selectedUser.materialDeductionItems || []).reduce(
+            (sum, item) => sum + Number(item.unsettledTotal || 0),
+            0
+        );
+    };
+
     return (
         <div className="p-6">
             <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-6">Payroll & Salaries</h1>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                 <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Payroll (This Month)</p>
                     <h2 className="text-3xl font-bold text-gray-800 dark:text-white mt-2">{formatPrice(stats.totalPayrollThisMonth)}</h2>
@@ -192,6 +223,11 @@ const Payroll = () => {
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Pending Commissions</p>
                     <h2 className="text-3xl font-bold text-orange-500 mt-2">{formatPrice(stats.pendingCommissions)}</h2>
                     <p className="text-xs text-gray-400 mt-1">Unpaid commissions from completed sessions</p>
+                </div>
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Pending Material Deductions</p>
+                    <h2 className="text-3xl font-bold text-red-500 mt-2">{formatPrice(stats.pendingMaterialDeductions || 0)}</h2>
+                    <p className="text-xs text-gray-400 mt-1">To be deducted from trainer commission payouts</p>
                 </div>
             </div>
 
@@ -248,13 +284,14 @@ const Payroll = () => {
                                 {activeTab === 'STAFF' && <th className="p-4">Base Salary</th>}
                                 <th className="p-4">Paid (All Time)</th>
                                 {activeTab === 'TRAINERS' && <th className="p-4">Unpaid Commissions</th>}
+                                {activeTab === 'TRAINERS' && <th className="p-4">Material Deductions</th>}
                                 <th className="p-4 text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                             {activeTab === 'TRAINERS' ? (
                                 trainers.length === 0 ? (
-                                    <tr><td colSpan="5" className="p-4 text-center text-gray-500">No trainers found.</td></tr>
+                                    <tr><td colSpan="6" className="p-4 text-center text-gray-500">No trainers found.</td></tr>
                                 ) : (
                                     trainers
                                         .filter(t => trainerFilter === 'ALL' || t.type === trainerFilter)
@@ -275,6 +312,7 @@ const Payroll = () => {
                                                 <td className="p-4 text-gray-600 dark:text-gray-300">{(trainer.commissionRate * 100).toFixed(0)}%</td>
                                                 <td className="p-4 text-green-600 font-medium">{formatPrice(trainer.totalPaid)}</td>
                                                 <td className="p-4 text-orange-500 font-medium">{formatPrice(trainer.unpaidCommissions)}</td>
+                                                <td className="p-4 text-red-500 font-medium">{formatPrice(trainer.outstandingMaterialDeductions || 0)}</td>
                                                 <td className="p-4 text-right flex justify-end gap-2">
                                                     <button
                                                         onClick={() => handlePayCommission(trainer)}
@@ -282,6 +320,13 @@ const Payroll = () => {
                                                         disabled={trainer.unpaidCommissions <= 0}
                                                     >
                                                         Pay Commission
+                                                    </button>
+                                                    <button
+                                                        onClick={() => submitAutoCommissionPayment(trainer.id, trainer.name)}
+                                                        className="px-3 py-1.5 bg-rose-500 text-white text-sm rounded-lg hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        disabled={trainer.unpaidCommissions <= 0}
+                                                    >
+                                                        Auto Settle
                                                     </button>
                                                     <button
                                                         onClick={() => handleRecordPayment(trainer, 'TRAINER')}
@@ -546,11 +591,72 @@ const Payroll = () => {
                                     </table>
                                 </div>
 
-                                <div className="flex justify-between items-center p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-100 dark:border-orange-900/50">
-                                    <span className="text-orange-800 dark:text-orange-200 font-medium">Total Selected:</span>
-                                    <span className="text-xl font-bold text-orange-600 dark:text-orange-400">
-                                        {formatPrice(calculateSelectedTotal())}
-                                    </span>
+                                {/* Tagged Material Purchases Table */}
+                                <div className="flex items-center justify-between mb-1 pt-2">
+                                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Tagged Material Purchases</h3>
+                                </div>
+                                <div className="max-h-40 overflow-y-auto border border-gray-100 dark:border-gray-700 rounded-lg">
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="bg-gray-50 dark:bg-gray-900 text-gray-500 sticky top-0">
+                                            <tr>
+                                                <th className="p-2">Date</th>
+                                                <th className="p-2">Item</th>
+                                                <th className="p-2 text-center">Qty</th>
+                                                <th className="p-2 text-right">Unit</th>
+                                                <th className="p-2 text-right">Subtotal</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                                            {(selectedUser.materialDeductionItems || []).map((item) => (
+                                                <tr key={item.paymentItemId} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                                    <td className="p-2 text-gray-600 dark:text-gray-300 text-xs">
+                                                        {item.purchasedAt ? new Date(item.purchasedAt).toLocaleDateString() : '-'}
+                                                    </td>
+                                                    <td className="p-2 text-gray-800 dark:text-white text-xs font-medium">
+                                                        {item.name}
+                                                    </td>
+                                                    <td className="p-2 text-center text-gray-600 dark:text-gray-300 text-xs">
+                                                        {item.unsettledQty}
+                                                    </td>
+                                                    <td className="p-2 text-right text-gray-600 dark:text-gray-300 text-xs">
+                                                        {formatPrice(item.unitPrice)}
+                                                    </td>
+                                                    <td className="p-2 text-right text-red-500 text-xs font-semibold">
+                                                        {formatPrice(item.unsettledTotal)}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {(!selectedUser.materialDeductionItems || selectedUser.materialDeductionItems.length === 0) && (
+                                                <tr><td colSpan="5" className="p-4 text-center text-gray-500">No tagged material purchases pending.</td></tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <div className="space-y-2 p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-100 dark:border-orange-900/50">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-orange-800 dark:text-orange-200 font-medium">Gross Selected:</span>
+                                        <span className="text-xl font-bold text-orange-600 dark:text-orange-400">
+                                            {formatPrice(calculateSelectedTotal())}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-sm">
+                                        <span className="text-red-700 dark:text-red-300 font-medium">Material Deductions:</span>
+                                        <span className="font-bold text-red-600 dark:text-red-300">
+                                            -{formatPrice(calculateTaggedMaterialTotal())}
+                                        </span>
+                                    </div>
+                                    <div className="border-t border-orange-200 dark:border-orange-800 pt-2 flex justify-between items-center">
+                                        <span className="text-orange-900 dark:text-orange-100 font-bold">Net Payout:</span>
+                                        <span className={`text-xl font-extrabold ${calculateNetSelectedPayout() < 0 ? 'text-red-500' : 'text-green-600 dark:text-green-400'}`}>
+                                            {formatPrice(Math.max(0, calculateNetSelectedPayout()))}
+                                        </span>
+                                    </div>
+                                    {calculateNetSelectedPayout() < 0 && (
+                                        <p className="text-[11px] text-red-600 dark:text-red-300">
+                                            Selected commissions are lower than outstanding material deductions.
+                                        </p>
+                                    )}
                                 </div>
 
                                 <div className="flex gap-3 mt-6">
@@ -562,7 +668,7 @@ const Payroll = () => {
                                     </button>
                                     <button
                                         onClick={submitCommissionPayment}
-                                        disabled={selectedSessions.length === 0 && selectedClasses.length === 0}
+                                        disabled={(selectedSessions.length === 0 && selectedClasses.length === 0) || calculateNetSelectedPayout() < 0}
                                         className="flex-1 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         Pay Selected ({selectedSessions.length + selectedClasses.length})

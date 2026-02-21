@@ -2,11 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { REWARD_CATEGORIES } from '../../constants/categories';
 
-const toPoints = (amount) => Math.floor(Number(amount || 0) / 100);
-
 export default function TrainerLoyalty() {
     const [rewards, setRewards] = useState([]);
     const [orders, setOrders] = useState([]);
+    const [persistedPoints, setPersistedPoints] = useState(0);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState('all');
 
@@ -16,13 +15,15 @@ export default function TrainerLoyalty() {
                 const token = localStorage.getItem('token') || sessionStorage.getItem('token');
                 const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
 
-                const [rewardsRes, ordersRes] = await Promise.all([
+                const [rewardsRes, ordersRes, trainerRes] = await Promise.all([
                     axios.get('http://localhost:5000/api/loyalty/rewards', { headers }),
-                    axios.get('http://localhost:5000/api/members/orders', { headers })
+                    axios.get('http://localhost:5000/api/members/orders', { headers }),
+                    axios.get('http://localhost:5000/api/trainer/me', { headers })
                 ]);
 
                 setRewards(rewardsRes.data || []);
                 setOrders(ordersRes.data || []);
+                setPersistedPoints(Number(trainerRes?.data?.loyaltyPoints || 0));
             } catch (e) {
                 console.error('Failed to fetch trainer loyalty data', e);
                 const fallbackRewards = [
@@ -32,6 +33,7 @@ export default function TrainerLoyalty() {
                 ];
                 setRewards(fallbackRewards);
                 setOrders([]);
+                setPersistedPoints(0);
             } finally {
                 setLoading(false);
             }
@@ -45,10 +47,7 @@ export default function TrainerLoyalty() {
         [orders]
     );
 
-    const loyaltyPoints = useMemo(
-        () => completedOrders.reduce((sum, order) => sum + toPoints(order.amount), 0),
-        [completedOrders]
-    );
+    const loyaltyPoints = persistedPoints;
 
     const totalSpend = useMemo(
         () => completedOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0),

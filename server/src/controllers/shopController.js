@@ -2,7 +2,7 @@ const prisma = require('../config/prisma');
 
 // Checkout (Member Shop)
 const checkout = async (req, res) => {
-    const { items, paymentMethod, paymentType, paymentMethodId, gcashReference, gcashDate } = req.body;
+    const { items, paymentMethod, paymentType, paymentMethodId, gcashReference, gcashDate, markAsSessionMaterial } = req.body;
     const isMember = req.user?.role === 'MEMBER';
     const isTrainer = req.user?.role === 'TRAINER';
     if (!isMember && !isTrainer) {
@@ -16,10 +16,11 @@ const checkout = async (req, res) => {
 
     try {
         const requestedMethod = String(paymentType || paymentMethod || '').toUpperCase();
+        const isDeferredTrainerMaterial = isTrainer && Boolean(markAsSessionMaterial);
         const isPendingCash = requestedMethod === 'CASH_PENDING';
-        const method = isPendingCash ? 'CASH' : requestedMethod;
-        const status = isPendingCash ? 'PENDING' : 'COMPLETED';
-        const allowedMethods = ['CASH', 'CARD', 'GCASH'];
+        const method = isDeferredTrainerMaterial ? 'COMMISSION_DEDUCTION' : (isPendingCash ? 'CASH' : requestedMethod);
+        const status = isDeferredTrainerMaterial ? 'COMPLETED' : (isPendingCash ? 'PENDING' : 'COMPLETED');
+        const allowedMethods = ['CASH', 'CARD', 'GCASH', 'MAYA', 'COMMISSION_DEDUCTION'];
         if (!allowedMethods.includes(method)) {
             return res.status(400).json({ error: "Invalid payment method" });
         }
@@ -56,7 +57,69 @@ const checkout = async (req, res) => {
             computedTotal += Number(product.price) * item.quantity;
         }
 
-        if (method !== 'CASH' && isMember) {
+        if (isDeferredTrainerMaterial) {
+            const trainerId = Number(req.user?.trainerId || 0);
+            if (!Number.isInteger(trainerId) || trainerId <= 0) {
+                return res.status(400).json({ error: "Trainer account is not linked" });
+            }
+
+            const trainer = await prisma.trainer.findUnique({
+                where: { id: trainerId },
+                select: { commissionRate: true }
+            });
+            if (!trainer) {
+                return res.status(404).json({ error: "Trainer not found" });
+            }
+
+            const [unpaidSessions, unpaidClasses, unsettledMaterialItems] = await Promise.all([
+                prisma.trainingSession.findMany({
+                    where: { trainerId, status: 'COMPLETED', commissionPaid: false },
+                    select: { price: true }
+                }),
+                prisma.classHistory.findMany({
+                    where: { trainerId, commissionPaid: false },
+                    select: { commissionAmount: true }
+                }),
+                prisma.paymentItem.findMany({
+                    where: {
+                        intendedForSessionMaterial: true,
+                        payment: {
+                            cashierId: Number(req.user.id),
+                            method: 'COMMISSION_DEDUCTION'
+                        }
+                    },
+                    select: {
+                        quantity: true,
+                        returnedQuantity: true,
+                        materialSettledQuantity: true,
+                        unitPrice: true
+                    }
+                })
+            ]);
+
+            const sessionCommissions = unpaidSessions.reduce((sum, s) => {
+                return sum + (Number(s.price || 0) * Number(trainer.commissionRate || 0));
+            }, 0);
+            const classCommissions = unpaidClasses.reduce((sum, c) => {
+                return sum + Number(c.commissionAmount || 0);
+            }, 0);
+            const outstandingMaterialDeductions = unsettledMaterialItems.reduce((sum, item) => {
+                const unsettledQty = Math.max(
+                    0,
+                    Number(item.quantity || 0) - Number(item.returnedQuantity || 0) - Number(item.materialSettledQuantity || 0)
+                );
+                return sum + (unsettledQty * Number(item.unitPrice || 0));
+            }, 0);
+
+            const availableCommission = Number((sessionCommissions + classCommissions - outstandingMaterialDeductions).toFixed(2));
+            if (availableCommission < Number(computedTotal.toFixed(2))) {
+                return res.status(400).json({
+                    error: `Insufficient commission balance for tagged material purchase. Available: ${availableCommission.toFixed(2)}, Required: ${Number(computedTotal).toFixed(2)}`
+                });
+            }
+        }
+
+        if (method !== 'CASH' && method !== 'COMMISSION_DEDUCTION' && isMember) {
             const parsedMethodId = paymentMethodId !== undefined && paymentMethodId !== null ? Number(paymentMethodId) : null;
             if (!Number.isInteger(parsedMethodId) || parsedMethodId <= 0) {
                 return res.status(400).json({ error: "Saved payment method is required for non-cash checkout" });
@@ -68,13 +131,17 @@ const checkout = async (req, res) => {
             if (!savedMethod || savedMethod.memberId !== Number(memberId)) {
                 return res.status(403).json({ error: "Payment method is invalid for this member" });
             }
-            if ((method === 'CARD' && savedMethod.type !== 'CARD') || (method === 'GCASH' && savedMethod.type !== 'GCASH')) {
+            const savedType = String(savedMethod.type || '').toUpperCase();
+            const cardMatch = method === 'CARD' && (savedType === 'CARD' || savedType === 'CREDIT_CARD');
+            const walletMatch = (method === 'GCASH' && savedType === 'GCASH') || (method === 'MAYA' && savedType === 'MAYA');
+            if (!cardMatch && !walletMatch) {
                 return res.status(400).json({ error: "Selected payment method type does not match checkout method" });
             }
         }
 
         const result = await prisma.$transaction(async (tx) => {
-            const pointsAwarded = memberId && status === 'COMPLETED' ? Math.floor(computedTotal / 100) : 0;
+            const pointsAwarded = status === 'COMPLETED' && method !== 'COMMISSION_DEDUCTION' ? Math.floor(computedTotal / 100) : 0;
+            const intendedForSessionMaterial = isTrainer && Boolean(markAsSessionMaterial);
 
             const payment = await tx.payment.create({
                 data: {
@@ -85,8 +152,8 @@ const checkout = async (req, res) => {
                     ...(isTrainer ? { cashier: { connect: { id: Number(req.user.id) } } } : {}),
                     pointsAwarded,
                     status,
-                    externalRef: method === 'GCASH' ? (gcashReference || null) : null,
-                    externalDate: method === 'GCASH' && gcashDate ? new Date(gcashDate) : null
+                    externalRef: (method === 'GCASH' || method === 'MAYA') ? (gcashReference || null) : null,
+                    externalDate: (method === 'GCASH' || method === 'MAYA') && gcashDate ? new Date(gcashDate) : null
                 }
             });
 
@@ -99,7 +166,8 @@ const checkout = async (req, res) => {
                         name: product.name,
                         type: 'PRODUCT',
                         quantity: item.quantity,
-                        unitPrice: Number(product.price)
+                        unitPrice: Number(product.price),
+                        intendedForSessionMaterial
                     }
                 });
 
@@ -122,6 +190,12 @@ const checkout = async (req, res) => {
                 await tx.member.update({
                     where: { id: memberId },
                     data: { points: { increment: pointsAwarded } }
+                });
+            }
+            if (!memberId && isTrainer && pointsAwarded > 0) {
+                await tx.user.update({
+                    where: { id: Number(req.user.id) },
+                    data: { loyaltyPoints: { increment: pointsAwarded } }
                 });
             }
 

@@ -15,8 +15,20 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
         vatReg: "VAT REG TIN: 123-456-789-000"
     };
 
+    const normalizedItems = Array.isArray(items) ? items : [];
+    const fallbackBaseAmount = Number(transaction?.amount || 0) + Number(discount || 0);
+    const receiptItems = normalizedItems.length > 0
+        ? normalizedItems
+        : (fallbackBaseAmount > 0
+            ? [{
+                name: String(transaction?.type || 'Transaction').replaceAll('_', ' '),
+                price: fallbackBaseAmount,
+                quantity: 1
+            }]
+            : []);
+
     // Calculations
-    const subtotal = items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+    const subtotal = receiptItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
     const total = Math.max(0, subtotal - discount);
 
     // Points Calculation (1 pt per 100 PHP)
@@ -71,7 +83,7 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
                         </tr>
                     </thead>
                     <tbody>
-                        {items.map((item, idx) => (
+                        {receiptItems.map((item, idx) => (
                             <tr key={idx}>
                                 <td className="align-top">{item.quantity}</td>
                                 <td className="align-top pr-2">{item.name}</td>

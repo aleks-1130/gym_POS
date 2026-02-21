@@ -15,6 +15,7 @@ router.get('/payroll/stats', authenticateToken, authorize(['OWNER', 'ADMIN']), p
 router.get('/payroll/trainers', authenticateToken, authorize(['OWNER', 'ADMIN']), payrollController.getTrainers);
 router.get('/payroll/staff', authenticateToken, authorize(['OWNER', 'ADMIN']), payrollController.getStaff);
 router.post('/payroll/pay-commissions', authenticateToken, authorize(['OWNER', 'ADMIN']), payrollController.payCommissions);
+router.post('/payroll/pay-commissions-auto', authenticateToken, authorize(['OWNER', 'ADMIN']), payrollController.payCommissionsAuto);
 
 // Payroll Config Routes
 router.get('/payroll/config', authenticateToken, authorize(['OWNER', 'ADMIN']), payrollConfigController.getPayrollConfig);

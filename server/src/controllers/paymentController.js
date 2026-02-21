@@ -10,6 +10,13 @@ const getPlanClassSessions = (plan) => {
     return Number.isInteger(included) && included > 0 ? included : 0;
 };
 
+const getTrainerBuyerIdFromPayment = (payment) => {
+    if (!payment) return null;
+    if (payment.memberId) return null;
+    const role = String(payment.cashier?.role || '').toUpperCase();
+    return role === 'TRAINER' && payment.cashierId ? Number(payment.cashierId) : null;
+};
+
 // Get Payment Details
 const getPaymentDetails = async (req, res) => {
     const { id } = req.params;
@@ -31,13 +38,61 @@ const getPaymentDetails = async (req, res) => {
         if (!payment) return res.status(404).json({ error: "Payment not found" });
 
         // Staff constraint (optional)
-        if (req.user.role === 'STAFF' && payment.cashierId !== req.user.id && payment.type !== 'IN_APP_PURCHASE') {
+        if (
+            req.user.role === 'STAFF' &&
+            payment.cashierId !== req.user.id &&
+            !['IN_APP_PURCHASE', 'STORE_SALE'].includes(String(payment.type || '').toUpperCase())
+        ) {
             // Allow Staff to view but restrict if needed.
             // Original logic had strict check here:
             return res.status(403).json({ error: "Access denied" });
         }
 
-        res.json(payment);
+        let trainingSessions = [];
+        const isTrainingPayment = String(payment.type || '').toUpperCase() === 'TRAINING';
+        if (isTrainingPayment && payment.memberId) {
+            const paymentDate = new Date(payment.date);
+            const windowStart = new Date(paymentDate.getTime() - 5 * 60 * 1000);
+            const windowEnd = new Date(paymentDate.getTime() + 5 * 60 * 1000);
+            const matched = await prisma.trainingSession.findMany({
+                where: {
+                    memberId: Number(payment.memberId),
+                    paymentStatus: 'PAID',
+                    paidAt: {
+                        gte: windowStart,
+                        lte: windowEnd
+                    }
+                },
+                include: {
+                    trainer: { select: { id: true, name: true } }
+                },
+                orderBy: { paidAt: 'asc' }
+            });
+
+            const amount = Number(payment.amount || 0);
+            const sumMatched = matched.reduce((sum, session) => sum + Number(session.price || 0), 0);
+            const hasExactSum = Math.abs(sumMatched - amount) < 0.01;
+            if (hasExactSum) {
+                trainingSessions = matched;
+            } else {
+                const singleExact = matched.find((session) => Math.abs(Number(session.price || 0) - amount) < 0.01);
+                if (singleExact) {
+                    trainingSessions = [singleExact];
+                } else if (matched.length > 0) {
+                    const nearest = [...matched].sort((a, b) => {
+                        const aDiff = Math.abs(new Date(a.paidAt || a.date).getTime() - paymentDate.getTime());
+                        const bDiff = Math.abs(new Date(b.paidAt || b.date).getTime() - paymentDate.getTime());
+                        return aDiff - bDiff;
+                    })[0];
+                    trainingSessions = nearest ? [nearest] : [];
+                }
+            }
+        }
+
+        res.json({
+            ...payment,
+            trainingSessions
+        });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -59,7 +114,7 @@ const createPayment = async (req, res) => {
 
         if (!type) badRequest("Payment type is required");
 
-        const allowedMethods = ['CASH', 'CARD', 'GCASH'];
+        const allowedMethods = ['CASH', 'CARD', 'GCASH', 'MAYA'];
         if (!allowedMethods.includes(method)) badRequest("Invalid payment method");
 
         const normalizedDiscount = discount !== undefined ? Number(discount) : 0;
@@ -365,6 +420,7 @@ const getAllPayments = async (req, res) => {
             where: {
                 OR: [
                     { cashierId: req.user.id },
+                    { type: 'STORE_SALE' },
                     { type: 'IN_APP_PURCHASE' },
                     { type: 'TRAINING' },
                     { status: 'PENDING' }
@@ -451,7 +507,10 @@ const returnPaymentItems = async (req, res) => {
 
         const payment = await prisma.payment.findUnique({
             where: { id: paymentId },
-            include: { items: true }
+            include: {
+                items: true,
+                cashier: { select: { id: true, role: true } }
+            }
         });
         if (!payment) return res.status(404).json({ error: "Payment not found" });
         if (req.user.role === 'STAFF' && payment.cashierId !== req.user.id) {
@@ -497,14 +556,25 @@ const returnPaymentItems = async (req, res) => {
             return res.status(400).json({ error: "Nothing to return" });
         }
 
-        const pointsReversal = payment.memberId ? Math.floor(refundAmount / 100) : 0;
+        const trainerBuyerId = getTrainerBuyerIdFromPayment(payment);
+        const pointsReversal = (payment.memberId || trainerBuyerId) ? Math.floor(refundAmount / 100) : 0;
         if (pointsReversal > 0) {
-            const member = await prisma.member.findUnique({ where: { id: payment.memberId } });
-            if (member) {
-                await prisma.member.update({
-                    where: { id: payment.memberId },
-                    data: { points: { decrement: pointsReversal } }
-                });
+            if (payment.memberId) {
+                const member = await prisma.member.findUnique({ where: { id: payment.memberId } });
+                if (member) {
+                    await prisma.member.update({
+                        where: { id: payment.memberId },
+                        data: { points: { decrement: pointsReversal } }
+                    });
+                }
+            } else if (trainerBuyerId) {
+                const trainerUser = await prisma.user.findUnique({ where: { id: trainerBuyerId } });
+                if (trainerUser) {
+                    await prisma.user.update({
+                        where: { id: trainerBuyerId },
+                        data: { loyaltyPoints: { decrement: pointsReversal } }
+                    });
+                }
             }
         }
 
@@ -539,7 +609,10 @@ const voidPayment = async (req, res) => {
 
         const payment = await prisma.payment.findUnique({
             where: { id: paymentId },
-            include: { items: true }
+            include: {
+                items: true,
+                cashier: { select: { id: true, role: true } }
+            }
         });
         if (!payment) return res.status(404).json({ error: "Payment not found" });
         if (req.user.role === 'STAFF' && payment.cashierId !== req.user.id) {
@@ -558,14 +631,25 @@ const voidPayment = async (req, res) => {
             }
         }
 
-        const pointsReversal = payment.memberId ? (payment.pointsAwarded || 0) : 0;
+        const trainerBuyerId = getTrainerBuyerIdFromPayment(payment);
+        const pointsReversal = (payment.memberId || trainerBuyerId) ? (payment.pointsAwarded || 0) : 0;
         if (pointsReversal > 0) {
-            const member = await prisma.member.findUnique({ where: { id: payment.memberId } });
-            if (member) {
-                await prisma.member.update({
-                    where: { id: payment.memberId },
-                    data: { points: { decrement: pointsReversal } }
-                });
+            if (payment.memberId) {
+                const member = await prisma.member.findUnique({ where: { id: payment.memberId } });
+                if (member) {
+                    await prisma.member.update({
+                        where: { id: payment.memberId },
+                        data: { points: { decrement: pointsReversal } }
+                    });
+                }
+            } else if (trainerBuyerId) {
+                const trainerUser = await prisma.user.findUnique({ where: { id: trainerBuyerId } });
+                if (trainerUser) {
+                    await prisma.user.update({
+                        where: { id: trainerBuyerId },
+                        data: { loyaltyPoints: { decrement: pointsReversal } }
+                    });
+                }
             }
         }
 
@@ -668,7 +752,10 @@ const collectPendingCashPayment = async (req, res) => {
     try {
         const payment = await prisma.payment.findUnique({
             where: { id: paymentId },
-            include: { member: true }
+            include: {
+                member: true,
+                cashier: { select: { id: true, role: true } }
+            }
         });
         if (!payment) return res.status(404).json({ error: "Payment not found" });
         if (payment.status !== 'PENDING') {
@@ -681,7 +768,8 @@ const collectPendingCashPayment = async (req, res) => {
             return res.status(400).json({ error: "Cash tendered must be at least the payment amount" });
         }
 
-        const pointsAwarded = payment.memberId ? Math.floor(Number(payment.amount || 0) / 100) : 0;
+        const trainerBuyerId = getTrainerBuyerIdFromPayment(payment);
+        const pointsAwarded = (payment.memberId || trainerBuyerId) ? Math.floor(Number(payment.amount || 0) / 100) : 0;
         const changeDue = Number((cashTendered - Number(payment.amount || 0)).toFixed(2));
 
         const updated = await prisma.$transaction(async (tx) => {
@@ -711,7 +799,7 @@ const collectPendingCashPayment = async (req, res) => {
                     cashTendered,
                     changeDue,
                     pointsAwarded,
-                    cashierId: req.user.id
+                    cashierId: trainerBuyerId ? payment.cashierId : req.user.id
                 },
                 include: {
                     member: true,
@@ -724,6 +812,12 @@ const collectPendingCashPayment = async (req, res) => {
                 await tx.member.update({
                     where: { id: Number(payment.memberId) },
                     data: { points: { increment: pointsAwarded } }
+                });
+            }
+            if (!payment.memberId && trainerBuyerId && pointsAwarded > 0) {
+                await tx.user.update({
+                    where: { id: Number(trainerBuyerId) },
+                    data: { loyaltyPoints: { increment: pointsAwarded } }
                 });
             }
 

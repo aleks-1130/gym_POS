@@ -10,6 +10,9 @@ export default function TrainingManager() {
     const [sessions, setSessions] = useState([]);
     const [products, setProducts] = useState([]);
     const [addedMaterials, setAddedMaterials] = useState([]);
+    const [materialCandidates, setMaterialCandidates] = useState([]);
+    const [candidateQuantities, setCandidateQuantities] = useState({});
+    const [loadingCandidates, setLoadingCandidates] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState('');
     const [quantity, setQuantity] = useState(1);
 
@@ -30,6 +33,15 @@ export default function TrainingManager() {
         fetchSessions();
         fetchProducts();
     }, []);
+
+    useEffect(() => {
+        if (selectedSession?.id) {
+            fetchMaterialCandidates(selectedSession.id);
+        } else {
+            setMaterialCandidates([]);
+            setCandidateQuantities({});
+        }
+    }, [selectedSession?.id]);
 
     const fetchSessions = async () => {
         try {
@@ -73,6 +85,32 @@ export default function TrainingManager() {
         }
     };
 
+    const fetchMaterialCandidates = async (sessionId) => {
+        if (!sessionId) {
+            setMaterialCandidates([]);
+            setCandidateQuantities({});
+            return;
+        }
+        setLoadingCandidates(true);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await axios.get(`http://localhost:5000/api/training-sessions/${sessionId}/material-candidates`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const candidates = Array.isArray(res.data) ? res.data : [];
+            setMaterialCandidates(candidates);
+            const qtyDefaults = {};
+            candidates.forEach((c) => { qtyDefaults[c.paymentItemId] = 1; });
+            setCandidateQuantities(qtyDefaults);
+        } catch (e) {
+            console.error("Failed to fetch material candidates", e);
+            setMaterialCandidates([]);
+            setCandidateQuantities({});
+        } finally {
+            setLoadingCandidates(false);
+        }
+    };
+
     const addMaterial = () => {
         if (isCustomItem) {
             if (!customName || !customCost) return;
@@ -110,8 +148,57 @@ export default function TrainingManager() {
 
     const removeMaterial = (index) => {
         const newMaterials = [...addedMaterials];
-        newMaterials.splice(index, 1);
+        const [removed] = newMaterials.splice(index, 1);
         setAddedMaterials(newMaterials);
+        if (removed?.sourcePaymentItemId) {
+            setMaterialCandidates((prev) => {
+                const idx = prev.findIndex((c) => Number(c.paymentItemId) === Number(removed.sourcePaymentItemId));
+                if (idx >= 0) {
+                    return prev.map((c, i) => i === idx ? { ...c, availableQuantity: Number(c.availableQuantity || 0) + Number(removed.quantity || 0) } : c);
+                }
+                return [
+                    ...prev,
+                    {
+                        paymentItemId: removed.sourcePaymentItemId,
+                        paymentId: removed.paymentId || null,
+                        name: removed.name,
+                        productId: removed.productId || null,
+                        category: removed.category || PRODUCT_CATEGORIES.OTHER,
+                        costPerUnit: Number(removed.cost || 0),
+                        availableQuantity: Number(removed.quantity || 0),
+                        purchasedAt: removed.purchasedAt || null,
+                        paymentMethod: removed.paymentMethod || null
+                    }
+                ];
+            });
+        }
+    };
+
+    const addCandidateMaterial = (candidate) => {
+        const desiredQty = Number(candidateQuantities[candidate.paymentItemId] || 1);
+        const safeQty = Math.min(
+            Math.max(Number.isFinite(desiredQty) ? desiredQty : 1, 1),
+            Number(candidate.availableQuantity || 0)
+        );
+        if (safeQty <= 0) return;
+
+        const material = {
+            sourcePaymentItemId: candidate.paymentItemId,
+            paymentId: candidate.paymentId,
+            purchasedAt: candidate.purchasedAt,
+            paymentMethod: candidate.paymentMethod,
+            productId: candidate.productId,
+            name: candidate.name,
+            category: candidate.category || PRODUCT_CATEGORIES.OTHER,
+            cost: Number(candidate.costPerUnit || 0),
+            quantity: safeQty
+        };
+        setAddedMaterials((prev) => [...prev, material]);
+        setMaterialCandidates((prev) => prev
+            .map((c) => Number(c.paymentItemId) === Number(candidate.paymentItemId)
+                ? { ...c, availableQuantity: Number(c.availableQuantity || 0) - safeQty }
+                : c)
+            .filter((c) => Number(c.availableQuantity || 0) > 0));
     };
 
     const totalMaterialCost = addedMaterials.reduce((sum, item) => sum + (item.cost * item.quantity), 0);
@@ -329,6 +416,52 @@ export default function TrainingManager() {
                                 {/* Materials Section */}
                                 <div>
                                     <label className="block text-xs font-bold text-text-muted uppercase tracking-wider mb-2">Materials Used</label>
+
+                                    <div className="mb-3 rounded-xl border border-white/10 bg-background/60 p-3">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <p className="text-xs font-bold text-white uppercase tracking-wider">Trainer Purchases</p>
+                                            <button
+                                                type="button"
+                                                onClick={() => fetchMaterialCandidates(selectedSession.id)}
+                                                className="text-[10px] text-primary hover:underline font-bold uppercase"
+                                            >
+                                                Refresh
+                                            </button>
+                                        </div>
+                                        {loadingCandidates ? (
+                                            <p className="text-[11px] text-text-muted">Loading linked trainer purchases...</p>
+                                        ) : materialCandidates.length === 0 ? (
+                                            <p className="text-[11px] text-text-muted">No available trainer purchases tagged as "session material".</p>
+                                        ) : (
+                                            <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-1">
+                                                {materialCandidates.map((candidate) => (
+                                                    <div key={candidate.paymentItemId} className="flex items-center gap-2 rounded-lg border border-white/5 bg-black/20 p-2">
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-xs text-white font-semibold truncate">{candidate.name}</p>
+                                                            <p className="text-[10px] text-text-muted">
+                                                                {candidate.availableQuantity} available • {formatPrice(candidate.costPerUnit)} each
+                                                            </p>
+                                                        </div>
+                                                        <input
+                                                            type="number"
+                                                            min="1"
+                                                            max={candidate.availableQuantity}
+                                                            value={candidateQuantities[candidate.paymentItemId] ?? 1}
+                                                            onChange={(e) => setCandidateQuantities((prev) => ({ ...prev, [candidate.paymentItemId]: e.target.value }))}
+                                                            className="w-14 bg-background border border-white/10 rounded-lg px-2 py-1 text-xs text-white focus:border-primary outline-none text-center"
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => addCandidateMaterial(candidate)}
+                                                            className="px-2.5 py-1.5 rounded-lg bg-primary/15 hover:bg-primary/25 text-primary text-[11px] font-bold transition-colors"
+                                                        >
+                                                            Add
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
 
                                     {/* Add Material */}
                                     <div className="flex flex-col gap-2 mb-3">

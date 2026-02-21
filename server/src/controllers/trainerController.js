@@ -58,10 +58,21 @@ const getMe = async (req, res) => {
         if (!trainerId) return res.status(400).json({ error: "Trainer account is not linked" });
         const trainer = await prisma.trainer.findUnique({
             where: { id: Number(trainerId) },
-            include: { classes: true }
+            include: {
+                classes: true,
+                user: {
+                    select: {
+                        id: true,
+                        loyaltyPoints: true
+                    }
+                }
+            }
         });
         if (!trainer) return res.status(404).json({ error: "Trainer not found" });
-        res.json(withTrainerAvailability(trainer));
+        res.json({
+            ...withTrainerAvailability(trainer),
+            loyaltyPoints: Number(trainer.user?.loyaltyPoints || 0)
+        });
     } catch (e) {
         res.status(500).json({ error: "Failed to fetch trainer profile" });
     }
@@ -82,7 +93,7 @@ const getMyCommissions = async (req, res) => {
             return res.status(404).json({ error: "Trainer not found" });
         }
 
-        const [completedSessions, classHistory, payoutExpenses] = await Promise.all([
+        const [completedSessions, classHistory, payoutExpenses, materialItems] = await Promise.all([
             prisma.trainingSession.findMany({
                 where: { trainerId, status: 'COMPLETED' },
                 select: {
@@ -115,6 +126,23 @@ const getMyCommissions = async (req, res) => {
                 },
                 select: { id: true, title: true, amount: true, date: true, notes: true },
                 orderBy: { date: 'desc' }
+            }),
+            prisma.paymentItem.findMany({
+                where: {
+                    intendedForSessionMaterial: true,
+                    payment: {
+                        cashierId: Number(req.user.id),
+                        method: 'COMMISSION_DEDUCTION'
+                    }
+                },
+                select: {
+                    id: true,
+                    quantity: true,
+                    returnedQuantity: true,
+                    unitPrice: true,
+                    materialUsedQuantity: true,
+                    materialSettledQuantity: true
+                }
             })
         ]);
 
@@ -154,6 +182,19 @@ const getMyCommissions = async (req, res) => {
         const totalUnpaid = allCommissionHistory
             .filter((item) => !item.commissionPaid)
             .reduce((sum, item) => sum + item.commissionAmount, 0);
+        const materialUsedAmount = materialItems.reduce((sum, item) => {
+            return sum + (Number(item.unitPrice || 0) * Number(item.materialUsedQuantity || 0));
+        }, 0);
+        const materialDeductedAmount = materialItems.reduce((sum, item) => {
+            return sum + (Number(item.unitPrice || 0) * Number(item.materialSettledQuantity || 0));
+        }, 0);
+        const materialPendingDeduction = materialItems.reduce((sum, item) => {
+            const unsettledQty = Math.max(
+                0,
+                Number(item.quantity || 0) - Number(item.returnedQuantity || 0) - Number(item.materialSettledQuantity || 0)
+            );
+            return sum + (Number(item.unitPrice || 0) * unsettledQty);
+        }, 0);
 
         return res.json({
             trainer: {
@@ -168,6 +209,9 @@ const getMyCommissions = async (req, res) => {
                 totalPaidMarked,
                 totalPayoutRecorded,
                 totalUnpaid,
+                materialUsedAmount,
+                materialDeductedAmount,
+                materialPendingDeduction,
                 completedSessions: sessionHistory.length,
                 completedClasses: classHistoryItems.length
             },

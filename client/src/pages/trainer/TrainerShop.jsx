@@ -19,8 +19,8 @@ export default function TrainerShop() {
 
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [selectedMethodId, setSelectedMethodId] = useState(null);
-    const [selectedPaymentType, setSelectedPaymentType] = useState('CARD');
-    const [gcashDetails, setGcashDetails] = useState({ reference: '', date: '', time: '' });
+    const [selectedPaymentType, setSelectedPaymentType] = useState('CASH');
+    const [markAsSessionMaterial, setMarkAsSessionMaterial] = useState(false);
     const [isCheckingOut, setIsCheckingOut] = useState(false);
 
     useEffect(() => {
@@ -48,12 +48,24 @@ export default function TrainerShop() {
     }, [showPaymentModal]);
 
     const cardMethods = paymentMethods.filter((m) => String(m.type || '').toUpperCase() === 'CARD');
+    const walletMethods = paymentMethods.filter((m) => ['GCASH', 'MAYA'].includes(String(m.type || '').toUpperCase()));
 
     useEffect(() => {
-        if (selectedPaymentType !== 'CARD') return;
-        const defaultMethod = cardMethods.find((m) => m.isDefault) || cardMethods[0] || null;
-        setSelectedMethodId(defaultMethod?.id || null);
-    }, [selectedPaymentType, showPaymentModal]);
+        const cards = paymentMethods.filter((m) => String(m.type || '').toUpperCase() === 'CARD');
+        const wallets = paymentMethods.filter((m) => ['GCASH', 'MAYA'].includes(String(m.type || '').toUpperCase()));
+
+        if (selectedPaymentType === 'CARD') {
+            const defaultMethod = cards.find((m) => m.isDefault) || cards[0] || null;
+            setSelectedMethodId(defaultMethod?.id || null);
+            return;
+        }
+        if (selectedPaymentType === 'E_WALLET') {
+            const defaultMethod = wallets.find((m) => m.isDefault) || wallets[0] || null;
+            setSelectedMethodId(defaultMethod?.id || null);
+            return;
+        }
+        setSelectedMethodId(null);
+    }, [selectedPaymentType, showPaymentModal, paymentMethods]);
 
     const saveCart = (updatedCart) => {
         localStorage.setItem(STORAGE_KEYS.cart, JSON.stringify(updatedCart));
@@ -99,20 +111,27 @@ export default function TrainerShop() {
 
     const handleCheckoutInit = () => {
         setShowCartModal(false);
+        setSelectedPaymentType('CASH');
+        setSelectedMethodId(null);
+        setMarkAsSessionMaterial(false);
         setShowPaymentModal(true);
     };
 
     const handleConfirmCheckout = async () => {
-        if (selectedPaymentType === 'CARD' && cardMethods.length === 0) {
+        if (!markAsSessionMaterial && selectedPaymentType === 'CARD' && cardMethods.length === 0) {
             alert('No saved cards found. Add card in Trainer Payment Methods.');
             return;
         }
-        if (selectedPaymentType === 'CARD' && !selectedMethodId) {
+        if (!markAsSessionMaterial && selectedPaymentType === 'CARD' && !selectedMethodId) {
             alert('Please select a saved card');
             return;
         }
-        if (selectedPaymentType === 'GCASH' && (!gcashDetails.reference || !gcashDetails.date || !gcashDetails.time)) {
-            alert('Please enter GCash details');
+        if (!markAsSessionMaterial && selectedPaymentType === 'E_WALLET' && walletMethods.length === 0) {
+            alert('No saved e-wallet found. Add GCash or Maya in Trainer Payment Methods.');
+            return;
+        }
+        if (!markAsSessionMaterial && selectedPaymentType === 'E_WALLET' && !selectedMethodId) {
+            alert('Please select a saved e-wallet');
             return;
         }
 
@@ -122,10 +141,17 @@ export default function TrainerShop() {
             await axios.post('http://localhost:5000/api/members/checkout', {
                 items: cart.map((i) => ({ productId: i.id, quantity: i.quantity, price: i.price, name: i.name })),
                 total: getCartTotal(),
-                paymentType: selectedPaymentType === 'CASH' ? 'CASH_PENDING' : selectedPaymentType,
-                paymentMethodId: null,
-                gcashReference: selectedPaymentType === 'GCASH' ? gcashDetails.reference : null,
-                gcashDate: selectedPaymentType === 'GCASH' ? `${gcashDetails.date}T${gcashDetails.time}` : null
+                paymentType: markAsSessionMaterial
+                    ? 'COMMISSION_DEDUCTION'
+                    : (selectedPaymentType === 'CASH'
+                        ? 'CASH_PENDING'
+                        : (selectedPaymentType === 'E_WALLET'
+                            ? String(walletMethods.find((m) => Number(m.id) === Number(selectedMethodId))?.type || '').toUpperCase()
+                            : 'CARD')),
+                paymentMethodId: markAsSessionMaterial || selectedPaymentType === 'CASH' ? null : selectedMethodId,
+                gcashReference: null,
+                gcashDate: null,
+                markAsSessionMaterial
             }, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined
             });
@@ -133,7 +159,10 @@ export default function TrainerShop() {
             setCart([]);
             saveCart([]);
             setShowPaymentModal(false);
-            alert(selectedPaymentType === 'CASH' ? 'Order placed. Please pay at counter.' : 'Order placed successfully.');
+            setMarkAsSessionMaterial(false);
+            alert(markAsSessionMaterial
+                ? 'Material purchase saved. Cost will be deducted from trainer commission payout.'
+                : (selectedPaymentType === 'CASH' ? 'Order placed. Please pay at counter.' : 'Order placed successfully.'));
             navigate('/trainer/purchase-history');
         } catch (error) {
             console.error(error);
@@ -341,7 +370,11 @@ export default function TrainerShop() {
                     <div className="bg-[#111111] border border-white/5 rounded-3xl w-full max-w-md p-6 space-y-6 my-auto shadow-2xl">
                         <div className="space-y-1">
                             <h2 className="text-xl font-bold text-white">Order Details</h2>
-                            <p className="text-text-muted text-xs">Review your items and choose payment method</p>
+                            <p className="text-text-muted text-xs">
+                                {markAsSessionMaterial
+                                    ? 'Review your items. Cost will be deducted during commission payout.'
+                                    : 'Review your items and choose payment method'}
+                            </p>
                         </div>
 
                         <div className="bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 space-y-4">
@@ -374,22 +407,32 @@ export default function TrainerShop() {
                             </div>
                         </div>
 
-                        <div className="bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 space-y-4">
+                        <div className={`bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 space-y-4 ${markAsSessionMaterial ? 'opacity-60' : ''}`}>
                             <div className="flex justify-between items-center">
                                 <h3 className="text-white font-bold text-sm">Payment Method</h3>
-                                <button onClick={() => { setShowPaymentModal(false); navigate('/trainer/payment-methods'); }} className="text-primary text-[10px] font-bold uppercase hover:underline">
+                                <button
+                                    onClick={() => { setShowPaymentModal(false); navigate('/trainer/payment-methods'); }}
+                                    className="text-primary text-[10px] font-bold uppercase hover:underline disabled:opacity-40"
+                                    disabled={markAsSessionMaterial}
+                                >
                                     Manage methods
                                 </button>
                             </div>
+                            {markAsSessionMaterial && (
+                                <p className="text-[10px] text-text-muted">
+                                    Payment selection is disabled. This order will be deducted from trainer commissions.
+                                </p>
+                            )}
 
                             <div className="flex gap-2 p-1 bg-black/40 rounded-xl border border-white/5">
-                                {['CARD', 'GCASH', 'CASH'].map((type) => (
+                                {['CASH', 'E_WALLET', 'CARD'].map((type) => (
                                     <button
                                         key={type}
                                         onClick={() => setSelectedPaymentType(type)}
+                                        disabled={markAsSessionMaterial}
                                         className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${selectedPaymentType === type ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-text-muted hover:text-white hover:bg-white/5'}`}
                                     >
-                                        {type === 'CARD' ? 'Saved Cards' : type === 'GCASH' ? 'GCash' : 'Cash'}
+                                        {type === 'CARD' ? 'Card' : type === 'E_WALLET' ? 'E-Wallet' : 'Cash'}
                                     </button>
                                 ))}
                             </div>
@@ -430,34 +473,61 @@ export default function TrainerShop() {
                                     )
                                 )}
 
-                                {selectedPaymentType === 'GCASH' && (
-                                    <div className="space-y-3">
-                                        <div>
-                                            <label className="block text-text-muted text-[10px] font-bold uppercase mb-1 tracking-wider">GCash Reference No.</label>
-                                            <input type="text" className="w-full bg-black/40 border border-white/5 rounded-xl p-3 text-white text-sm focus:border-primary outline-none transition-all" placeholder="Enter Transaction Ref No." value={gcashDetails.reference} onChange={(e) => setGcashDetails({ ...gcashDetails, reference: e.target.value })} />
+                                {selectedPaymentType === 'E_WALLET' && (
+                                    walletMethods.length === 0 ? (
+                                        <div className="text-center py-6 border border-white/5 rounded-xl bg-black/20">
+                                            <p className="text-white text-xs mb-1">No linked e-wallets found</p>
+                                            <p className="text-text-muted text-[10px]">Please add GCash or Maya in Trainer Payment Methods.</p>
                                         </div>
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <div>
-                                                <label className="block text-text-muted text-[10px] font-bold uppercase mb-1 tracking-wider">Date</label>
-                                                <input type="date" className="w-full bg-black/40 border border-white/5 rounded-xl p-3 text-white text-sm focus:border-primary outline-none transition-all" value={gcashDetails.date} onChange={(e) => setGcashDetails({ ...gcashDetails, date: e.target.value })} />
-                                            </div>
-                                            <div>
-                                                <label className="block text-text-muted text-[10px] font-bold uppercase mb-1 tracking-wider">Time</label>
-                                                <input type="time" className="w-full bg-black/40 border border-white/5 rounded-xl p-3 text-white text-sm focus:border-primary outline-none transition-all" value={gcashDetails.time} onChange={(e) => setGcashDetails({ ...gcashDetails, time: e.target.value })} />
-                                            </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {walletMethods.map((method) => (
+                                                <label key={method.id} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${selectedMethodId === method.id ? 'bg-primary/5 border-primary/40' : 'bg-black/20 border-white/5 hover:border-white/10'}`}>
+                                                    <input type="radio" name="paymentMethod" className="hidden" checked={selectedMethodId === method.id} onChange={() => setSelectedMethodId(method.id)} />
+                                                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${selectedMethodId === method.id ? 'border-primary ring-2 ring-primary/20' : 'border-white/20'}`}>
+                                                        {selectedMethodId === method.id && <div className="w-2 h-2 bg-primary rounded-full" />}
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-bold text-white text-xs uppercase tracking-tight">{String(method.type || '').toUpperCase() === 'MAYA' ? 'Maya' : 'GCash'}</span>
+                                                            {method.isDefault && <span className="text-[8px] bg-primary/20 text-primary px-1.5 py-0.5 rounded font-black uppercase">Default</span>}
+                                                        </div>
+                                                        <span className="text-text-muted text-[10px] block mt-0.5 tracking-wider">**** {method.last4}</span>
+                                                    </div>
+                                                </label>
+                                            ))}
                                         </div>
-                                    </div>
+                                    )
                                 )}
                             </div>
+                        </div>
+
+                        <div className="bg-[#1a1a1a] border border-white/5 rounded-2xl p-4">
+                            <label className="flex items-start gap-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={markAsSessionMaterial}
+                                    onChange={(e) => setMarkAsSessionMaterial(e.target.checked)}
+                                    className="mt-0.5 accent-primary"
+                                />
+                                <div>
+                                    <p className="text-white text-sm font-bold">Tag as Session Material Purchase</p>
+                                    <p className="text-text-muted text-[11px] leading-relaxed mt-0.5">
+                                        Tagged items can be added quickly in Admin Training Sessions when completing a trainer session.
+                                    </p>
+                                </div>
+                            </label>
                         </div>
 
                         <div className="space-y-3 pt-2">
                             <button
                                 onClick={handleConfirmCheckout}
-                                disabled={isCheckingOut || (selectedPaymentType === 'CARD' && cardMethods.length > 0 && !selectedMethodId) || (selectedPaymentType === 'GCASH' && (!gcashDetails.reference || !gcashDetails.date || !gcashDetails.time))}
+                                disabled={isCheckingOut || (!markAsSessionMaterial && ((selectedPaymentType === 'CARD' || selectedPaymentType === 'E_WALLET') && !selectedMethodId))}
                                 className="w-full bg-primary hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl transition-all shadow-xl shadow-primary/20 active:scale-95 flex items-center justify-center gap-2 text-base"
                             >
-                                {isCheckingOut ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /><span>Processing...</span></> : <span>Place Order</span>}
+                                {isCheckingOut
+                                    ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /><span>Processing...</span></>
+                                    : <span>{markAsSessionMaterial ? 'Save For Commission Deduction' : 'Place Order'}</span>}
                             </button>
                             <button onClick={() => setShowPaymentModal(false)} className="w-full bg-white/5 hover:bg-white/10 text-text-muted font-bold py-4 rounded-2xl transition-all active:scale-95 text-base">Cancel</button>
                         </div>
