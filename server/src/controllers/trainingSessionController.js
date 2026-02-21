@@ -637,6 +637,57 @@ const requestRefundException = async (req, res) => {
     }
 };
 
+const requestUnableToAttend = async (req, res) => {
+    const sessionId = Number(req.params.id);
+    const { reason, preferredDate, preferredTime } = req.body || {};
+    const normalizedReason = String(reason || '').trim();
+
+    if (!normalizedReason) {
+        return res.status(400).json({ error: "reason is required" });
+    }
+
+    try {
+        const session = await prisma.trainingSession.findUnique({
+            where: { id: sessionId }
+        });
+        if (!session) {
+            return res.status(404).json({ error: "Session not found" });
+        }
+        if (req.user.role !== 'TRAINER' || Number(req.user.trainerId) !== Number(session.trainerId)) {
+            return res.status(403).json({ error: "Not authorized to request change for this session" });
+        }
+        if (isSessionTerminal(session.status)) {
+            return res.status(400).json({ error: "This session is already finalized" });
+        }
+        if (new Date(session.date) < new Date()) {
+            return res.status(400).json({ error: "Cannot create trainer change request for past sessions" });
+        }
+        if (String(session.status).toUpperCase() === 'RESCHEDULE_REQUESTED') {
+            return res.status(400).json({ error: "A trainer change request is already pending for this session" });
+        }
+
+        const preferredSegment = preferredDate && preferredTime
+            ? ` | preferred=${preferredDate}T${preferredTime}`
+            : '';
+        const line = `TRAINER_CHANGE_REQUESTED by TRAINER#${req.user.id} at ${new Date().toISOString()} | reason=${normalizedReason}${preferredSegment}`;
+
+        const updated = await prisma.trainingSession.update({
+            where: { id: sessionId },
+            data: {
+                status: 'RESCHEDULE_REQUESTED',
+                notes: appendPolicyNote(session.notes, line)
+            }
+        });
+
+        res.json({
+            message: "Request submitted to staff/admin for approval.",
+            session: updated
+        });
+    } catch (e) {
+        res.status(500).json({ error: "Failed to submit trainer change request", detail: e?.message });
+    }
+};
+
 
 module.exports = {
     getAllSessions,
@@ -649,5 +700,6 @@ module.exports = {
     declineSession,
     memberRescheduleSession,
     markNoShow,
-    requestRefundException
+    requestRefundException,
+    requestUnableToAttend
 };

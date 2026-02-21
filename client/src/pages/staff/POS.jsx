@@ -28,6 +28,11 @@ export default function POS() {
     const [trainingBookings, setTrainingBookings] = useState([]);
     const [pendingInAppPurchases, setPendingInAppPurchases] = useState([]);
     const [refundExceptionRequests, setRefundExceptionRequests] = useState([]);
+    const [trainerChangeRequests, setTrainerChangeRequests] = useState([]);
+    const [trainerChangeModalSession, setTrainerChangeModalSession] = useState(null);
+    const [trainerChangeResolution, setTrainerChangeResolution] = useState({ action: 'MOVE', date: '', time: '', note: '' });
+    const [trainerChangeSubmitting, setTrainerChangeSubmitting] = useState(false);
+    const [trainerChangeError, setTrainerChangeError] = useState('');
     const [showCollectModal, setShowCollectModal] = useState(false);
     const [collectSession, setCollectSession] = useState(null);
     const [showCollectPurchaseModal, setShowCollectPurchaseModal] = useState(false);
@@ -85,7 +90,12 @@ export default function POS() {
         if (viewMode !== 'TRAINING_BOOKINGS') return;
 
         const fetchCollectCashData = async () => {
-            await Promise.all([fetchTrainingBookings(), fetchPendingInAppPurchases(), fetchRefundExceptionRequests()]);
+            await Promise.all([
+                fetchTrainingBookings(),
+                fetchPendingInAppPurchases(),
+                fetchRefundExceptionRequests(),
+                fetchTrainerChangeRequests()
+            ]);
         };
 
         fetchCollectCashData();
@@ -200,6 +210,19 @@ export default function POS() {
         }
     };
 
+    const fetchTrainerChangeRequests = async () => {
+        try {
+            const res = await axios.get(withApiBase('/api/staff/training-sessions/trainer-change-requests'), {
+                params: { status: 'PENDING' },
+                headers: authHeaders()
+            });
+            setTrainerChangeRequests(res.data || []);
+        } catch (error) {
+            console.error("Failed to fetch trainer change requests");
+            setTrainerChangeRequests([]);
+        }
+    };
+
     const resolveRefundException = async (session, decision) => {
         const isApprove = decision === 'APPROVE';
         const promptText = isApprove
@@ -224,6 +247,57 @@ export default function POS() {
             const message = e.response?.data?.error || 'Failed to resolve refund exception';
             const detail = e.response?.data?.detail;
             alert(detail ? `${message}\n\nDetails: ${detail}` : message);
+        }
+    };
+
+    const openTrainerChangeResolutionModal = (session) => {
+        const preferred = String(session?.trainerChangeRequest?.request?.preferred || '');
+        const [preferredDate = '', preferredTimeRaw = ''] = preferred.split('T');
+        const preferredTime = preferredTimeRaw ? preferredTimeRaw.slice(0, 5) : '';
+        setTrainerChangeModalSession(session);
+        setTrainerChangeResolution({
+            action: 'MOVE',
+            date: preferredDate,
+            time: preferredTime,
+            note: ''
+        });
+        setTrainerChangeError('');
+    };
+
+    const submitTrainerChangeResolution = async () => {
+        if (!trainerChangeModalSession) return;
+
+        const payload = {
+            action: trainerChangeResolution.action,
+            note: String(trainerChangeResolution.note || '').trim()
+        };
+
+        if (trainerChangeResolution.action === 'MOVE') {
+            if (!trainerChangeResolution.date || !trainerChangeResolution.time) {
+                setTrainerChangeError('Date and time are required for MOVE action.');
+                return;
+            }
+            payload.date = trainerChangeResolution.date;
+            payload.time = trainerChangeResolution.time;
+        }
+
+        setTrainerChangeSubmitting(true);
+        setTrainerChangeError('');
+        try {
+            await axios.post(
+                withApiBase(`/api/staff/training-sessions/${trainerChangeModalSession.id}/trainer-change-request/resolve`),
+                payload,
+                { headers: authHeaders() }
+            );
+            setTrainerChangeModalSession(null);
+            await Promise.all([fetchTrainerChangeRequests(), fetchTrainingBookings()]);
+            alert('Trainer change request resolved.');
+        } catch (e) {
+            const message = e.response?.data?.error || 'Failed to resolve trainer change request';
+            const detail = e.response?.data?.detail;
+            setTrainerChangeError(detail ? `${message} ${detail}` : message);
+        } finally {
+            setTrainerChangeSubmitting(false);
         }
     };
 
@@ -703,6 +777,16 @@ export default function POS() {
                     >
                         Refund Exceptions
                     </button>
+                    <button
+                        type="button"
+                        onClick={() => setCollectCashTab('TRAINER_CHANGE_REQUESTS')}
+                        className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${collectCashTab === 'TRAINER_CHANGE_REQUESTS'
+                            ? 'bg-primary text-background'
+                            : 'text-text-secondary hover:text-white bg-white/5'
+                            }`}
+                    >
+                        Trainer Change Requests
+                    </button>
                 </div>
 
                 {collectCashTab === 'BOOKINGS' && (
@@ -903,6 +987,63 @@ export default function POS() {
                     </div>
                 )}
 
+                {collectCashTab === 'TRAINER_CHANGE_REQUESTS' && (
+                    <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
+                        <table className="w-full text-left text-sm text-text-secondary">
+                            <thead className="bg-white/5 text-text-muted uppercase text-xs font-bold tracking-wider">
+                                <tr>
+                                    <th className="px-6 py-4">Session</th>
+                                    <th className="px-6 py-4">Member</th>
+                                    <th className="px-6 py-4">Trainer</th>
+                                    <th className="px-6 py-4">Reason</th>
+                                    <th className="px-6 py-4">Preferred</th>
+                                    <th className="px-6 py-4">Requested</th>
+                                    <th className="px-6 py-4">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                                {trainerChangeRequests.length === 0 && (
+                                    <tr><td colSpan="7" className="p-6 text-center text-text-muted">No pending trainer change requests.</td></tr>
+                                )}
+                                {trainerChangeRequests.map((session) => (
+                                    <tr key={session.id} className="hover:bg-white/5 transition-colors">
+                                        <td className="px-6 py-4 text-white font-medium">
+                                            {new Date(session.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(session.date).toLocaleTimeString()}</span>
+                                        </td>
+                                        <td className="px-6 py-4 text-white">
+                                            {session.member ? `${session.member.firstName} ${session.member.lastName}` : 'N/A'}
+                                        </td>
+                                        <td className="px-6 py-4 text-white">{session.trainer?.name || 'N/A'}</td>
+                                        <td className="px-6 py-4 text-white">
+                                            <p className="text-xs max-w-[220px] truncate" title={session.trainerChangeRequest?.request?.reason || ''}>
+                                                {session.trainerChangeRequest?.request?.reason || 'No reason provided'}
+                                            </p>
+                                        </td>
+                                        <td className="px-6 py-4 text-white">
+                                            {session.trainerChangeRequest?.request?.preferred
+                                                ? new Date(session.trainerChangeRequest.request.preferred).toLocaleString()
+                                                : <span className="text-text-muted">None</span>}
+                                        </td>
+                                        <td className="px-6 py-4 text-white">
+                                            {session.trainerChangeRequest?.request?.requestedAt
+                                                ? new Date(session.trainerChangeRequest.request.requestedAt).toLocaleString()
+                                                : 'Unknown'}
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <button
+                                                onClick={() => openTrainerChangeResolutionModal(session)}
+                                                className="text-xs font-bold px-3 py-1 rounded-lg border border-blue-500/30 text-blue-300 hover:bg-blue-500/10"
+                                            >
+                                                Resolve
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
                 {showCollectModal && collectSession && (
                     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
                         <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6">
@@ -1024,6 +1165,96 @@ export default function POS() {
                                         {collectLoading ? 'Collecting...' : 'Collect'}
                                     </button>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {trainerChangeModalSession && (
+                    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                        <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4">
+                            <div>
+                                <h2 className="text-xl font-bold text-white">Resolve Trainer Change Request</h2>
+                                <p className="text-text-muted text-sm mt-1">
+                                    {trainerChangeModalSession.member?.firstName} {trainerChangeModalSession.member?.lastName} • {trainerChangeModalSession.trainer?.name}
+                                </p>
+                            </div>
+
+                            <div className="bg-white/5 rounded-xl p-3 text-xs text-text-muted space-y-1">
+                                <p><span className="text-white font-semibold">Current session:</span> {new Date(trainerChangeModalSession.date).toLocaleString()}</p>
+                                <p><span className="text-white font-semibold">Reason:</span> {trainerChangeModalSession.trainerChangeRequest?.request?.reason || 'N/A'}</p>
+                                <p><span className="text-white font-semibold">Preferred:</span> {trainerChangeModalSession.trainerChangeRequest?.request?.preferred ? new Date(trainerChangeModalSession.trainerChangeRequest.request.preferred).toLocaleString() : 'None'}</p>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-white mb-2">Action</label>
+                                <select
+                                    value={trainerChangeResolution.action}
+                                    onChange={(e) => setTrainerChangeResolution((prev) => ({ ...prev, action: e.target.value }))}
+                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
+                                >
+                                    <option style={{ color: '#111', backgroundColor: '#fff' }} value="MOVE">Move Session</option>
+                                    <option style={{ color: '#111', backgroundColor: '#fff' }} value="CANCEL_CREDIT">Cancel & Credit</option>
+                                    <option style={{ color: '#111', backgroundColor: '#fff' }} value="CANCEL_REFUND">Cancel & Refund</option>
+                                    <option style={{ color: '#111', backgroundColor: '#fff' }} value="DENY">Deny Request</option>
+                                </select>
+                            </div>
+
+                            {trainerChangeResolution.action === 'MOVE' && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-sm font-medium text-white mb-2">New Date</label>
+                                        <input
+                                            type="date"
+                                            value={trainerChangeResolution.date}
+                                            onChange={(e) => setTrainerChangeResolution((prev) => ({ ...prev, date: e.target.value }))}
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-white mb-2">New Time</label>
+                                        <input
+                                            type="time"
+                                            value={trainerChangeResolution.time}
+                                            onChange={(e) => setTrainerChangeResolution((prev) => ({ ...prev, time: e.target.value }))}
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="block text-sm font-medium text-white mb-2">Note (optional)</label>
+                                <textarea
+                                    rows={3}
+                                    value={trainerChangeResolution.note}
+                                    onChange={(e) => setTrainerChangeResolution((prev) => ({ ...prev, note: e.target.value }))}
+                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
+                                    placeholder="Add resolution note..."
+                                />
+                            </div>
+
+                            {trainerChangeError && (
+                                <div className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+                                    {trainerChangeError}
+                                </div>
+                            )}
+
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setTrainerChangeModalSession(null)}
+                                    disabled={trainerChangeSubmitting}
+                                    className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 disabled:opacity-50 rounded-xl"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={submitTrainerChangeResolution}
+                                    disabled={trainerChangeSubmitting}
+                                    className="flex-1 py-3 bg-primary hover:brightness-110 disabled:opacity-50 text-background font-bold rounded-xl"
+                                >
+                                    {trainerChangeSubmitting ? 'Submitting...' : 'Submit Resolution'}
+                                </button>
                             </div>
                         </div>
                     </div>

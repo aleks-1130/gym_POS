@@ -46,8 +46,78 @@ const parseRefundExceptionMeta = (notes) => {
     };
 };
 
+const parseTrainerChangeRequestMeta = (notes) => {
+    const lines = String(notes || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    let latestRequest = null;
+    let latestResolution = null;
+
+    for (const line of lines) {
+        if (line.startsWith('TRAINER_CHANGE_REQUESTED')) {
+            const atMatch = line.match(/at ([^|]+)/);
+            const reasonMatch = line.match(/reason=([^|]+)/);
+            const preferredMatch = line.match(/preferred=([^|]+)/);
+            latestRequest = {
+                raw: line,
+                requestedAt: atMatch?.[1]?.trim() || null,
+                reason: reasonMatch?.[1]?.trim() || null,
+                preferred: preferredMatch?.[1]?.trim() || null
+            };
+        }
+        if (line.startsWith('TRAINER_CHANGE_RESOLVED')) {
+            const byMatch = line.match(/by ([^|]+)/);
+            const atMatch = line.match(/at ([^|]+)/);
+            const actionMatch = line.match(/action=([^|]+)/);
+            const noteMatch = line.match(/note=(.+)$/);
+            latestResolution = {
+                raw: line,
+                resolvedBy: byMatch?.[1]?.trim() || null,
+                resolvedAt: atMatch?.[1]?.trim() || null,
+                action: actionMatch?.[1]?.trim() || null,
+                note: noteMatch?.[1]?.trim() || null
+            };
+        }
+    }
+
+    return {
+        hasRequest: Boolean(latestRequest),
+        isResolved: Boolean(latestResolution),
+        request: latestRequest,
+        resolution: latestResolution
+    };
+};
+
 const appendNote = (currentNotes, line) => {
     return [String(currentNotes || '').trim(), line].filter(Boolean).join('\n');
+};
+
+const checkBookingConflict = async (trainerId, startDateTime, durationMinutes, excludeSessionId = null) => {
+    const endDateTime = new Date(startDateTime.getTime() + durationMinutes * 60000);
+    const startOfDay = new Date(startDateTime);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(startOfDay);
+    endOfDay.setDate(endOfDay.getDate() + 1);
+
+    const sessions = await prisma.trainingSession.findMany({
+        where: {
+            trainerId: Number(trainerId),
+            date: {
+                gte: startOfDay,
+                lt: endOfDay
+            },
+            status: { not: 'CANCELLED' },
+            ...(excludeSessionId ? { id: { not: Number(excludeSessionId) } } : {})
+        }
+    });
+
+    return sessions.some((session) => {
+        const sessionStart = new Date(session.date);
+        const sessionEnd = new Date(sessionStart.getTime() + (Number(session.duration) || 0) * 60000);
+        return startDateTime < sessionEnd && endDateTime > sessionStart;
+    });
 };
 
 const createPaymentCompat = async (tx, data) => {
@@ -360,11 +430,126 @@ const resolveRefundException = async (req, res) => {
     }
 };
 
+const getTrainerChangeRequests = async (req, res) => {
+    const statusFilter = String(req.query.status || 'PENDING').toUpperCase();
+    if (!['PENDING', 'RESOLVED', 'ALL'].includes(statusFilter)) {
+        return res.status(400).json({ error: "status must be PENDING, RESOLVED, or ALL" });
+    }
+
+    try {
+        const sessions = await prisma.trainingSession.findMany({
+            where: { notes: { contains: 'TRAINER_CHANGE_REQUESTED' } },
+            include: { member: true, trainer: true },
+            orderBy: { updatedAt: 'desc' }
+        });
+
+        const normalized = sessions
+            .map((session) => {
+                const meta = parseTrainerChangeRequestMeta(session.notes);
+                return {
+                    ...session,
+                    trainerChangeRequest: {
+                        status: !meta.hasRequest ? 'NONE' : (meta.isResolved ? 'RESOLVED' : 'PENDING'),
+                        request: meta.request,
+                        resolution: meta.resolution
+                    }
+                };
+            })
+            .filter((session) => {
+                if (statusFilter === 'ALL') return true;
+                if (statusFilter === 'PENDING') return session.trainerChangeRequest.status === 'PENDING';
+                return session.trainerChangeRequest.status === 'RESOLVED';
+            });
+
+        res.json(normalized);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch trainer change requests", detail: e?.message });
+    }
+};
+
+const resolveTrainerChangeRequest = async (req, res) => {
+    const sessionId = Number(req.params.id);
+    const action = String(req.body?.action || '').toUpperCase();
+    const note = String(req.body?.note || '').trim();
+    const date = String(req.body?.date || '').trim();
+    const time = String(req.body?.time || '').trim();
+    const allowedActions = ['MOVE', 'CANCEL_CREDIT', 'CANCEL_REFUND', 'DENY'];
+
+    if (!allowedActions.includes(action)) {
+        return res.status(400).json({ error: `action must be one of: ${allowedActions.join(', ')}` });
+    }
+
+    try {
+        const session = await prisma.trainingSession.findUnique({
+            where: { id: sessionId }
+        });
+        if (!session) return res.status(404).json({ error: "Training session not found" });
+
+        const meta = parseTrainerChangeRequestMeta(session.notes);
+        if (!meta.hasRequest) {
+            return res.status(400).json({ error: "No trainer change request found for this session" });
+        }
+        if (meta.isResolved) {
+            return res.status(400).json({ error: "Trainer change request is already resolved" });
+        }
+
+        const updateData = {};
+        let actionDetail = action;
+
+        if (action === 'MOVE') {
+            if (!date || !time) {
+                return res.status(400).json({ error: "date and time are required for MOVE action" });
+            }
+            const nextDateTime = new Date(`${date}T${time}`);
+            if (Number.isNaN(nextDateTime.getTime())) {
+                return res.status(400).json({ error: "Invalid move date/time" });
+            }
+            if (!isTimeAllowedForTrainer({
+                trainerId: Number(session.trainerId),
+                date,
+                time,
+                duration: Number(session.duration)
+            })) {
+                return res.status(400).json({ error: "Selected schedule is outside trainer availability" });
+            }
+            if (await checkBookingConflict(Number(session.trainerId), nextDateTime, Number(session.duration), session.id)) {
+                return res.status(409).json({ error: "Selected schedule overlaps another session" });
+            }
+            updateData.date = nextDateTime;
+            updateData.status = 'RESCHEDULED';
+            actionDetail = `MOVE(${date} ${time})`;
+        } else if (action === 'CANCEL_CREDIT' || action === 'CANCEL_REFUND') {
+            updateData.status = 'CANCELLED';
+            actionDetail = action;
+        } else if (action === 'DENY') {
+            updateData.status = 'SCHEDULED';
+            actionDetail = 'DENY';
+        }
+
+        const resolutionLine = `TRAINER_CHANGE_RESOLVED by ${req.user.role}#${req.user.id} at ${new Date().toISOString()} | action=${actionDetail}${note ? ` | note=${note}` : ''}`;
+        updateData.notes = appendNote(session.notes, resolutionLine);
+
+        const updated = await prisma.trainingSession.update({
+            where: { id: sessionId },
+            data: updateData
+        });
+
+        res.json({
+            message: "Trainer change request resolved successfully.",
+            session: updated
+        });
+    } catch (e) {
+        res.status(500).json({ error: "Failed to resolve trainer change request", detail: e?.message });
+    }
+};
+
 module.exports = {
     bookTraining,
     getTrainingSessions,
     collectSessionPayment,
     declineSessionBooking,
     getRefundExceptionRequests,
-    resolveRefundException
+    resolveRefundException,
+    getTrainerChangeRequests,
+    resolveTrainerChangeRequest
 };

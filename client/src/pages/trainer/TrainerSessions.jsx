@@ -17,6 +17,10 @@ export default function TrainerSessions() {
     const [refundSubmitting, setRefundSubmitting] = useState(false);
     const [refundError, setRefundError] = useState('');
     const [refundNotice, setRefundNotice] = useState('');
+    const [unavailableModalSession, setUnavailableModalSession] = useState(null);
+    const [unavailableForm, setUnavailableForm] = useState({ reason: '', preferredDate: '', preferredTime: '' });
+    const [unavailableLoading, setUnavailableLoading] = useState(false);
+    const [unavailableError, setUnavailableError] = useState('');
     const [noShowModalSession, setNoShowModalSession] = useState(null);
     const [noShowNote, setNoShowNote] = useState('');
     const [noShowSubmitting, setNoShowSubmitting] = useState(false);
@@ -114,6 +118,36 @@ export default function TrainerSessions() {
         }
     };
 
+    const handleOpenUnableModal = (session) => {
+        setUnavailableModalSession(session);
+        setUnavailableForm({ reason: '', preferredDate: '', preferredTime: '' });
+        setUnavailableError('');
+    };
+
+    const handleSubmitUnableToAttend = async () => {
+        if (!unavailableModalSession) return;
+        if (!String(unavailableForm.reason).trim()) {
+            setUnavailableError('Please provide a reason.');
+            return;
+        }
+        setUnavailableLoading(true);
+        setUnavailableError('');
+        try {
+            await axios.post(`http://localhost:5000/api/trainer/me/sessions/${unavailableModalSession.id}/unable-to-attend`, {
+                reason: unavailableForm.reason,
+                preferredDate: unavailableForm.preferredDate || undefined,
+                preferredTime: unavailableForm.preferredTime || undefined
+            });
+            setUnavailableModalSession(null);
+            setRefundNotice('Unable-to-attend request submitted to staff/admin for review.');
+            await refreshSessions();
+        } catch (e) {
+            setUnavailableError(e.response?.data?.error || 'Failed to submit request');
+        } finally {
+            setUnavailableLoading(false);
+        }
+    };
+
     const handleOpenNotes = (session) => {
         setEditingSession(session);
         setNotesDraft(session.notes || '');
@@ -205,6 +239,7 @@ export default function TrainerSessions() {
         if (status === 'COMPLETED') return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
         if (status === 'SCHEDULED') return 'bg-primary/10 text-primary border-primary/20';
         if (status === 'RESCHEDULED') return 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20';
+        if (status === 'RESCHEDULE_REQUESTED') return 'bg-amber-500/10 text-amber-300 border-amber-500/20';
         if (status === 'NO_SHOW') return 'bg-rose-500/10 text-rose-300 border-rose-500/20';
         return 'bg-red-500/10 text-red-500 border-red-500/20';
     };
@@ -222,6 +257,11 @@ export default function TrainerSessions() {
         if (Number.isNaN(start.getTime())) return false;
         const eligibleAt = new Date(start.getTime() + (NO_SHOW_GRACE_MINUTES * 60 * 1000));
         return new Date() >= eligibleAt;
+    };
+
+    const canTakeAttendanceAction = (session) => {
+        const status = String(session?.status || '').toUpperCase();
+        return status === 'SCHEDULED' || status === 'RESCHEDULED';
     };
 
     const sessionHistory = [...sessions]
@@ -395,7 +435,7 @@ export default function TrainerSessions() {
                                             </span>
                                         </div>
                                     </div>
-                                    {session.status !== 'COMPLETED' && session.status !== 'CANCELLED' && session.status !== 'NO_SHOW' && (
+                                    {canTakeAttendanceAction(session) && (
                                         <button
                                             onClick={() => handleMarkCompleted(session.id)}
                                             disabled={completingId === session.id || !canMarkCompleted(session)}
@@ -405,7 +445,7 @@ export default function TrainerSessions() {
                                             {completingId === session.id ? 'Updating...' : 'Mark As Complete'}
                                         </button>
                                     )}
-                                    {session.status !== 'COMPLETED' && session.status !== 'CANCELLED' && session.status !== 'NO_SHOW' && (
+                                    {canTakeAttendanceAction(session) && (
                                         <button
                                             onClick={() => handleOpenNoShowModal(session)}
                                             disabled={!canMarkNoShow(session)}
@@ -423,8 +463,16 @@ export default function TrainerSessions() {
                                             Refund Exception
                                         </button>
                                     )}
-                                    <button
-                                        onClick={() => handleOpenNotes(session)}
+                                    {canTakeAttendanceAction(session) && (
+                                        <button
+                                            onClick={() => handleOpenUnableModal(session)}
+                                            className="px-4 py-2 rounded-xl bg-blue-500/10 text-blue-300 border border-blue-500/30 text-xs font-bold uppercase tracking-widest hover:bg-blue-500/20 transition-all"
+                                        >
+                                            Unable To Attend
+                                        </button>
+                                    )}
+                                        <button
+                                            onClick={() => handleOpenNotes(session)}
                                         className="px-4 py-2 rounded-xl bg-white/5 text-white border border-white/10 text-xs font-bold uppercase tracking-widest hover:bg-white/10 transition-all"
                                     >
                                         Notes
@@ -716,6 +764,83 @@ export default function TrainerSessions() {
                                 className="px-4 py-2 rounded-xl bg-rose-500/20 text-rose-200 border border-rose-500/30 text-sm font-medium hover:bg-rose-500/30 disabled:opacity-60"
                             >
                                 {noShowSubmitting ? 'Submitting...' : 'Confirm No-Show'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {unavailableModalSession && (
+                <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-surface rounded-2xl border border-white/10 w-full max-w-lg">
+                        <div className="p-5 border-b border-white/10 flex items-center justify-between">
+                            <div>
+                                <h2 className="text-lg font-bold text-white">Unable To Attend Request</h2>
+                                <p className="text-text-muted text-xs mt-1">
+                                    {unavailableModalSession.member?.firstName} {unavailableModalSession.member?.lastName}
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setUnavailableModalSession(null)}
+                                className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-white"
+                            >
+                                <span className="material-icons-round text-lg">close</span>
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-white mb-2">Reason *</label>
+                                <textarea
+                                    value={unavailableForm.reason}
+                                    onChange={(e) => setUnavailableForm((prev) => ({ ...prev, reason: e.target.value }))}
+                                    rows={3}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-primary"
+                                    placeholder="Explain why you cannot attend this session..."
+                                />
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-sm font-medium text-white mb-2">Preferred Date (optional)</label>
+                                    <input
+                                        type="date"
+                                        value={unavailableForm.preferredDate}
+                                        onChange={(e) => setUnavailableForm((prev) => ({ ...prev, preferredDate: e.target.value }))}
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-white mb-2">Preferred Time (optional)</label>
+                                    <input
+                                        type="time"
+                                        value={unavailableForm.preferredTime}
+                                        onChange={(e) => setUnavailableForm((prev) => ({ ...prev, preferredTime: e.target.value }))}
+                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
+                                    />
+                                </div>
+                            </div>
+                            {unavailableError && (
+                                <div className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+                                    {unavailableError}
+                                </div>
+                            )}
+                            <p className="text-xs text-text-muted">
+                                Staff/Admin will review and decide move, credit, refund, or deny.
+                            </p>
+                        </div>
+                        <div className="p-5 border-t border-white/10 flex items-center justify-end gap-3">
+                            <button
+                                onClick={() => setUnavailableModalSession(null)}
+                                className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm font-medium hover:bg-white/10"
+                                disabled={unavailableLoading}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSubmitUnableToAttend}
+                                disabled={unavailableLoading}
+                                className="px-4 py-2 rounded-xl bg-primary text-background text-sm font-medium hover:brightness-110 disabled:opacity-60"
+                            >
+                                {unavailableLoading ? 'Submitting...' : 'Submit Request'}
                             </button>
                         </div>
                     </div>

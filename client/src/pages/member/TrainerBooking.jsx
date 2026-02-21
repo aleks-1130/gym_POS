@@ -25,6 +25,14 @@ export default function TrainerBooking() {
     const [filterView, setFilterView] = useState('all'); // all, available, top-rated
     const [paymentMethods, setPaymentMethods] = useState([]);
     const [selectedMethodId, setSelectedMethodId] = useState('');
+    const [rescheduleSession, setRescheduleSession] = useState(null);
+    const [rescheduleForm, setRescheduleForm] = useState({ date: '', time: '', reason: '' });
+    const [rescheduleLoading, setRescheduleLoading] = useState(false);
+    const [rescheduleError, setRescheduleError] = useState('');
+    const [rescheduleCalendarMonth, setRescheduleCalendarMonth] = useState(() => {
+        const now = new Date();
+        return new Date(now.getFullYear(), now.getMonth(), 1);
+    });
     const [calendarMonth, setCalendarMonth] = useState(() => {
         const now = new Date();
         return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -67,7 +75,8 @@ export default function TrainerBooking() {
 
     // Prevent body scroll when modal is open (PWA best practice)
     useEffect(() => {
-        if (showBookingModal) {
+        const hasOpenModal = showBookingModal || Boolean(rescheduleSession);
+        if (hasOpenModal) {
             document.body.style.overflow = 'hidden';
             // Add safe area insets for iOS
             document.body.style.position = 'fixed';
@@ -82,7 +91,7 @@ export default function TrainerBooking() {
             document.body.style.position = '';
             document.body.style.width = '';
         };
-    }, [showBookingModal]);
+    }, [showBookingModal, rescheduleSession]);
 
     const fetchTrainers = async () => {
         try {
@@ -134,7 +143,7 @@ export default function TrainerBooking() {
         }
     };
 
-    const handleRescheduleSession = async (session) => {
+    const handleOpenRescheduleModal = (session) => {
         const sessionDate = new Date(session.date);
         const now = new Date();
         const hoursUntil = (sessionDate.getTime() - now.getTime()) / (1000 * 60 * 60);
@@ -144,27 +153,54 @@ export default function TrainerBooking() {
         }
 
         const currentIsoDate = toIsoDate(sessionDate);
-        const currentTime = `${String(sessionDate.getHours()).padStart(2, '0')}:${String(sessionDate.getMinutes()).padStart(2, '0')}`;
-        const date = prompt('Enter new date (YYYY-MM-DD):', currentIsoDate);
-        if (!date) return;
-        const time = prompt('Enter new time (HH:mm, 24-hour):', currentTime);
-        if (!time) return;
-        const reason = prompt('Reason for reschedule (optional):', '') || '';
+        setRescheduleSession(session);
+        setRescheduleForm({
+            date: currentIsoDate,
+            time: '',
+            reason: ''
+        });
+        setRescheduleCalendarMonth(new Date(sessionDate.getFullYear(), sessionDate.getMonth(), 1));
+        setRescheduleError('');
+    };
 
+    const handleSubmitReschedule = async () => {
+        if (!rescheduleSession) return;
+        if (!rescheduleForm.date || !rescheduleForm.time) {
+            setRescheduleError('Please provide both date and time.');
+            return;
+        }
+        const originalDate = new Date(rescheduleSession.date);
+        const originalIso = toIsoDate(originalDate);
+        const originalTime = `${String(originalDate.getHours()).padStart(2, '0')}:${String(originalDate.getMinutes()).padStart(2, '0')}`;
+        if (rescheduleForm.date === originalIso && rescheduleForm.time === originalTime) {
+            setRescheduleError('Please choose a different time from your previous schedule.');
+            return;
+        }
+        if (!rescheduleAvailableSlots.includes(rescheduleForm.time)) {
+            setRescheduleError('Selected time is not available for this trainer.');
+            return;
+        }
+
+        setRescheduleLoading(true);
+        setRescheduleError('');
         try {
             const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-            await axios.post(`http://localhost:5000/api/members/me/training-sessions/${session.id}/reschedule`, {
-                date,
-                time,
-                reason
+            await axios.post(`http://localhost:5000/api/members/me/training-sessions/${rescheduleSession.id}/reschedule`, {
+                date: rescheduleForm.date,
+                time: rescheduleForm.time,
+                reason: rescheduleForm.reason
             }, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined
             });
             alert("Session rescheduled successfully.");
+            setRescheduleSession(null);
+            setRescheduleForm({ date: '', time: '', reason: '' });
             fetchMemberSessions();
         } catch (error) {
             console.error("Failed to reschedule session", error);
-            alert(error.response?.data?.error || "Failed to reschedule session");
+            setRescheduleError(error.response?.data?.error || "Failed to reschedule session");
+        } finally {
+            setRescheduleLoading(false);
         }
     };
 
@@ -299,6 +335,78 @@ export default function TrainerBooking() {
         return `${hour12}:${String(minute).padStart(2, '0')} ${suffix}`;
     };
 
+    const getRescheduleAvailableTimeSlots = useCallback((session, isoDate) => {
+        if (!session || !isoDate) return [];
+        const trainerId = Number(session.trainer?.id || session.trainerId);
+        const trainer = trainers.find((t) => Number(t.id) === trainerId);
+        if (!trainer) return [];
+
+        const dateObj = new Date(`${isoDate}T00:00:00`);
+        if (Number.isNaN(dateObj.getTime())) return [];
+
+        const availabilityDays = Array.isArray(trainer.availabilityDays)
+            ? trainer.availabilityDays.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+            : [];
+        if (availabilityDays.length > 0 && !availabilityDays.includes(dateObj.getDay())) return [];
+
+        const dayKey = String(dateObj.getDay());
+        const interval = Number(trainer.availabilityIntervalMinutes) || 30;
+        const dayConfig = trainer.availabilityByDay?.[dayKey];
+        const start = toMinutes(dayConfig?.start || trainer.availabilityStart || '09:00');
+        const end = toMinutes(dayConfig?.end || trainer.availabilityEnd || '18:00');
+        if (start === null || end === null || end <= start) return [];
+
+        const bookedSessions = (trainer.trainingSessions || [])
+            .filter((s) => {
+                if (s.status === 'CANCELLED') return false;
+                if (Number(s.id) === Number(session.id)) return false;
+                const sDate = new Date(s.date);
+                return toIsoDate(sDate) === isoDate;
+            })
+            .map((s) => {
+                const sDate = new Date(s.date);
+                const startMins = sDate.getHours() * 60 + sDate.getMinutes();
+                return {
+                    start: startMins,
+                    end: startMins + (Number(s.duration) || 60)
+                };
+            });
+
+        const duration = Number(session.duration) || 60;
+        const slots = [];
+        const todayIso = toIsoDate(new Date());
+        const now = new Date();
+        const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+        for (let t = start; t + duration <= end; t += interval) {
+            const slotStart = t;
+            const slotEnd = t + duration;
+
+            if (isoDate === todayIso && slotStart <= nowMinutes) continue;
+
+            const isBlocked = bookedSessions.some((b) => slotStart < b.end && slotEnd > b.start);
+            if (!isBlocked) {
+                const hh = String(Math.floor(t / 60)).padStart(2, '0');
+                const mm = String(t % 60).padStart(2, '0');
+                slots.push(`${hh}:${mm}`);
+            }
+        }
+
+        return slots;
+    }, [trainers]);
+
+    const rescheduleAvailableSlots = useMemo(() => {
+        if (!rescheduleSession || !rescheduleForm.date) return [];
+        const slots = getRescheduleAvailableTimeSlots(rescheduleSession, rescheduleForm.date);
+        const originalDate = new Date(rescheduleSession.date);
+        const originalIso = toIsoDate(originalDate);
+        const originalTime = `${String(originalDate.getHours()).padStart(2, '0')}:${String(originalDate.getMinutes()).padStart(2, '0')}`;
+        if (rescheduleForm.date === originalIso) {
+            return slots.filter((slot) => slot !== originalTime);
+        }
+        return slots;
+    }, [rescheduleSession, rescheduleForm.date, getRescheduleAvailableTimeSlots]);
+
     const calendarCells = useMemo(() => {
         const start = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
         const end = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0);
@@ -311,6 +419,32 @@ export default function TrainerBooking() {
         while (cells.length % 7 !== 0) cells.push(null);
         return cells;
     }, [calendarMonth]);
+
+    const rescheduleCalendarCells = useMemo(() => {
+        const start = new Date(rescheduleCalendarMonth.getFullYear(), rescheduleCalendarMonth.getMonth(), 1);
+        const end = new Date(rescheduleCalendarMonth.getFullYear(), rescheduleCalendarMonth.getMonth() + 1, 0);
+        const leading = start.getDay();
+        const cells = [];
+        for (let i = 0; i < leading; i += 1) cells.push(null);
+        for (let d = 1; d <= end.getDate(); d += 1) {
+            cells.push(new Date(rescheduleCalendarMonth.getFullYear(), rescheduleCalendarMonth.getMonth(), d));
+        }
+        while (cells.length % 7 !== 0) cells.push(null);
+        return cells;
+    }, [rescheduleCalendarMonth]);
+
+    const rescheduleTrainer = useMemo(() => {
+        if (!rescheduleSession) return null;
+        const trainerId = Number(rescheduleSession.trainer?.id || rescheduleSession.trainerId);
+        return trainers.find((t) => Number(t.id) === trainerId) || null;
+    }, [rescheduleSession, trainers]);
+
+    const rescheduleAvailabilityDays = useMemo(() => {
+        if (!rescheduleTrainer) return [];
+        return Array.isArray(rescheduleTrainer.availabilityDays)
+            ? rescheduleTrainer.availabilityDays.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+            : [];
+    }, [rescheduleTrainer]);
 
     const availabilityDays = useMemo(() => {
         if (!selectedTrainer) return [];
@@ -561,7 +695,7 @@ export default function TrainerBooking() {
                                           <div className="mt-2 flex items-center justify-end gap-2">
                                               {canRequestReschedule && (
                                                   <button
-                                                      onClick={() => handleRescheduleSession(session)}
+                                                      onClick={() => handleOpenRescheduleModal(session)}
                                                       className="px-3 py-1 bg-primary/10 text-primary border border-primary/30 rounded-lg text-xs font-bold hover:bg-primary/20 transition-all"
                                                   >
                                                       Reschedule
@@ -1086,6 +1220,177 @@ export default function TrainerBooking() {
                     </div>
                 )
             }
+
+            {rescheduleSession && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center sm:justify-center p-0 sm:p-4">
+                    <div className="w-full sm:max-w-lg bg-surface rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 overflow-hidden">
+                        <div className="flex items-center justify-between p-5 border-b border-white/10">
+                            <div>
+                                <h3 className="text-lg font-bold text-white">Reschedule Session</h3>
+                                <p className="text-text-muted text-xs mt-0.5">Review details and choose your new schedule</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setRescheduleSession(null)}
+                                className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-white"
+                            >
+                                <span className="material-icons-round text-lg">close</span>
+                            </button>
+                        </div>
+
+                        <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+                            <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-2 text-sm">
+                                <div className="flex justify-between gap-3">
+                                    <span className="text-text-muted">Trainer</span>
+                                    <span className="text-white font-semibold text-right">{rescheduleSession.trainer?.name || 'Trainer'}</span>
+                                </div>
+                                <div className="flex justify-between gap-3">
+                                    <span className="text-text-muted">Current Schedule</span>
+                                    <span className="text-white font-semibold text-right">
+                                        {new Date(rescheduleSession.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                                        {' at '}
+                                        {new Date(rescheduleSession.date).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between gap-3">
+                                    <span className="text-text-muted">Duration</span>
+                                    <span className="text-white font-semibold">{rescheduleSession.duration} min</span>
+                                </div>
+                                <div className="flex justify-between gap-3">
+                                    <span className="text-text-muted">Payment</span>
+                                    <span className="text-white font-semibold">
+                                        {formatPrice(rescheduleSession.price)} • {rescheduleSession.paymentStatus || 'UNPAID'} • {rescheduleSession.paymentMethod || 'N/A'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-white mb-2">New Date *</label>
+                                <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => setRescheduleCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
+                                            className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-white"
+                                        >
+                                            <span className="material-icons-round text-base">chevron_left</span>
+                                        </button>
+                                        <p className="text-sm font-semibold text-white">
+                                            {rescheduleCalendarMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={() => setRescheduleCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
+                                            className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-white"
+                                        >
+                                            <span className="material-icons-round text-base">chevron_right</span>
+                                        </button>
+                                    </div>
+                                    <div className="grid grid-cols-7 gap-1 mb-2">
+                                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+                                            <div key={d} className="text-[10px] text-center uppercase tracking-wide text-text-muted font-semibold">{d}</div>
+                                        ))}
+                                    </div>
+                                    <div className="grid grid-cols-7 gap-1">
+                                        {rescheduleCalendarCells.map((day, idx) => {
+                                            if (!day) return <div key={`reschedule-blank-${idx}`} className="h-9" />;
+                                            const iso = toIsoDate(day);
+                                            const todayIso = toIsoDate(new Date());
+                                            const isPast = iso < todayIso;
+                                            const unavailableDay = rescheduleAvailabilityDays.length > 0 && !rescheduleAvailabilityDays.includes(day.getDay());
+                                            const selected = rescheduleForm.date === iso;
+                                            return (
+                                                <button
+                                                    key={iso}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        if (isPast || unavailableDay) return;
+                                                        setRescheduleForm((prev) => ({ ...prev, date: iso, time: '' }));
+                                                    }}
+                                                    disabled={isPast || unavailableDay}
+                                                    className={`h-9 rounded-lg text-xs font-semibold transition-all ${selected
+                                                        ? 'bg-primary text-background'
+                                                        : (isPast || unavailableDay)
+                                                            ? 'bg-white/5 text-text-muted/40 cursor-not-allowed'
+                                                            : 'bg-white/5 text-white hover:bg-white/10'
+                                                        }`}
+                                                >
+                                                    {day.getDate()}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-white mb-2">New Time *</label>
+                                <select
+                                    value={rescheduleForm.time}
+                                    onChange={(e) => setRescheduleForm((prev) => ({ ...prev, time: e.target.value }))}
+                                    className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary cursor-pointer"
+                                    disabled={!rescheduleForm.date || rescheduleAvailableSlots.length === 0}
+                                >
+                                    <option style={{ color: '#111', backgroundColor: '#fff' }} value="">
+                                        {!rescheduleForm.date
+                                            ? 'Select date first'
+                                            : (rescheduleAvailableSlots.length === 0 ? 'No available time slots' : 'Select available time')}
+                                    </option>
+                                    {rescheduleAvailableSlots.map((slot) => (
+                                        <option
+                                            key={slot}
+                                            value={slot}
+                                            style={{ color: '#111', backgroundColor: '#fff' }}
+                                        >
+                                            {formatTimeLabel(slot)}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-white mb-2">Reason (optional)</label>
+                                <textarea
+                                    rows={3}
+                                    value={rescheduleForm.reason}
+                                    onChange={(e) => setRescheduleForm((prev) => ({ ...prev, reason: e.target.value }))}
+                                    placeholder="Tell your trainer why you need to reschedule"
+                                    className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-text-muted focus:outline-none focus:border-primary resize-none"
+                                />
+                            </div>
+
+                            {rescheduleError && (
+                                <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2 text-xs text-red-300">
+                                    {rescheduleError}
+                                </div>
+                            )}
+
+                            <div className="bg-primary/10 border border-primary/30 rounded-xl p-3 text-xs text-text-muted">
+                                Policy reminder: One member reschedule is allowed with at least 24-hour notice. Refund is not automatic for missed sessions.
+                            </div>
+                        </div>
+
+                        <div className="p-5 border-t border-white/10 bg-surface space-y-2">
+                            <button
+                                type="button"
+                                onClick={handleSubmitReschedule}
+                                disabled={rescheduleLoading}
+                                className="w-full py-3 rounded-xl font-bold bg-primary text-background hover:brightness-110 transition-all disabled:opacity-50"
+                            >
+                                {rescheduleLoading ? 'Submitting...' : 'Confirm Reschedule'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setRescheduleSession(null)}
+                                disabled={rescheduleLoading}
+                                className="w-full py-3 rounded-xl font-medium bg-white/5 text-white hover:bg-white/10 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Add animation styles */}
             <style>{`

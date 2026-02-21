@@ -14,6 +14,7 @@ router.post('/me/sessions/:id/cancel', authenticateToken, authorize(['TRAINER'])
 router.patch('/me/sessions/:id', authenticateToken, authorize(['TRAINER']), trainingSessionController.updateSession);
 router.post('/me/sessions/:id/no-show', authenticateToken, authorize(['TRAINER']), trainingSessionController.markNoShow);
 router.post('/me/sessions/:id/refund-exception', authenticateToken, authorize(['TRAINER']), trainingSessionController.requestRefundException);
+router.post('/me/sessions/:id/unable-to-attend', authenticateToken, authorize(['TRAINER']), trainingSessionController.requestUnableToAttend);
 
 router.get('/me/classes', authenticateToken, authorize(['TRAINER']), classController.getAllClasses);
 router.patch('/me/classes/:classId/attendees/:bookingId', authenticateToken, authorize(['TRAINER']), classController.updateAttendeeStatus);
