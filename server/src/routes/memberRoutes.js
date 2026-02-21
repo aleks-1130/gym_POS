@@ -16,6 +16,7 @@ router.post('/book-training', authenticateToken, authorize(['MEMBER']), memberCo
 router.post('/book-training-cash', authenticateToken, authorize(['MEMBER']), memberController.bookTrainingCash);
 router.get('/me/transactions', authenticateToken, authorize(['MEMBER']), paymentController.getMyTransactions);
 router.post('/me/training-sessions/:id/cancel', authenticateToken, authorize(['MEMBER']), trainingSessionController.cancelSession);
+router.post('/me/training-sessions/:id/reschedule', authenticateToken, authorize(['MEMBER']), trainingSessionController.memberRescheduleSession);
 router.get('/me/training-sessions', authenticateToken, authorize(['MEMBER']), memberController.getMyTrainingSessions);
 
 // Member Profile & Payment Methods

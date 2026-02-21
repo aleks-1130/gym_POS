@@ -1,6 +1,55 @@
 const prisma = require('../config/prisma');
 const { isTimeAllowedForTrainer } = require('../services/trainerAvailabilityService');
 
+const parseRefundExceptionMeta = (notes) => {
+    const lines = String(notes || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    let latestRequest = null;
+    let latestResolution = null;
+
+    for (const line of lines) {
+        if (line.startsWith('REFUND_EXCEPTION_REQUESTED')) {
+            const atMatch = line.match(/at ([^|]+)/);
+            const reasonMatch = line.match(/reason=([^|]+)/);
+            const detailsMatch = line.match(/details=(.+)$/);
+            latestRequest = {
+                raw: line,
+                requestedAt: atMatch?.[1]?.trim() || null,
+                reason: reasonMatch?.[1]?.trim() || 'OTHER',
+                details: detailsMatch?.[1]?.trim() || null
+            };
+        }
+        if (line.startsWith('REFUND_EXCEPTION_APPROVED') || line.startsWith('REFUND_EXCEPTION_REJECTED')) {
+            const atMatch = line.match(/at ([^|]+)/);
+            const byMatch = line.match(/by ([^|]+)/);
+            const noteMatch = line.match(/note=(.+)$/);
+            latestResolution = {
+                raw: line,
+                status: line.startsWith('REFUND_EXCEPTION_APPROVED') ? 'APPROVED' : 'REJECTED',
+                resolvedAt: atMatch?.[1]?.trim() || null,
+                resolvedBy: byMatch?.[1]?.trim() || null,
+                note: noteMatch?.[1]?.trim() || null
+            };
+        }
+    }
+
+    const hasRequest = Boolean(latestRequest);
+    const isResolved = Boolean(latestResolution);
+    return {
+        hasRequest,
+        isResolved,
+        request: latestRequest,
+        resolution: latestResolution
+    };
+};
+
+const appendNote = (currentNotes, line) => {
+    return [String(currentNotes || '').trim(), line].filter(Boolean).join('\n');
+};
+
 const createPaymentCompat = async (tx, data) => {
     const paymentData = { ...data };
     const removableOptionalFields = new Set(['discount', 'cashTendered', 'changeDue', 'externalRef', 'externalDate']);
@@ -230,9 +279,92 @@ const declineSessionBooking = async (req, res) => {
     }
 };
 
+const getRefundExceptionRequests = async (req, res) => {
+    const statusFilter = String(req.query.status || 'PENDING').toUpperCase();
+    if (!['PENDING', 'RESOLVED', 'ALL'].includes(statusFilter)) {
+        return res.status(400).json({ error: "status must be PENDING, RESOLVED, or ALL" });
+    }
+
+    try {
+        const sessions = await prisma.trainingSession.findMany({
+            where: {
+                notes: { contains: 'REFUND_EXCEPTION_REQUESTED' }
+            },
+            include: { member: true, trainer: true },
+            orderBy: { updatedAt: 'desc' }
+        });
+
+        const normalized = sessions
+            .map((session) => {
+                const meta = parseRefundExceptionMeta(session.notes);
+                return {
+                    ...session,
+                    refundException: {
+                        status: !meta.hasRequest ? 'NONE' : (meta.isResolved ? meta.resolution.status : 'PENDING'),
+                        request: meta.request,
+                        resolution: meta.resolution
+                    }
+                };
+            })
+            .filter((session) => {
+                if (statusFilter === 'ALL') return true;
+                if (statusFilter === 'PENDING') return session.refundException.status === 'PENDING';
+                return session.refundException.status !== 'PENDING';
+            });
+
+        res.json(normalized);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch refund exception requests", detail: e?.message });
+    }
+};
+
+const resolveRefundException = async (req, res) => {
+    const sessionId = Number(req.params.id);
+    const decision = String(req.body?.decision || '').toUpperCase();
+    const resolutionNote = String(req.body?.note || '').trim();
+
+    if (!['APPROVE', 'REJECT'].includes(decision)) {
+        return res.status(400).json({ error: "decision must be APPROVE or REJECT" });
+    }
+
+    try {
+        const session = await prisma.trainingSession.findUnique({
+            where: { id: sessionId }
+        });
+        if (!session) return res.status(404).json({ error: "Training session not found" });
+
+        const meta = parseRefundExceptionMeta(session.notes);
+        if (!meta.hasRequest) {
+            return res.status(400).json({ error: "No refund exception request found for this session" });
+        }
+        if (meta.isResolved) {
+            return res.status(400).json({ error: "Refund exception request is already resolved" });
+        }
+
+        const resolutionTag = decision === 'APPROVE' ? 'REFUND_EXCEPTION_APPROVED' : 'REFUND_EXCEPTION_REJECTED';
+        const resolutionLine = `${resolutionTag} by ${req.user.role}#${req.user.id} at ${new Date().toISOString()}${resolutionNote ? ` | note=${resolutionNote}` : ''}`;
+
+        const updated = await prisma.trainingSession.update({
+            where: { id: sessionId },
+            data: {
+                notes: appendNote(session.notes, resolutionLine)
+            }
+        });
+
+        res.json({
+            message: `Refund exception ${decision === 'APPROVE' ? 'approved' : 'rejected'} successfully.`,
+            session: updated
+        });
+    } catch (e) {
+        res.status(500).json({ error: "Failed to resolve refund exception", detail: e?.message });
+    }
+};
+
 module.exports = {
     bookTraining,
     getTrainingSessions,
     collectSessionPayment,
-    declineSessionBooking
+    declineSessionBooking,
+    getRefundExceptionRequests,
+    resolveRefundException
 };

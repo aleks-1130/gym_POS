@@ -84,7 +84,6 @@ export default function TrainerDashboard() {
     const upcomingCount = upcomingSessions.length;
     const completedCount = sessions.filter((s) => s.status === 'COMPLETED').length;
     const commissionSummary = commissions?.summary || {};
-    const commissionHistory = commissions?.history?.commissions || [];
 
     return (
         <div className="space-y-4 pb-20 px-4 max-w-2xl mx-auto">
@@ -155,76 +154,28 @@ export default function TrainerDashboard() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-3">
                 <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
-                    <p className="text-text-muted text-xs font-medium mb-1">Total Earned</p>
-                    <p className="text-lg font-bold text-emerald-400">{formatMoney(commissionSummary.totalEarned)}</p>
-                </div>
-                <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
-                    <p className="text-text-muted text-xs font-medium mb-1">Pending</p>
-                    <p className="text-lg font-bold text-amber-400">{formatMoney(commissionSummary.totalUnpaid)}</p>
-                </div>
-                <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
-                    <p className="text-text-muted text-xs font-medium mb-1">Paid Out</p>
-                    <p className="text-lg font-bold text-blue-300">{formatMoney(commissionSummary.totalPayoutRecorded)}</p>
-                </div>
-            </div>
-
-            <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
-                <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-                    <span className="material-icons-round text-primary text-base">schedule</span>
-                    Upcoming Sessions
-                </h3>
-                {upcomingSessions.length === 0 ? (
-                    <div className="p-3 bg-black/20 rounded-lg border border-white/5 text-text-muted text-xs">No upcoming sessions yet.</div>
-                ) : (
-                    <div className="space-y-2">
-                        {upcomingSessions.slice(0, 5).map((session) => (
-                            <div key={session.id} className="p-3 bg-black/20 rounded-lg border border-white/5 flex items-center justify-between gap-3">
-                                <div className="min-w-0">
-                                    <p className="text-white text-sm font-semibold truncate">
-                                        {session.member?.firstName} {session.member?.lastName}
-                                    </p>
-                                    <p className="text-text-muted text-xs">
-                                        {new Date(session.date).toLocaleDateString()} - {new Date(session.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    </p>
-                                </div>
-                                <span className="text-xs font-bold uppercase tracking-widest px-2 py-1 rounded-full border border-primary/30 text-primary bg-primary/10">
-                                    {session.duration}m
-                                </span>
-                            </div>
-                        ))}
+                    <div className="flex flex-col h-full">
+                        <span className="material-icons-round text-emerald-400 text-2xl mb-2">payments</span>
+                        <p className="text-text-muted text-xs font-medium mb-1">Total Earned</p>
+                        <p className="text-lg font-bold text-emerald-400">{formatMoney(commissionSummary.totalEarned)}</p>
                     </div>
-                )}
-            </div>
-
-            <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
-                <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-                    <span className="material-icons-round text-primary text-base">receipt_long</span>
-                    Commission History
-                </h3>
-                {commissionHistory.length === 0 ? (
-                    <div className="p-3 bg-black/20 rounded-lg border border-white/5 text-text-muted text-xs">No commission history yet.</div>
-                ) : (
-                    <div className="space-y-2">
-                        {commissionHistory.slice(0, 6).map((item) => (
-                            <div key={item.id} className="p-3 bg-black/20 rounded-lg border border-white/5 flex items-center justify-between gap-3">
-                                <div className="min-w-0">
-                                    <p className="text-white text-sm font-semibold truncate">{item.label || item.source}</p>
-                                    <p className="text-text-muted text-xs">
-                                        {new Date(item.date).toLocaleDateString()} - {item.source}
-                                    </p>
-                                </div>
-                                <div className="text-right">
-                                    <p className="text-emerald-400 text-sm font-semibold">{formatMoney(item.commissionAmount)}</p>
-                                    <p className={`text-[10px] font-bold uppercase tracking-widest ${item.commissionPaid ? 'text-blue-300' : 'text-amber-300'}`}>
-                                        {item.commissionPaid ? 'Paid' : 'Pending'}
-                                    </p>
-                                </div>
-                            </div>
-                        ))}
+                </div>
+                <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
+                    <div className="flex flex-col h-full">
+                        <span className="material-icons-round text-amber-400 text-2xl mb-2">hourglass_top</span>
+                        <p className="text-text-muted text-xs font-medium mb-1">Pending</p>
+                        <p className="text-lg font-bold text-amber-400">{formatMoney(commissionSummary.totalUnpaid)}</p>
                     </div>
-                )}
+                </div>
+                <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
+                    <div className="flex flex-col h-full">
+                        <span className="material-icons-round text-blue-300 text-2xl mb-2">account_balance_wallet</span>
+                        <p className="text-text-muted text-xs font-medium mb-1">Paid Out</p>
+                        <p className="text-lg font-bold text-blue-300">{formatMoney(commissionSummary.totalPayoutRecorded)}</p>
+                    </div>
+                </div>
             </div>
 
             <div>

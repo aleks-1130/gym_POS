@@ -27,6 +27,7 @@ export default function POS() {
     const [history, setHistory] = useState([]);
     const [trainingBookings, setTrainingBookings] = useState([]);
     const [pendingInAppPurchases, setPendingInAppPurchases] = useState([]);
+    const [refundExceptionRequests, setRefundExceptionRequests] = useState([]);
     const [showCollectModal, setShowCollectModal] = useState(false);
     const [collectSession, setCollectSession] = useState(null);
     const [showCollectPurchaseModal, setShowCollectPurchaseModal] = useState(false);
@@ -84,7 +85,7 @@ export default function POS() {
         if (viewMode !== 'TRAINING_BOOKINGS') return;
 
         const fetchCollectCashData = async () => {
-            await Promise.all([fetchTrainingBookings(), fetchPendingInAppPurchases()]);
+            await Promise.all([fetchTrainingBookings(), fetchPendingInAppPurchases(), fetchRefundExceptionRequests()]);
         };
 
         fetchCollectCashData();
@@ -183,6 +184,46 @@ export default function POS() {
         } catch (error) {
             console.error("Failed to fetch pending in-app purchases");
             setPendingInAppPurchases([]);
+        }
+    };
+
+    const fetchRefundExceptionRequests = async () => {
+        try {
+            const res = await axios.get(withApiBase('/api/staff/training-sessions/refund-exceptions'), {
+                params: { status: 'PENDING' },
+                headers: authHeaders()
+            });
+            setRefundExceptionRequests(res.data || []);
+        } catch (error) {
+            console.error("Failed to fetch refund exception requests");
+            setRefundExceptionRequests([]);
+        }
+    };
+
+    const resolveRefundException = async (session, decision) => {
+        const isApprove = decision === 'APPROVE';
+        const promptText = isApprove
+            ? 'Optional approval note (leave blank to continue):'
+            : 'Reason for rejection:';
+        const note = window.prompt(promptText, '') ?? '';
+
+        if (!isApprove && !String(note).trim()) {
+            alert('Rejection reason is required.');
+            return;
+        }
+
+        try {
+            await axios.post(
+                withApiBase(`/api/staff/training-sessions/${session.id}/refund-exception/resolve`),
+                { decision, note: String(note).trim() },
+                { headers: authHeaders() }
+            );
+            await fetchRefundExceptionRequests();
+            alert(`Refund exception ${isApprove ? 'approved' : 'rejected'}.`);
+        } catch (e) {
+            const message = e.response?.data?.error || 'Failed to resolve refund exception';
+            const detail = e.response?.data?.detail;
+            alert(detail ? `${message}\n\nDetails: ${detail}` : message);
         }
     };
 
@@ -652,6 +693,16 @@ export default function POS() {
                     >
                         In App Purchases
                     </button>
+                    <button
+                        type="button"
+                        onClick={() => setCollectCashTab('REFUND_EXCEPTIONS')}
+                        className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${collectCashTab === 'REFUND_EXCEPTIONS'
+                            ? 'bg-primary text-background'
+                            : 'text-text-secondary hover:text-white bg-white/5'
+                            }`}
+                    >
+                        Refund Exceptions
+                    </button>
                 </div>
 
                 {collectCashTab === 'BOOKINGS' && (
@@ -776,6 +827,72 @@ export default function POS() {
                                                     className="text-xs font-bold px-3 py-1 rounded-lg border border-red-500/30 text-red-300 hover:bg-red-500/10"
                                                 >
                                                     Decline
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {collectCashTab === 'REFUND_EXCEPTIONS' && (
+                    <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
+                        <table className="w-full text-left text-sm text-text-secondary">
+                            <thead className="bg-white/5 text-text-muted uppercase text-xs font-bold tracking-wider">
+                                <tr>
+                                    <th className="px-6 py-4">Session</th>
+                                    <th className="px-6 py-4">Member</th>
+                                    <th className="px-6 py-4">Trainer</th>
+                                    <th className="px-6 py-4">Reason</th>
+                                    <th className="px-6 py-4">Requested</th>
+                                    <th className="px-6 py-4">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                                {refundExceptionRequests.length === 0 && (
+                                    <tr><td colSpan="6" className="p-6 text-center text-text-muted">No pending refund exception requests.</td></tr>
+                                )}
+                                {refundExceptionRequests.map((session) => (
+                                    <tr key={session.id} className="hover:bg-white/5 transition-colors">
+                                        <td className="px-6 py-4 text-white font-medium">
+                                            {new Date(session.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(session.date).toLocaleTimeString()}</span>
+                                        </td>
+                                        <td className="px-6 py-4 text-white">
+                                            {session.member ? `${session.member.firstName} ${session.member.lastName}` : 'N/A'}
+                                        </td>
+                                        <td className="px-6 py-4 text-white">{session.trainer?.name || 'N/A'}</td>
+                                        <td className="px-6 py-4 text-white">
+                                            <div className="space-y-1">
+                                                <span className="px-2 py-1 rounded text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                                    {session.refundException?.request?.reason || 'OTHER'}
+                                                </span>
+                                                {session.refundException?.request?.details && (
+                                                    <p className="text-xs text-text-muted max-w-[220px] truncate" title={session.refundException.request.details}>
+                                                        {session.refundException.request.details}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 text-white">
+                                            {session.refundException?.request?.requestedAt
+                                                ? new Date(session.refundException.request.requestedAt).toLocaleString()
+                                                : 'Unknown'}
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => resolveRefundException(session, 'APPROVE')}
+                                                    className="text-xs font-bold px-3 py-1 rounded-lg border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
+                                                >
+                                                    Approve
+                                                </button>
+                                                <button
+                                                    onClick={() => resolveRefundException(session, 'REJECT')}
+                                                    className="text-xs font-bold px-3 py-1 rounded-lg border border-red-500/30 text-red-300 hover:bg-red-500/10"
+                                                >
+                                                    Reject
                                                 </button>
                                             </div>
                                         </td>

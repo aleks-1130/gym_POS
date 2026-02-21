@@ -54,6 +54,50 @@
     "availabilityEnd": "17:00",
     "availabilityIntervalMinutes": 30
   },
+  "105": {
+    "availabilityByDay": {
+      "0": {
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "1": {
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "2": {
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "3": {
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "4": {
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "5": {
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "6": {
+        "start": "09:00",
+        "end": "18:00"
+      }
+    },
+    "availabilityDays": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "availabilityStart": "09:00",
+    "availabilityEnd": "18:00",
+    "availabilityIntervalMinutes": 30
+  },
   "108": {
     "availabilityByDay": {
       "1": {

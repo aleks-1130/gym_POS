@@ -1,14 +1,26 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 
 export default function TrainerSessions() {
+    const COMPLETE_GRACE_MINUTES = 5;
+    const NO_SHOW_GRACE_MINUTES = 10;
     const [sessions, setSessions] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [activeView, setActiveView] = useState('calendar'); // calendar | list
+    const [activeView, setActiveView] = useState('calendar'); // calendar | history
     const [activeDay, setActiveDay] = useState('');
     const [completingId, setCompletingId] = useState(null);
     const [editingSession, setEditingSession] = useState(null);
     const [notesDraft, setNotesDraft] = useState('');
+    const [refundModalSession, setRefundModalSession] = useState(null);
+    const [refundReason, setRefundReason] = useState('OTHER');
+    const [refundDetails, setRefundDetails] = useState('');
+    const [refundSubmitting, setRefundSubmitting] = useState(false);
+    const [refundError, setRefundError] = useState('');
+    const [refundNotice, setRefundNotice] = useState('');
+    const [noShowModalSession, setNoShowModalSession] = useState(null);
+    const [noShowNote, setNoShowNote] = useState('');
+    const [noShowSubmitting, setNoShowSubmitting] = useState(false);
+    const [noShowError, setNoShowError] = useState('');
     const [monthCursor, setMonthCursor] = useState(() => {
         const now = new Date();
         return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -52,13 +64,53 @@ export default function TrainerSessions() {
         await refreshSessions();
     };
 
-    const handleCancelSession = async (sessionId) => {
-        if (!confirm("Are you sure you want to cancel this session?")) return;
+    const handleOpenNoShowModal = (session) => {
+        setNoShowModalSession(session);
+        setNoShowNote('');
+        setNoShowError('');
+    };
+
+    const handleSubmitNoShow = async () => {
+        if (!noShowModalSession) return;
+        setNoShowSubmitting(true);
+        setNoShowError('');
         try {
-            await axios.post(`http://localhost:5000/api/trainer/me/sessions/${sessionId}/cancel`);
-            refreshSessions();
+            await axios.post(`http://localhost:5000/api/trainer/me/sessions/${noShowModalSession.id}/no-show`, {
+                note: noShowNote
+            });
+            setNoShowModalSession(null);
+            setRefundNotice('Session marked as NO_SHOW.');
+            await refreshSessions();
         } catch (e) {
-            alert(e.response?.data?.error || "Failed to cancel session");
+            setNoShowError(e.response?.data?.error || "Failed to mark no-show");
+        } finally {
+            setNoShowSubmitting(false);
+        }
+    };
+
+    const handleOpenRefundExceptionModal = (session) => {
+        setRefundModalSession(session);
+        setRefundReason('OTHER');
+        setRefundDetails('');
+        setRefundError('');
+    };
+
+    const handleSubmitRefundException = async () => {
+        if (!refundModalSession) return;
+        setRefundSubmitting(true);
+        setRefundError('');
+        try {
+            await axios.post(`http://localhost:5000/api/trainer/me/sessions/${refundModalSession.id}/refund-exception`, {
+                reason: refundReason,
+                details: refundDetails
+            });
+            setRefundModalSession(null);
+            setRefundNotice('Refund exception request submitted for staff/admin review.');
+            await refreshSessions();
+        } catch (e) {
+            setRefundError(e.response?.data?.error || "Failed to request refund exception");
+        } finally {
+            setRefundSubmitting(false);
         }
     };
 
@@ -85,7 +137,23 @@ export default function TrainerSessions() {
         );
     }
 
-    const sortedSessions = [...sessions].sort((a, b) => new Date(a.date) - new Date(b.date));
+    const now = new Date();
+    const finalizedStatuses = ['COMPLETED', 'CANCELLED', 'NO_SHOW'];
+    const visibleSessions = sessions.filter((session) => {
+        const isPast = new Date(session.date) < now;
+        const status = String(session.status || '').toUpperCase();
+        const isFinalized = finalizedStatuses.includes(status);
+        return !isPast && !isFinalized;
+    });
+    const needsActionSessions = [...sessions]
+        .filter((session) => {
+            const isPast = new Date(session.date) < now;
+            const status = String(session.status || '').toUpperCase();
+            return isPast && !finalizedStatuses.includes(status);
+        })
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    const sortedSessions = [...visibleSessions].sort((a, b) => new Date(a.date) - new Date(b.date));
     const groupKey = (dateStr) => new Date(dateStr).toDateString();
     const grouped = sortedSessions.reduce((acc, session) => {
         const key = groupKey(session.date);
@@ -106,7 +174,7 @@ export default function TrainerSessions() {
     const firstCellDate = new Date(startOfMonth);
     firstCellDate.setDate(firstCellDate.getDate() - leadingDays);
 
-    const sessionsByDay = sessions.reduce((acc, session) => {
+    const sessionsByDay = visibleSessions.reduce((acc, session) => {
         const key = new Date(session.date).toDateString();
         acc[key] = acc[key] || [];
         acc[key].push(session);
@@ -133,14 +201,36 @@ export default function TrainerSessions() {
         }
     };
 
-    const adjustDuration = async (session, delta) => {
-        const next = Math.max(15, Math.min(480, (session.duration || 0) + delta));
-        try {
-            await handleUpdateSession(session.id, { duration: next });
-        } catch (e) {
-            alert(e.response?.data?.error || "Failed to update duration");
-        }
+    const getStatusBadgeClass = (status) => {
+        if (status === 'COMPLETED') return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+        if (status === 'SCHEDULED') return 'bg-primary/10 text-primary border-primary/20';
+        if (status === 'RESCHEDULED') return 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20';
+        if (status === 'NO_SHOW') return 'bg-rose-500/10 text-rose-300 border-rose-500/20';
+        return 'bg-red-500/10 text-red-500 border-red-500/20';
     };
+
+    const canMarkCompleted = (session) => {
+        const start = new Date(session?.date);
+        if (Number.isNaN(start.getTime())) return false;
+        const durationMinutes = Math.max(0, Number(session?.duration) || 0);
+        const end = new Date(start.getTime() + ((durationMinutes + COMPLETE_GRACE_MINUTES) * 60 * 1000));
+        return new Date() >= end;
+    };
+
+    const canMarkNoShow = (session) => {
+        const start = new Date(session?.date);
+        if (Number.isNaN(start.getTime())) return false;
+        const eligibleAt = new Date(start.getTime() + (NO_SHOW_GRACE_MINUTES * 60 * 1000));
+        return new Date() >= eligibleAt;
+    };
+
+    const sessionHistory = [...sessions]
+        .filter((session) => {
+            const isPast = new Date(session.date) < now;
+            const status = String(session.status || '').toUpperCase();
+            return isPast && finalizedStatuses.includes(status);
+        })
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
 
     return (
         <div className="space-y-6">
@@ -148,23 +238,29 @@ export default function TrainerSessions() {
                 <div>
                     <h1 className="text-3xl font-bold text-white">My Sessions</h1>
                     <p className="text-text-muted mt-1">Personal training bookings with members</p>
+                    {refundNotice && (
+                        <p className="text-emerald-300 text-xs mt-2">{refundNotice}</p>
+                    )}
                 </div>
-                <div className="flex gap-2">
-                    {[
-                        { value: 'calendar', label: 'Calendar' },
-                        { value: 'list', label: 'List' }
-                    ].map((tab) => (
-                        <button
-                            key={tab.value}
-                            onClick={() => setActiveView(tab.value)}
-                            className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === tab.value
-                                ? 'bg-primary text-background'
-                                : 'bg-surface text-text-muted border border-white/5'
-                                }`}
-                        >
-                            {tab.label}
-                        </button>
-                    ))}
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setActiveView('calendar')}
+                        className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'calendar'
+                            ? 'bg-primary text-background'
+                            : 'bg-surface text-text-muted border border-white/10 hover:text-white'
+                            }`}
+                    >
+                        Calendar
+                    </button>
+                    <button
+                        onClick={() => setActiveView('history')}
+                        className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'history'
+                            ? 'bg-primary text-background'
+                            : 'bg-surface text-text-muted border border-white/10 hover:text-white'
+                            }`}
+                    >
+                        Session History
+                    </button>
                 </div>
             </header>
 
@@ -224,34 +320,19 @@ export default function TrainerSessions() {
                                                 draggable
                                                 onDragStart={() => setDraggingId(session.id)}
                                                 onDragEnd={() => setDraggingId(null)}
-                                                className="bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-[10px] text-white flex items-center justify-between gap-2"
+                                                className="bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-[10px] text-white"
                                                 title="Drag to reschedule"
                                             >
-                                                <span className="truncate">
+                                                <p className="truncate font-semibold">
                                                     {getTimeString(session.date)} {session.member?.firstName}
-                                                </span>
-                                                <div className="flex items-center gap-1">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => adjustDuration(session, -15)}
-                                                        className="px-1 rounded bg-white/10 text-text-muted hover:text-white"
-                                                        title="Shorter"
-                                                    >
-                                                        −
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => adjustDuration(session, 15)}
-                                                        className="px-1 rounded bg-white/10 text-text-muted hover:text-white"
-                                                        title="Longer"
-                                                    >
-                                                        +
-                                                    </button>
-                                                </div>
+                                                </p>
+                                                <p className="text-[9px] text-text-muted mt-0.5">
+                                                    {session.duration} min • {session.status}
+                                                </p>
                                             </div>
                                         ))}
                                         {daySessions.length > 3 && (
-                                            <div className="text-[10px] text-text-muted">+{daySessions.length - 3} more</div>
+                                            <div className="text-[10px] text-text-muted">{daySessions.length - 3} more</div>
                                         )}
                                     </div>
                                 </div>
@@ -291,14 +372,18 @@ export default function TrainerSessions() {
                                             {session.member?.firstName} {session.member?.lastName}
                                         </p>
                                         <p className="text-text-muted text-xs mt-1">
-                                            {new Date(session.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {session.duration} min
+                                            {new Date(session.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} â€¢ {session.duration} min
                                         </p>
                                         <div className="flex gap-2 mt-2">
                                             <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${session.status === 'COMPLETED'
                                                 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                                                 : session.status === 'SCHEDULED'
                                                     ? 'bg-primary/10 text-primary border-primary/20'
-                                                    : 'bg-red-500/10 text-red-500 border-red-500/20'
+                                                    : session.status === 'RESCHEDULED'
+                                                        ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20'
+                                                        : session.status === 'NO_SHOW'
+                                                            ? 'bg-rose-500/10 text-rose-300 border-rose-500/20'
+                                                            : 'bg-red-500/10 text-red-500 border-red-500/20'
                                                 }`}>
                                                 {session.status}
                                             </span>
@@ -310,21 +395,32 @@ export default function TrainerSessions() {
                                             </span>
                                         </div>
                                     </div>
-                                    {session.status !== 'COMPLETED' && (
+                                    {session.status !== 'COMPLETED' && session.status !== 'CANCELLED' && session.status !== 'NO_SHOW' && (
                                         <button
                                             onClick={() => handleMarkCompleted(session.id)}
-                                            disabled={completingId === session.id}
+                                            disabled={completingId === session.id || !canMarkCompleted(session)}
+                                            title={canMarkCompleted(session) ? 'Mark this session as completed' : 'Completion is available only after session duration ends'}
                                             className="px-4 py-2 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold uppercase tracking-widest hover:bg-emerald-500/30 transition-all disabled:opacity-50"
                                         >
-                                            {completingId === session.id ? 'Updating...' : 'Mark Completed'}
+                                            {completingId === session.id ? 'Updating...' : 'Mark As Complete'}
                                         </button>
                                     )}
-                                    {session.status !== 'CANCELLED' && session.status !== 'COMPLETED' && (
+                                    {session.status !== 'COMPLETED' && session.status !== 'CANCELLED' && session.status !== 'NO_SHOW' && (
                                         <button
-                                            onClick={() => handleCancelSession(session.id)}
-                                            className="px-4 py-2 rounded-xl bg-red-500/10 text-red-400 border border-red-500/20 text-xs font-bold uppercase tracking-widest hover:bg-red-500/20 transition-all"
+                                            onClick={() => handleOpenNoShowModal(session)}
+                                            disabled={!canMarkNoShow(session)}
+                                            title={canMarkNoShow(session) ? 'Mark this session as no-show' : 'No-show can be marked only after grace period'}
+                                            className="px-4 py-2 rounded-xl bg-rose-500/10 text-rose-300 border border-rose-500/30 text-xs font-bold uppercase tracking-widest hover:bg-rose-500/20 transition-all disabled:opacity-50"
                                         >
-                                            Cancel
+                                            Mark No Show
+                                        </button>
+                                    )}
+                                    {session.paymentStatus === 'PAID' && session.status !== 'COMPLETED' && (
+                                        <button
+                                            onClick={() => handleOpenRefundExceptionModal(session)}
+                                            className="px-4 py-2 rounded-xl bg-amber-500/10 text-amber-300 border border-amber-500/30 text-xs font-bold uppercase tracking-widest hover:bg-amber-500/20 transition-all"
+                                        >
+                                            Refund Exception
                                         </button>
                                     )}
                                     <button
@@ -337,85 +433,121 @@ export default function TrainerSessions() {
                             ))
                         )}
                     </div>
+
+                    <section className="space-y-3">
+                        <div className="flex items-center justify-between">
+                            <h2 className="text-lg font-bold text-white">Needs Action</h2>
+                            <span className="text-xs text-text-muted">
+                                {needsActionSessions.length} session{needsActionSessions.length === 1 ? '' : 's'}
+                            </span>
+                        </div>
+                        {needsActionSessions.length === 0 ? (
+                            <div className="bg-surface rounded-2xl border border-white/5 p-5 text-sm text-text-muted">
+                                No unresolved past sessions.
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                {needsActionSessions.map((session) => (
+                                    <div key={`needs-action-${session.id}`} className="bg-surface rounded-xl border border-white/5 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                                        <div>
+                                            <p className="text-white font-semibold">
+                                                {session.member?.firstName} {session.member?.lastName}
+                                            </p>
+                                            <p className="text-xs text-text-muted mt-1">
+                                                {new Date(session.date).toLocaleDateString()} {' '}
+                                                {new Date(session.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {session.duration} min
+                                            </p>
+                                            <div className="flex gap-2 mt-2">
+                                                <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${getStatusBadgeClass(session.status)}`}>
+                                                    {session.status}
+                                                </span>
+                                                <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${session.paymentStatus === 'PAID'
+                                                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                                    : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                                    }`}>
+                                                    {session.paymentStatus}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <button
+                                                onClick={() => handleMarkCompleted(session.id)}
+                                                disabled={completingId === session.id || !canMarkCompleted(session)}
+                                                title={canMarkCompleted(session) ? 'Mark this session as completed' : 'Completion is available only after session duration ends'}
+                                                className="px-3 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-500/30 transition-all disabled:opacity-50"
+                                            >
+                                                {completingId === session.id ? 'Updating...' : 'Mark As Complete'}
+                                            </button>
+                                            <button
+                                                onClick={() => handleOpenNoShowModal(session)}
+                                                disabled={!canMarkNoShow(session)}
+                                                title={canMarkNoShow(session) ? 'Mark this session as no-show' : 'No-show can be marked only after grace period'}
+                                                className="px-3 py-1 rounded-lg bg-rose-500/10 text-rose-300 border border-rose-500/30 text-[10px] font-bold uppercase tracking-widest hover:bg-rose-500/20 transition-all disabled:opacity-50"
+                                            >
+                                                Mark No Show
+                                            </button>
+                                            {session.paymentStatus === 'PAID' && (
+                                                <button
+                                                    onClick={() => handleOpenRefundExceptionModal(session)}
+                                                    className="px-3 py-1 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/30 text-[10px] font-bold uppercase tracking-widest hover:bg-amber-500/20 transition-all"
+                                                >
+                                                    Refund Exception
+                                                </button>
+                                            )}
+                                            <button
+                                                onClick={() => handleOpenNotes(session)}
+                                                className="px-3 py-1 rounded-lg bg-white/5 text-white border border-white/10 text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-all"
+                                            >
+                                                Notes
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </section>
                 </div>
             ) : (
-                <div className="bg-surface rounded-2xl border border-white/5 overflow-hidden">
-                    <table className="w-full text-left text-sm text-text-secondary">
-                        <thead className="bg-white/5 text-text-muted uppercase text-xs font-bold tracking-wider">
-                            <tr>
-                                <th className="px-6 py-4">Member</th>
-                                <th className="px-6 py-4">Date</th>
-                                <th className="px-6 py-4">Duration</th>
-                                <th className="px-6 py-4">Status</th>
-                                <th className="px-6 py-4">Payment</th>
-                                <th className="px-6 py-4">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/5">
-                            {sessions.length === 0 && (
-                                <tr>
-                                    <td colSpan="6" className="p-6 text-center text-text-muted">No sessions yet.</td>
-                                </tr>
-                            )}
-                            {sessions.map((session) => (
-                                <tr key={session.id} className="hover:bg-white/5 transition-colors">
-                                    <td className="px-6 py-4 text-white font-medium">
-                                        {session.member?.firstName} {session.member?.lastName}
-                                    </td>
-                                    <td className="px-6 py-4 text-white">
-                                        {new Date(session.date).toLocaleDateString()} <span className="text-text-muted text-xs">{new Date(session.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                    </td>
-                                    <td className="px-6 py-4 text-white">{session.duration} min</td>
-                                    <td className="px-6 py-4">
-                                        <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${session.status === 'COMPLETED'
-                                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                                            : session.status === 'SCHEDULED'
-                                                ? 'bg-primary/10 text-primary border-primary/20'
-                                                : 'bg-red-500/10 text-red-500 border-red-500/20'
-                                            }`}>
+                <section className="space-y-3">
+                    <div className="flex items-center justify-between">
+                        <h2 className="text-xl font-bold text-white">Session History</h2>
+                        <span className="text-xs text-text-muted">
+                            {sessionHistory.length} past session{sessionHistory.length === 1 ? '' : 's'}
+                        </span>
+                    </div>
+                    {sessionHistory.length === 0 ? (
+                        <div className="bg-surface rounded-2xl border border-white/5 p-5 text-sm text-text-muted">
+                            No past sessions yet.
+                        </div>
+                    ) : (
+                        <div className="space-y-2">
+                            {sessionHistory.map((session) => (
+                                <div key={`history-${session.id}`} className="bg-surface rounded-xl border border-white/5 p-4 flex items-start justify-between gap-4">
+                                    <div>
+                                        <p className="text-white font-semibold">
+                                            {session.member?.firstName} {session.member?.lastName}
+                                        </p>
+                                        <p className="text-xs text-text-muted mt-1">
+                                            {new Date(session.date).toLocaleDateString()} {' '}
+                                            {new Date(session.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {session.duration} min
+                                        </p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${getStatusBadgeClass(session.status)}`}>
                                             {session.status}
                                         </span>
-                                    </td>
-                                    <td className="px-6 py-4">
                                         <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${session.paymentStatus === 'PAID'
                                             ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
                                             : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
                                             }`}>
                                             {session.paymentStatus}
                                         </span>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        {session.status !== 'COMPLETED' ? (
-                                            <button
-                                                onClick={() => handleMarkCompleted(session.id)}
-                                                disabled={completingId === session.id}
-                                                className="px-3 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-500/30 transition-all disabled:opacity-50"
-                                            >
-                                                {completingId === session.id ? 'Updating...' : 'Mark Completed'}
-                                            </button>
-                                        ) : (
-                                            <span className="text-text-muted text-xs">Done</span>
-                                        )}
-                                        <button
-                                            onClick={() => handleOpenNotes(session)}
-                                            className="ml-2 px-3 py-1 rounded-lg bg-white/5 text-white border border-white/10 text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-all"
-                                        >
-                                            Notes
-                                        </button>
-                                        {session.status !== 'CANCELLED' && session.status !== 'COMPLETED' && (
-                                            <button
-                                                onClick={() => handleCancelSession(session.id)}
-                                                className="ml-2 px-3 py-1 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 text-[10px] font-bold uppercase tracking-widest hover:bg-red-500/20 transition-all"
-                                            >
-                                                Cancel
-                                            </button>
-                                        )}
-                                    </td>
-                                </tr>
+                                    </div>
+                                </div>
                             ))}
-                        </tbody>
-                    </table>
-                </div>
+                        </div>
+                    )}
+                </section>
             )}
 
             {editingSession && (
@@ -461,6 +593,136 @@ export default function TrainerSessions() {
                     </div>
                 </div>
             )}
+
+            {refundModalSession && (
+                <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-surface rounded-2xl border border-white/10 w-full max-w-lg">
+                        <div className="p-5 border-b border-white/10 flex items-center justify-between">
+                            <div>
+                                <h2 className="text-lg font-bold text-white">Request Refund Exception</h2>
+                                <p className="text-text-muted text-xs mt-1">
+                                    {refundModalSession.member?.firstName} {refundModalSession.member?.lastName}
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setRefundModalSession(null)}
+                                className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-white"
+                            >
+                                <span className="material-icons-round text-lg">close</span>
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-white mb-2">Reason</label>
+                                <select
+                                    value={refundReason}
+                                    onChange={(e) => setRefundReason(e.target.value)}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white cursor-pointer focus:outline-none focus:border-primary"
+                                >
+                                    <option style={{ color: '#111', backgroundColor: '#fff' }} value="OTHER">Other</option>
+                                    <option style={{ color: '#111', backgroundColor: '#fff' }} value="TRAINER_ABSENT">Trainer Absent</option>
+                                    <option style={{ color: '#111', backgroundColor: '#fff' }} value="GYM_CLOSURE">Gym Closure</option>
+                                    <option style={{ color: '#111', backgroundColor: '#fff' }} value="SYSTEM_ERROR">System Error</option>
+                                    <option style={{ color: '#111', backgroundColor: '#fff' }} value="MEDICAL_EMERGENCY">Medical Emergency</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-white mb-2">Details (optional)</label>
+                                <textarea
+                                    value={refundDetails}
+                                    onChange={(e) => setRefundDetails(e.target.value)}
+                                    rows={4}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-primary"
+                                    placeholder="Provide context for staff/admin review..."
+                                />
+                            </div>
+                            {refundError && (
+                                <div className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+                                    {refundError}
+                                </div>
+                            )}
+                            <p className="text-xs text-text-muted">
+                                Refunds are exception-based and require staff/admin approval.
+                            </p>
+                        </div>
+                        <div className="p-5 border-t border-white/10 flex items-center justify-end gap-3">
+                            <button
+                                onClick={() => setRefundModalSession(null)}
+                                className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm font-medium hover:bg-white/10"
+                                disabled={refundSubmitting}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSubmitRefundException}
+                                disabled={refundSubmitting}
+                                className="px-4 py-2 rounded-xl bg-primary text-background text-sm font-medium hover:brightness-110 disabled:opacity-60"
+                            >
+                                {refundSubmitting ? 'Submitting...' : 'Submit Request'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {noShowModalSession && (
+                <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-surface rounded-2xl border border-white/10 w-full max-w-lg">
+                        <div className="p-5 border-b border-white/10 flex items-center justify-between">
+                            <div>
+                                <h2 className="text-lg font-bold text-white">Mark Session No-Show</h2>
+                                <p className="text-text-muted text-xs mt-1">
+                                    {noShowModalSession.member?.firstName} {noShowModalSession.member?.lastName}
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setNoShowModalSession(null)}
+                                className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-white"
+                            >
+                                <span className="material-icons-round text-lg">close</span>
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-4">
+                            <p className="text-sm text-text-muted">
+                                This marks the session as <span className="text-rose-300 font-semibold">NO_SHOW</span> under your no-refund-default policy.
+                            </p>
+                            <div>
+                                <label className="block text-sm font-medium text-white mb-2">Note (optional)</label>
+                                <textarea
+                                    value={noShowNote}
+                                    onChange={(e) => setNoShowNote(e.target.value)}
+                                    rows={4}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-primary"
+                                    placeholder="Add context for staff/admin..."
+                                />
+                            </div>
+                            {noShowError && (
+                                <div className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+                                    {noShowError}
+                                </div>
+                            )}
+                        </div>
+                        <div className="p-5 border-t border-white/10 flex items-center justify-end gap-3">
+                            <button
+                                onClick={() => setNoShowModalSession(null)}
+                                className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm font-medium hover:bg-white/10"
+                                disabled={noShowSubmitting}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSubmitNoShow}
+                                disabled={noShowSubmitting}
+                                className="px-4 py-2 rounded-xl bg-rose-500/20 text-rose-200 border border-rose-500/30 text-sm font-medium hover:bg-rose-500/30 disabled:opacity-60"
+                            >
+                                {noShowSubmitting ? 'Submitting...' : 'Confirm No-Show'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
+
+

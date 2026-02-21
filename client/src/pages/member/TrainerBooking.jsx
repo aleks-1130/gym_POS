@@ -134,6 +134,40 @@ export default function TrainerBooking() {
         }
     };
 
+    const handleRescheduleSession = async (session) => {
+        const sessionDate = new Date(session.date);
+        const now = new Date();
+        const hoursUntil = (sessionDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+        if (hoursUntil < 24) {
+            alert("Reschedule is allowed only if requested at least 24 hours before your session.");
+            return;
+        }
+
+        const currentIsoDate = toIsoDate(sessionDate);
+        const currentTime = `${String(sessionDate.getHours()).padStart(2, '0')}:${String(sessionDate.getMinutes()).padStart(2, '0')}`;
+        const date = prompt('Enter new date (YYYY-MM-DD):', currentIsoDate);
+        if (!date) return;
+        const time = prompt('Enter new time (HH:mm, 24-hour):', currentTime);
+        if (!time) return;
+        const reason = prompt('Reason for reschedule (optional):', '') || '';
+
+        try {
+            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+            await axios.post(`http://localhost:5000/api/members/me/training-sessions/${session.id}/reschedule`, {
+                date,
+                time,
+                reason
+            }, {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined
+            });
+            alert("Session rescheduled successfully.");
+            fetchMemberSessions();
+        } catch (error) {
+            console.error("Failed to reschedule session", error);
+            alert(error.response?.data?.error || "Failed to reschedule session");
+        }
+    };
+
     const handleBookSession = async (e) => {
         e.preventDefault();
         if (!selectedTrainer || selectedDates.length === 0) {
@@ -472,6 +506,11 @@ export default function TrainerBooking() {
                         </div>
                     </div>
 
+                    <div className="bg-primary/10 border border-primary/30 rounded-xl p-3 text-xs text-text-muted">
+                        Policy: No refund by default for missed sessions. One member reschedule is allowed with at least 24-hour notice.
+                        Refunds are exceptions for trainer/gym/system issues and require approval.
+                    </div>
+
                     {sessionsLoading ? (
                         <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-text-muted">
                             Loading your sessions...
@@ -486,11 +525,13 @@ export default function TrainerBooking() {
                         </div>
                     ) : (
                         <div className="space-y-3">
-                            {memberSessions.slice(0, 8).map((session) => {
-                                const sessionDate = new Date(session.date);
-                                const isUpcoming = sessionDate >= now;
-                                return (
-                                    <div key={session.id} className="bg-white/5 border border-white/10 rounded-xl p-3 sm:p-4">
+                              {memberSessions.slice(0, 8).map((session) => {
+                                  const sessionDate = new Date(session.date);
+                                  const isUpcoming = sessionDate >= now;
+                                  const hoursUntil = (sessionDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+                                  const canRequestReschedule = isUpcoming && hoursUntil >= 24 && session.status === 'SCHEDULED';
+                                  return (
+                                      <div key={session.id} className="bg-white/5 border border-white/10 rounded-xl p-3 sm:p-4">
                                         <div className="flex items-start justify-between gap-3">
                                             <div>
                                                 <p className="text-white font-semibold text-sm sm:text-base">{session.trainer?.name || 'Trainer'}</p>
@@ -500,18 +541,36 @@ export default function TrainerBooking() {
                                                     {sessionDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
                                                 </p>
                                             </div>
-                                            <span className={`text-[10px] uppercase tracking-wide font-bold px-2 py-1 rounded-md border ${isUpcoming
-                                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                                                : 'bg-white/10 text-text-muted border-white/20'
-                                                }`}>
-                                                {session.status === 'CANCELLED' ? 'CANCELLED' : (isUpcoming ? 'Check-In' : 'Past')}
-                                            </span>
-                                        </div>
-                                        <div className="mt-2 text-right">
-                                            {isUpcoming && session.status !== 'CANCELLED' && (
-                                                <button
-                                                    onClick={() => handleCancelSession(session.id)}
-                                                    className="px-3 py-1 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold hover:bg-red-500/20 transition-all"
+                                              <span className={`text-[10px] uppercase tracking-wide font-bold px-2 py-1 rounded-md border ${session.status === 'CANCELLED' || session.status === 'NO_SHOW'
+                                                  ? 'bg-red-500/10 text-red-400 border-red-500/30'
+                                                  : session.status === 'RESCHEDULED'
+                                                      ? 'bg-primary/10 text-primary border-primary/30'
+                                                      : isUpcoming
+                                                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                                          : 'bg-white/10 text-text-muted border-white/20'
+                                                  }`}>
+                                                  {session.status === 'CANCELLED'
+                                                      ? 'CANCELLED'
+                                                      : session.status === 'NO_SHOW'
+                                                          ? 'NO SHOW'
+                                                          : session.status === 'RESCHEDULED'
+                                                              ? 'RESCHEDULED'
+                                                              : (isUpcoming ? 'Check-In' : 'Past')}
+                                              </span>
+                                          </div>
+                                          <div className="mt-2 flex items-center justify-end gap-2">
+                                              {canRequestReschedule && (
+                                                  <button
+                                                      onClick={() => handleRescheduleSession(session)}
+                                                      className="px-3 py-1 bg-primary/10 text-primary border border-primary/30 rounded-lg text-xs font-bold hover:bg-primary/20 transition-all"
+                                                  >
+                                                      Reschedule
+                                                  </button>
+                                              )}
+                                              {isUpcoming && session.status !== 'CANCELLED' && session.status !== 'NO_SHOW' && (
+                                                  <button
+                                                      onClick={() => handleCancelSession(session.id)}
+                                                      className="px-3 py-1 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold hover:bg-red-500/20 transition-all"
                                                 >
                                                     Cancel
                                                 </button>

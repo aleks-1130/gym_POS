@@ -51,18 +51,27 @@ export default function TrainerCommissionHistory() {
                     <p className="text-text-muted text-xs sm:text-sm mt-1">Track earned commissions and payout records</p>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                     <div className="bg-surface rounded-xl p-3 sm:p-4 border border-white/5">
-                        <p className="text-text-muted text-[10px] sm:text-xs mb-1">Total Earned</p>
-                        <p className="text-emerald-400 text-lg sm:text-2xl font-bold">{formatMoney(summary.totalEarned)}</p>
+                        <div className="flex flex-col h-full">
+                            <span className="material-icons-round text-emerald-400 text-2xl mb-2">payments</span>
+                            <p className="text-text-muted text-[10px] sm:text-xs mb-1">Total Earned</p>
+                            <p className="text-emerald-400 text-lg sm:text-2xl font-bold">{formatMoney(summary.totalEarned)}</p>
+                        </div>
                     </div>
                     <div className="bg-surface rounded-xl p-3 sm:p-4 border border-white/5">
-                        <p className="text-text-muted text-[10px] sm:text-xs mb-1">Pending</p>
-                        <p className="text-amber-300 text-lg sm:text-2xl font-bold">{formatMoney(summary.totalUnpaid)}</p>
+                        <div className="flex flex-col h-full">
+                            <span className="material-icons-round text-amber-400 text-2xl mb-2">hourglass_top</span>
+                            <p className="text-text-muted text-[10px] sm:text-xs mb-1">Pending</p>
+                            <p className="text-amber-300 text-lg sm:text-2xl font-bold">{formatMoney(summary.totalUnpaid)}</p>
+                        </div>
                     </div>
                     <div className="bg-surface rounded-xl p-3 sm:p-4 border border-white/5">
-                        <p className="text-text-muted text-[10px] sm:text-xs mb-1">Paid Out</p>
-                        <p className="text-blue-300 text-lg sm:text-2xl font-bold">{formatMoney(summary.totalPayoutRecorded)}</p>
+                        <div className="flex flex-col h-full">
+                            <span className="material-icons-round text-blue-300 text-2xl mb-2">account_balance_wallet</span>
+                            <p className="text-text-muted text-[10px] sm:text-xs mb-1">Paid Out</p>
+                            <p className="text-blue-300 text-lg sm:text-2xl font-bold">{formatMoney(summary.totalPayoutRecorded)}</p>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -1,4 +1,49 @@
 const prisma = require('../config/prisma');
+const { isTimeAllowedForTrainer } = require('../services/trainerAvailabilityService');
+
+const MEMBER_RESCHEDULE_NOTICE_HOURS = 24;
+const MEMBER_RESCHEDULE_WINDOW_DAYS = 7;
+const COMPLETE_GRACE_MINUTES = 5;
+const NO_SHOW_GRACE_MINUTES = 10;
+
+const appendPolicyNote = (existingNotes, extraLine) => {
+    const base = (existingNotes || '').trim();
+    return [base, extraLine].filter(Boolean).join('\n');
+};
+
+const isSessionTerminal = (status) => {
+    return ['CANCELLED', 'COMPLETED', 'NO_SHOW'].includes(String(status || '').toUpperCase());
+};
+
+const canFinalizeAttendanceStatus = (status) => {
+    return ['SCHEDULED', 'RESCHEDULED'].includes(String(status || '').toUpperCase());
+};
+
+const checkBookingConflict = async (trainerId, startDateTime, durationMinutes, excludeSessionId = null) => {
+    const endDateTime = new Date(startDateTime.getTime() + durationMinutes * 60000);
+    const startOfDay = new Date(startDateTime);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(startOfDay);
+    endOfDay.setDate(endOfDay.getDate() + 1);
+
+    const sessions = await prisma.trainingSession.findMany({
+        where: {
+            trainerId: Number(trainerId),
+            date: {
+                gte: startOfDay,
+                lt: endOfDay
+            },
+            status: { not: 'CANCELLED' },
+            ...(excludeSessionId ? { id: { not: Number(excludeSessionId) } } : {})
+        }
+    });
+
+    return sessions.some((session) => {
+        const sessionStart = new Date(session.date);
+        const sessionEnd = new Date(sessionStart.getTime() + (Number(session.duration) || 0) * 60000);
+        return startDateTime < sessionEnd && endDateTime > sessionStart;
+    });
+};
 
 const getAllSessions = async (req, res) => {
     try {
@@ -82,6 +127,22 @@ const completeSession = async (req, res) => {
             if (session.trainerId !== Number(req.user.trainerId)) {
                 return res.status(403).json({ error: "Access denied" });
             }
+        }
+        if (!canFinalizeAttendanceStatus(session.status)) {
+            return res.status(400).json({ error: "Only scheduled or rescheduled sessions can be completed" });
+        }
+
+        const sessionStart = new Date(session.date);
+        if (Number.isNaN(sessionStart.getTime())) {
+            return res.status(400).json({ error: "Invalid session date" });
+        }
+        const sessionEndWithGrace = new Date(
+            sessionStart.getTime() + ((Number(session.duration) || 0) + COMPLETE_GRACE_MINUTES) * 60 * 1000
+        );
+        if (new Date() < sessionEndWithGrace) {
+            return res.status(400).json({
+                error: `Session can be marked completed only after it ends (+${COMPLETE_GRACE_MINUTES} min grace period)`
+            });
         }
 
         // Calculate total material cost if not provided manually
@@ -193,15 +254,37 @@ const updateSession = async (req, res) => {
                 return res.status(403).json({ error: "Access denied" });
             }
         }
+        if (isSessionTerminal(session.status)) {
+            return res.status(400).json({ error: "Cannot modify a completed, cancelled, or no-show session" });
+        }
+        if (new Date(session.date) < new Date()) {
+            return res.status(400).json({ error: "Past sessions cannot be modified" });
+        }
 
         let nextDateTime = session.date;
         if (date || time) {
             const current = new Date(session.date);
-            const yyyyMmDd = date || current.toISOString().split('T')[0];
-            const hhmm = time || `${String(current.getHours()).padStart(2, '0')}:${String(current.getMinutes()).padStart(2, '0')}`;
-            const composed = new Date(`${yyyyMmDd}T${hhmm}`);
+            const requestedDate = date || current.toISOString().split('T')[0];
+            const requestedTime = time || `${String(current.getHours()).padStart(2, '0')}:${String(current.getMinutes()).padStart(2, '0')}`;
+            const composed = new Date(`${requestedDate}T${requestedTime}`);
             if (isNaN(composed.getTime())) {
                 return res.status(400).json({ error: "Invalid date or time" });
+            }
+            if (composed <= new Date()) {
+                return res.status(400).json({ error: "Rescheduled time must be in the future" });
+            }
+            const composedDate = composed.toISOString().slice(0, 10);
+            const composedTime = `${String(composed.getHours()).padStart(2, '0')}:${String(composed.getMinutes()).padStart(2, '0')}`;
+            if (!isTimeAllowedForTrainer({
+                trainerId: Number(session.trainerId),
+                date: composedDate,
+                time: composedTime,
+                duration: Number(session.duration)
+            })) {
+                return res.status(400).json({ error: "Selected schedule is outside trainer availability" });
+            }
+            if (await checkBookingConflict(Number(session.trainerId), composed, Number(session.duration), session.id)) {
+                return res.status(409).json({ error: "This time slot overlaps another session" });
             }
             nextDateTime = composed;
         }
@@ -220,7 +303,8 @@ const updateSession = async (req, res) => {
             data: {
                 date: nextDateTime,
                 duration: nextDuration,
-                notes: notes !== undefined ? (notes || null) : session.notes
+                notes: notes !== undefined ? (notes || null) : session.notes,
+                status: session.status === 'SCHEDULED' && (date || time) ? 'RESCHEDULED' : session.status
             }
         });
         res.json(updated);
@@ -286,6 +370,10 @@ const cancelSession = async (req, res) => {
             return res.status(404).json({ error: "Session not found" });
         }
 
+        if (isSessionTerminal(session.status)) {
+            return res.status(400).json({ error: "This session can no longer be cancelled" });
+        }
+
         // 1. Check if session is in the past
         const now = new Date();
         if (new Date(session.date) < now) {
@@ -308,6 +396,13 @@ const cancelSession = async (req, res) => {
             return res.status(403).json({ error: "You are not authorized to cancel this session" });
         }
 
+        const hoursUntilSession = (new Date(session.date).getTime() - now.getTime()) / (1000 * 60 * 60);
+        if (user.role === 'MEMBER' && hoursUntilSession < MEMBER_RESCHEDULE_NOTICE_HOURS) {
+            return res.status(400).json({
+                error: `Member cancellations require at least ${MEMBER_RESCHEDULE_NOTICE_HOURS} hours notice. Missed sessions are non-refundable by default.`
+            });
+        }
+
         // 3. Update Status
         await prisma.trainingSession.update({
             where: { id: sessionId },
@@ -317,7 +412,7 @@ const cancelSession = async (req, res) => {
         // 4. Return message
         let message = "Session cancelled successfully.";
         if (session.paymentStatus === 'PAID') {
-            message += " Note: This session was paid. Please contact the front desk for a refund.";
+            message += " Paid sessions are non-refundable by default unless approved as a refund exception by staff.";
         }
 
         res.json({ message, session: { ...session, status: 'CANCELLED' } });
@@ -356,6 +451,192 @@ const declineSession = async (req, res) => {
     }
 };
 
+const memberRescheduleSession = async (req, res) => {
+    const sessionId = Number(req.params.id);
+    const { date, time, reason } = req.body || {};
+
+    if (!date || !time) {
+        return res.status(400).json({ error: "date and time are required" });
+    }
+
+    try {
+        const session = await prisma.trainingSession.findUnique({
+            where: { id: sessionId }
+        });
+        if (!session) {
+            return res.status(404).json({ error: "Session not found" });
+        }
+        if (req.user.role !== 'MEMBER' || Number(req.user.id) !== Number(session.memberId)) {
+            return res.status(403).json({ error: "Access denied" });
+        }
+        if (isSessionTerminal(session.status)) {
+            return res.status(400).json({ error: "This session can no longer be rescheduled" });
+        }
+        if (String(session.status).toUpperCase() === 'RESCHEDULED') {
+            return res.status(400).json({ error: "This booking already used its one-time member reschedule" });
+        }
+
+        const now = new Date();
+        const originalDate = new Date(session.date);
+        const hoursUntilOriginal = (originalDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+        if (hoursUntilOriginal < MEMBER_RESCHEDULE_NOTICE_HOURS) {
+            return res.status(400).json({
+                error: `Reschedule requires at least ${MEMBER_RESCHEDULE_NOTICE_HOURS} hours notice before session start`
+            });
+        }
+
+        const nextDateTime = new Date(`${date}T${time}`);
+        if (Number.isNaN(nextDateTime.getTime())) {
+            return res.status(400).json({ error: "Invalid date/time" });
+        }
+        if (nextDateTime <= now) {
+            return res.status(400).json({ error: "New schedule must be in the future" });
+        }
+
+        const maxRescheduleDate = new Date(originalDate);
+        maxRescheduleDate.setDate(maxRescheduleDate.getDate() + MEMBER_RESCHEDULE_WINDOW_DAYS);
+        if (nextDateTime > maxRescheduleDate) {
+            return res.status(400).json({
+                error: `Rescheduled date must be within ${MEMBER_RESCHEDULE_WINDOW_DAYS} days from the original session`
+            });
+        }
+
+        const hhmm = `${String(nextDateTime.getHours()).padStart(2, '0')}:${String(nextDateTime.getMinutes()).padStart(2, '0')}`;
+        const yyyyMmDd = nextDateTime.toISOString().slice(0, 10);
+        if (!isTimeAllowedForTrainer({
+            trainerId: Number(session.trainerId),
+            date: yyyyMmDd,
+            time: hhmm,
+            duration: Number(session.duration)
+        })) {
+            return res.status(400).json({ error: "Selected schedule is outside trainer availability" });
+        }
+
+        if (await checkBookingConflict(Number(session.trainerId), nextDateTime, Number(session.duration), session.id)) {
+            return res.status(409).json({ error: "This time slot overlaps another session" });
+        }
+
+        const update = await prisma.trainingSession.update({
+            where: { id: sessionId },
+            data: {
+                date: nextDateTime,
+                status: 'RESCHEDULED',
+                notes: appendPolicyNote(
+                    session.notes,
+                    `Member rescheduled (${new Date().toISOString()}) from ${originalDate.toISOString()} to ${nextDateTime.toISOString()}${reason ? ` | reason: ${String(reason).trim()}` : ''}`
+                )
+            }
+        });
+
+        res.json({
+            message: "Session rescheduled successfully. No-refund policy still applies to future no-shows.",
+            session: update
+        });
+    } catch (e) {
+        res.status(500).json({ error: "Failed to reschedule session", detail: e?.message });
+    }
+};
+
+const markNoShow = async (req, res) => {
+    const sessionId = Number(req.params.id);
+    const { note } = req.body || {};
+
+    try {
+        const session = await prisma.trainingSession.findUnique({
+            where: { id: sessionId }
+        });
+        if (!session) {
+            return res.status(404).json({ error: "Session not found" });
+        }
+
+        const user = req.user;
+        let authorized = ['ADMIN', 'STAFF', 'OWNER'].includes(user.role);
+        if (!authorized && user.role === 'TRAINER' && session.trainerId === Number(user.trainerId)) {
+            authorized = true;
+        }
+        if (!authorized) {
+            return res.status(403).json({ error: "Not authorized to mark this session as no-show" });
+        }
+        if (!canFinalizeAttendanceStatus(session.status)) {
+            return res.status(400).json({ error: "Only scheduled or rescheduled sessions can be marked as no-show" });
+        }
+        const sessionStart = new Date(session.date);
+        if (Number.isNaN(sessionStart.getTime())) {
+            return res.status(400).json({ error: "Invalid session date" });
+        }
+        const noShowEligibleAt = new Date(sessionStart.getTime() + (NO_SHOW_GRACE_MINUTES * 60 * 1000));
+        if (new Date() < noShowEligibleAt) {
+            return res.status(400).json({
+                error: `No-show can only be marked ${NO_SHOW_GRACE_MINUTES} minutes after session start`
+            });
+        }
+
+        const updated = await prisma.trainingSession.update({
+            where: { id: sessionId },
+            data: {
+                status: 'NO_SHOW',
+                notes: appendPolicyNote(
+                    session.notes,
+                    `Marked NO_SHOW by ${user.role}#${user.id} at ${new Date().toISOString()}${note ? ` | ${String(note).trim()}` : ''}`
+                )
+            }
+        });
+
+        res.json({
+            message: "Session marked as NO_SHOW. No refund is issued by default.",
+            session: updated
+        });
+    } catch (e) {
+        res.status(500).json({ error: "Failed to mark no-show", detail: e?.message });
+    }
+};
+
+const requestRefundException = async (req, res) => {
+    const sessionId = Number(req.params.id);
+    const { reason, details } = req.body || {};
+    const normalizedReason = String(reason || '').trim().toUpperCase();
+    const allowedReasons = ['TRAINER_ABSENT', 'GYM_CLOSURE', 'SYSTEM_ERROR', 'MEDICAL_EMERGENCY', 'OTHER'];
+
+    if (!allowedReasons.includes(normalizedReason)) {
+        return res.status(400).json({ error: `reason must be one of: ${allowedReasons.join(', ')}` });
+    }
+
+    try {
+        const session = await prisma.trainingSession.findUnique({
+            where: { id: sessionId }
+        });
+        if (!session) {
+            return res.status(404).json({ error: "Session not found" });
+        }
+
+        const user = req.user;
+        let authorized = ['ADMIN', 'STAFF', 'OWNER'].includes(user.role);
+        if (!authorized && user.role === 'TRAINER' && session.trainerId === Number(user.trainerId)) {
+            authorized = true;
+        }
+        if (!authorized) {
+            return res.status(403).json({ error: "Not authorized to request refund exception" });
+        }
+
+        const updated = await prisma.trainingSession.update({
+            where: { id: sessionId },
+            data: {
+                notes: appendPolicyNote(
+                    session.notes,
+                    `REFUND_EXCEPTION_REQUESTED by ${user.role}#${user.id} at ${new Date().toISOString()} | reason=${normalizedReason}${details ? ` | details=${String(details).trim()}` : ''}`
+                )
+            }
+        });
+
+        res.json({
+            message: "Refund exception request logged. Staff/owner approval is required before any refund action.",
+            session: updated
+        });
+    } catch (e) {
+        res.status(500).json({ error: "Failed to request refund exception", detail: e?.message });
+    }
+};
+
 
 module.exports = {
     getAllSessions,
@@ -365,5 +646,8 @@ module.exports = {
     getTrainerSessions,
     getMySessions,
     cancelSession,
-    declineSession
+    declineSession,
+    memberRescheduleSession,
+    markNoShow,
+    requestRefundException
 };
