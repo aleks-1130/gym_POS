@@ -12,6 +12,7 @@ import FullscreenController from './components/FullscreenController';
 import Landing from './pages/Landing';
 import Signup from './pages/auth/Signup';
 import Login from './pages/auth/Login';
+import ActivateAccount from './pages/auth/ActivateAccount';
 
 // Shared
 import Dashboard from './pages/shared/Dashboard';
@@ -134,6 +135,7 @@ function AppRoutes() {
         <Route path="/landing" element={<Landing />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/activate-account" element={<ActivateAccount />} />
 
         {/* --- PROTECTED ROUTES --- */}
         <Route

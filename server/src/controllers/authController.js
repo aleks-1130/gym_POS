@@ -88,8 +88,8 @@ const login = async (req, res) => {
         });
 
         if (member && member.password) { // Only if password is set
-            if (member.status === 'PENDING') {
-                return res.status(403).json({ error: "Your account is pending approval by staff." });
+            if (member.status === 'PENDING' || member.status === 'PENDING_ACTIVATION') {
+                return res.status(403).json({ error: "Your account is pending activation. Please check your email." });
             }
             const match = await bcrypt.compare(password, member.password);
             console.log("[DEBUG] Member Password Match:", match);
@@ -150,9 +150,54 @@ const getMe = async (req, res) => {
     res.json(req.user);
 };
 
+const activateAccount = async (req, res) => {
+    const { token, password } = req.body;
+    if (!token || !password) {
+        return res.status(400).json({ error: "Token and password are required" });
+    }
+
+    try {
+        const member = await prisma.member.findUnique({
+            where: { activationToken: token }
+        });
+
+        if (!member) {
+            return res.status(400).json({ error: "Invalid or expired activation token" });
+        }
+
+        if (member.activationExpires && new Date() > new Date(member.activationExpires)) {
+            return res.status(400).json({ error: "Activation token has expired" });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        await prisma.member.update({
+            where: { id: member.id },
+            data: {
+                password: hashedPassword,
+                status: 'ACTIVE',
+                activationToken: null,
+                activationExpires: null
+            }
+        });
+
+        // Sync to Neon Auth
+        try {
+            await syncToNeonAuth(`${member.firstName} ${member.lastName}`, member.email, password);
+        } catch (syncErr) {
+            console.error("Neon Auth Sync Warning:", syncErr.message);
+        }
+
+        res.json({ message: "Account activated successfully. You can now log in." });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+};
+
 module.exports = {
     register,
     login,
     setupMemberPassword,
-    getMe
+    getMe,
+    activateAccount
 };

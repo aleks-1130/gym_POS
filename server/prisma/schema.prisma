@@ -69,6 +69,8 @@ model Member {
   payments               Payment[]
   paymentMethods         PaymentMethod[]
   trainingSessions       TrainingSession[]
+  activationToken        String?            @unique
+  activationExpires      DateTime?
 
   @@index([status])
   @@index([createdAt])

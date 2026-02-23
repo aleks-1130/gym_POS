@@ -7,6 +7,7 @@ const { authenticateToken, authorize } = require('../middleware/authMiddleware')
 router.post('/register', authController.register);
 router.post('/login', authController.login);
 router.post('/member-setup', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), authController.setupMemberPassword);
+router.post('/activate', authController.activateAccount);
 router.get('/me', authenticateToken, authController.getMe);
 
 module.exports = router;

@@ -1,5 +1,7 @@
 const prisma = require('../config/prisma');
 const { isTimeAllowedForTrainer } = require('../services/trainerAvailabilityService');
+const { sendActivationEmail } = require('../services/emailService');
+const crypto = require('crypto');
 
 const createPaymentCompat = async (tx, data) => {
     const paymentData = { ...data };
@@ -817,16 +819,20 @@ const createMember = async (req, res) => {
         }
 
         const { member, payment } = await prisma.$transaction(async (tx) => {
+            const activationToken = crypto.randomBytes(32).toString('hex');
+            const activationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
             const createdMember = await tx.member.create({
                 data: {
                     firstName, lastName, email, phone, planId: Number(planId),
                     imageUrl,
                     birthDate: birthDate ? new Date(birthDate) : null,
                     sex,
-                    status: 'ACTIVE',
+                    status: 'PENDING_ACTIVATION',
                     startDate,
                     expiryDate,
-                    password: await bcrypt.hash('password123', 10) // Default password
+                    activationToken,
+                    activationExpires
                 }
             });
 
@@ -872,6 +878,14 @@ const createMember = async (req, res) => {
                 where: { id: createdMember.id },
                 include: { plan: true }
             });
+
+            // Send activation email
+            try {
+                await sendActivationEmail(email, `${firstName} ${lastName}`, activationToken);
+            } catch (err) {
+                console.error("Failed to send activation email:", err.message);
+                // We still proceed as the member is created, but staff might need to resend (future feature)
+            }
 
             return { member: hydratedMember || createdMember, payment: createdPayment };
         });
