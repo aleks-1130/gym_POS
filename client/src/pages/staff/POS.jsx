@@ -61,6 +61,7 @@ export default function POS() {
     // Receipt Printing
     const [showReceiptPreview, setShowReceiptPreview] = useState(false);
     const [lastTransaction, setLastTransaction] = useState(null);
+    const [receiptSettings, setReceiptSettings] = useState(null);
     const receiptRef = useRef();
 
     const authHeaders = () => {
@@ -135,6 +136,7 @@ export default function POS() {
         fetchTrainers();
         fetchClassPackages();
         fetchMembers();
+        fetchReceiptSettings();
     }, []);
 
     useEffect(() => {
@@ -153,6 +155,11 @@ export default function POS() {
         const intervalId = setInterval(fetchCollectCashData, 10000);
         return () => clearInterval(intervalId);
     }, [viewMode]);
+
+    useEffect(() => {
+        if (!showReceiptPreview) return;
+        fetchReceiptSettings();
+    }, [showReceiptPreview]);
 
     const fetchProducts = async () => {
         try {
@@ -206,6 +213,18 @@ export default function POS() {
             setMembers([]);
         }
     }
+
+    const fetchReceiptSettings = async () => {
+        try {
+            const res = await axios.get(withApiBase('/api/payments/receipt-settings'), {
+                headers: authHeaders()
+            });
+            setReceiptSettings(res.data || null);
+        } catch (_) {
+            console.error("Failed to fetch receipt settings");
+            setReceiptSettings(null);
+        }
+    };
 
     const fetchHistory = async () => {
         try {
@@ -576,6 +595,45 @@ export default function POS() {
         } finally {
             setLoading(false);
         }
+    };
+
+    const openReceiptTemplatePreview = () => {
+        const previewItems = cart.length > 0
+            ? cart.map((item) => ({
+                name: item.name,
+                price: Number(item.price || 0),
+                quantity: Number(item.quantity || 1),
+                type: item.type
+            }))
+            : [{
+                name: 'Sample Item',
+                price: 350,
+                quantity: 1,
+                type: 'PRODUCT'
+            }];
+
+        const previewSubtotal = previewItems.reduce((sum, item) => sum + (Number(item.price) * Number(item.quantity)), 0);
+        const previewDiscount = cart.length > 0 ? discountAmount : 0;
+
+        setLastTransaction({
+            transaction: {
+                id: 'PREVIEW',
+                amount: Math.max(0, previewSubtotal - previewDiscount),
+                type: 'POS_PREVIEW',
+                method: 'CASH',
+                date: new Date().toISOString()
+            },
+            items: previewItems,
+            member: selectedMemberId ? members.find((m) => m.id === Number(selectedMemberId)) : null,
+            discount: previewDiscount,
+            cashierName: user?.name,
+            paymentDetails: {
+                method: 'CASH',
+                tendered: previewSubtotal,
+                change: 0
+            }
+        });
+        setShowReceiptPreview(true);
     };
 
     const renderStatusBadge = (status) => {
@@ -1342,7 +1400,7 @@ export default function POS() {
             {/* Receipt Preview Modal */}
             {showReceiptPreview && lastTransaction && (
                 <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-                    <div className="bg-white text-black rounded-lg shadow-2xl max-w-md w-full flex flex-col max-h-[90vh]">
+                    <div className="bg-white text-black rounded-lg shadow-2xl w-auto max-w-[95vw] flex flex-col max-h-[90vh]">
                         <div className="p-4 border-b flex justify-between items-center bg-gray-100 rounded-t-lg">
                             <h3 className="font-bold text-lg">Receipt Preview</h3>
                             <button onClick={() => setShowReceiptPreview(false)} className="text-gray-500 hover:text-gray-700">
@@ -1358,6 +1416,7 @@ export default function POS() {
                                 discount={lastTransaction.discount}
                                 cashierName={lastTransaction.cashierName}
                                 paymentDetails={lastTransaction.paymentDetails}
+                                receiptSettings={receiptSettings}
                             />
                         </div>
                         <div className="p-4 border-t bg-gray-50 flex gap-4">
@@ -1924,6 +1983,13 @@ export default function POS() {
                         <span className="text-white font-bold text-lg">Total</span>
                         <span className="text-3xl font-bold text-white">{formatCartPrice(cartTotal)}</span>
                     </div>
+
+                    <button
+                        onClick={openReceiptTemplatePreview}
+                        className="w-full mb-3 bg-white/10 hover:bg-white/20 text-white font-bold py-2.5 rounded-xl transition-colors"
+                    >
+                        Preview Receipt Layout
+                    </button>
 
                     <button
                         onClick={initiateCheckout}

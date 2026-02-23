@@ -4,6 +4,7 @@ import axios from 'axios';
 import { useReactToPrint } from 'react-to-print';
 import Receipt from '../../components/Receipt';
 import { useCurrency } from '../../context/CurrencyContext';
+import { withApiBase } from '../../config/api';
 
 export default function TransactionDetail() {
     const { id } = useParams();
@@ -17,6 +18,7 @@ export default function TransactionDetail() {
     const [cashTendered, setCashTendered] = useState('');
     const [returnQuantities, setReturnQuantities] = useState({});
     const [actionLoading, setActionLoading] = useState(false);
+    const [receiptSettings, setReceiptSettings] = useState(null);
     const receiptRef = useRef();
 
     const handlePrint = useReactToPrint({
@@ -25,17 +27,37 @@ export default function TransactionDetail() {
 
     useEffect(() => {
         fetchPayment();
+        fetchReceiptSettings();
     }, [id]);
+
+    const authHeaders = () => {
+        const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+        return token ? { Authorization: `Bearer ${token}` } : undefined;
+    };
 
     const fetchPayment = async () => {
         setLoading(true);
         try {
-            const res = await axios.get(`http://localhost:5000/api/payments/${id}`);
+            const res = await axios.get(withApiBase(`/api/payments/${id}`), {
+                headers: authHeaders()
+            });
             setPayment(res.data);
         } catch (e) {
             console.error('Failed to fetch payment', e);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const fetchReceiptSettings = async () => {
+        try {
+            const res = await axios.get(withApiBase('/api/payments/receipt-settings'), {
+                headers: authHeaders()
+            });
+            setReceiptSettings(res.data || null);
+        } catch (e) {
+            console.error('Failed to fetch receipt settings', e);
+            setReceiptSettings(null);
         }
     };
 
@@ -73,9 +95,11 @@ export default function TransactionDetail() {
 
         setActionLoading(true);
         try {
-            const res = await axios.post(`http://localhost:5000/api/payments/${payment.id}/return-items`, {
+            const res = await axios.post(withApiBase(`/api/payments/${payment.id}/return-items`), {
                 pin,
                 items
+            }, {
+                headers: authHeaders()
             });
             setPayment(res.data);
             closeModals();
@@ -90,7 +114,9 @@ export default function TransactionDetail() {
         if (!payment) return;
         setActionLoading(true);
         try {
-            const res = await axios.post(`http://localhost:5000/api/payments/${payment.id}/void`, { pin });
+            const res = await axios.post(withApiBase(`/api/payments/${payment.id}/void`), { pin }, {
+                headers: authHeaders()
+            });
             setPayment(res.data);
             closeModals();
         } catch (e) {
@@ -109,8 +135,10 @@ export default function TransactionDetail() {
         setActionLoading(true);
         try {
             // No PIN needed for completing a sale, just cash
-            const res = await axios.post(`http://localhost:5000/api/payments/${payment.id}/complete`, {
+            const res = await axios.post(withApiBase(`/api/payments/${payment.id}/complete`), {
                 cashTendered: Number(cashTendered)
+            }, {
+                headers: authHeaders()
             });
             alert("Payment Completed!");
             fetchPayment(); // Refresh
@@ -269,6 +297,7 @@ export default function TransactionDetail() {
                                     tendered: payment.cashTendered,
                                     change: payment.changeDue
                                 }}
+                                receiptSettings={receiptSettings}
                             />
                         </div>
                     </div>

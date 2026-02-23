@@ -1,5 +1,6 @@
 const prisma = require('../config/prisma');
 const { getPosConfig } = require('../services/configService');
+const { getReceiptSettings, saveReceiptSettings } = require('../services/receiptSettingsService');
 const bcrypt = require('bcryptjs');
 
 const POS_PIN_MIN_LENGTH = 4;
@@ -669,10 +670,14 @@ const voidPayment = async (req, res) => {
 
 const getPosSettings = async (req, res) => {
     try {
-        const config = await getPosConfig();
+        const [config, receiptSettings] = await Promise.all([
+            getPosConfig(),
+            getReceiptSettings()
+        ]);
         res.json({
             hasVoidPin: Boolean(config.voidPinHash),
-            hasReturnPin: Boolean(config.returnPinHash)
+            hasReturnPin: Boolean(config.returnPinHash),
+            receiptSettings
         });
     } catch (e) {
         res.status(500).json({ error: "Failed to load POS settings" });
@@ -680,16 +685,30 @@ const getPosSettings = async (req, res) => {
 };
 
 const updatePosSettings = async (req, res) => {
-    const { voidPin, returnPin } = req.body;
+    const { voidPin, returnPin, receiptSettings } = req.body;
     try {
-        if (voidPin === undefined && returnPin === undefined) {
-            return res.status(400).json({ error: "No settings provided" });
+        const body = req.body || {};
+        const hasVoidPinInput = Object.prototype.hasOwnProperty.call(body, 'voidPin');
+        const hasReturnPinInput = Object.prototype.hasOwnProperty.call(body, 'returnPin');
+        const hasReceiptSettingsInput = Object.prototype.hasOwnProperty.call(body, 'receiptSettings');
+
+        if (!hasVoidPinInput && !hasReturnPinInput && !hasReceiptSettingsInput) {
+            const [config, currentReceiptSettings] = await Promise.all([
+                getPosConfig(),
+                getReceiptSettings()
+            ]);
+            return res.json({
+                message: "No changes submitted",
+                hasVoidPin: Boolean(config.voidPinHash),
+                hasReturnPin: Boolean(config.returnPinHash),
+                receiptSettings: currentReceiptSettings
+            });
         }
 
         const data = {};
 
-        if (voidPin !== undefined) {
-            if (voidPin === '') {
+        if (hasVoidPinInput) {
+            if (voidPin === '' || voidPin === null) {
                 data.voidPinHash = null;
             } else if (String(voidPin).length < POS_PIN_MIN_LENGTH) {
                 return res.status(400).json({ error: `Void PIN must be at least ${POS_PIN_MIN_LENGTH} digits` });
@@ -698,8 +717,8 @@ const updatePosSettings = async (req, res) => {
             }
         }
 
-        if (returnPin !== undefined) {
-            if (returnPin === '') {
+        if (hasReturnPinInput) {
+            if (returnPin === '' || returnPin === null) {
                 data.returnPinHash = null;
             } else if (String(returnPin).length < POS_PIN_MIN_LENGTH) {
                 return res.status(400).json({ error: `Return PIN must be at least ${POS_PIN_MIN_LENGTH} digits` });
@@ -708,16 +727,35 @@ const updatePosSettings = async (req, res) => {
             }
         }
 
-        const config = await getPosConfig();
-        await prisma.posConfig.update({
-            where: { id: config.id },
-            data
-        });
+        if (Object.keys(data).length > 0) {
+            const config = await getPosConfig();
+            await prisma.posConfig.update({
+                where: { id: config.id },
+                data
+            });
+        }
 
-        res.json({ message: "POS settings updated" });
+        let savedReceiptSettings = null;
+        if (hasReceiptSettingsInput) {
+            savedReceiptSettings = await saveReceiptSettings(receiptSettings || {});
+        }
+
+        res.json({
+            message: "POS settings updated",
+            receiptSettings: savedReceiptSettings
+        });
     } catch (e) {
         console.error("updatePosSettings Error:", e);
         res.status(500).json({ error: "Failed to update POS settings" });
+    }
+};
+
+const getPosReceiptSettings = async (_req, res) => {
+    try {
+        const settings = await getReceiptSettings();
+        res.json(settings);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to load receipt settings" });
     }
 };
 
@@ -974,6 +1012,7 @@ module.exports = {
     voidPayment,
     completePayment,
     getPosSettings,
+    getPosReceiptSettings,
     updatePosSettings,
     getMyTransactions,
     collectPendingCashPayment,

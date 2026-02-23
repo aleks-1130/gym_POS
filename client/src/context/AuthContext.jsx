@@ -8,16 +8,26 @@ const AuthContext = createContext();
 // Initialize Neon Auth Client
 // We use the URL from environment variables
 const neonAuthUrl = import.meta.env.VITE_NEON_AUTH_API_URL || import.meta.env.VITE_NEON_AUTH_URL;
-if (!neonAuthUrl) {
-    console.error("Missing Neon Auth URL. Set VITE_NEON_AUTH_API_URL or VITE_NEON_AUTH_URL.");
-}
+let authClient = null;
+let authClientInitError = null;
 
-const authClient = createAuthClient(neonAuthUrl);
+try {
+    if (!neonAuthUrl) {
+        console.error("Missing Neon Auth URL. Set VITE_NEON_AUTH_API_URL or VITE_NEON_AUTH_URL.");
+    } else {
+        authClient = createAuthClient(neonAuthUrl);
+    }
+} catch (error) {
+    authClientInitError = error;
+    console.error("Failed to initialize Neon Auth client:", error);
+}
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [token, setToken] = useState(localStorage.getItem('token') || sessionStorage.getItem('token'));
     const [loading, setLoading] = useState(true);
+
+    const isAuthClientReady = Boolean(authClient);
 
     // Configure axios defaults when token changes
     useEffect(() => {
@@ -58,6 +68,10 @@ export const AuthProvider = ({ children }) => {
 
     const login = async (email, password) => {
         try {
+            if (!isAuthClientReady) {
+                throw new Error("Authentication client is not available on this browser.");
+            }
+
             // 1. Authenticate with Neon Auth
             // Use signIn.email directly to target correct endpoint
             const result = await authClient.signIn.email({
@@ -110,6 +124,10 @@ export const AuthProvider = ({ children }) => {
 
     const register = async (name, email, password) => {
         try {
+            if (!isAuthClientReady) {
+                throw new Error("Authentication client is not available on this browser.");
+            }
+
             // 1. Create account in Neon Auth
             // 1. Create account in Neon Auth
             // We use signUp.email directly because the generic signUp targets /sign-up which returns 404
@@ -145,7 +163,9 @@ export const AuthProvider = ({ children }) => {
 
     const logout = async () => {
         try {
-            await authClient.signOut();
+            if (isAuthClientReady) {
+                await authClient.signOut();
+            }
         } catch (e) {
             console.warn("Neon signOut failed", e);
         }
@@ -161,6 +181,14 @@ export const AuthProvider = ({ children }) => {
     // Initialize session check
     useEffect(() => {
         const initSession = async () => {
+            if (!isAuthClientReady) {
+                if (authClientInitError) {
+                    console.error("Skipping session restore because auth client failed to initialize.", authClientInitError);
+                }
+                setLoading(false);
+                return;
+            }
+
             // Check if we have a token
             const storedToken = localStorage.getItem('token');
             if (!storedToken) {
@@ -205,7 +233,7 @@ export const AuthProvider = ({ children }) => {
         };
 
         initSession();
-    }, []);
+    }, [isAuthClientReady]);
 
     return (
         <AuthContext.Provider value={{ user, token, login, register, logout, loading }}>
