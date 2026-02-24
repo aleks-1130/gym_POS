@@ -489,6 +489,68 @@ const getAllPayments = async (req, res) => {
     res.json(payments);
 };
 
+const getRefunds = async (req, res) => {
+    try {
+        const { startDate, endDate, page, limit } = req.query;
+        const where = {
+            status: { in: ['VOIDED', 'RETURNED'] }
+        };
+
+        if (startDate && endDate) {
+            where.date = {
+                gte: new Date(startDate),
+                lte: new Date(new Date(endDate).setHours(23, 59, 59, 999))
+            };
+        }
+
+        if (page && limit) {
+            const pageNum = Math.max(1, parseInt(page) || 1);
+            const limitNum = Math.max(1, parseInt(limit) || 10);
+            const skip = (pageNum - 1) * limitNum;
+
+            const [refunds, total] = await Promise.all([
+                prisma.payment.findMany({
+                    where,
+                    skip,
+                    take: limitNum,
+                    orderBy: { date: 'desc' },
+                    include: {
+                        member: true,
+                        cashier: { select: { id: true, name: true, role: true } },
+                        items: true
+                    }
+                }),
+                prisma.payment.count({ where })
+            ]);
+
+            return res.json({
+                data: refunds,
+                meta: {
+                    total,
+                    page: pageNum,
+                    limit: limitNum,
+                    totalPages: Math.ceil(total / limitNum)
+                }
+            });
+        }
+
+        const refunds = await prisma.payment.findMany({
+            where,
+            take: startDate ? undefined : 50,
+            orderBy: { date: 'desc' },
+            include: {
+                member: true,
+                cashier: { select: { id: true, name: true, role: true } },
+                items: true
+            }
+        });
+        res.json(refunds);
+    } catch (e) {
+        console.error('Fetch Refunds Error:', e);
+        res.status(500).json({ error: 'Failed to fetch refunds' });
+    }
+};
+
 const returnPaymentItems = async (req, res) => {
     const paymentId = Number(req.params.id);
     const { pin, items } = req.body;
@@ -1019,5 +1081,6 @@ module.exports = {
     declinePendingCashPayment,
     getPaymentMethods,
     addPaymentMethod,
-    deletePaymentMethod
+    deletePaymentMethod,
+    getRefunds
 };

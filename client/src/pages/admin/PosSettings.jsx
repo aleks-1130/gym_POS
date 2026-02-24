@@ -7,8 +7,7 @@ const MIN_PIN_LENGTH = 4;
 
 const TABS = {
     SECURITY: 'SECURITY',
-    RECEIPT: 'RECEIPT',
-    PAYROLL: 'PAYROLL'
+    RECEIPT: 'RECEIPT'
 };
 
 const DEFAULT_RECEIPT_SETTINGS = {
@@ -43,13 +42,6 @@ export default function PosSettings() {
     const [clearReturnPin, setClearReturnPin] = useState(false);
     const [receiptSettings, setReceiptSettings] = useState(DEFAULT_RECEIPT_SETTINGS);
 
-    const [payrollConfig, setPayrollConfig] = useState({
-        classBasePay: 350,
-        classBonusPerStudent: 30,
-        classBonusThreshold: 5
-    });
-    const [payrollLoading, setPayrollLoading] = useState(false);
-
     const authHeaders = () => {
         const token = sessionStorage.getItem('token') || localStorage.getItem('token');
         return token ? { Authorization: `Bearer ${token}` } : undefined;
@@ -57,7 +49,6 @@ export default function PosSettings() {
 
     useEffect(() => {
         fetchPosSettings();
-        fetchPayrollConfig();
     }, []);
 
     const fetchPosSettings = async () => {
@@ -78,20 +69,6 @@ export default function PosSettings() {
         }
     };
 
-    const fetchPayrollConfig = async () => {
-        try {
-            const res = await axios.get(withApiBase('/api/admin/payroll/config'), {
-                headers: authHeaders()
-            });
-            setPayrollConfig({
-                classBasePay: res.data.classBasePay,
-                classBonusPerStudent: res.data.classBonusPerStudent,
-                classBonusThreshold: res.data.classBonusThreshold
-            });
-        } catch (e) {
-            console.error('Failed to load payroll config', e);
-        }
-    };
 
     const handleSavePins = async (e) => {
         e.preventDefault();
@@ -167,47 +144,10 @@ export default function PosSettings() {
         }
     };
 
-    const handlePayrollSave = async (e) => {
-        e.preventDefault();
-        const { classBasePay, classBonusPerStudent, classBonusThreshold } = payrollConfig;
-
-        if (classBasePay < 0 || classBonusPerStudent < 0 || classBonusThreshold < 0) {
-            return alert('Values must be positive.');
-        }
-        if (classBonusThreshold > 50) {
-            return alert('Threshold seems too high (max 50). Are you sure?');
-        }
-
-        setPayrollLoading(true);
-        try {
-            await axios.post(withApiBase('/api/admin/payroll/config'), {
-                classBasePay: parseFloat(classBasePay),
-                classBonusPerStudent: parseFloat(classBonusPerStudent),
-                classBonusThreshold: parseInt(classBonusThreshold)
-            }, {
-                headers: authHeaders()
-            });
-            await fetchPayrollConfig();
-            alert('Payroll config updated.');
-        } catch (e) {
-            alert(e.response?.data?.error || 'Failed to update payroll config');
-        } finally {
-            setPayrollLoading(false);
-        }
-    };
-
     const updateReceiptField = (key, value) => {
         setReceiptSettings((prev) => ({ ...prev, [key]: value }));
     };
 
-    const previewStudents = [3, 5, 8, 10, 15];
-    const calcPay = (students) => {
-        const base = parseFloat(payrollConfig.classBasePay) || 0;
-        const bonus = parseFloat(payrollConfig.classBonusPerStudent) || 0;
-        const threshold = parseInt(payrollConfig.classBonusThreshold) || 0;
-        const extra = Math.max(0, students - threshold) * bonus;
-        return base + extra;
-    };
 
     const receiptPreviewData = useMemo(() => ({
         transaction: {
@@ -245,11 +185,6 @@ export default function PosSettings() {
                     active={activeTab === TABS.RECEIPT}
                     onClick={() => setActiveTab(TABS.RECEIPT)}
                     label="Receipt"
-                />
-                <TabButton
-                    active={activeTab === TABS.PAYROLL}
-                    onClick={() => setActiveTab(TABS.PAYROLL)}
-                    label="Payroll"
                 />
             </div>
 
@@ -426,87 +361,6 @@ export default function PosSettings() {
                 </div>
             )}
 
-            {activeTab === TABS.PAYROLL && (
-                <div className="bg-surface rounded-3xl border border-white/5 p-6 shadow-sm">
-                    <h3 className="text-xl font-bold text-white mb-1">Class Compensation</h3>
-                    <p className="text-text-muted text-sm mb-6">Configure how trainers are paid for group classes.</p>
-
-                    <form onSubmit={handlePayrollSave} className="space-y-5">
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <div>
-                                <label className="block text-xs text-text-secondary font-bold mb-2">Base Pay per Class</label>
-                                <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
-                                    value={payrollConfig.classBasePay}
-                                    onChange={(e) => setPayrollConfig((p) => ({ ...p, classBasePay: e.target.value }))}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs text-text-secondary font-bold mb-2">Bonus per Student</label>
-                                <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
-                                    value={payrollConfig.classBonusPerStudent}
-                                    onChange={(e) => setPayrollConfig((p) => ({ ...p, classBonusPerStudent: e.target.value }))}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs text-text-secondary font-bold mb-2">Threshold (bonus starts after)</label>
-                                <input
-                                    type="number"
-                                    min="0"
-                                    max="50"
-                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
-                                    value={payrollConfig.classBonusThreshold}
-                                    onChange={(e) => setPayrollConfig((p) => ({ ...p, classBonusThreshold: e.target.value }))}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="bg-surfaceHighlight rounded-2xl border border-white/10 p-4">
-                            <p className="text-xs text-text-muted font-bold uppercase tracking-widest mb-3">Live Preview</p>
-                            <div className="space-y-2">
-                                {previewStudents.map((n) => {
-                                    const pay = calcPay(n);
-                                    const threshold = parseInt(payrollConfig.classBonusThreshold) || 0;
-                                    const bonusStudents = Math.max(0, n - threshold);
-                                    const basePay = parseFloat(payrollConfig.classBasePay) || 0;
-                                    const bonusRate = parseFloat(payrollConfig.classBonusPerStudent) || 0;
-                                    return (
-                                        <div key={n} className="flex items-center justify-between text-sm">
-                                            <span className="text-text-muted">
-                                                {n} students -&gt;
-                                                <span className="text-gray-400 ml-1">
-                                                    PHP {basePay.toFixed(0)}
-                                                    {bonusStudents > 0 && ` + (${bonusStudents} x PHP ${bonusRate.toFixed(0)})`}
-                                                </span>
-                                            </span>
-                                            <span className={`font-bold ${bonusStudents > 0 ? 'text-emerald-400' : 'text-white'}`}>
-                                                PHP {pay.toFixed(2)}
-                                            </span>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-
-                        <div className="flex justify-end">
-                            <button
-                                type="submit"
-                                disabled={payrollLoading}
-                                className="px-6 py-3 rounded-xl bg-primary hover:bg-orange-600 text-white font-bold shadow-lg shadow-primary/20 disabled:opacity-50"
-                            >
-                                {payrollLoading ? 'Saving...' : 'Save Payroll Settings'}
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            )}
         </div>
     );
 }
@@ -515,11 +369,10 @@ const TabButton = ({ active, label, onClick }) => (
     <button
         type="button"
         onClick={onClick}
-        className={`px-4 py-2 rounded-2xl text-sm font-bold transition-colors ${
-            active
-                ? 'bg-primary text-white'
-                : 'bg-surfaceHighlight text-text-muted hover:text-white hover:bg-white/10'
-        }`}
+        className={`px-4 py-2 rounded-2xl text-sm font-bold transition-colors ${active
+            ? 'bg-primary text-white'
+            : 'bg-surfaceHighlight text-text-muted hover:text-white hover:bg-white/10'
+            }`}
     >
         {label}
     </button>

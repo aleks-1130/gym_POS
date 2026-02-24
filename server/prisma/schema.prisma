@@ -300,6 +300,7 @@ model Class {
   time      String
   duration  Int
   capacity  Int
+  basePay   Float     @default(0)
   enrolled  Int       @default(0)
   createdAt DateTime  @default(now())
   bookings  Booking[]

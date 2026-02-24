@@ -49,6 +49,7 @@ app.use('/api/seed', require('./src/routes/seedRoutes'));
 app.use('/api/payment-methods', require('./src/routes/paymentMethodRoutes'));
 app.use('/api/settings', require('./src/routes/settingsRoutes'));
 app.use('/api/plans', require('./src/routes/planRoutes'));
+app.use('/api/owner/projection', require('./src/routes/projectionRoutes'));
 
 // --- INVENTORY / PRODUCT / SUPPLIER ROUTES ---
 // Moved to src/routes/productRoutes.js and src/routes/supplierRoutes.js

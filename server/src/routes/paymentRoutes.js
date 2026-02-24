@@ -11,6 +11,7 @@ router.get('/receipt-settings', authenticateToken, authorize(['OWNER', 'ADMIN', 
 // POS Payments
 router.post('/', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBER']), paymentController.createPayment);
 router.get('/', authenticateToken, paymentController.getAllPayments);
+router.get('/refunds', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), paymentController.getRefunds);
 
 // Specific Payment Actions
 router.get('/:id', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), paymentController.getPaymentDetails);

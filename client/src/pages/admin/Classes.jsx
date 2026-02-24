@@ -26,7 +26,8 @@ export default function Classes() {
         dayOfWeek: activeDay,
         time: '',
         duration: '',
-        capacity: ''
+        capacity: '',
+        basePay: ''
     });
     const totalClasses = classes.length;
     const totalBookings = classes.reduce((sum, cls) => sum + (cls.bookings?.length || 0), 0);
@@ -83,7 +84,8 @@ export default function Classes() {
             dayOfWeek: activeDay,
             time: '',
             duration: '',
-            capacity: ''
+            capacity: '',
+            basePay: ''
         });
         setShowForm(true);
     };
@@ -96,7 +98,8 @@ export default function Classes() {
             dayOfWeek: cls.dayOfWeek || activeDay,
             time: cls.time || '',
             duration: cls.duration ?? '',
-            capacity: cls.capacity ?? ''
+            capacity: cls.capacity ?? '',
+            basePay: cls.basePay ?? ''
         });
         setEditingClass(cls);
         setShowForm(true);
@@ -252,6 +255,14 @@ export default function Classes() {
                                 <p className="text-text-muted text-sm mb-5">
                                     Led by <span className="text-white font-bold">{cls.trainer?.name}</span>
                                 </p>
+
+                                {cls.basePay > 0 && (
+                                    <div className="mb-4 flex items-center gap-2 text-xs">
+                                        <span className="material-icons-round text-emerald-400 text-[15px]">payments</span>
+                                        <span className="text-text-muted">Trainer pay per completion:</span>
+                                        <span className="font-bold text-emerald-400">₱{Number(cls.basePay).toFixed(2)}</span>
+                                    </div>
+                                )}
 
                                 <div className="bg-white/[0.03] p-4 rounded-xl border border-white/5 mb-5 flex items-center gap-3">
                                     <div className="w-10 h-10 bg-primary/20 rounded-lg flex items-center justify-center">
@@ -501,6 +512,19 @@ export default function Classes() {
                                             value={formData.capacity}
                                             onChange={(e) => handleFormChange('capacity', e.target.value)}
                                             className="mt-2 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
+                                        />
+                                    </div>
+                                    <div className="md:col-span-2">
+                                        <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Trainer Base Pay per Completion (₱)</label>
+                                        <p className="text-text-muted text-xs mt-1 mb-2">When this class is completed, this amount is added to the trainer's unpaid commission.</p>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            value={formData.basePay}
+                                            onChange={(e) => handleFormChange('basePay', e.target.value)}
+                                            className="mt-2 w-full bg-white/5 border border-emerald-500/30 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-400"
+                                            placeholder="e.g. 300"
                                         />
                                     </div>
                                 </div>

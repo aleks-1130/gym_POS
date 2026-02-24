@@ -62,7 +62,7 @@ const getClassParticipants = async (req, res) => {
 };
 
 const createClass = async (req, res) => {
-    const { name, trainerId, dayOfWeek, time, duration, capacity } = req.body;
+    const { name, trainerId, dayOfWeek, time, duration, capacity, basePay } = req.body;
     const resolvedTrainerId = req.user.role === 'TRAINER' ? Number(req.user.trainerId) : Number(trainerId);
     if (!resolvedTrainerId) return res.status(400).json({ error: "Trainer is required" });
     try {
@@ -71,7 +71,8 @@ const createClass = async (req, res) => {
                 name, dayOfWeek, time,
                 duration: Number(duration),
                 capacity: Number(capacity),
-                trainerId: resolvedTrainerId
+                trainerId: resolvedTrainerId,
+                basePay: basePay !== undefined && basePay !== '' ? Number(basePay) : 0
             }
         });
         res.json(gymClass);
@@ -82,7 +83,7 @@ const createClass = async (req, res) => {
 
 const updateClass = async (req, res) => {
     const classId = Number(req.params.id);
-    const { name, trainerId, dayOfWeek, time, duration, capacity } = req.body;
+    const { name, trainerId, dayOfWeek, time, duration, capacity, basePay } = req.body;
     try {
         if (req.user.role === 'TRAINER') {
             const existing = await prisma.class.findUnique({ where: { id: classId } });
@@ -102,7 +103,8 @@ const updateClass = async (req, res) => {
                 time,
                 duration: duration !== undefined && duration !== '' ? Number(duration) : undefined,
                 capacity: capacity !== undefined && capacity !== '' ? Number(capacity) : undefined,
-                trainerId: resolvedTrainerId
+                trainerId: resolvedTrainerId,
+                basePay: basePay !== undefined && basePay !== '' ? Number(basePay) : undefined
             }
         });
         res.json(gymClass);
@@ -203,14 +205,8 @@ const completeClass = async (req, res) => {
             }
         });
 
-        // 2. Calculate Commission using PayrollConfig
-        const config = await prisma.payrollConfig.findUnique({ where: { id: 1 } });
-        const basePay = config?.classBasePay ?? 350;
-        const bonusPerStudent = config?.classBonusPerStudent ?? 30;
-        const threshold = config?.classBonusThreshold ?? 5;
-
-        const bonus = Math.max(0, attendees - threshold) * bonusPerStudent;
-        const commissionAmount = basePay + bonus;
+        // 2. Use the class's own basePay as the commission amount
+        const commissionAmount = cls.basePay ?? 0;
 
         // 3. Create History Record
         const history = await prisma.classHistory.create({

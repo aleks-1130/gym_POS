@@ -97,9 +97,10 @@ export default function Transactions() {
                 actions={(pay) => (
                     <a
                         href={`/pos/transactions/${pay.id}`}
-                        className="text-xs font-bold px-3 py-1 rounded-lg border border-white/10 text-white hover:bg-white/10"
+                        className="text-primary hover:text-orange-400 font-medium text-xs flex items-center gap-1 transition-colors"
                     >
-                        View Transaction
+                        <span className="material-icons-round text-sm">receipt</span>
+                        View
                     </a>
                 )}
                 isLoading={loading}

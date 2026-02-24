@@ -805,7 +805,7 @@ export default function POS() {
             ? trainers
             : selectedCategory === POS_VIEWS.PACKAGES
                 ? classPackages
-            : filteredProducts;
+                : filteredProducts;
     const safeDisplayItems = Array.isArray(displayItems) ? displayItems : [];
 
     if (viewMode === 'HISTORY') {
@@ -842,7 +842,7 @@ export default function POS() {
                                     <td className="px-6 py-4 text-white font-medium">{new Date(pay.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(pay.date).toLocaleTimeString()}</span></td>
                                     <td className="px-6 py-4"><span className="bg-white/10 text-text-secondary px-2 py-1 rounded text-xs font-bold">{pay.type}</span></td>
                                     <td className="px-6 py-4 text-white font-bold">{formatPrice(pay.amount)}</td>
-                                      <td className="px-6 py-4 text-text-secondary">{getMethodLabel(pay.method)}</td>
+                                    <td className="px-6 py-4 text-text-secondary">{getMethodLabel(pay.method)}</td>
                                     <td className="px-6 py-4 text-white">{getBuyerLabel(pay)}</td>
                                     <td className="px-6 py-4 text-white">{pay.cashier?.name || 'N/A'}</td>
                                     <td className="px-6 py-4 text-white">
@@ -852,9 +852,10 @@ export default function POS() {
                                     <td className="px-6 py-4">
                                         <a
                                             href={`/pos/transactions/${pay.id}`}
-                                            className="text-xs font-bold px-3 py-1 rounded-lg border border-white/10 text-white hover:bg-white/10"
+                                            className="text-primary hover:text-orange-400 font-medium text-xs flex items-center gap-1 transition-colors"
                                         >
-                                            View Transaction
+                                            <span className="material-icons-round text-sm">receipt</span>
+                                            View
                                         </a>
                                     </td>
                                 </tr>
@@ -1869,10 +1870,10 @@ export default function POS() {
                                                                             setOpenCalendarLineId(null);
                                                                         }}
                                                                         className={`h-7 rounded text-[10px] font-semibold ${selected
-                                                                                ? 'bg-primary text-background'
-                                                                                : (isPast || unavailable)
-                                                                                    ? 'bg-white/5 text-text-muted/40 cursor-not-allowed'
-                                                                                    : 'bg-white/5 text-white hover:bg-white/10'
+                                                                            ? 'bg-primary text-background'
+                                                                            : (isPast || unavailable)
+                                                                                ? 'bg-white/5 text-text-muted/40 cursor-not-allowed'
+                                                                                : 'bg-white/5 text-white hover:bg-white/10'
                                                                             }`}
                                                                     >
                                                                         {day.getDate()}

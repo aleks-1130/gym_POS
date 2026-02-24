@@ -129,18 +129,29 @@ const executeCommissionPayout = async (tx, { trainerId, sessionIds = [], classHi
     };
 };
 
-const getStats = async (req, res) => {
+const getStats = async (req, res) => { console.log('GET STATS REQ.QUERY:', req.query);
     try {
-        const now = new Date();
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        const { startDate, endDate } = req.query;
+        let start = null;
+        let end = null;
+
+        if (startDate && endDate) {
+            start = new Date(startDate);
+            start.setHours(0, 0, 0, 0);
+            end = new Date(endDate);
+            end.setHours(23, 59, 59, 999);
+        } else {
+            const now = new Date();
+            start = new Date(now.getFullYear(), now.getMonth(), 1);
+            end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        }
 
         const expenses = await prisma.expense.findMany({
             where: {
                 category: 'SALARY',
                 date: {
-                    gte: startOfMonth,
-                    lte: endOfMonth
+                    gte: start,
+                    lte: end
                 }
             }
         });
@@ -150,7 +161,8 @@ const getStats = async (req, res) => {
         const pendingSessions = await prisma.trainingSession.findMany({
             where: {
                 status: 'COMPLETED',
-                commissionPaid: false
+                commissionPaid: false,
+                date: { gte: start, lte: end }
             },
             include: { trainer: true }
         });
@@ -164,7 +176,10 @@ const getStats = async (req, res) => {
         const pendingMaterialItems = await prisma.paymentItem.findMany({
             where: {
                 intendedForSessionMaterial: true,
-                payment: { method: 'COMMISSION_DEDUCTION' }
+                payment: {
+                    method: 'COMMISSION_DEDUCTION',
+                    date: { gte: start, lte: end }
+                }
             },
             select: {
                 quantity: true,
@@ -195,18 +210,38 @@ const getStats = async (req, res) => {
 
 const getTrainers = async (req, res) => {
     try {
+        const { startDate, endDate } = req.query;
+        let expenseFilter = { category: 'SALARY' };
+        let dateFilter = {};
+
+        if (startDate && endDate) {
+            const start = new Date(startDate);
+            start.setHours(0, 0, 0, 0);
+            const end = new Date(endDate);
+            end.setHours(23, 59, 59, 999);
+            expenseFilter.date = { gte: start, lte: end };
+            dateFilter = { gte: start, lte: end };
+        }
+
         const trainers = await prisma.trainer.findMany({
             include: {
                 user: { select: { id: true } },
                 expenses: {
-                    where: { category: 'SALARY' }
+                    where: expenseFilter
                 },
                 trainingSessions: {
-                    where: { status: 'COMPLETED', commissionPaid: false },
+                    where: {
+                        status: 'COMPLETED',
+                        commissionPaid: false,
+                        ...(dateFilter.gte ? { date: dateFilter } : {})
+                    },
                     include: { member: { select: { firstName: true, lastName: true } } }
                 },
                 classHistory: {
-                    where: { commissionPaid: false },
+                    where: {
+                        commissionPaid: false,
+                        ...(dateFilter.gte ? { date: dateFilter } : {})
+                    },
                     include: { class: true }
                 }
             }
@@ -227,7 +262,8 @@ const getTrainers = async (req, res) => {
                         intendedForSessionMaterial: true,
                         payment: {
                             cashierId: Number(t.user.id),
-                            method: 'COMMISSION_DEDUCTION'
+                            method: 'COMMISSION_DEDUCTION',
+                            ...(dateFilter.gte ? { date: dateFilter } : {})
                         }
                     },
                     include: {
@@ -284,13 +320,24 @@ const getTrainers = async (req, res) => {
 
 const getStaff = async (req, res) => {
     try {
+        const { startDate, endDate } = req.query;
+        let expenseFilter = { category: 'SALARY' };
+
+        if (startDate && endDate) {
+            const start = new Date(startDate);
+            start.setHours(0, 0, 0, 0);
+            const end = new Date(endDate);
+            end.setHours(23, 59, 59, 999);
+            expenseFilter.date = { gte: start, lte: end };
+        }
+
         const staff = await prisma.user.findMany({
             where: {
                 role: { in: ['STAFF', 'ADMIN', 'OWNER'] }
             },
             include: {
                 expenses: {
-                    where: { category: 'SALARY' }
+                    where: expenseFilter
                 }
             }
         });

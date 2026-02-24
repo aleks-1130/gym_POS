@@ -24,7 +24,8 @@ const getAnalytics = async (req, res) => {
             trainingSessions,
             accessLogs,
             products, // Needed for stock info
-            members
+            members,
+            trainers
         ] = await Promise.all([
             // Current Period Payments (exclude voided)
             prisma.payment.findMany({
@@ -59,7 +60,9 @@ const getAnalytics = async (req, res) => {
             // All Products (to get current Stock)
             prisma.product.findMany(),
             // All Members (allowed to filter active/expired in memory for stats)
-            prisma.member.findMany({ include: { plan: true } })
+            prisma.member.findMany({ include: { plan: true } }),
+            // All Trainers
+            prisma.trainer.findMany()
         ]);
 
 
@@ -104,6 +107,18 @@ const getAnalytics = async (req, res) => {
 
         // 2. Training Logic (Commissions)
         const trainerPerformance = {};
+        if (trainers) {
+            trainers.forEach(t => {
+                trainerPerformance[t.id] = {
+                    name: t.name,
+                    revenue: 0,
+                    commissionCost: 0,
+                    netGymProfit: 0,
+                    sessions: 0
+                };
+            });
+        }
+
         trainingSessions.forEach(session => {
             if (session.trainer) {
                 const tid = session.trainer.id;

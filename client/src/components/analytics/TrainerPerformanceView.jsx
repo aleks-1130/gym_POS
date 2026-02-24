@@ -1,17 +1,48 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 const TrainerPerformanceView = ({ data }) => {
     const { topTrainers } = data;
+    const [activeTab, setActiveTab] = useState('active');
+
     const formatPrice = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val);
+
+    const activeTrainers = topTrainers.filter(t => t.sessions > 0);
+    const inactiveTrainers = topTrainers.filter(t => t.sessions === 0);
+
+    let displayTrainers = topTrainers;
+    if (activeTab === 'active') displayTrainers = activeTrainers;
+    if (activeTab === 'inactive') displayTrainers = inactiveTrainers;
 
     return (
         <div className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {topTrainers.map((t, i) => (
-                    <div key={i} className="bg-surface p-6 rounded-2xl border border-white/5 hover:border-white/10 transition-colors">
+            {/* Tabs Navigation */}
+            <div className="flex space-x-2 border-b border-white/10 pb-4">
+                <button
+                    onClick={() => setActiveTab('active')}
+                    className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${activeTab === 'active' ? 'bg-primary text-black' : 'bg-surface border border-white/5 text-text-muted hover:text-white'}`}
+                >
+                    Active Trainers ({activeTrainers.length})
+                </button>
+                <button
+                    onClick={() => setActiveTab('all')}
+                    className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${activeTab === 'all' ? 'bg-primary text-black' : 'bg-surface border border-white/5 text-text-muted hover:text-white'}`}
+                >
+                    All Trainers ({topTrainers.length})
+                </button>
+                <button
+                    onClick={() => setActiveTab('inactive')}
+                    className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${activeTab === 'inactive' ? 'bg-primary text-black' : 'bg-surface border border-white/5 text-text-muted hover:text-white'}`}
+                >
+                    Inactive/Zero Revenue ({inactiveTrainers.length})
+                </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {displayTrainers.map((t, i) => (
+                    <div key={i} className={`p-6 rounded-2xl border transition-colors ${t.sessions > 0 ? 'bg-surface border-white/5 hover:border-white/20' : 'bg-surface/50 border-white/5 border-dashed opacty-75 hover:border-white/20'}`}>
                         <div className="flex justify-between items-start mb-6">
                             <div className="flex items-center gap-3">
-                                <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-lg">
+                                <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg ${t.sessions > 0 ? 'bg-primary/20 text-primary' : 'bg-white/5 text-text-muted'}`}>
                                     {t.name.charAt(0)}
                                 </div>
                                 <div>
@@ -19,9 +50,16 @@ const TrainerPerformanceView = ({ data }) => {
                                     <p className="text-xs text-text-muted">Trainer</p>
                                 </div>
                             </div>
-                            <span className="bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full text-xs font-bold">
-                                #{i + 1}
-                            </span>
+                            {t.sessions > 0 && (
+                                <span className={`text-xs font-bold px-3 py-1 rounded-full ${i === 0 && activeTab !== 'inactive' ? 'bg-amber-500/10 text-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                                    {i === 0 && activeTab !== 'inactive' ? '🏆 Top Performer' : `Rank #${i + 1}`}
+                                </span>
+                            )}
+                            {t.sessions === 0 && (
+                                <span className="bg-white/5 text-text-muted px-3 py-1 rounded-full text-xs font-bold">
+                                    No Data
+                                </span>
+                            )}
                         </div>
 
                         <div className="space-y-4">
@@ -49,9 +87,9 @@ const TrainerPerformanceView = ({ data }) => {
                     </div>
                 ))}
 
-                {topTrainers.length === 0 && (
-                    <div className="col-span-3 text-center py-12 text-text-muted">
-                        No trainer data available for this period.
+                {displayTrainers.length === 0 && (
+                    <div className="col-span-1 md:col-span-2 lg:col-span-3 text-center py-12 text-text-muted bg-surface/50 rounded-2xl border border-white/5 border-dashed">
+                        No trainers found for this category in the selected period.
                     </div>
                 )}
             </div>

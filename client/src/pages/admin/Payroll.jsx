@@ -13,6 +13,42 @@ const Payroll = () => {
     const [activeTab, setActiveTab] = useState('TRAINERS'); // TRAINERS, STAFF
     const [trainerFilter, setTrainerFilter] = useState('ALL'); // ALL, FREELANCER, FULLTIME
 
+    // Date Filter State
+    const [dateFilterType, setDateFilterType] = useState('THIS_MONTH');
+    const [dateRange, setDateRange] = useState({
+        start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+        end: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0]
+    });
+
+    useEffect(() => {
+        if (dateFilterType === 'CUSTOM') return;
+
+        const now = new Date();
+        let start, end;
+        switch (dateFilterType) {
+            case 'THIS_MONTH':
+                start = new Date(now.getFullYear(), now.getMonth(), 1);
+                end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                break;
+            case 'LAST_MONTH':
+                start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                end = new Date(now.getFullYear(), now.getMonth(), 0);
+                break;
+            case 'THIS_YEAR':
+                start = new Date(now.getFullYear(), 0, 1);
+                end = new Date(now.getFullYear(), 11, 31);
+                break;
+            default:
+                break;
+        }
+        if (start && end) {
+            setDateRange({
+                start: start.toISOString().split('T')[0],
+                end: end.toISOString().split('T')[0]
+            });
+        }
+    }, [dateFilterType]);
+
     // ... (state definitions remain same)
 
     // Helper: Can current user pay target user?
@@ -48,18 +84,19 @@ const Payroll = () => {
 
     useEffect(() => {
         fetchData();
-    }, []);
+    }, [dateRange]);
 
     const fetchData = async () => {
         try {
             setLoading(true);
             const token = localStorage.getItem('token');
             const headers = { Authorization: `Bearer ${token}` };
+            const params = { startDate: dateRange.start, endDate: dateRange.end };
 
             const [statsRes, trainersRes, staffRes] = await Promise.all([
-                axios.get('http://localhost:5000/api/admin/payroll/stats', { headers }),
-                axios.get('http://localhost:5000/api/admin/payroll/trainers', { headers }),
-                axios.get('http://localhost:5000/api/admin/payroll/staff', { headers })
+                axios.get('http://localhost:5000/api/admin/payroll/stats', { headers, params }),
+                axios.get('http://localhost:5000/api/admin/payroll/trainers', { headers, params }),
+                axios.get('http://localhost:5000/api/admin/payroll/staff', { headers, params })
             ]);
 
             setStats(statsRes.data);
@@ -211,12 +248,46 @@ const Payroll = () => {
 
     return (
         <div className="p-6">
-            <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-6">Payroll & Salaries</h1>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Payroll & Salaries</h1>
+
+                {/* Date Filters */}
+                <div className="flex items-center gap-3">
+                    <select
+                        value={dateFilterType}
+                        onChange={(e) => setDateFilterType(e.target.value)}
+                        className="p-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-700 focus:ring-2 focus:ring-blue-500"
+                    >
+                        <option value="THIS_MONTH">This Month</option>
+                        <option value="LAST_MONTH">Last Month</option>
+                        <option value="THIS_YEAR">This Year</option>
+                        <option value="CUSTOM">Custom Range</option>
+                    </select>
+
+                    {dateFilterType === 'CUSTOM' && (
+                        <div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-1.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                            <input
+                                type="date"
+                                value={dateRange.start}
+                                onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+                                className="bg-transparent border-none text-sm text-gray-700 dark:text-gray-200 focus:ring-0 cursor-pointer"
+                            />
+                            <span className="text-gray-400">→</span>
+                            <input
+                                type="date"
+                                value={dateRange.end}
+                                onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+                                className="bg-transparent border-none text-sm text-gray-700 dark:text-gray-200 focus:ring-0 cursor-pointer"
+                            />
+                        </div>
+                    )}
+                </div>
+            </div>
 
             {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                 <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
-                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Payroll (This Month)</p>
+                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Payroll (Selected Period)</p>
                     <h2 className="text-3xl font-bold text-gray-800 dark:text-white mt-2">{formatPrice(stats.totalPayrollThisMonth)}</h2>
                 </div>
                 <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
@@ -261,8 +332,8 @@ const Payroll = () => {
                             key={f.value}
                             onClick={() => setTrainerFilter(f.value)}
                             className={`px-3 py-1 text-xs font-medium rounded-full border transition-colors ${trainerFilter === f.value
-                                    ? 'bg-orange-500/15 text-orange-500 border-orange-500/40'
-                                    : 'bg-transparent text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:text-gray-700'
+                                ? 'bg-orange-500/15 text-orange-500 border-orange-500/40'
+                                : 'bg-transparent text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:text-gray-700'
                                 }`}
                         >
                             {f.label}
@@ -282,7 +353,7 @@ const Payroll = () => {
                                 <th className="p-4">Name</th>
                                 {activeTab === 'TRAINERS' && <th className="p-4">Commission Rate</th>}
                                 {activeTab === 'STAFF' && <th className="p-4">Base Salary</th>}
-                                <th className="p-4">Paid (All Time)</th>
+                                <th className="p-4">Paid (Selected Period)</th>
                                 {activeTab === 'TRAINERS' && <th className="p-4">Unpaid Commissions</th>}
                                 {activeTab === 'TRAINERS' && <th className="p-4">Material Deductions</th>}
                                 <th className="p-4 text-right">Actions</th>
@@ -303,8 +374,8 @@ const Payroll = () => {
                                                     )}
                                                     {trainer.name}
                                                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${trainer.type === 'FREELANCER'
-                                                            ? 'bg-orange-500/15 text-orange-500'
-                                                            : 'bg-blue-500/15 text-blue-500'
+                                                        ? 'bg-orange-500/15 text-orange-500'
+                                                        : 'bg-blue-500/15 text-blue-500'
                                                         }`}>
                                                         {trainer.type === 'FREELANCER' ? 'Freelance' : 'Full-time'}
                                                     </span>

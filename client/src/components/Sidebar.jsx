@@ -100,6 +100,7 @@ export default function Sidebar() {
                     { to: "/schedule", icon: "calendar_month", label: "Schedule" },
                     { to: "/analytics", icon: "analytics", label: "Analytics" },
                     { to: "/transactions", icon: "history", label: "Transactions" },
+                    { to: "/refunds", icon: "assignment_return", label: "Refunds" },
                     { to: "/loyalty", icon: "loyalty", label: "Rewards" },
                     { to: "/announcements", icon: "campaign", label: "Broadcast" },
                 ]
@@ -117,6 +118,8 @@ export default function Sidebar() {
                     { to: "/users", icon: "admin_panel_settings", label: "Users" },
                     { to: "/payroll", icon: "payments", label: "Payroll" },
                     { to: "/audit", icon: "verified_user", label: "Audit Logs" },
+                    { to: "/refunds", icon: "assignment_return", label: "Refunds" },
+                    { to: "/projections", icon: "trending_up", label: "Projections" },
                     { to: "/settings", icon: "tune", label: "Settings" },
                     { to: "/suppliers", icon: "local_shipping", label: "Suppliers" },
                     { to: "/expenses", icon: "monetization_on", label: "Expenses" },

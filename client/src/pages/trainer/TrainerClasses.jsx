@@ -72,12 +72,19 @@ export default function TrainerClasses() {
                                     <div className="text-xs font-bold uppercase tracking-widest px-3 py-1 rounded-full border border-primary/30 text-primary bg-primary/10">
                                         {cls.enrolled}/{cls.capacity} enrolled
                                     </div>
-                                    <button
-                                        onClick={() => handleCompleteClass(cls.id)}
-                                        className="px-3 py-1 text-xs font-bold uppercase tracking-widest rounded-lg border border-emerald-500/30 text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20"
-                                    >
-                                        Complete & Pay
-                                    </button>
+                                    {cls.completedToday ? (
+                                        <div className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold uppercase tracking-widest rounded-lg border border-emerald-500/20 text-emerald-400 bg-emerald-500/10">
+                                            <span className="material-icons-round text-[14px]">check_circle</span>
+                                            Completed Today · ₱{cls.todayCompletion?.commissionAmount?.toFixed(2) || '0.00'}
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={() => handleCompleteClass(cls.id)}
+                                            className="px-3 py-1 text-xs font-bold uppercase tracking-widest rounded-lg border border-emerald-500/30 text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20"
+                                        >
+                                            Complete &amp; Pay
+                                        </button>
+                                    )}
                                 </div>
                             </div>
 

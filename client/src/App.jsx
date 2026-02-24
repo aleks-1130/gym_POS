@@ -34,6 +34,7 @@ import Suppliers from './pages/admin/Suppliers';
 import TrainingManager from './pages/admin/TrainingManager';
 import PosSettings from './pages/admin/PosSettings';
 import Transactions from './pages/admin/Transactions';
+import Refunds from './pages/admin/Refunds';
 import Trainers from './pages/admin/Trainers';
 import Classes from './pages/admin/Classes';
 import AdminMembers from './pages/admin/Members';
@@ -41,6 +42,7 @@ import DashboardReportPage from './pages/admin/DashboardReportPage';
 import PnLReportPage from './pages/admin/PnLReportPage';
 import AnalyticsReportPage from './pages/admin/AnalyticsReportPage';
 import Payroll from './pages/admin/Payroll';
+import Projections from './pages/admin/Projections';
 
 // Staff Pages
 import Inventory from './pages/staff/Inventory';
@@ -131,7 +133,7 @@ function AppRoutes() {
       <FullscreenController enabled={Boolean(user)} />
       <Routes>
         {/* --- PUBLIC ROUTES --- */}
-        <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="/" element={<Landing />} />
         <Route path="/landing" element={<Landing />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
@@ -426,6 +428,22 @@ function AppRoutes() {
           element={
             <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
               <Transactions />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/refunds"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
+              <Refunds />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/projections"
+          element={
+            <ProtectedRoute allowedRoles={[ROLES.OWNER]}>
+              <Projections />
             </ProtectedRoute>
           }
         />

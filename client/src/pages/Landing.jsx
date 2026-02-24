@@ -131,16 +131,16 @@ const FitOSLanding = () => {
                     <div className="text-center mb-12">
                         <div className="inline-flex items-center gap-2 bg-orange-500/10 border border-orange-500/20 text-orange-400 px-4 py-2 rounded-full text-sm font-medium mb-6">
                             <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div>
-                            Enterprise v3.0 Now Available
+                            Built for local gyms in the Philippines 🇵🇭
                         </div>
 
                         <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold mb-6 text-white">
-                            The Operating System for<br />Modern Fitness Facilities
+                            Run Your Gym<br />Without the Headache
                         </h1>
 
                         <p className="text-xl text-gray-400 max-w-3xl mx-auto mb-10">
-                            Replace your spreadsheets and disconnected tools with one unified platform.
-                            Manage members, automated billing, and access control securely.
+                            Ditch the notebook and group chats. FitOS handles your members, walk-ins, trainer schedules,
+                            and daily sales — all in one easy system built for local gym owners like you.
                         </p>
 
                         <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -148,25 +148,24 @@ const FitOSLanding = () => {
                                 onClick={() => scrollToSection('pricing')}
                                 className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-8 py-4 rounded-lg font-semibold text-lg hover:from-orange-600 hover:to-orange-700 transition-all shadow-lg shadow-orange-500/25"
                             >
-                                View Packages
+                                See Pricing
                             </button>
                             <button
                                 onClick={() => scrollToSection('features')}
                                 className="bg-gray-800 border border-gray-700 text-white px-8 py-4 rounded-lg font-semibold text-lg hover:bg-gray-700 transition-all"
                             >
-                                Book Live Demo
+                                See Features
                             </button>
                         </div>
                     </div>
 
-                    {/* Hero Image Placeholder */}
+                    {/* Hero Image */}
                     <div className="mt-16 rounded-2xl overflow-hidden border border-gray-800 shadow-2xl">
-                        <div className="bg-gradient-to-br from-gray-900 to-gray-800 aspect-video flex items-center justify-center">
-                            <div className="text-center">
-                                <Monitor className="h-16 w-16 text-gray-600 mx-auto mb-4" />
-                                <p className="text-gray-500 font-medium">Dashboard Preview</p>
-                            </div>
-                        </div>
+                        <img
+                            src="/dashboardprev.png"
+                            alt="FitOS Dashboard Preview"
+                            className="w-full object-cover"
+                        />
                     </div>
                 </div>
             </section>
@@ -175,14 +174,14 @@ const FitOSLanding = () => {
             <section className="py-12 border-y border-gray-800">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <p className="text-center text-sm text-gray-500 font-medium mb-6">
-                        TRUSTED BY 500+ GYMS & WELLNESS CENTERS
+                        TRUSTED BY LOCAL GYMS, STUDIOS &amp; FITNESS CENTERS
                     </p>
                     <div className="flex flex-wrap justify-center items-center gap-8 opacity-40">
-                        <span className="text-gray-600 font-bold text-lg">GOLD'S GYM</span>
-                        <span className="text-gray-600 font-bold text-lg">ANYTIME FITNESS</span>
-                        <span className="text-gray-600 font-bold text-lg">CROSSFIT</span>
-                        <span className="text-gray-600 font-bold text-lg">EQUINOX</span>
-                        <span className="text-gray-600 font-bold text-lg">YMCA</span>
+                        <span className="text-gray-600 font-bold text-lg">🏋️ INDEPENDENT GYMS</span>
+                        <span className="text-gray-600 font-bold text-lg">🥊 BOXING STUDIOS</span>
+                        <span className="text-gray-600 font-bold text-lg">🧘 YOGA CENTERS</span>
+                        <span className="text-gray-600 font-bold text-lg">⚽ SPORTS CLUBS</span>
+                        <span className="text-gray-600 font-bold text-lg">💪 CROSSFIT BOXES</span>
                     </div>
                 </div>
             </section>
@@ -203,7 +202,7 @@ const FitOSLanding = () => {
                             <ul className="space-y-3">
                                 <li className="flex items-center gap-3">
                                     <Check className="h-5 w-5 text-orange-500 flex-shrink-0" />
-                                    <span className="text-gray-300">Works with Barcode & QR Codes</span>
+                                    <span className="text-gray-300">Works with Barcode &amp; QR Codes</span>
                                 </li>
                                 <li className="flex items-center gap-3">
                                     <Check className="h-5 w-5 text-orange-500 flex-shrink-0" />
@@ -253,7 +252,7 @@ const FitOSLanding = () => {
                                 </li>
                                 <li className="flex items-center gap-3">
                                     <Check className="h-5 w-5 text-orange-500 flex-shrink-0" />
-                                    <span className="text-gray-300">Member retention & churn rates</span>
+                                    <span className="text-gray-300">Member retention &amp; churn rates</span>
                                 </li>
                                 <li className="flex items-center gap-3">
                                     <Check className="h-5 w-5 text-orange-500 flex-shrink-0" />
@@ -277,7 +276,7 @@ const FitOSLanding = () => {
                             <span className="inline-block bg-orange-500/10 border border-orange-500/20 text-orange-400 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide mb-4">
                                 Point of Sale
                             </span>
-                            <h2 className="text-4xl font-bold mb-4 text-white">Integrated POS & Billing</h2>
+                            <h2 className="text-4xl font-bold mb-4 text-white">Integrated POS &amp; Billing</h2>
                             <p className="text-gray-400 text-lg mb-6">
                                 Sell supplements, water, and gear directly from the same interface you use for check-ins.
                                 Manage inventory levels and link purchases to member profiles for "charge to account" capabilities.
@@ -314,41 +313,16 @@ const FitOSLanding = () => {
             <section className="py-20 bg-gradient-to-b from-gray-900 to-gray-800/50">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="text-center mb-16">
-                        <h2 className="text-4xl font-bold mb-4 text-white">Enterprise-Grade Infrastructure</h2>
-                        <p className="text-gray-400 text-lg">Built for stability, security, and scale.</p>
+                        <h2 className="text-4xl font-bold mb-4 text-white">Everything You Need, Nothing You Don't</h2>
+                        <p className="text-gray-400 text-lg">Powerful features that work for a 30-member studio or a 500-member gym — no IT team required.</p>
                     </div>
-
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        <BentoCard
-                            icon={<Lock className="h-6 w-6" />}
-                            title="Local Data Encryption"
-                            description="Your member data is encrypted at rest using AES-256 standards. We prioritize local-first storage for maximum speed and offline capability."
-                        />
-                        <BentoCard
-                            icon={<Users className="h-6 w-6" />}
-                            title="Multi-User Permissions"
-                            description="Granular access control. Give your front-desk staff access to check-ins, while restricting financial data to managers and owners."
-                        />
-                        <BentoCard
-                            icon={<RefreshCw className="h-6 w-6" />}
-                            title="Automated Backups"
-                            description="Never lose data. The system automatically creates daily backups to a secure local partition or your optional cloud drive."
-                        />
-                        <BentoCard
-                            icon={<Mail className="h-6 w-6" />}
-                            title="Marketing Automation"
-                            description="Send bulk SMS or Emails to members who haven't visited in 30 days, or wish them a happy birthday automatically."
-                        />
-                        <BentoCard
-                            icon={<FileText className="h-6 w-6" />}
-                            title="Digital Waivers"
-                            description="Go paperless. New members can sign liability waivers digitally, which are instantly stored and linked to their profile."
-                        />
-                        <BentoCard
-                            icon={<Clock className="h-6 w-6" />}
-                            title="Session Tracking"
-                            description="Perfect for Personal Trainers. Track prepaid sessions (e.g., '10 Class Pack') and auto-deduct upon check-in."
-                        />
+                        <BentoCard icon={<Lock className="h-6 w-6" />} title="Your Data, Stays Here" description="Member info stays on your local machine — fast, private, and works even without internet. No third-party has access to your data." />
+                        <BentoCard icon={<Users className="h-6 w-6" />} title="Owner, Admin & Staff Roles" description="Let your cashier handle check-ins and POS without seeing your financials. Full role-based access so everyone only sees what they need." />
+                        <BentoCard icon={<RefreshCw className="h-6 w-6" />} title="No Data Loss, Ever" description="Automatic daily backups so you never lose member records. Even if your PC crashes, you can restore everything in minutes." />
+                        <BentoCard icon={<Mail className="h-6 w-6" />} title="Member Reminders" description="Notify members when their membership is about to expire. Stop losing renewals because people simply forgot." />
+                        <BentoCard icon={<FileText className="h-6 w-6" />} title="Daily Sales Summary" description="End-of-day report shows exactly what came in — memberships, walk-ins, trainer fees, and product sales. No more manual tallying." />
+                        <BentoCard icon={<Clock className="h-6 w-6" />} title="Session Package Tracking" description="Selling 10-session packs? The system auto-deducts each visit and alerts you when a member is on their last session." />
                     </div>
                 </div>
             </section>
@@ -358,32 +332,13 @@ const FitOSLanding = () => {
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="text-center mb-16">
                         <h2 className="text-4xl font-bold mb-4 text-white">Hardware Compatibility</h2>
-                        <p className="text-gray-400 text-lg">
-                            Our software runs on standard Windows hardware, or you can purchase our turnkey kits.
-                        </p>
+                        <p className="text-gray-400 text-lg">Our software runs on standard Windows hardware, or you can purchase our turnkey kits.</p>
                     </div>
-
                     <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                        <HardwareCard
-                            icon="🖥️"
-                            title="Windows PC"
-                            specs={["Windows 10/11", "4GB RAM Min", "i3 Processor or better"]}
-                        />
-                        <HardwareCard
-                            icon="🔫"
-                            title="Barcode Scanner"
-                            specs={["Any USB Plug-and-Play", "Supports Code 128/39", "QR Code Compatible"]}
-                        />
-                        <HardwareCard
-                            icon="🖨️"
-                            title="Receipt Printer"
-                            specs={["Standard 58mm or 80mm", "Thermal Printer", "EPSON / POS-58 Driver"]}
-                        />
-                        <HardwareCard
-                            icon="📸"
-                            title="Webcam"
-                            specs={["Logitech or Generic", "For Member Photos", "720p Recommended"]}
-                        />
+                        <HardwareCard icon="🖥️" title="Windows PC" specs={["Windows 10/11", "4GB RAM Min", "i3 Processor or better"]} />
+                        <HardwareCard icon="🔫" title="Barcode Scanner" specs={["Any USB Plug-and-Play", "Supports Code 128/39", "QR Code Compatible"]} />
+                        <HardwareCard icon="🖨️" title="Receipt Printer" specs={["Standard 58mm or 80mm", "Thermal Printer", "EPSON / POS-58 Driver"]} />
+                        <HardwareCard icon="📸" title="Webcam" specs={["Logitech or Generic", "For Member Photos", "720p Recommended"]} />
                     </div>
                 </div>
             </section>
@@ -392,65 +347,36 @@ const FitOSLanding = () => {
             <section id="pricing" className="py-20 bg-gradient-to-b from-gray-900/50 to-transparent">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="text-center mb-16">
-                        <h2 className="text-4xl font-bold mb-4 text-white">Transparent Investment</h2>
-                        <p className="text-gray-400 text-lg">
-                            One-time licensing. No recurring monthly software fees. Own your data.
-                        </p>
+                        <h2 className="text-4xl font-bold mb-4 text-white">Simple, Transparent Pricing</h2>
+                        <p className="text-gray-400 text-lg">Monthly subscription — scales with your gym. Cancel anytime.</p>
+                        <div className="inline-flex items-center gap-2 mt-4 bg-orange-500/10 border border-orange-500/20 text-orange-400 px-4 py-2 rounded-full text-sm">
+                            <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                            All plans include free onboarding &amp; data migration assistance
+                        </div>
                     </div>
-
                     <div className="grid md:grid-cols-3 gap-8">
-                        {/* Starter */}
                         <PricingCard
-                            name="Starter"
-                            subtitle="For boutique studios & small gyms"
-                            price="18k"
-                            hardware="🖥️ Client provides PC/Laptop"
-                            features={[
-                                "Core Membership Software",
-                                "Basic Barcode Scanner",
-                                "Remote Installation",
-                                "90 Days Email Support"
-                            ]}
-                            buttonText="Get Starter"
-                            buttonStyle="outline"
+                            name="Starter" subtitle="Perfect for small local gyms just getting started"
+                            price="799" period="mo" badge="Up to 150 members"
+                            features={["Member management & check-ins", "Walk-in & POS sales", "Inventory tracking", "Email support (48hr response)", "1 staff account"]}
+                            buttonText="Try Free for 14 Days" buttonStyle="outline"
                         />
-
-                        {/* Standard - Featured */}
                         <PricingCard
-                            name="Standard"
-                            subtitle="For growing fitness centers"
-                            price="35k"
-                            hardware="🖥️ Client provides PC/Laptop"
-                            features={[
-                                "Advanced Analytics Module",
-                                "Pro Barcode Scanner",
-                                "80mm Thermal Printer",
-                                "On-site Deployment & Training",
-                                "6 Months Priority Support"
-                            ]}
-                            buttonText="Choose Standard"
-                            buttonStyle="primary"
-                            featured={true}
+                            name="Growth" subtitle="For gyms with trainers, classes & retail"
+                            price="1,499" period="mo" badge="Up to 500 members"
+                            features={["Everything in Starter", "Trainer payroll & commissions", "Class scheduling & bookings", "Analytics & profit/loss reports", "5 staff accounts", "Priority support (12hr response)"]}
+                            buttonText="Choose Growth" buttonStyle="primary" featured={true}
                         />
-
-                        {/* Enterprise */}
                         <PricingCard
-                            name="Enterprise"
-                            subtitle="For large-scale facilities"
-                            price="65k"
-                            hardware="✅ Includes Dedicated PC Unit"
-                            hardwareIncluded={true}
-                            features={[
-                                "Turnkey Hardware Solution",
-                                "Enterprise Scanner & Printer",
-                                "Custom Receipt Branding",
-                                "Full Day On-site Implementation",
-                                "12 Months Dedicated Support"
-                            ]}
-                            buttonText="Contact Sales"
-                            buttonStyle="outline"
+                            name="Scale" subtitle="For multi-branch gyms or high-volume facilities"
+                            price="2,999" period="mo" badge="Unlimited members"
+                            features={["Everything in Growth", "Multi-branch management", "Custom receipt & gym branding", "Dedicated account manager", "Unlimited staff accounts", "On-call priority support"]}
+                            buttonText="Contact Us" buttonStyle="outline"
                         />
                     </div>
+                    <p className="text-center text-gray-600 text-sm mt-8">
+                        No setup fees. Cancel anytime. Hardware (scanner, printer, webcam) available as add-on. Prices in Philippine Peso (₱).
+                    </p>
                 </div>
             </section>
 
@@ -458,24 +384,11 @@ const FitOSLanding = () => {
             <section id="faq" className="py-20">
                 <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
                     <h2 className="text-4xl font-bold text-center mb-12 text-white">Frequently Asked Questions</h2>
-
                     <div className="space-y-6">
-                        <FAQItem
-                            question="Does this require an internet connection?"
-                            answer="FitOS is a 'Local First' software. It functions perfectly offline for check-ins and POS. Internet is only required for cloud backups and sending emails."
-                        />
-                        <FAQItem
-                            question="Is there a monthly fee?"
-                            answer="No. We operate on a Lifetime License model. You pay once for the version you buy. Optional support packages are available for renewal annually."
-                        />
-                        <FAQItem
-                            question="Can I migrate my data from Excel?"
-                            answer="Yes, we provide a CSV import template. Our team can also handle the migration for you with the Premium package."
-                        />
-                        <FAQItem
-                            question="Does it support door access control (Maglocks)?"
-                            answer="Yes, FitOS can integrate with specific relay controllers to trigger magnetic door locks upon successful member scan. Contact sales for compatible hardware list."
-                        />
+                        <FAQItem question="Does this require an internet connection?" answer="FitOS is a 'Local First' software. It functions perfectly offline for check-ins and POS. Internet is only required for cloud backups and sending emails." />
+                        <FAQItem question="Is there a monthly fee?" answer="Yes — FitOS runs on a monthly subscription model. This allows us to continuously fund updates, new features, security patches, and support. You can cancel anytime with no lock-in contract. Annual billing is available at a 15% discount." />
+                        <FAQItem question="Can I migrate my data from Excel?" answer="Yes, we provide a CSV import template. Our team can also handle the migration for you with the Premium package." />
+                        <FAQItem question="Does it support door access control (Maglocks)?" answer="Yes, FitOS can integrate with specific relay controllers to trigger magnetic door locks upon successful member scan. Contact sales for compatible hardware list." />
                     </div>
                 </div>
             </section>
@@ -483,12 +396,10 @@ const FitOSLanding = () => {
             {/* Final CTA */}
             <section className="py-20 bg-gradient-to-r from-orange-600 to-orange-500">
                 <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-                    <h2 className="text-4xl font-bold text-white mb-4">Stop Overpaying for Gym Software</h2>
-                    <p className="text-orange-100 text-lg mb-8">
-                        Join hundreds of gym owners who have switched to the reliability of FitOS.
-                    </p>
+                    <h2 className="text-4xl font-bold text-white mb-4">Try It Free for 14 Days</h2>
+                    <p className="text-orange-100 text-lg mb-8">No credit card. No complicated setup. Just log in and start managing your gym today.</p>
                     <button className="bg-white text-orange-600 px-10 py-4 rounded-lg font-bold text-lg hover:bg-gray-100 transition-all shadow-xl">
-                        See Investment Packages
+                        Start Free Trial
                     </button>
                 </div>
             </section>
@@ -504,11 +415,8 @@ const FitOSLanding = () => {
                                 </div>
                                 <span className="text-xl font-bold">FitOS</span>
                             </div>
-                            <p className="text-gray-500 text-sm">
-                                Building the digital infrastructure for the fitness industry.
-                            </p>
+                            <p className="text-gray-500 text-sm">Building the digital infrastructure for the fitness industry.</p>
                         </div>
-
                         <div>
                             <h4 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Product</h4>
                             <div className="space-y-2">
@@ -517,7 +425,6 @@ const FitOSLanding = () => {
                                 <a href="#" className="block text-gray-500 hover:text-orange-500 transition-colors text-sm">Download Trial</a>
                             </div>
                         </div>
-
                         <div>
                             <h4 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Company</h4>
                             <div className="space-y-2">
@@ -526,7 +433,6 @@ const FitOSLanding = () => {
                                 <a href="#" className="block text-gray-500 hover:text-orange-500 transition-colors text-sm">Contact</a>
                             </div>
                         </div>
-
                         <div>
                             <h4 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Legal</h4>
                             <div className="space-y-2">
@@ -536,11 +442,8 @@ const FitOSLanding = () => {
                             </div>
                         </div>
                     </div>
-
                     <div className="border-t border-gray-800 pt-8">
-                        <p className="text-center text-gray-500 text-sm">
-                            © 2026 Gym Membership Management Solutions. All rights reserved.
-                        </p>
+                        <p className="text-center text-gray-500 text-sm">© 2026 Gym Membership Management Solutions. All rights reserved.</p>
                     </div>
                 </div>
             </footer>
@@ -575,42 +478,27 @@ const HardwareCard = ({ icon, title, specs }) => {
 };
 
 // Component: Pricing Card
-const PricingCard = ({
-    name,
-    subtitle,
-    price,
-    hardware,
-    hardwareIncluded,
-    features,
-    buttonText,
-    buttonStyle,
-    featured
-}) => {
+const PricingCard = ({ name, subtitle, price, period = 'mo', badge, features, buttonText, buttonStyle, featured }) => {
     return (
-        <div className={`relative bg-gray-900 border ${featured ? 'border-orange-500 shadow-xl shadow-orange-500/10' : 'border-gray-800'} rounded-xl p-8 hover:border-orange-500/50 transition-all`}>
+        <div className={`relative bg-gray-900 border ${featured ? 'border-orange-500 shadow-xl shadow-orange-500/10' : 'border-gray-800'} rounded-xl p-8 hover:border-orange-500/50 transition-all flex flex-col`}>
             {featured && (
                 <div className="absolute -top-4 left-1/2 -translate-x-1/2">
-                    <span className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-4 py-1 rounded-full text-xs font-bold uppercase tracking-wide">
-                        Recommended
-                    </span>
+                    <span className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-4 py-1 rounded-full text-xs font-bold uppercase tracking-wide">Most Popular</span>
                 </div>
             )}
-
             <div className="mb-6">
                 <h3 className="text-xl font-semibold mb-1 text-white">{name}</h3>
                 <p className="text-gray-500 text-sm mb-4">{subtitle}</p>
                 <div className="flex items-baseline gap-1">
                     <span className="text-gray-400 text-2xl">₱</span>
                     <span className="text-5xl font-bold text-white">{price}</span>
-                    <span className="text-gray-500">/ license</span>
+                    <span className="text-gray-500">/ {period}</span>
                 </div>
+                {badge && (
+                    <span className="inline-block mt-3 text-xs font-semibold bg-gray-800 border border-gray-700 text-gray-400 px-3 py-1 rounded-full">{badge}</span>
+                )}
             </div>
-
-            <div className={`${hardwareIncluded ? 'bg-green-900/20 border-green-500/30 text-green-400' : 'bg-gray-800/50 border-gray-700 text-gray-400'} border rounded-lg px-4 py-2 text-sm mb-6`}>
-                {hardware}
-            </div>
-
-            <ul className="space-y-3 mb-8">
+            <ul className="space-y-3 mb-8 flex-1">
                 {features.map((feature, index) => (
                     <li key={index} className="flex items-start gap-3">
                         <Check className="h-5 w-5 text-orange-500 flex-shrink-0 mt-0.5" />
@@ -618,11 +506,7 @@ const PricingCard = ({
                     </li>
                 ))}
             </ul>
-
-            <button className={`w-full py-3 rounded-lg font-semibold transition-all ${buttonStyle === 'primary'
-                ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:from-orange-600 hover:to-orange-700'
-                : 'bg-gray-800 border border-gray-700 text-white hover:bg-gray-700'
-                }`}>
+            <button className={`w-full py-3 rounded-lg font-semibold transition-all ${buttonStyle === 'primary' ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:from-orange-600 hover:to-orange-700' : 'bg-gray-800 border border-gray-700 text-white hover:bg-gray-700'}`}>
                 {buttonText}
             </button>
         </div>

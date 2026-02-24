@@ -59,21 +59,16 @@ export default function PurchaseHistory() {
     const allTransactions = [...payments, ...cancelledBookings].sort((a, b) => new Date(b.date) - new Date(a.date));
 
     const filteredTransactions = activeTab === 'all'
-        ? allTransactions
+        ? allTransactions.filter(p => !['VOIDED', 'RETURNED', 'CANCELLED'].includes(p.status))
         : activeTab === 'membership'
-            ? allTransactions.filter((p) => p.type === 'MEMBERSHIP')
-            : allTransactions.filter((p) => p.type === 'TRAINING' || p.type === 'TRAINING_BOOKING');
+            ? allTransactions.filter((p) => p.type === 'MEMBERSHIP' && !['VOIDED', 'RETURNED', 'CANCELLED'].includes(p.status))
+            : allTransactions.filter((p) => (p.type === 'TRAINING' || p.type === 'TRAINING_BOOKING') && !['VOIDED', 'RETURNED', 'CANCELLED'].includes(p.status));
 
     const totalSpent = payments.reduce((sum, item) => sum + (item.amount || 0), 0);
 
-    const isActionDisabled = (item) => item.status === 'PENDING' || item.status === 'VOIDED' || item.status === 'CANCELLED';
+    const isActionDisabled = (item) => false;
 
-    const getActionLabel = (item, mobile = false) => {
-        if (item.status === 'PENDING') return 'Pending Approval';
-        if (item.status === 'VOIDED') return 'Declined';
-        if (item.status === 'CANCELLED') return 'Cancelled';
-        return mobile ? 'View Receipt' : 'View';
-    };
+    const getActionLabel = (item, mobile = false) => mobile ? 'View Receipt' : 'View';
 
     const getTypeBadge = (item) => {
         if (item.type === 'MEMBERSHIP') return 'bg-blue-500/20 text-blue-300';
