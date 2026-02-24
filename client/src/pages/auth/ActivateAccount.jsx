@@ -11,14 +11,35 @@ const ActivateAccount = () => {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [status, setStatus] = useState('loading'); // loading, form, success, error
     const [message, setMessage] = useState('');
+    const [role, setRole] = useState('MEMBER');
 
     useEffect(() => {
-        if (!token) {
-            setStatus('error');
-            setMessage('Invalid or missing activation token.');
-        } else {
-            setStatus('form');
-        }
+        const checkToken = async () => {
+            if (!token) {
+                setStatus('error');
+                setMessage('Invalid or missing activation token.');
+                return;
+            }
+
+            try {
+                const res = await axios.get(`/api/auth/verify-token?token=${token}`);
+                if (res.data.role) {
+                    setRole(res.data.role);
+                }
+                setStatus('form');
+            } catch (err) {
+                setStatus('error');
+                if (err.response?.data?.code === 'ALREADY_ACTIVATED') {
+                    setMessage('This account has already been activated! You can proceed to log in.');
+                } else if (err.response?.data?.code === 'TOKEN_INVALID_OR_CONSUMED') {
+                    setMessage('This activation link is invalid or has already been used. If you already set a password, please try logging in.');
+                } else {
+                    setMessage(err.response?.data?.error || 'Invalid or expired activation link.');
+                }
+            }
+        };
+
+        checkToken();
     }, [token]);
 
     const handleActivate = async (e) => {
@@ -55,7 +76,9 @@ const ActivateAccount = () => {
                     <h1 className="text-4xl font-black italic tracking-tighter uppercase">
                         Fit<span className="text-primary">OS</span>
                     </h1>
-                    <p className="text-gray-400 mt-2">Member Portal Activation</p>
+                    <p className="text-gray-400 mt-2">
+                        {role === 'TRAINER' ? 'Staff Portal Activation' : 'Member Portal Activation'}
+                    </p>
                 </div>
 
                 {status === 'loading' && (
@@ -135,15 +158,19 @@ const ActivateAccount = () => {
 
                 {status === 'error' && (
                     <div className="text-center py-8 space-y-6">
-                        <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center mx-auto ring-1 ring-red-500/20">
-                            <span className="material-icons-round text-5xl text-red-500">error_outline</span>
+                        <div className={`w-20 h-20 ${message.includes('already been activated') ? 'bg-orange-500/10 ring-orange-500/20 text-orange-500' : 'bg-red-500/10 ring-red-500/20 text-red-500'} rounded-full flex items-center justify-center mx-auto ring-1`}>
+                            <span className="material-icons-round text-5xl">
+                                {message.includes('already been activated') ? 'info' : 'error_outline'}
+                            </span>
                         </div>
                         <div className="space-y-2">
-                            <h3 className="text-2xl font-bold text-white">Activation Failed</h3>
+                            <h3 className="text-2xl font-bold text-white">
+                                {message.includes('already been activated') ? 'Already Activated' : 'Activation Failed'}
+                            </h3>
                             <p className="text-gray-400">{message}</p>
                         </div>
-                        <div className="pt-4">
-                            <Link to="/login" className="text-primary font-bold hover:underline">
+                        <div className="pt-4 flex flex-col gap-3">
+                            <Link to="/login" className="inline-block w-full py-4 px-6 bg-primary hover:bg-orange-600 text-white rounded-xl font-bold transition-all shadow-lg text-center">
                                 Go to Login
                             </Link>
                         </div>

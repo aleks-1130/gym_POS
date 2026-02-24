@@ -137,7 +137,8 @@ function AppRoutes() {
         <Route path="/landing" element={<Landing />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/activate-account" element={<ActivateAccount />} />
+        <Route path="/activate" element={<ActivateAccount />} />
+
 
         {/* --- PROTECTED ROUTES --- */}
         <Route

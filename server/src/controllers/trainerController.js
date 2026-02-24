@@ -6,6 +6,8 @@ const {
     removeTrainerAvailability
 } = require('../services/trainerAvailabilityService');
 const { syncToNeonAuth } = require('../services/neonAuthSync');
+const crypto = require('crypto');
+const { sendActivationEmail } = require('../services/emailService');
 
 const getAllTrainers = async (req, res) => {
     try {
@@ -245,9 +247,7 @@ const createTrainer = async (req, res) => {
             specialties,
             commissionRate,
             baseSalary,
-            createLogin,
-            loginEmail,
-            loginPassword
+            createLogin
         } = req.body;
 
         if (!name || !String(name).trim()) {
@@ -270,10 +270,10 @@ const createTrainer = async (req, res) => {
         }
 
         // 1. Check if login email is taken (if creating login)
-        if (createLogin && loginEmail) {
-            const existingUser = await prisma.user.findUnique({ where: { email: String(loginEmail).trim() } });
+        if (createLogin && email) {
+            const existingUser = await prisma.user.findUnique({ where: { email: String(email).trim() } });
             if (existingUser) {
-                return res.status(400).json({ error: 'Login email is already taken' });
+                return res.status(400).json({ error: 'Trainer email is already mapped to a login' });
             }
         }
 
@@ -299,28 +299,43 @@ const createTrainer = async (req, res) => {
         });
 
         // 2. Create Login if requested
-        if (createLogin && loginEmail && loginPassword) {
+        if (createLogin && email) {
             try {
-                const hashed = await bcrypt.hash(String(loginPassword), 10);
+                // Securely generate random temporary password and activation token
+                const tempPassword = crypto.randomBytes(16).toString('hex');
+                const hashed = await bcrypt.hash(tempPassword, 10);
+                const activationToken = crypto.randomBytes(16).toString('hex');
+                const activationExpires = new Date();
+                activationExpires.setHours(activationExpires.getHours() + 24);
+
                 await prisma.user.create({
                     data: {
-                        email: String(loginEmail).trim(),
+                        email: String(email).trim(),
                         password: hashed,
                         name: trainer.name,
                         role: 'TRAINER',
-                        trainerId: trainer.id
+                        trainerId: trainer.id,
+                        status: 'PENDING_ACTIVATION',
+                        activationToken,
+                        activationExpires
                     }
                 });
+
+                await sendActivationEmail(
+                    String(email).trim(),
+                    trainer.name,
+                    activationToken,
+                    'Staff Access',
+                    'Lifetime',
+                    phone ? String(phone).trim() : null,
+                    null,
+                    null,
+                    'TRAINER'
+                );
             } catch (e) {
                 console.error("Failed to create trainer login:", e);
                 // Don't fail the whole request, but maybe warn?
             }
-        }
-
-        // 3. Sync to Neon Auth (Dual Write)
-        if (createLogin && loginEmail && loginPassword) {
-            // Fire and forget, or await? Awaiting is safer to see logs.
-            await syncToNeonAuth(name, loginEmail, loginPassword);
         }
 
         const availability = setTrainerAvailability(trainer.id, req.body);
@@ -410,9 +425,13 @@ const deleteTrainer = async (req, res) => {
 
 const createTrainerLogin = async (req, res) => {
     const trainerId = Number(req.params.id);
-    const { loginEmail, loginPassword } = req.body;
-    if (!loginEmail || !loginPassword) {
-        return res.status(400).json({ error: 'Login email and password are required' });
+    const { loginEmail } = req.body;
+
+    // UI might send loginEmail out of compat, but it's just the main email
+    const targetEmail = loginEmail;
+
+    if (!targetEmail) {
+        return res.status(400).json({ error: 'Trainer email is required to create a login' });
     }
     try {
         const trainer = await prisma.trainer.findUnique({ where: { id: trainerId } });
@@ -420,27 +439,44 @@ const createTrainerLogin = async (req, res) => {
 
         const existingUser = await prisma.user.findFirst({
             where: {
-                OR: [{ email: String(loginEmail).trim() }, { trainerId }]
+                OR: [{ email: String(targetEmail).trim() }, { trainerId }]
             }
         });
         if (existingUser) return res.status(400).json({ error: 'Trainer login already exists or email is taken' });
 
-        const hashed = await bcrypt.hash(String(loginPassword), 10);
+        const tempPassword = crypto.randomBytes(16).toString('hex');
+        const hashed = await bcrypt.hash(tempPassword, 10);
+        const activationToken = crypto.randomBytes(16).toString('hex');
+        const activationExpires = new Date();
+        activationExpires.setHours(activationExpires.getHours() + 24);
+
         const user = await prisma.user.create({
             data: {
-                email: String(loginEmail).trim(),
+                email: String(targetEmail).trim(),
                 password: hashed,
                 name: trainer.name,
                 role: 'TRAINER',
-                trainerId
+                trainerId,
+                status: 'PENDING_ACTIVATION',
+                activationToken,
+                activationExpires
             },
             select: { id: true, email: true, role: true, trainerId: true }
         });
 
-        // Sync to Neon Auth
-        await syncToNeonAuth(trainer.name, String(loginEmail).trim(), String(loginPassword));
+        await sendActivationEmail(
+            String(targetEmail).trim(),
+            trainer.name,
+            activationToken,
+            'Staff Access',
+            'Lifetime',
+            trainer.phone,
+            null,
+            null,
+            'TRAINER'
+        );
 
-        res.json({ message: 'Trainer login created', user });
+        res.json({ message: 'Trainer login created and activation email sent', user });
     } catch (e) {
         res.status(500).json({ error: e.message || 'Failed to create trainer login' });
     }

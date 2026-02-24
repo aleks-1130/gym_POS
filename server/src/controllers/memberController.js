@@ -818,8 +818,8 @@ const createMember = async (req, res) => {
             return res.status(400).json({ error: `${method} reference is required for e-wallet payments` });
         }
 
-        const { member, payment } = await prisma.$transaction(async (tx) => {
-            const activationToken = crypto.randomBytes(32).toString('hex');
+        const { member: createdMemberData, payment, activationToken, activationEmail, activationName, planName, expiryDate: calculatedExpiry } = await prisma.$transaction(async (tx) => {
+            const activationToken = crypto.randomBytes(16).toString('hex');
             const activationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
             const createdMember = await tx.member.create({
@@ -879,18 +879,39 @@ const createMember = async (req, res) => {
                 include: { plan: true }
             });
 
-            // Send activation email
-            try {
-                await sendActivationEmail(email, `${firstName} ${lastName}`, activationToken);
-            } catch (err) {
-                console.error("Failed to send activation email:", err.message);
-                // We still proceed as the member is created, but staff might need to resend (future feature)
-            }
-
-            return { member: hydratedMember || createdMember, payment: createdPayment };
+            return {
+                member: hydratedMember || createdMember,
+                payment: createdPayment,
+                activationToken,
+                activationEmail: email,
+                activationName: `${firstName} ${lastName}`,
+                planName: plan.name,
+                expiryDate: new Date(Date.now() + plan.duration * 24 * 60 * 60 * 1000).toLocaleDateString()
+            };
         });
 
-        res.json({ member, payment });
+        // Send activation email OUTSIDE the transaction to avoid stalling the DB connection
+        const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').trim();
+        const activationLink = `${frontendUrl}/activate?token=${(activationToken || '').trim()}`;
+        console.log(`[Member Created] Activation link for ${activationName}: ${activationLink}`);
+
+        try {
+            await sendActivationEmail(
+                activationEmail || email,
+                activationName || `${firstName} ${lastName}`,
+                activationToken,
+                planName || 'Gym Plan',
+                calculatedExpiry,
+                createdMemberData.phone || 'N/A',
+                createdMemberData.birthDate ? new Date(createdMemberData.birthDate).toLocaleDateString() : 'N/A',
+                createdMemberData.sex || 'N/A'
+            );
+        } catch (err) {
+            console.error("Failed to send activation email:", err.message);
+            console.warn(`[Fallback] Staff can manually share this activation link: ${activationLink}`);
+        }
+
+        res.json({ member: createdMemberData, payment });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -957,16 +978,28 @@ const renewMembership = async (req, res) => {
             });
         }
 
+        let activationToken = null;
+        let isActivating = false;
+        const updateData = {
+            expiryDate: newExpiry,
+            status: 'ACTIVE',
+            ...(planId ? { planId: Number(planId) } : {}),
+            ...(getPlanClassSessions(selectedPlan) > 0
+                ? { classSessionsRemaining: { increment: getPlanClassSessions(selectedPlan) } }
+                : {})
+        };
+
+        if (member.status === 'WAITLIST') {
+            isActivating = true;
+            activationToken = crypto.randomBytes(16).toString('hex');
+            updateData.activationToken = activationToken;
+            updateData.activationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+            updateData.status = 'PENDING_ACTIVATION';
+        }
+
         const updatedMember = await prisma.member.update({
             where: { id: Number(id) },
-            data: {
-                expiryDate: newExpiry,
-                status: 'ACTIVE',
-                ...(planId ? { planId: Number(planId) } : {}),
-                ...(getPlanClassSessions(selectedPlan) > 0
-                    ? { classSessionsRemaining: { increment: getPlanClassSessions(selectedPlan) } }
-                    : {})
-            }
+            data: updateData
         });
 
         await prisma.membershipPeriod.create({
@@ -1020,6 +1053,16 @@ const renewMembership = async (req, res) => {
                 where: { id: Number(id) },
                 data: { points: { increment: pointsAwarded } }
             });
+        }
+
+        if (isActivating && activationToken) {
+            try {
+                // Format the expiry date to be human readable (e.g., YYYY-MM-DD or MM/DD/YYYY)
+                const formattedExpiry = newExpiry.toLocaleDateString();
+                await sendActivationEmail(member.email, `${member.firstName} ${member.lastName}`, activationToken, planName, formattedExpiry);
+            } catch (err) {
+                console.error("Failed to send activation email:", err.message);
+            }
         }
 
         res.json({ member: updatedMember, payment });

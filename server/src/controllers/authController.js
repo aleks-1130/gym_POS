@@ -6,52 +6,6 @@ const { syncToNeonAuth } = require('../services/neonAuthSync');
 
 const SECRET = process.env.JWT_SECRET;
 
-const register = async (req, res) => {
-    const { email, password, name } = req.body;
-    try {
-        const normalizedEmail = String(email || '').trim().toLowerCase();
-        const normalizedName = String(name || '').trim();
-        const rawPassword = String(password || '');
-
-        if (!normalizedEmail || !rawPassword || !normalizedName) {
-            return res.status(400).json({ error: "Name, email, and password are required" });
-        }
-        if (rawPassword.length < 8) {
-            return res.status(400).json({ error: "Password must be at least 8 characters" });
-        }
-
-        const [existingUser, existingMember] = await Promise.all([
-            prisma.user.findUnique({ where: { email: normalizedEmail }, select: { id: true } }),
-            prisma.member.findUnique({ where: { email: normalizedEmail }, select: { id: true } })
-        ]);
-        if (existingUser || existingMember) {
-            return res.status(400).json({ error: "Email already in use" });
-        }
-
-        const parts = normalizedName.split(/\s+/).filter(Boolean);
-        const firstName = parts.shift() || normalizedName;
-        const lastName = parts.join(' ') || 'Member';
-        const hashedPassword = await bcrypt.hash(rawPassword, 10);
-
-        await prisma.member.create({
-            data: {
-                firstName,
-                lastName,
-                email: normalizedEmail,
-                password: hashedPassword,
-                status: 'PENDING'
-            }
-        });
-
-        // Sync to Neon Auth
-        await syncToNeonAuth(`${firstName} ${lastName}`, normalizedEmail, rawPassword);
-
-        res.json({ message: "Account created. Wait for membership activation by staff." });
-    } catch (e) {
-        res.status(400).json({ error: "Registration failed" });
-    }
-};
-
 const login = async (req, res) => {
     const { email, password } = req.body;
     const normalizedEmail = String(email || '').trim().toLowerCase();
@@ -150,6 +104,49 @@ const getMe = async (req, res) => {
     res.json(req.user);
 };
 
+const verifyToken = async (req, res) => {
+    const { token } = req.query;
+    if (!token) {
+        return res.status(400).json({ error: "Token is required" });
+    }
+
+    try {
+        let account = await prisma.member.findUnique({ where: { activationToken: token } });
+        let isMember = true;
+
+        if (!account) {
+            account = await prisma.user.findUnique({ where: { activationToken: token } });
+            isMember = false;
+        }
+
+        if (!account) {
+            return res.status(400).json({
+                error: "Invalid or consumed token",
+                code: "TOKEN_INVALID_OR_CONSUMED",
+                message: "This activation link is invalid. If you have already set your password, your account is already activated and you may proceed to login."
+            });
+        }
+
+        if (account.status === 'ACTIVE') {
+            return res.status(400).json({
+                error: "Account already activated",
+                code: "ALREADY_ACTIVATED",
+                message: "This account has already been activated. Please proceed to the login page."
+            });
+        }
+
+        if (account.activationExpires && new Date() > new Date(account.activationExpires)) {
+            return res.status(400).json({ error: "Activation token has expired", code: "TOKEN_EXPIRED" });
+        }
+
+        const name = isMember ? account.firstName : account.name;
+        const role = isMember ? 'MEMBER' : account.role;
+        res.json({ message: "Token is valid", memberName: name, role });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+};
+
 const activateAccount = async (req, res) => {
     const { token, password } = req.body;
     if (!token || !password) {
@@ -157,33 +154,50 @@ const activateAccount = async (req, res) => {
     }
 
     try {
-        const member = await prisma.member.findUnique({
-            where: { activationToken: token }
-        });
+        let account = await prisma.member.findUnique({ where: { activationToken: token } });
+        let isMember = true;
 
-        if (!member) {
+        if (!account) {
+            account = await prisma.user.findUnique({ where: { activationToken: token } });
+            isMember = false;
+        }
+
+        if (!account) {
             return res.status(400).json({ error: "Invalid or expired activation token" });
         }
 
-        if (member.activationExpires && new Date() > new Date(member.activationExpires)) {
+        if (account.activationExpires && new Date() > new Date(account.activationExpires)) {
             return res.status(400).json({ error: "Activation token has expired" });
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        await prisma.member.update({
-            where: { id: member.id },
-            data: {
-                password: hashedPassword,
-                status: 'ACTIVE',
-                activationToken: null,
-                activationExpires: null
-            }
-        });
+        if (isMember) {
+            await prisma.member.update({
+                where: { id: account.id },
+                data: {
+                    password: hashedPassword,
+                    status: 'ACTIVE',
+                    activationToken: null,
+                    activationExpires: null
+                }
+            });
+        } else {
+            await prisma.user.update({
+                where: { id: account.id },
+                data: {
+                    password: hashedPassword,
+                    status: 'ACTIVE',
+                    activationToken: null,
+                    activationExpires: null
+                }
+            });
+        }
 
         // Sync to Neon Auth
         try {
-            await syncToNeonAuth(`${member.firstName} ${member.lastName}`, member.email, password);
+            const fullName = isMember ? `${account.firstName} ${account.lastName}` : account.name;
+            await syncToNeonAuth(fullName, account.email, password);
         } catch (syncErr) {
             console.error("Neon Auth Sync Warning:", syncErr.message);
         }
@@ -195,9 +209,9 @@ const activateAccount = async (req, res) => {
 };
 
 module.exports = {
-    register,
     login,
     setupMemberPassword,
     getMe,
+    verifyToken,
     activateAccount
 };

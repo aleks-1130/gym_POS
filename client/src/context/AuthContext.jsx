@@ -122,31 +122,14 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    const register = async (name, email, password) => {
+    const register = async (name, email) => {
         try {
-            if (!isAuthClientReady) {
-                throw new Error("Authentication client is not available on this browser.");
-            }
-
-            // 1. Create account in Neon Auth
-            // 1. Create account in Neon Auth
-            // We use signUp.email directly because the generic signUp targets /sign-up which returns 404
-            const result = await authClient.signUp.email({
-                email,
-                password,
-                name // generic better-auth uses name at top level
-            });
-
-            if (result.error) {
-                throw new Error(result.error.message);
-            }
-
-            // 2. We ALSO need to create the user in our local DB (Prisma)
+            // We ONLY create the user in our local DB (Prisma) on waitlist
+            // Neon Auth account is only created upon activation later.
             try {
                 await axios.post(withApiBase('/api/auth/register'), {
                     name,
-                    email,
-                    password
+                    email
                 });
             } catch (apiError) {
                 // Extract error message from backend response

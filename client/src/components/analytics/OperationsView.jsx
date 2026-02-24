@@ -3,7 +3,7 @@ import { Bar } from 'react-chartjs-2';
 import { Users, Clock, ShoppingCart } from 'lucide-react';
 
 const OperationsView = ({ data }) => {
-    const { peakHours, transactions, strategic, summary } = data;
+    const { peakHours, transactions, strategic, summary, transactionCount } = data;
 
     // Strategic metrics might be missing in initial backend response if not fully updated, fallback safely
     const arpu = strategic?.arpu || 0;
@@ -56,7 +56,7 @@ const OperationsView = ({ data }) => {
                         <div>
                             <p className="text-text-muted text-sm">Avg Ticket Size</p>
                             <h3 className="text-2xl font-bold text-white">
-                                PHP {summary.transactionCount > 0 ? (summary.revenue / summary.transactionCount).toFixed(0) : 0}
+                                PHP {transactionCount > 0 ? (summary.revenue / transactionCount).toFixed(0) : 0}
                             </h3>
                         </div>
                     </div>

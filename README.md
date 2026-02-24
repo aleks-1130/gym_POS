@@ -44,6 +44,12 @@ npm run dev
 ```
 *Ctrl+Click the link shown (usually http://localhost:5173).*
 
+### 4. Setup Local Email Webhooks (n8n)
+We use **n8n** to handle email webhooks (e.g., Member and Trainer Account Activations). To test emails locally via Docker:
+1. Open Docker and follow the setup based on PDF (check Documentation in DC)
+2. Open `http://localhost:5678` in your browser and set up an owner account.
+3. Import the `.json` file to add the Gmail nodes and Switch node routing for roles (`MEMBER` vs `TRAINER`).
+
 ## Demo Credentials
 Login with these pre-configured credentials:
 - **Email**: `admin@gym.com`

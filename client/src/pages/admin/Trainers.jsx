@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { User, Star, History, X, Info, Pencil, Trash2, Plus, QrCode } from 'lucide-react';
+import { User, Star, History, X, Info, Pencil, Trash2, Plus, QrCode, Mail } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { ROLES } from '../../constants/roles';
 import DataTable from '../../components/common/DataTable';
@@ -228,8 +228,8 @@ export default function Trainers() {
         e.preventDefault();
         if (!formData.name.trim()) return alert('Trainer name is required.');
         if (formMode === 'create' && formData.createLogin) {
-            if (!formData.loginEmail || !formData.loginPassword) {
-                return alert('Login email and password are required to create trainer access.');
+            if (!formData.email) {
+                return alert('Trainer email is required to create trainer access.');
             }
         }
 
@@ -258,20 +258,18 @@ export default function Trainers() {
 
     const openLoginModal = (trainer) => {
         setLoginTrainer(trainer);
-        setLoginEmail(trainer.email || '');
-        setLoginPassword('');
         setShowLoginModal(true);
     };
 
     const handleCreateLogin = (e) => {
         e.preventDefault();
         if (!loginTrainer) return;
-        if (!loginEmail || !loginPassword) {
-            return alert('Login email and password are required.');
+        if (!loginTrainer.email) {
+            return alert('Trainer does not have an email address set. Please edit the trainer first.');
         }
         createLoginMutation.mutate({
             id: loginTrainer.id,
-            creds: { loginEmail, loginPassword }
+            creds: { loginEmail: loginTrainer.email }
         });
     };
 
@@ -367,8 +365,8 @@ export default function Trainers() {
                                 <div className="flex items-center gap-2">
                                     <h3 className="text-xl font-bold text-white">{trainer.name}</h3>
                                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${trainer.type === 'FREELANCER'
-                                            ? 'bg-orange-500/15 text-orange-400 border border-orange-500/30'
-                                            : 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                                        ? 'bg-orange-500/15 text-orange-400 border border-orange-500/30'
+                                        : 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
                                         }`}>
                                         {trainer.type === 'FREELANCER' ? 'Freelance' : 'Full-time'}
                                     </span>
@@ -886,9 +884,7 @@ export default function Trainers() {
                                                         const checked = e.target.checked;
                                                         setFormData((prev) => ({
                                                             ...prev,
-                                                            createLogin: checked,
-                                                            loginEmail: checked ? (prev.loginEmail || prev.email || '') : '',
-                                                            loginPassword: checked ? prev.loginPassword : ''
+                                                            createLogin: checked
                                                         }));
                                                     }}
                                                     className="accent-orange-500 w-4 h-4"
@@ -896,26 +892,19 @@ export default function Trainers() {
                                             </div>
 
                                             {formData.createLogin && (
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                                                    <div>
-                                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Login Email</label>
-                                                        <input
-                                                            type="email"
-                                                            value={formData.loginEmail}
-                                                            onChange={(e) => handleFormChange('loginEmail', e.target.value)}
-                                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
-                                                            placeholder="trainer@login.com"
-                                                        />
+                                                <div className="mt-4 p-4 bg-orange-500/10 border border-orange-500/20 rounded-xl flex items-center gap-3">
+                                                    <div className="w-10 h-10 rounded-full bg-orange-500/20 flex items-center justify-center flex-shrink-0">
+                                                        <Mail size={20} className="text-orange-500" />
                                                     </div>
                                                     <div>
-                                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Temporary Password</label>
-                                                        <input
-                                                            type="password"
-                                                            value={formData.loginPassword}
-                                                            onChange={(e) => handleFormChange('loginPassword', e.target.value)}
-                                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
-                                                            placeholder="Set a temp password"
-                                                        />
+                                                        <p className="text-sm text-orange-400 font-medium w-full">
+                                                            {formData.email ? (
+                                                                <>An activation email will be sent to <strong>{formData.email}</strong>.</>
+                                                            ) : (
+                                                                <>Please enter an email address above first.</>
+                                                            )}
+                                                        </p>
+                                                        <p className="text-xs text-orange-500/70 mt-0.5">They will use this to set their password and log in.</p>
                                                     </div>
                                                 </div>
                                             )}
@@ -998,26 +987,21 @@ export default function Trainers() {
                                     <X size={18} />
                                 </button>
                             </div>
-                            <div className="p-5 space-y-4 bg-[#13151a]">
-                                <div>
-                                    <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Login Email</label>
-                                    <input
-                                        type="email"
-                                        value={loginEmail}
-                                        onChange={(e) => setLoginEmail(e.target.value)}
-                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
-                                        placeholder="trainer@login.com"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Temporary Password</label>
-                                    <input
-                                        type="password"
-                                        value={loginPassword}
-                                        onChange={(e) => setLoginPassword(e.target.value)}
-                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
-                                        placeholder="Set a temp password"
-                                    />
+                            <div className="p-5 bg-[#13151a]">
+                                <div className="p-4 bg-orange-500/10 border border-orange-500/20 rounded-xl flex items-start gap-4">
+                                    <div className="w-10 h-10 rounded-full bg-orange-500/20 flex items-center justify-center flex-shrink-0 mt-1">
+                                        <Mail size={20} className="text-orange-500" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-orange-400">Send Activation Email</h3>
+                                        <p className="text-sm text-orange-400/80 mt-1">
+                                            {loginTrainer?.email ? (
+                                                <>An activation email will be sent to <strong>{loginTrainer.email}</strong> for them to securely set their password.</>
+                                            ) : (
+                                                <span className="text-red-400 font-medium">This trainer does not have an email address on file. Please edit their profile first.</span>
+                                            )}
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                             <div className="p-5 border-t border-white/10 flex items-center justify-end gap-3">
@@ -1030,7 +1014,7 @@ export default function Trainers() {
                                 </button>
                                 <button
                                     type="submit"
-                                    disabled={loginSaving}
+                                    disabled={loginSaving || !loginTrainer?.email}
                                     className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium shadow-lg shadow-emerald-500/20 disabled:opacity-70 transition-colors"
                                 >
                                     {loginSaving ? 'Creating...' : 'Create Login'}

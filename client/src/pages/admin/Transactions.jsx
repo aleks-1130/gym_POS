@@ -18,7 +18,10 @@ export default function Transactions() {
     const fetchHistory = async (page = 1) => {
         setLoading(true);
         try {
-            const res = await axios.get(`http://localhost:5000/api/payments?page=${page}&limit=${LIMIT}`);
+            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+            const res = await axios.get(`http://localhost:5000/api/payments?page=${page}&limit=${LIMIT}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
             if (res.data.meta) {
                 setHistory(res.data.data);
                 setTotalPages(res.data.meta.totalPages);

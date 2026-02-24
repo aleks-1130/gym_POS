@@ -205,9 +205,9 @@ const completeSession = async (req, res) => {
                     resolvedProductId = sourcePaymentItem.productId ? Number(sourcePaymentItem.productId) : null;
                     resolvedName = sourcePaymentItem.name || resolvedName;
                     resolvedCategory = sourcePaymentItem.product?.category || resolvedCategory;
-                    resolvedCostPerUnit = Number(sourcePaymentItem.product?.supplyCost || 0) > 0
-                        ? Number(sourcePaymentItem.product.supplyCost)
-                        : Number(sourcePaymentItem.unitPrice || resolvedCostPerUnit || 0);
+                    // Use unitPrice (what the trainer paid at retail) for commission deduction,
+                    // NOT supplyCost (the gym's internal wholesale cost basis)
+                    resolvedCostPerUnit = Number(sourcePaymentItem.unitPrice || resolvedCostPerUnit || 0);
                     shouldDecrementStock = false; // Stock already decremented at purchase time
 
                     await prisma.paymentItem.update({
@@ -568,9 +568,9 @@ const getSessionMaterialCandidates = async (req, res) => {
         const candidates = items
             .map((item) => {
                 const availableQuantity = Number(item.quantity || 0) - Number(item.returnedQuantity || 0) - Number(item.materialUsedQuantity || 0);
-                const derivedCost = Number(item.product?.supplyCost || 0) > 0
-                    ? Number(item.product.supplyCost)
-                    : Number(item.unitPrice || 0);
+                // Use unitPrice (what the trainer paid at retail) for deduction display,
+                // NOT supplyCost (the gym's internal wholesale cost basis)
+                const derivedCost = Number(item.unitPrice || 0);
                 return {
                     paymentItemId: item.id,
                     paymentId: item.paymentId,

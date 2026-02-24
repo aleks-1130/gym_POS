@@ -22,6 +22,9 @@ model User {
   baseSalary  Float        @default(0.0)
   trainerId   Int?         @unique
   createdAt   DateTime     @default(now())
+  status      String       @default("ACTIVE")
+  activationToken String?  @unique
+  activationExpires DateTime?
   memberNotes MemberNote[]
   payments    Payment[]    @relation("PaymentCashier")
   trainer     Trainer?     @relation("TrainerUser", fields: [trainerId], references: [id])
