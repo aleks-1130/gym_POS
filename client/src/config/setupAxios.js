@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { API_BASE_URL, withApiBase } from './api';
 
-const LOCAL_API_PREFIX = 'http://localhost:5000';
+const LOCAL_API_PREFIX = '';
 
 if (API_BASE_URL) {
     axios.defaults.baseURL = API_BASE_URL;

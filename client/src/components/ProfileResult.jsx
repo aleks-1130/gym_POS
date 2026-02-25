@@ -48,7 +48,7 @@ export default function ProfileResult({ logId: propLogId, showHistory = false, s
 
         try {
             const token = localStorage.getItem('token');
-            const res = await axios.get(`http://localhost:5000/api/access/logs/${logId}`, {
+            const res = await axios.get(`/api/access/logs/${logId}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setLog(res.data);

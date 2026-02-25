@@ -1,6 +1,7 @@
 import React from 'react';
 import { Line, Doughnut } from 'react-chartjs-2';
 import { TrendingUp, DollarSign, Activity, ShoppingBag } from 'lucide-react';
+import DataTable from '../common/DataTable';
 
 const FinancialsView = ({ data, dateRange }) => {
     const { summary, trends, topCategories, revenueBySource } = data;
@@ -261,39 +262,47 @@ const FinancialsView = ({ data, dateRange }) => {
                 <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                     <ShoppingBag className="text-purple-400" /> Retail Profitability by Category
                 </h3>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                        <thead>
-                            <tr className="text-xs text-gray-500 border-b border-white/10">
-                                <th className="pb-3 font-medium uppercase min-w-[150px]">Category</th>
-                                <th className="pb-3 font-medium uppercase text-right">Revenue</th>
-                                <th className="pb-3 font-medium uppercase text-right">COGS</th>
-                                <th className="pb-3 font-medium uppercase text-right">Gross Profit</th>
-                                <th className="pb-3 font-medium uppercase text-right">Margin</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {topCategories.map((cat, idx) => {
-                                const margin = cat.revenue > 0 ? ((cat.profit / cat.revenue) * 100).toFixed(1) : 0;
+                <DataTable
+                    columns={[
+                        {
+                            header: "Category",
+                            accessor: (row) => <span className="font-bold text-white">{row.category}</span>
+                        },
+                        {
+                            header: "Revenue",
+                            accessor: (row) => <span className="text-gray-300">{formatPrice(row.revenue)}</span>,
+                            className: "text-right",
+                            cellClassName: "text-right"
+                        },
+                        {
+                            header: "COGS",
+                            accessor: (row) => <span className="text-gray-400">{formatPrice(row.cogs || 0)}</span>,
+                            className: "text-right",
+                            cellClassName: "text-right"
+                        },
+                        {
+                            header: "Gross Profit",
+                            accessor: (row) => <span className="text-emerald-400 font-bold">{formatPrice(row.profit)}</span>,
+                            className: "text-right",
+                            cellClassName: "text-right"
+                        },
+                        {
+                            header: "Margin",
+                            accessor: (row) => {
+                                const margin = row.revenue > 0 ? ((row.profit / row.revenue) * 100).toFixed(1) : 0;
                                 return (
-                                    <tr key={idx} className="border-b border-white/5 hover:bg-white/5 transition-colors group">
-                                        <td className="py-3 items-center gap-3">
-                                            <span className="font-bold text-white">{cat.category}</span>
-                                        </td>
-                                        <td className="py-3 text-right text-gray-300">{formatPrice(cat.revenue)}</td>
-                                        <td className="py-3 text-right text-gray-400">{formatPrice(cat.cogs || 0)}</td>
-                                        <td className="py-3 text-right font-bold text-emerald-400">{formatPrice(cat.profit)}</td>
-                                        <td className="py-3 text-right">
-                                            <span className={`px-2 py-1 rounded text-xs font-bold ${parseFloat(margin) > 20 ? 'bg-emerald-500/20 text-emerald-400' : parseFloat(margin) > 0 ? 'bg-amber-500/20 text-amber-400' : 'bg-rose-500/20 text-rose-400'}`}>
-                                                {margin}%
-                                            </span>
-                                        </td>
-                                    </tr>
-                                )
-                            })}
-                        </tbody>
-                    </table>
-                </div>
+                                    <span className={`px-2 py-1 rounded text-xs font-bold ${parseFloat(margin) > 20 ? 'bg-emerald-500/20 text-emerald-400' : parseFloat(margin) > 0 ? 'bg-amber-500/20 text-amber-400' : 'bg-rose-500/20 text-rose-400'}`}>
+                                        {margin}%
+                                    </span>
+                                );
+                            },
+                            className: "text-right",
+                            cellClassName: "text-right"
+                        }
+                    ]}
+                    data={topCategories}
+                    className="border-none shadow-none bg-transparent"
+                />
             </div>
         </div>
     );

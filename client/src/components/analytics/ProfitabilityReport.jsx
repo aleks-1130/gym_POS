@@ -12,6 +12,7 @@ import {
     Legend,
     ArcElement,
     BarElement,
+    Filler
 } from 'chart.js';
 
 ChartJS.register(
@@ -23,7 +24,8 @@ ChartJS.register(
     Tooltip,
     Legend,
     ArcElement,
-    BarElement
+    BarElement,
+    Filler
 );
 
 const ProfitabilityReport = ({ data }) => {

@@ -23,7 +23,7 @@ export const SettingsProvider = ({ children }) => {
             // Actually, reports are viewed by Admin/Owner who are logged in.
             // But 'getSettings' might be public in backend? I made it public/protected?
             // Route was: router.get('/', getSettings); // in Step 3015. It was unprotected (no middleware).
-            const res = await axios.get('http://localhost:5000/api/settings');
+            const res = await axios.get('/api/settings');
             if (res.data) {
                 setSettings(res.data);
             }
@@ -37,7 +37,7 @@ export const SettingsProvider = ({ children }) => {
     const updateSettings = async (newSettings) => {
         try {
             const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-            const res = await axios.post('http://localhost:5000/api/settings', newSettings, {
+            const res = await axios.post('/api/settings', newSettings, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setSettings(res.data);

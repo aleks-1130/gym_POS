@@ -23,33 +23,34 @@ app.get('/', (req, res) => {
 });
 
 // --- MODULE ROUTES ---
-app.use('/api/auth', require('./src/routes/authRoutes'));
-app.use('/api/dashboard', require('./src/routes/dashboardRoutes'));
-app.use('/api/admin', require('./src/routes/adminRoutes'));
-app.use('/api/staff', require('./src/routes/staffRoutes'));
+// --- MODULE ROUTES ---
+app.use('/api/auth', require('./src/features/auth/authRoutes'));
+app.use('/api/dashboard', require('./src/features/dashboard/dashboardRoutes'));
+app.use('/api/admin', require('./src/features/admin/adminRoutes'));
+app.use('/api/staff', require('./src/features/admin/staffRoutes'));
 // Member Routes (includes profile, generic booking)
-app.use('/api/members', require('./src/routes/memberRoutes'));
+app.use('/api/members', require('./src/features/members/memberRoutes'));
 // Shop Routes (checkout, orders - mounted at /api/members for compatibility)
-app.use('/api/members', require('./src/routes/shopRoutes'));
-app.use('/api/payments', require('./src/routes/paymentRoutes'));
-app.use('/api/pos', require('./src/routes/paymentRoutes')); // Alias for POS settings frontend
-app.use('/api/access', require('./src/routes/accessRoutes'));
-app.use('/api/products', require('./src/routes/productRoutes'));
-app.use('/api/inventory', require('./src/routes/productRoutes')); // Alias for restock
-app.use('/api/suppliers', require('./src/routes/supplierRoutes'));
-app.use('/api/trainers', require('./src/routes/trainerRoutes'));
-app.use('/api/trainer', require('./src/routes/trainerRoutes')); // For /me routes
-app.use('/api/training-sessions', require('./src/routes/trainingSessionRoutes'));
-app.use('/api/classes', require('./src/routes/classRoutes'));
-app.use('/api/loyalty', require('./src/routes/loyaltyRoutes'));
-app.use('/api/expenses', require('./src/routes/expenseRoutes'));
-app.use('/api/notifications', require('./src/routes/notificationRoutes'));
-app.use('/api/analytics', require('./src/routes/analyticsRoutes'));
-app.use('/api/seed', require('./src/routes/seedRoutes'));
-app.use('/api/payment-methods', require('./src/routes/paymentMethodRoutes'));
-app.use('/api/settings', require('./src/routes/settingsRoutes'));
-app.use('/api/plans', require('./src/routes/planRoutes'));
-app.use('/api/owner/projection', require('./src/routes/projectionRoutes'));
+app.use('/api/members', require('./src/features/pos/shopRoutes'));
+app.use('/api/payments', require('./src/features/pos/paymentRoutes'));
+app.use('/api/pos', require('./src/features/pos/paymentRoutes')); // Alias for POS settings frontend
+app.use('/api/access', require('./src/features/members/accessRoutes'));
+app.use('/api/products', require('./src/features/inventory/productRoutes'));
+app.use('/api/inventory', require('./src/features/inventory/productRoutes')); // Alias for restock
+app.use('/api/suppliers', require('./src/features/inventory/supplierRoutes'));
+app.use('/api/trainers', require('./src/features/training/trainerRoutes'));
+app.use('/api/trainer', require('./src/features/training/trainerRoutes')); // For /me routes
+app.use('/api/training-sessions', require('./src/features/training/trainingSessionRoutes'));
+app.use('/api/classes', require('./src/features/training/classRoutes'));
+app.use('/api/loyalty', require('./src/features/pos/loyaltyRoutes'));
+app.use('/api/expenses', require('./src/features/analytics/expenseRoutes'));
+app.use('/api/notifications', require('./src/features/dashboard/notificationRoutes'));
+app.use('/api/analytics', require('./src/features/analytics/analyticsRoutes'));
+app.use('/api/seed', require('./src/features/admin/seedRoutes'));
+app.use('/api/payment-methods', require('./src/features/members/paymentMethodRoutes'));
+app.use('/api/settings', require('./src/features/settings/settingsRoutes'));
+app.use('/api/plans', require('./src/features/pos/planRoutes'));
+app.use('/api/owner/projection', require('./src/features/analytics/projectionRoutes'));
 
 // --- INVENTORY / PRODUCT / SUPPLIER ROUTES ---
 // Moved to src/routes/productRoutes.js and src/routes/supplierRoutes.js
@@ -68,13 +69,13 @@ app.listen(PORT, '0.0.0.0', async () => {
             console.log("Force Restart (Production Switch): " + new Date().toISOString());
             await prisma.user.create({
                 data: {
-                    email: 'admin@gym.com',
-                    password: await bcrypt.hash('password123', 10),
+                    email: process.env.INITIAL_ADMIN_EMAIL || 'admin@gym.com',
+                    password: await bcrypt.hash(process.env.INITIAL_ADMIN_PASSWORD || 'password123', 10),
                     name: 'Admin User',
                     role: 'ADMIN'
                 }
             });
-            console.log("Database seeded! Admin: admin@gym.com / password123");
+            console.log(`Database seeded! Admin: ${process.env.INITIAL_ADMIN_EMAIL || 'admin@gym.com'}`);
         }
     } catch (e) {
         const msg = (e && e.message) ? e.message : '';
