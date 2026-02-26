@@ -1,0 +1,202 @@
+{
+  "1": {
+    "availabilityByDay": {},
+    "availabilityDays": [],
+    "availabilityStart": "",
+    "availabilityEnd": "",
+    "availabilityIntervalMinutes": 30
+  },
+  "91": {
+    "availabilityByDay": {
+      "1": {
+        "start": "07:00",
+        "end": "11:00"
+      },
+      "3": {
+        "start": "13:00",
+        "end": "20:00"
+      },
+      "5": {
+        "start": "07:00",
+        "end": "20:00"
+      }
+    },
+    "availabilityDays": [
+      1,
+      3,
+      5
+    ],
+    "availabilityStart": "07:00",
+    "availabilityEnd": "11:00",
+    "availabilityIntervalMinutes": 30
+  },
+  "98": {
+    "availabilityByDay": {
+      "2": {
+        "start": "10:00",
+        "end": "17:00"
+      },
+      "3": {
+        "start": "10:00",
+        "end": "17:00"
+      },
+      "4": {
+        "start": "10:00",
+        "end": "17:00"
+      }
+    },
+    "availabilityDays": [
+      2,
+      3,
+      4
+    ],
+    "availabilityStart": "10:00",
+    "availabilityEnd": "17:00",
+    "availabilityIntervalMinutes": 30
+  },
+  "105": {
+    "availabilityByDay": {
+      "0": {
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "1": {
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "2": {
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "3": {
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "4": {
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "5": {
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "6": {
+        "start": "09:00",
+        "end": "18:00"
+      }
+    },
+    "availabilityDays": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "availabilityStart": "09:00",
+    "availabilityEnd": "18:00",
+    "availabilityIntervalMinutes": 30
+  },
+  "108": {
+    "availabilityByDay": {
+      "1": {
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "2": {
+        "start": "09:00",
+        "end": "18:00"
+      }
+    },
+    "availabilityDays": [
+      1,
+      2
+    ],
+    "availabilityStart": "09:00",
+    "availabilityEnd": "18:00",
+    "availabilityIntervalMinutes": 30
+  },
+  "109": {
+    "availabilityByDay": {
+      "1": {
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "2": {
+        "start": "09:00",
+        "end": "18:00"
+      }
+    },
+    "availabilityDays": [
+      1,
+      2
+    ],
+    "availabilityStart": "09:00",
+    "availabilityEnd": "18:00",
+    "availabilityIntervalMinutes": 30
+  },
+  "122": {
+    "availabilityByDay": {
+      "1": {
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "2": {
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "3": {
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "4": {
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "5": {
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "6": {
+        "start": "09:00",
+        "end": "18:00"
+      }
+    },
+    "availabilityDays": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "availabilityStart": "09:00",
+    "availabilityEnd": "18:00",
+    "availabilityIntervalMinutes": 30
+  },
+  "123": {
+    "availabilityByDay": {
+      "2": {
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "3": {
+        "start": "09:00",
+        "end": "18:00"
+      },
+      "4": {
+        "start": "09:00",
+        "end": "18:00"
+      }
+    },
+    "availabilityDays": [
+      2,
+      3,
+      4
+    ],
+    "availabilityStart": "09:00",
+    "availabilityEnd": "18:00",
+    "availabilityIntervalMinutes": 30
+  }
+}

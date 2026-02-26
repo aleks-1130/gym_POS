@@ -3,7 +3,8 @@
   "short_name": "FitOS",
   "description": "Progressive Web App for gym membership management, class scheduling, and fitness tracking",
   "start_url": "/",
-  "display": "standalone",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
   "scope": "/",
   "orientation": "portrait-primary",
   "background_color": "#0F1115",
@@ -63,21 +64,5 @@
       ]
     }
   ],
-  "categories": ["fitness", "health", "productivity"],
-  "screenshots": [
-    {
-      "src": "/screenshot-1.png",
-      "sizes": "540x720",
-      "type": "image/png",
-      "form_factor": "narrow",
-      "label": "FitOS Dashboard"
-    },
-    {
-      "src": "/screenshot-2.png",
-      "sizes": "1280x720",
-      "type": "image/png",
-      "form_factor": "wide",
-      "label": "FitOS Dashboard Wide"
-    }
-  ]
+  "categories": ["fitness", "health", "productivity"]
 }

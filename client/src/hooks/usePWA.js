@@ -4,8 +4,13 @@ export const usePWA = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isInstallable, setIsInstallable] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isInstalled, setIsInstalled] = useState(false);
+  const [isDismissed, setIsDismissed] = useState(() => localStorage.getItem('pwa_install_dismissed') === '1');
 
   useEffect(() => {
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    setIsInstalled(isStandalone);
+
     // Register service worker
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker
@@ -18,27 +23,31 @@ export const usePWA = () => {
         });
     }
 
-    // Handle online/offline status
-    window.addEventListener('online', () => setIsOnline(true));
-    window.addEventListener('offline', () => setIsOnline(false));
-
-    // Handle app installation
-    window.addEventListener('beforeinstallprompt', e => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    const handleBeforeInstallPrompt = (e) => {
       e.preventDefault();
       setDeferredPrompt(e);
       setIsInstallable(true);
-    });
-
-    window.addEventListener('appinstalled', () => {
+    };
+    const handleAppInstalled = () => {
       console.log('PWA was installed');
       setIsInstallable(false);
-    });
+      setDeferredPrompt(null);
+      setIsInstalled(true);
+    };
+
+    // Handle online/offline status
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
 
     return () => {
-      window.removeEventListener('online', () => setIsOnline(true));
-      window.removeEventListener('offline', () => setIsOnline(false));
-      window.removeEventListener('beforeinstallprompt', () => {});
-      window.removeEventListener('appinstalled', () => {});
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
     };
   }, []);
 
@@ -53,10 +62,24 @@ export const usePWA = () => {
     setIsInstallable(false);
   };
 
+  const dismissInstallPrompt = () => {
+    setIsDismissed(true);
+    localStorage.setItem('pwa_install_dismissed', '1');
+  };
+
+  const resetInstallPromptDismissal = () => {
+    setIsDismissed(false);
+    localStorage.removeItem('pwa_install_dismissed');
+  };
+
   return {
     isOnline,
     isInstallable,
+    isInstalled,
+    isDismissed,
     installApp,
-    deferredPrompt
+    deferredPrompt,
+    dismissInstallPrompt,
+    resetInstallPromptDismissal
   };
 };
