@@ -38,6 +38,8 @@ export default function TrainerBooking() {
         const now = new Date();
         return new Date(now.getFullYear(), now.getMonth(), 1);
     });
+    const [showSuccessModal, setShowSuccessModal] = useState(false);
+    const [bookingResult, setBookingResult] = useState(null);
 
     useEffect(() => {
         fetchTrainers();
@@ -257,7 +259,14 @@ export default function TrainerBooking() {
                 };
                 await axios.post(endpoint, payload, { headers });
             }
-            alert(`Booked ${selectedDates.length} training session${selectedDates.length > 1 ? 's' : ''} successfully!`);
+            setBookingResult({
+                count: selectedDates.length,
+                trainerName: selectedTrainer.name,
+                dates: selectedDates,
+                paymentMethod: bookingData.paymentMethod
+            });
+            setShowSuccessModal(true);
+
             setShowBookingModal(false);
             setSelectedTrainer(null);
             setBookingData({ duration: 60, notes: '', paymentMethod: 'CASH' });
@@ -265,6 +274,7 @@ export default function TrainerBooking() {
             setSelectedTimesByDate({});
             fetchTrainers();
             fetchMemberSessions();
+            setActiveTab('bookings'); // Auto-switch to bookings tab
         } catch (error) {
             const errorMessage = error.response?.data?.error || error.response?.data?.message || "Failed to book training session";
             const errorDetail = error.response?.data?.detail;
@@ -671,74 +681,94 @@ export default function TrainerBooking() {
                             You have no trainer bookings yet.
                         </div>
                     ) : (
-                        <div className="space-y-3">
-                              {memberSessions.slice(0, 8).map((session) => {
-                                  const sessionDate = new Date(session.date);
-                                  const isUpcoming = sessionDate >= now;
-                                  const hoursUntil = (sessionDate.getTime() - now.getTime()) / (1000 * 60 * 60);
-                                  const canRequestReschedule = isUpcoming && hoursUntil >= 24 && session.status === 'SCHEDULED';
-                                  return (
-                                      <div key={session.id} className="bg-white/5 border border-white/10 rounded-xl p-3 sm:p-4">
-                                        <div className="flex items-start justify-between gap-3">
-                                            <div>
-                                                <p className="text-white font-semibold text-sm sm:text-base">{session.trainer?.name || 'Trainer'}</p>
-                                                <p className="text-text-muted text-xs sm:text-sm mt-0.5">
-                                                    {sessionDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
-                                                    {' at '}
-                                                    {sessionDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
-                                                </p>
+                        <div className="space-y-6">
+                            {/* Upcoming Sessions */}
+                            {upcomingSessions.length > 0 && (
+                                <div className="space-y-3">
+                                    <h3 className="text-sm font-bold text-primary flex items-center gap-2">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                                        Upcoming Sessions
+                                    </h3>
+                                    {upcomingSessions.map((session) => {
+                                        const sessionDate = new Date(session.date);
+                                        const hoursUntil = (sessionDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+                                        const canRequestReschedule = hoursUntil >= 24 && session.status === 'SCHEDULED';
+                                        return (
+                                            <div key={session.id} className="bg-white/5 border border-white/10 rounded-xl p-3 sm:p-4 hover:border-primary/30 transition-all">
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div>
+                                                        <p className="text-white font-semibold text-sm sm:text-base">{session.trainer?.name || 'Trainer'}</p>
+                                                        <p className="text-text-muted text-xs sm:text-sm mt-0.5">
+                                                            {sessionDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                                                            {' at '}
+                                                            {sessionDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                                                        </p>
+                                                    </div>
+                                                    <span className={`text-[10px] uppercase tracking-wide font-bold px-2 py-1 rounded-md border ${session.status === 'CANCELLED' || session.status === 'NO_SHOW'
+                                                        ? 'bg-red-500/10 text-red-400 border-red-500/30'
+                                                        : session.status === 'RESCHEDULED'
+                                                            ? 'bg-primary/10 text-primary border-primary/30'
+                                                            : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                                        }`}>
+                                                        {session.status}
+                                                    </span>
+                                                </div>
+                                                <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs">
+                                                    <span className="px-2 py-1 rounded-md bg-white/10 text-text-muted">{session.duration} min</span>
+                                                    <span className="px-2 py-1 rounded-md bg-white/10 text-text-muted">{formatPrice(session.price)}</span>
+                                                    <span className={`px-2 py-1 rounded-md border ${session.paymentStatus === 'PAID'
+                                                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                                        : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                                                        }`}>
+                                                        {session.paymentStatus || 'UNPAID'}
+                                                    </span>
+                                                </div>
+                                                <div className="mt-4 flex items-center justify-end gap-2">
+                                                    {canRequestReschedule && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); handleOpenRescheduleModal(session); }}
+                                                            className="px-3 py-1.5 bg-primary/10 text-primary border border-primary/30 rounded-lg text-xs font-bold hover:bg-primary/20 transition-all"
+                                                        >
+                                                            Reschedule
+                                                        </button>
+                                                    )}
+                                                    {session.status !== 'CANCELLED' && session.status !== 'NO_SHOW' && (
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); handleCancelSession(session.id); }}
+                                                            className="px-3 py-1.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold hover:bg-red-500/20 transition-all"
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </div>
-                                              <span className={`text-[10px] uppercase tracking-wide font-bold px-2 py-1 rounded-md border ${session.status === 'CANCELLED' || session.status === 'NO_SHOW'
-                                                  ? 'bg-red-500/10 text-red-400 border-red-500/30'
-                                                  : session.status === 'RESCHEDULED'
-                                                      ? 'bg-primary/10 text-primary border-primary/30'
-                                                      : isUpcoming
-                                                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                                                          : 'bg-white/10 text-text-muted border-white/20'
-                                                  }`}>
-                                                  {session.status === 'CANCELLED'
-                                                      ? 'CANCELLED'
-                                                      : session.status === 'NO_SHOW'
-                                                          ? 'NO SHOW'
-                                                          : session.status === 'RESCHEDULED'
-                                                              ? 'RESCHEDULED'
-                                                              : (isUpcoming ? 'Check-In' : 'Past')}
-                                              </span>
-                                          </div>
-                                          <div className="mt-2 flex items-center justify-end gap-2">
-                                              {canRequestReschedule && (
-                                                  <button
-                                                      onClick={() => handleOpenRescheduleModal(session)}
-                                                      className="px-3 py-1 bg-primary/10 text-primary border border-primary/30 rounded-lg text-xs font-bold hover:bg-primary/20 transition-all"
-                                                  >
-                                                      Reschedule
-                                                  </button>
-                                              )}
-                                              {isUpcoming && session.status !== 'CANCELLED' && session.status !== 'NO_SHOW' && (
-                                                  <button
-                                                      onClick={() => handleCancelSession(session.id)}
-                                                      className="px-3 py-1 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold hover:bg-red-500/20 transition-all"
-                                                >
-                                                    Cancel
-                                                </button>
-                                            )}
-                                        </div>
-                                        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs">
-                                            <span className="px-2 py-1 rounded-md bg-white/10 text-text-muted">{session.duration} min</span>
-                                            <span className="px-2 py-1 rounded-md bg-white/10 text-text-muted">{formatPrice(session.price)}</span>
-                                            <span className={`px-2 py-1 rounded-md border ${session.paymentStatus === 'PAID'
-                                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                                                : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                                                }`}>
-                                                {session.paymentStatus || 'UNPAID'}
-                                            </span>
-                                            <span className="px-2 py-1 rounded-md bg-white/10 text-text-muted">{session.paymentMethod || 'N/A'}</span>
-                                        </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
+                            {/* Past Sessions */}
+                            {memberSessions.filter(s => new Date(s.date) < now).length > 0 && (
+                                <div className="space-y-3">
+                                    <h3 className="text-sm font-bold text-text-muted">Past Sessions</h3>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        {memberSessions.filter(s => new Date(s.date) < now).slice(0, 6).map((session) => {
+                                            const sessionDate = new Date(session.date);
+                                            return (
+                                                <div key={session.id} className="bg-white/5 border border-white/5 rounded-xl p-3 opacity-60">
+                                                    <p className="text-white font-medium text-xs sm:text-sm">{session.trainer?.name || 'Trainer'}</p>
+                                                    <p className="text-[10px] text-text-muted mt-0.5">
+                                                        {sessionDate.toLocaleDateString()} at {sessionDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                                                    </p>
+                                                    <div className="mt-2 flex items-center gap-2">
+                                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-text-muted">{session.status}</span>
+                                                        <span className={`text-[10px] px-1.5 py-0.5 rounded border ${session.paymentStatus === 'PAID' ? 'border-emerald-500/20 text-emerald-400' : 'border-amber-500/20 text-amber-400'}`}>{session.paymentStatus}</span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
-                                );
-                            })}
-                            {memberSessions.length > 8 && (
-                                <p className="text-xs text-text-muted">Showing latest 8 sessions.</p>
+                                </div>
                             )}
                         </div>
                     )}
@@ -1449,6 +1479,47 @@ export default function TrainerBooking() {
                     animation: slide-up 0.3s ease-out;
                 }
             `}</style>
+            {/* Success Modal */}
+            {showSuccessModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div
+                        className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+                        onClick={() => setShowSuccessModal(false)}
+                    />
+                    <div className="relative w-full max-w-sm bg-surface rounded-3xl border border-primary/20 p-6 shadow-2xl animate-in zoom-in duration-300 text-center">
+                        <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-primary/20">
+                            <span className="material-icons-round text-5xl text-primary">check_circle</span>
+                        </div>
+                        <h2 className="text-2xl font-bold text-white mb-2">Booking Success!</h2>
+                        <p className="text-text-muted text-sm mb-6 px-4">
+                            You've successfully booked {bookingResult?.count} session{bookingResult?.count > 1 ? 's' : ''} with <strong>{bookingResult?.trainerName}</strong>.
+                        </p>
+
+                        <div className="bg-white/5 rounded-2xl p-4 mb-6 border border-white/5 text-left">
+                            <div className="flex justify-between items-center mb-2">
+                                <span className="text-xs text-text-muted">Payment Method</span>
+                                <span className="text-xs font-bold text-primary">{bookingResult?.paymentMethod === 'CASH' ? 'Pay at Front Desk' : bookingResult?.paymentMethod}</span>
+                            </div>
+                            <div className="space-y-1">
+                                <span className="text-xs text-text-muted block">Booked Dates</span>
+                                {bookingResult?.dates?.map((date, idx) => (
+                                    <div key={idx} className="text-sm text-white font-medium">
+                                        {new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => setShowSuccessModal(false)}
+                            className="w-full py-4 bg-primary text-background rounded-2xl font-bold text-base hover:bg-primary-hover transition-all shadow-lg active:scale-95"
+                        >
+                            Got it!
+                        </button>
+                    </div>
+                </div>
+            )}
         </div >
     );
 }

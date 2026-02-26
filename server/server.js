@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const path = require('path');
 const http = require('http');
 const prisma = require('./src/config/prisma');
@@ -11,7 +12,11 @@ const logAudit = require('./src/services/auditService');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+app.use(helmet());
+app.use(cors({
+    origin: process.env.CORS_ALLOWED_ORIGINS ? process.env.CORS_ALLOWED_ORIGINS.split(',') : '*',
+    credentials: true
+}));
 app.use(express.json());
 
 // Serve static files (uploads) - ensure the folder exists or is handled

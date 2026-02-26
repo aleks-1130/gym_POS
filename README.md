@@ -18,12 +18,6 @@ A full-stack Gym Management System built with React, Node.js, Prisma, and Tailwi
 
 ### 1. Environment Variables (.env)
 We use a shared PostgreSQL database. Due to security, the connection string is not in the repo.
-1.  Navigate to the `server/` directory.
-2.  Copy `.env.example` to a new file named `.env`.
-3.  Fill in the keys:
-    *   **PORT**: `5000`
-    *   **DATABASE_URL**: *(Ask the project lead for this key)*
-    *   **JWT_SECRET**: *(Ask the project lead for this key)*
 
 ### 2. Setup & Start Backend
 Open a terminal and run:
