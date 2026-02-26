@@ -27,6 +27,9 @@ export default function Trainers() {
     const [viewMode, setViewMode] = useState(null); // 'profile' or 'sessions'
     const [showForm, setShowForm] = useState(false);
     const [formMode, setFormMode] = useState('create'); // create | edit
+    const [activeTab, setActiveTab] = useState('TRAINERS'); // TRAINERS or RESCHEDULE
+    const [resolveModalSession, setResolveModalSession] = useState(null);
+    const [resolveForm, setResolveForm] = useState({ action: 'MOVE', date: '', time: '', note: '' });
     const [showLoginModal, setShowLoginModal] = useState(false);
     const [loginTrainer, setLoginTrainer] = useState(null);
     const [loginEmail, setLoginEmail] = useState('');
@@ -62,6 +65,17 @@ export default function Trainers() {
             const res = await axios.get('/api/trainers');
             return res.data;
         }
+    });
+
+    const { data: trainerChangeRequests = [], isLoading: requestsLoading } = useQuery({
+        queryKey: ['trainer-change-requests'],
+        queryFn: async () => {
+            const res = await axios.get('/api/staff/training-sessions/trainer-change-requests', {
+                params: { status: 'PENDING' }
+            });
+            return res.data || [];
+        },
+        enabled: isAdmin // fetch always so we can show the badge
     });
 
     const { data: sessions = [], isLoading: sessionsLoading } = useQuery({
@@ -110,6 +124,20 @@ export default function Trainers() {
         },
         onError: (error) => {
             alert(error?.response?.data?.error || 'Failed to delete trainer.');
+        }
+    });
+
+    const resolveRequestMutation = useMutation({
+        mutationFn: async (payload) => {
+            return axios.post(`/api/staff/training-sessions/${resolveModalSession.id}/trainer-change-request/resolve`, payload);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries(['trainer-change-requests']);
+            setResolveModalSession(null);
+            alert('Trainer change request resolved.');
+        },
+        onError: (error) => {
+            alert(error?.response?.data?.error || 'Failed to resolve request.');
         }
     });
 
@@ -273,6 +301,19 @@ export default function Trainers() {
         });
     };
 
+    const handleSubmitResolution = () => {
+        if (!resolveModalSession) return;
+        const payload = { action: resolveForm.action, note: resolveForm.note };
+        if (payload.action === 'MOVE') {
+            if (!resolveForm.date || !resolveForm.time) {
+                return alert('Date and time are required for MOVE action.');
+            }
+            payload.date = resolveForm.date;
+            payload.time = resolveForm.time;
+        }
+        resolveRequestMutation.mutate(payload);
+    };
+
     if (trainersLoading) {
         return (
             <div className="flex items-center justify-center min-h-[50vh]">
@@ -289,6 +330,12 @@ export default function Trainers() {
                     <p className="text-text-muted mt-1">Create, update, and manage trainer profiles and sessions</p>
                 </div>
                 <div className="flex flex-wrap gap-3">
+                    <button
+                        onClick={() => setActiveTab(activeTab === 'RESCHEDULE' ? 'TRAINERS' : 'RESCHEDULE')}
+                        className={`px-4 py-2 rounded-xl border transition-all text-sm font-semibold flex items-center gap-2 ${activeTab === 'RESCHEDULE' ? 'bg-primary text-background border-primary' : 'bg-surfaceHighlight text-white border-white/10 hover:border-white/20'}`}
+                    >
+                        Reschedules {trainerChangeRequests.length > 0 && <span className={`text-[10px] px-2 py-0.5 rounded-full ${activeTab === 'RESCHEDULE' ? 'bg-background/20 font-black' : 'bg-red-500 text-white font-black'}`}>{trainerChangeRequests.length}</span>}
+                    </button>
                     <div className="px-4 py-2 rounded-xl bg-surfaceHighlight border border-white/10 text-sm text-text-secondary">
                         <span className="text-white font-semibold">{totalTrainers}</span> Trainers
                     </div>
@@ -311,126 +358,191 @@ export default function Trainers() {
                 </div>
             </header>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                {trainers.map(trainer => (
-                    <div key={trainer.id} className="bg-surface p-5 rounded-2xl border border-white/5 shadow-sm hover:shadow-lg transition-all relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-28 h-28 bg-primary/5 rounded-full -mr-16 -mt-16 blur-3xl pointer-events-none"></div>
+            {activeTab === 'RESCHEDULE' ? (
+                <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
+                    <div className="px-6 py-4 border-b border-white/10">
+                        <h3 className="text-white font-bold">Trainer Change Requests</h3>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left text-sm text-text-secondary">
+                            <thead className="bg-white/5 text-text-muted uppercase text-xs font-bold tracking-wider">
+                                <tr>
+                                    <th className="px-6 py-4">Session</th>
+                                    <th className="px-6 py-4">Member</th>
+                                    <th className="px-6 py-4">Trainer</th>
+                                    <th className="px-6 py-4">Reason</th>
+                                    <th className="px-6 py-4">Preferred</th>
+                                    <th className="px-6 py-4">Requested</th>
+                                    <th className="px-6 py-4">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                                {trainerChangeRequests.length === 0 && (
+                                    <tr><td colSpan="7" className="p-6 text-center text-text-muted">No pending trainer change requests.</td></tr>
+                                )}
+                                {trainerChangeRequests.map((session) => (
+                                    <tr key={session.id} className="hover:bg-white/5 transition-colors">
+                                        <td className="px-6 py-4 text-white font-medium">
+                                            {new Date(session.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(session.date).toLocaleTimeString()}</span>
+                                        </td>
+                                        <td className="px-6 py-4 text-white">
+                                            {session.member ? `${session.member.firstName} ${session.member.lastName}` : 'N/A'}
+                                        </td>
+                                        <td className="px-6 py-4 text-white">{session.trainer?.name || 'N/A'}</td>
+                                        <td className="px-6 py-4 text-white">
+                                            <p className="text-xs max-w-[220px] truncate" title={session.trainerChangeRequest?.request?.reason || ''}>
+                                                {session.trainerChangeRequest?.request?.reason || 'No reason provided'}
+                                            </p>
+                                        </td>
+                                        <td className="px-6 py-4 text-white">
+                                            {session.trainerChangeRequest?.request?.preferred
+                                                ? new Date(session.trainerChangeRequest.request.preferred).toLocaleString()
+                                                : <span className="text-text-muted">None</span>}
+                                        </td>
+                                        <td className="px-6 py-4 text-white">
+                                            {session.trainerChangeRequest?.request?.requestedAt
+                                                ? new Date(session.trainerChangeRequest.request.requestedAt).toLocaleString()
+                                                : 'Unknown'}
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <button
+                                                onClick={() => {
+                                                    setResolveModalSession(session);
+                                                    setResolveForm({ action: 'MOVE', date: '', time: '', note: '' });
+                                                }}
+                                                className="text-xs font-bold px-3 py-1 rounded-lg border border-blue-500/30 text-blue-300 hover:bg-blue-500/10"
+                                            >
+                                                Resolve
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                    {trainers.map(trainer => (
+                        <div key={trainer.id} className="bg-surface p-5 rounded-2xl border border-white/5 shadow-sm hover:shadow-lg transition-all relative overflow-hidden">
+                            <div className="absolute top-0 right-0 w-28 h-28 bg-primary/5 rounded-full -mr-16 -mt-16 blur-3xl pointer-events-none"></div>
 
-                        <div className="absolute top-4 right-4 flex gap-2 z-20 pointer-events-auto">
-                            {isAdmin && (
-                                <>
-                                    <button
-                                        onClick={() => setQrTrainer(trainer)}
-                                        className="w-9 h-9 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-blue-300 transition-all"
-                                        title="View trainer QR"
-                                    >
-                                        <QrCode size={16} />
-                                    </button>
-                                    <button
-                                        onClick={() => openEditForm(trainer)}
-                                        className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-text-muted hover:text-white transition-all"
-                                        title="Edit trainer"
-                                    >
-                                        <Pencil size={16} />
-                                    </button>
-                                    <button
-                                        onClick={() => openLoginModal(trainer)}
-                                        className="w-9 h-9 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 transition-all"
-                                        title="Create trainer login"
-                                    >
-                                        <User size={16} />
-                                    </button>
-                                    <button
-                                        onClick={() => handleDeleteTrainer(trainer)}
-                                        className="w-9 h-9 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400 transition-all"
-                                        title="Delete trainer"
-                                    >
-                                        <Trash2 size={16} />
-                                    </button>
-                                </>
-                            )}
-                        </div>
-
-                        <div className="flex items-center gap-4 mb-5 relative z-10">
-                            <div className="w-16 h-16 rounded-2xl overflow-hidden border border-white/10">
-                                {trainer.imageUrl ? (
-                                    <img src={trainer.imageUrl} alt={trainer.name} className="w-full h-full object-cover" />
-                                ) : (
-                                    <div className="w-full h-full bg-surfaceHighlight flex items-center justify-center">
-                                        <User className="text-text-muted" size={26} />
-                                    </div>
+                            <div className="absolute top-4 right-4 flex gap-2 z-20 pointer-events-auto">
+                                {isAdmin && (
+                                    <>
+                                        <button
+                                            onClick={() => setQrTrainer(trainer)}
+                                            className="w-9 h-9 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-blue-300 transition-all"
+                                            title="View trainer QR"
+                                        >
+                                            <QrCode size={16} />
+                                        </button>
+                                        <button
+                                            onClick={() => openEditForm(trainer)}
+                                            className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-text-muted hover:text-white transition-all"
+                                            title="Edit trainer"
+                                        >
+                                            <Pencil size={16} />
+                                        </button>
+                                        <button
+                                            onClick={() => openLoginModal(trainer)}
+                                            className="w-9 h-9 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 transition-all"
+                                            title="Create trainer login"
+                                        >
+                                            <User size={16} />
+                                        </button>
+                                        <button
+                                            onClick={() => handleDeleteTrainer(trainer)}
+                                            className="w-9 h-9 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400 transition-all"
+                                            title="Delete trainer"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </>
                                 )}
                             </div>
-                            <div>
-                                <div className="flex items-center gap-2">
-                                    <h3 className="text-xl font-bold text-white">{trainer.name}</h3>
-                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${trainer.type === 'FREELANCER'
-                                        ? 'bg-orange-500/15 text-orange-400 border border-orange-500/30'
-                                        : 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
-                                        }`}>
-                                        {trainer.type === 'FREELANCER' ? 'Freelance' : 'Full-time'}
-                                    </span>
-                                </div>
-                                <p className="text-text-secondary text-sm">{trainer.specialty || 'Elite Coach'}</p>
-                            </div>
-                        </div>
 
-                        <div className="grid grid-cols-2 gap-3 mb-6 relative z-10">
-                            <div className="bg-white/[0.03] rounded-xl p-3 border border-white/5">
-                                <p className="text-xs text-text-muted mb-1">Classes</p>
-                                <p className="text-lg font-semibold text-white">{trainer.classes?.length || 0}</p>
-                            </div>
-                            <div className="bg-white/[0.03] rounded-xl p-3 border border-white/5">
-                                <p className="text-xs text-text-muted mb-1">Rating</p>
-                                <div className="flex items-center gap-2">
-                                    <p className="text-lg font-semibold text-white">{trainer.rating || '5.0'}</p>
-                                    <Star className="text-amber-400 fill-amber-400" size={14} />
+                            <div className="flex items-center gap-4 mb-5 relative z-10">
+                                <div className="w-16 h-16 rounded-2xl overflow-hidden border border-white/10">
+                                    {trainer.imageUrl ? (
+                                        <img src={trainer.imageUrl} alt={trainer.name} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="w-full h-full bg-surfaceHighlight flex items-center justify-center">
+                                            <User className="text-text-muted" size={26} />
+                                        </div>
+                                    )}
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-xl font-bold text-white">{trainer.name}</h3>
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${trainer.type === 'FREELANCER'
+                                            ? 'bg-orange-500/15 text-orange-400 border border-orange-500/30'
+                                            : 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
+                                            }`}>
+                                            {trainer.type === 'FREELANCER' ? 'Freelance' : 'Full-time'}
+                                        </span>
+                                    </div>
+                                    <p className="text-text-secondary text-sm">{trainer.specialty || 'Elite Coach'}</p>
                                 </div>
                             </div>
-                        </div>
 
-                        {(trainer.availabilityByDay && Object.keys(trainer.availabilityByDay).length > 0) && (
-                            <div className="mb-5 bg-white/[0.03] rounded-xl p-3 border border-white/5">
-                                <p className="text-[11px] text-text-muted uppercase tracking-wide mb-1">Availability</p>
-                                <div className="space-y-1">
-                                    {Object.keys(trainer.availabilityByDay)
-                                        .map(Number)
-                                        .sort((a, b) => a - b)
-                                        .map((day) => {
-                                            const config = trainer.availabilityByDay[String(day)];
-                                            const label = WEEKDAY_OPTIONS.find((w) => w.value === day)?.label || day;
-                                            return (
-                                                <p key={day} className="text-xs text-white">
-                                                    <span className="font-semibold">{label}</span>: {config?.start || '--:--'} - {config?.end || '--:--'}
-                                                </p>
-                                            );
-                                        })}
+                            <div className="grid grid-cols-2 gap-3 mb-6 relative z-10">
+                                <div className="bg-white/[0.03] rounded-xl p-3 border border-white/5">
+                                    <p className="text-xs text-text-muted mb-1">Classes</p>
+                                    <p className="text-lg font-semibold text-white">{trainer.classes?.length || 0}</p>
                                 </div>
-                                <p className="text-xs text-text-muted mt-2">
-                                    Interval: {trainer.availabilityIntervalMinutes || 30} min
-                                </p>
+                                <div className="bg-white/[0.03] rounded-xl p-3 border border-white/5">
+                                    <p className="text-xs text-text-muted mb-1">Rating</p>
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-lg font-semibold text-white">{trainer.rating || '5.0'}</p>
+                                        <Star className="text-amber-400 fill-amber-400" size={14} />
+                                    </div>
+                                </div>
                             </div>
-                        )}
 
-                        <div className="flex gap-3 relative z-10">
-                            <button
-                                onClick={() => handleViewProfile(trainer)}
-                                className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-xl border border-white/5 transition-all flex items-center justify-center gap-2 text-sm"
-                            >
-                                <Info size={16} className="text-primary" />
-                                Profile
-                            </button>
-                            <button
-                                onClick={() => handleViewSessions(trainer)}
-                                className="flex-1 py-2.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-xl border border-primary/20 transition-all flex items-center justify-center gap-2 text-sm"
-                            >
-                                <History size={16} />
-                                Sessions
-                            </button>
+                            {(trainer.availabilityByDay && Object.keys(trainer.availabilityByDay).length > 0) && (
+                                <div className="mb-5 bg-white/[0.03] rounded-xl p-3 border border-white/5">
+                                    <p className="text-[11px] text-text-muted uppercase tracking-wide mb-1">Availability</p>
+                                    <div className="space-y-1">
+                                        {Object.keys(trainer.availabilityByDay)
+                                            .map(Number)
+                                            .sort((a, b) => a - b)
+                                            .map((day) => {
+                                                const config = trainer.availabilityByDay[String(day)];
+                                                const label = WEEKDAY_OPTIONS.find((w) => w.value === day)?.label || day;
+                                                return (
+                                                    <p key={day} className="text-xs text-white">
+                                                        <span className="font-semibold">{label}</span>: {config?.start || '--:--'} - {config?.end || '--:--'}
+                                                    </p>
+                                                );
+                                            })}
+                                    </div>
+                                    <p className="text-xs text-text-muted mt-2">
+                                        Interval: {trainer.availabilityIntervalMinutes || 30} min
+                                    </p>
+                                </div>
+                            )}
+
+                            <div className="flex gap-3 relative z-10">
+                                <button
+                                    onClick={() => handleViewProfile(trainer)}
+                                    className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-xl border border-white/5 transition-all flex items-center justify-center gap-2 text-sm"
+                                >
+                                    <Info size={16} className="text-primary" />
+                                    Profile
+                                </button>
+                                <button
+                                    onClick={() => handleViewSessions(trainer)}
+                                    className="flex-1 py-2.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-xl border border-primary/20 transition-all flex items-center justify-center gap-2 text-sm"
+                                >
+                                    <History size={16} />
+                                    Sessions
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                ))}
-            </div>
+                    ))}
+                </div>
+            )}
 
             {/* Modal for Profile / Sessions */}
             {viewMode && selectedTrainer && (
@@ -590,6 +702,91 @@ export default function Trainers() {
                                     </div>
                                 )}
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Trainer Change Resolution Modal */}
+            {resolveModalSession && (
+                <div className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4">
+                        <div>
+                            <h2 className="text-xl font-bold text-white">Resolve Trainer Change Request</h2>
+                            <p className="text-text-muted text-sm mt-1">
+                                {resolveModalSession.member?.firstName} {resolveModalSession.member?.lastName} • {resolveModalSession.trainer?.name}
+                            </p>
+                        </div>
+
+                        <div className="bg-white/5 rounded-xl p-3 text-xs text-text-muted space-y-1">
+                            <p><span className="text-white font-semibold">Current session:</span> {new Date(resolveModalSession.date).toLocaleString()}</p>
+                            <p><span className="text-white font-semibold">Reason:</span> {resolveModalSession.trainerChangeRequest?.request?.reason || 'N/A'}</p>
+                            <p><span className="text-white font-semibold">Preferred:</span> {resolveModalSession.trainerChangeRequest?.request?.preferred ? new Date(resolveModalSession.trainerChangeRequest.request.preferred).toLocaleString() : 'None'}</p>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-white mb-2">Action</label>
+                            <select
+                                value={resolveForm.action}
+                                onChange={(e) => setResolveForm(p => ({ ...p, action: e.target.value }))}
+                                className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
+                            >
+                                <option style={{ color: '#111', backgroundColor: '#fff' }} value="MOVE">Move Session</option>
+                                <option style={{ color: '#111', backgroundColor: '#fff' }} value="CANCEL_CREDIT">Cancel & Credit</option>
+                                <option style={{ color: '#111', backgroundColor: '#fff' }} value="CANCEL_REFUND">Cancel & Refund</option>
+                                <option style={{ color: '#111', backgroundColor: '#fff' }} value="DENY">Deny Request</option>
+                            </select>
+                        </div>
+
+                        {resolveForm.action === 'MOVE' && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-sm font-medium text-white mb-2">New Date</label>
+                                    <input
+                                        type="date"
+                                        value={resolveForm.date}
+                                        onChange={(e) => setResolveForm(p => ({ ...p, date: e.target.value }))}
+                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-white mb-2">New Time</label>
+                                    <input
+                                        type="time"
+                                        value={resolveForm.time}
+                                        onChange={(e) => setResolveForm(p => ({ ...p, time: e.target.value }))}
+                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        <div>
+                            <label className="block text-sm font-medium text-white mb-2">Note (optional)</label>
+                            <textarea
+                                rows={3}
+                                value={resolveForm.note}
+                                onChange={(e) => setResolveForm(p => ({ ...p, note: e.target.value }))}
+                                className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
+                                placeholder="Add resolution note..."
+                            />
+                        </div>
+
+                        <div className="flex gap-3 mt-4">
+                            <button
+                                onClick={() => setResolveModalSession(null)}
+                                disabled={resolveRequestMutation.isPending}
+                                className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 disabled:opacity-50 rounded-xl"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSubmitResolution}
+                                disabled={resolveRequestMutation.isPending}
+                                className="flex-1 py-3 bg-primary hover:brightness-110 disabled:opacity-50 text-background font-bold rounded-xl"
+                            >
+                                {resolveRequestMutation.isPending ? 'Submitting...' : 'Submit Resolution'}
+                            </button>
                         </div>
                     </div>
                 </div>

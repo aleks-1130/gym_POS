@@ -456,11 +456,11 @@ const bookTraining = async (req, res) => {
         return res.status(403).json({ error: "Only member accounts can book trainer sessions from this endpoint" });
     }
 
-    if (!trainerId || !date || !time || !duration || !method) {
-        return res.status(400).json({ error: "Missing required booking details" });
-    }
-    const allowedMethods = PAYMENT_METHODS.map(m => m.id).concat(['CARD']); // Compatibility for existing CARD data
-    if (!allowedMethods.includes(method)) {
+    const normalizedMethod = String(method || 'CASH').trim().toUpperCase();
+    const validBaseMethods = (PAYMENT_METHODS || []).map(m => String(m.value).toUpperCase());
+    const allowedMethods = [...new Set([...validBaseMethods, 'CARD', 'CASH', 'GCASH', 'PAYMAYA', 'BANK_TRANSFER'])];
+
+    if (!allowedMethods.includes(normalizedMethod)) {
         return res.status(400).json({ error: "Invalid payment method" });
     }
 
@@ -500,15 +500,15 @@ const bookTraining = async (req, res) => {
         await prisma.$transaction(async (tx) => {
             await tx.trainingSession.create({
                 data: {
-                    memberId,
+                    memberId: Number(memberId),
                     trainerId: Number(trainerId),
                     date: startDateTime,
                     duration: Number(duration),
                     price: totalAmount,
                     status: 'SCHEDULED',
-                    paymentStatus: method === 'CASH' ? 'UNPAID' : 'PAID',
-                    paymentMethod: method,
-                    paidAt: method === 'CASH' ? null : new Date(),
+                    paymentStatus: normalizedMethod === 'CASH' ? 'UNPAID' : 'PAID',
+                    paymentMethod: normalizedMethod,
+                    paidAt: normalizedMethod === 'CASH' ? null : new Date(),
                     notes: appendBookingBatchNote(notes, bookingBatchId)
                 }
             });
@@ -525,7 +525,15 @@ const bookTraining = async (req, res) => {
 
         });
 
-        res.json({ message: method === 'CASH' ? "Training session booked. Pay at the front desk." : "Training session booked and paid" });
+        res.json({
+            message: normalizedMethod === 'CASH' ? "Training session booked. Pay at the front desk." : "Training session booked and paid",
+            session: {
+                trainerName: trainer.name,
+                date: startDateTime,
+                totalAmount,
+                paymentMethod: normalizedMethod
+            }
+        });
     } catch (e) {
         res.status(500).json({ error: "Failed to book training session", detail: e?.message });
     }
@@ -580,7 +588,7 @@ const bookTrainingCash = async (req, res) => {
         await prisma.$transaction(async (tx) => {
             await tx.trainingSession.create({
                 data: {
-                    memberId: resolvedMemberId,
+                    memberId: Number(resolvedMemberId), // Fix: ensure memberId is a Number
                     trainerId: Number(trainerId),
                     date: startDateTime,
                     duration: Number(duration),
@@ -791,7 +799,12 @@ const createMember = async (req, res) => {
         if (!firstName || !lastName || !planId || !paymentMethod) {
             return res.status(400).json({ error: "firstName, lastName, planId, and paymentMethod are required" });
         }
-        if (!PAYMENT_METHODS.map(m => m.id).concat(['CARD']).includes(String(paymentMethod).toUpperCase())) {
+        const { PAYMENT_METHODS } = require('../../config/businessConfig');
+        const normalizedMethod = String(paymentMethod || 'CASH').trim().toUpperCase();
+        const validBaseMethods = (PAYMENT_METHODS || []).map(m => String(m.value).toUpperCase());
+        const allowedMethods = [...new Set([...validBaseMethods, 'CARD', 'CASH', 'GCASH', 'PAYMAYA', 'BANK_TRANSFER'])];
+
+        if (!allowedMethods.includes(normalizedMethod)) {
             return res.status(400).json({ error: "Invalid payment method" });
         }
 
@@ -1084,8 +1097,12 @@ const purchaseClassSessionPackage = async (req, res) => {
         gcashTime
     } = req.body;
 
-    const normalizedMethod = String(method || '').toUpperCase();
-    if (!PAYMENT_METHODS.map(m => m.id).concat(['CARD']).includes(normalizedMethod)) {
+    const { PAYMENT_METHODS } = require('../../config/businessConfig');
+    const normalizedMethod = String(method).trim().toUpperCase();
+    const validBaseMethods = (PAYMENT_METHODS || []).map(m => String(m.value).toUpperCase());
+    const allowedMethods = [...new Set([...validBaseMethods, 'CARD', 'CASH', 'GCASH', 'PAYMAYA', 'BANK_TRANSFER'])];
+
+    if (!allowedMethods.includes(normalizedMethod)) {
         return res.status(400).json({ error: "Invalid payment method" });
     }
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { POS_VIEWS } from '../../constants/categories'; // Added import
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
@@ -9,61 +10,48 @@ import Receipt from '../../components/Receipt';
 import { withApiBase } from '../../config/api';
 import { PAYMENT_METHODS } from '../../config/businessConfig';
 
+import { usePOSStore } from '../../stores/usePOSStore';
+
 export default function POS() {
     const { user } = useAuth();
     const { isSidebarCollapsed } = useUIStore();
     const { formatPrice } = useCurrency();
+
+    // Zustand Store Selectors (Prevents Lag)
+    const {
+        cart, selectedCategory, selectedMemberId, discount,
+        modals, paymentDetails, lastTransaction, collectData, trainerChangeData,
+        addToCart, removeFromCart, updateQuantity, setCategory, setSelectedMemberId, setDiscount,
+        openModal, closeModal, setPaymentField, setCollectField, setTrainerChangeField, clearCart, updateTrainingDetails
+    } = usePOSStore();
+
+    const { subtotal, discountAmount, total: cartTotal } = usePOSStore(useShallow(state => state.getTotals()));
+
+
     const [products, setProducts] = useState([]);
     const [plans, setPlans] = useState([]);
     const [trainers, setTrainers] = useState([]);
     const [classPackages, setClassPackages] = useState([]);
-    const [members, setMembers] = useState([]); // For POS member selection
-    const [selectedMemberId, setSelectedMemberId] = useState('');
-    const [cart, setCart] = useState([]);
-    const [selectedCategory, setSelectedCategory] = useState('All');
+    const [members, setMembers] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [discount, setDiscount] = useState(0); // in dollars
     const [viewMode, setViewMode] = useState('POS');
+
     const [collectCashTab, setCollectCashTab] = useState('BOOKINGS');
     const [history, setHistory] = useState([]);
     const [trainingBookings, setTrainingBookings] = useState([]);
     const [pendingInAppPurchases, setPendingInAppPurchases] = useState([]);
-    const [refundExceptionRequests, setRefundExceptionRequests] = useState([]);
-    const [trainerChangeRequests, setTrainerChangeRequests] = useState([]);
-    const [trainerChangeModalSession, setTrainerChangeModalSession] = useState(null);
-    const [trainerChangeResolution, setTrainerChangeResolution] = useState({ action: 'MOVE', date: '', time: '', note: '' });
-    const [trainerChangeSubmitting, setTrainerChangeSubmitting] = useState(false);
-    const [trainerChangeError, setTrainerChangeError] = useState('');
-    const [showCollectModal, setShowCollectModal] = useState(false);
-    const [collectSession, setCollectSession] = useState(null);
-    const [showCollectPurchaseModal, setShowCollectPurchaseModal] = useState(false);
-    const [collectPurchase, setCollectPurchase] = useState(null);
-    const [collectTendered, setCollectTendered] = useState('');
+
     const [collectLoading, setCollectLoading] = useState(false);
     const [openCalendarLineId, setOpenCalendarLineId] = useState(null);
     const [calendarMonthByLine, setCalendarMonthByLine] = useState({});
 
-    // Derived Variables
-    const subtotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
-    const discountAmount = (subtotal * (discount / 100));
-    const cartTotal = subtotal - discountAmount;
     const hasTraining = cart.some(item => item.type === 'TRAINING');
     const hasClassPackages = cart.some(item => item.type === 'CLASS_PACKAGE');
 
-    // Payment Selection
-    const [showPaymentModal, setShowPaymentModal] = useState(false);
-    const [amountTendered, setAmountTendered] = useState('');
-    const [paymentMethod, setPaymentMethod] = useState('');
-    const [gcashReference, setGcashReference] = useState('');
-    const [gcashDate, setGcashDate] = useState('');
-    const [gcashTime, setGcashTime] = useState('');
-
-
     // Receipt Printing
-    const [showReceiptPreview, setShowReceiptPreview] = useState(false);
-    const [lastTransaction, setLastTransaction] = useState(null);
     const [receiptSettings, setReceiptSettings] = useState(null);
     const receiptRef = useRef();
+
 
     const authHeaders = () => {
         const token = sessionStorage.getItem('token') || localStorage.getItem('token');
@@ -146,9 +134,7 @@ export default function POS() {
         const fetchCollectCashData = async () => {
             await Promise.all([
                 fetchTrainingBookings(),
-                fetchPendingInAppPurchases(),
-                fetchRefundExceptionRequests(),
-                fetchTrainerChangeRequests()
+                fetchPendingInAppPurchases()
             ]);
         };
 
@@ -158,9 +144,9 @@ export default function POS() {
     }, [viewMode]);
 
     useEffect(() => {
-        if (!showReceiptPreview) return;
+        if (!modals.receiptPreview) return;
         fetchReceiptSettings();
-    }, [showReceiptPreview]);
+    }, [modals.receiptPreview]);
 
     const fetchProducts = async () => {
         try {
@@ -268,239 +254,79 @@ export default function POS() {
         }
     };
 
-    const fetchRefundExceptionRequests = async () => {
-        try {
-            const res = await axios.get(withApiBase('/api/staff/training-sessions/refund-exceptions'), {
-                params: { status: 'PENDING' },
-                headers: authHeaders()
-            });
-            setRefundExceptionRequests(res.data || []);
-        } catch (error) {
-            console.error("Failed to fetch refund exception requests");
-            setRefundExceptionRequests([]);
-        }
-    };
-
-    const fetchTrainerChangeRequests = async () => {
-        try {
-            const res = await axios.get(withApiBase('/api/staff/training-sessions/trainer-change-requests'), {
-                params: { status: 'PENDING' },
-                headers: authHeaders()
-            });
-            setTrainerChangeRequests(res.data || []);
-        } catch (error) {
-            console.error("Failed to fetch trainer change requests");
-            setTrainerChangeRequests([]);
-        }
-    };
-
-    const resolveRefundException = async (session, decision) => {
-        const isApprove = decision === 'APPROVE';
-        const promptText = isApprove
-            ? 'Optional approval note (leave blank to continue):'
-            : 'Reason for rejection:';
-        const note = window.prompt(promptText, '') ?? '';
-
-        if (!isApprove && !String(note).trim()) {
-            alert('Rejection reason is required.');
-            return;
-        }
-
-        try {
-            await axios.post(
-                withApiBase(`/api/staff/training-sessions/${session.id}/refund-exception/resolve`),
-                { decision, note: String(note).trim() },
-                { headers: authHeaders() }
-            );
-            await fetchRefundExceptionRequests();
-            alert(`Refund exception ${isApprove ? 'approved' : 'rejected'}.`);
-        } catch (e) {
-            const message = e.response?.data?.error || 'Failed to resolve refund exception';
-            const detail = e.response?.data?.detail;
-            alert(detail ? `${message}\n\nDetails: ${detail}` : message);
-        }
-    };
-
-    const openTrainerChangeResolutionModal = (session) => {
-        const preferred = String(session?.trainerChangeRequest?.request?.preferred || '');
-        const [preferredDate = '', preferredTimeRaw = ''] = preferred.split('T');
-        const preferredTime = preferredTimeRaw ? preferredTimeRaw.slice(0, 5) : '';
-        setTrainerChangeModalSession(session);
-        setTrainerChangeResolution({
-            action: 'MOVE',
-            date: preferredDate,
-            time: preferredTime,
-            note: ''
-        });
-        setTrainerChangeError('');
-    };
-
-    const submitTrainerChangeResolution = async () => {
-        if (!trainerChangeModalSession) return;
-
-        const payload = {
-            action: trainerChangeResolution.action,
-            note: String(trainerChangeResolution.note || '').trim()
-        };
-
-        if (trainerChangeResolution.action === 'MOVE') {
-            if (!trainerChangeResolution.date || !trainerChangeResolution.time) {
-                setTrainerChangeError('Date and time are required for MOVE action.');
-                return;
-            }
-            payload.date = trainerChangeResolution.date;
-            payload.time = trainerChangeResolution.time;
-        }
-
-        setTrainerChangeSubmitting(true);
-        setTrainerChangeError('');
-        try {
-            await axios.post(
-                withApiBase(`/api/staff/training-sessions/${trainerChangeModalSession.id}/trainer-change-request/resolve`),
-                payload,
-                { headers: authHeaders() }
-            );
-            setTrainerChangeModalSession(null);
-            await Promise.all([fetchTrainerChangeRequests(), fetchTrainingBookings()]);
-            alert('Trainer change request resolved.');
-        } catch (e) {
-            const message = e.response?.data?.error || 'Failed to resolve trainer change request';
-            const detail = e.response?.data?.detail;
-            setTrainerChangeError(detail ? `${message} ${detail}` : message);
-        } finally {
-            setTrainerChangeSubmitting(false);
-        }
-    };
-
-
     const formatCartPrice = (amount) => formatPrice(amount);
 
-    const addToCart = (item, type = 'PRODUCT') => {
-        setCart(prev => {
-            if (type === 'TRAINING') {
-                const durations = (item.sessionDurations || '60')
-                    .split(',')
-                    .map((d) => Number(String(d).trim()))
-                    .filter((d) => Number.isFinite(d) && d > 0);
-                return [...prev, {
-                    id: item.id,
-                    cartLineId: `training-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-                    name: item.name,
-                    price: item.sessionPrice ?? item.price ?? 0,
-                    type: 'TRAINING',
-                    quantity: 1,
-                    trainerId: item.id,
-                    date: '',
-                    time: '',
-                    duration: durations[0] || 60,
-                    notes: ''
-                }];
-            }
+    // Cart logic now handled by usePOSStore
 
-            const existing = prev.find(p => p.id === item.id && p.type === type);
-
-            const currentQty = existing ? existing.quantity : 0;
-            if (type === 'PRODUCT' && (currentQty + 1) > item.stock) {
-                alert(`Not enough stock! Only ${item.stock} left.`);
-                return prev;
-            }
-
-            if (existing) {
-                return prev.map(p => p.id === item.id && p.type === type ? { ...p, quantity: p.quantity + 1 } : p);
-            }
-            return [...prev, { ...item, type: type, quantity: 1 }];
-        });
-    };
-
-    const removeFromCart = (id, type, cartLineId = null) => {
-        if (cartLineId) {
-            setCart(prev => prev.filter(item => item.cartLineId !== cartLineId));
-            return;
-        }
-        setCart(prev => prev.filter(item => !(item.id === id && item.type === type)));
-    };
-
-    const updateQuantity = (id, type, newQty) => {
-        if (newQty < 1) return;
-
-        // Find original item to check stock
-        const cartItem = cart.find(i => i.id === id && i.type === type);
-        // We need the original product stock. Ideally we look up in 'products' array
-        // but cartItem might have the original stock attached if we spread ...item
-        const originalProduct = products.find(p => p.id === id);
-
-        if (type === 'PRODUCT' && originalProduct && newQty > originalProduct.stock) {
-            alert(`Cannot exceed available stock (${originalProduct.stock})`);
-            return;
-        }
-
-        setCart(prev => prev.map(item =>
-            (item.id === id && item.type === type) ? { ...item, quantity: newQty } : item
-        ));
-    };
 
     const initiateCheckout = () => {
-        if (cart.length === 0) return;
+        try {
+            console.log("initiateCheckout triggered. Cart:", cart);
+            if (cart.length === 0) return;
 
-        const hasTraining = cart.some(item => item.type === 'TRAINING');
-        const hasNonTraining = cart.some(item => item.type !== 'TRAINING');
-        if (hasTraining && hasNonTraining) {
-            alert("Training sessions must be checked out separately from products or memberships.");
-            return;
-        }
+            const hasTraining = cart.some(item => item.type === 'TRAINING');
+            const hasNonTraining = cart.some(item => item.type !== 'TRAINING');
 
-        // Validation for Membership
-        const hasPlan = cart.some(item => item.type === 'PLAN');
-        if (hasPlan && !selectedMemberId) {
-            alert("A Member must be selected when purchasing a Membership Plan.");
-            return;
-        }
-        if (hasTraining && !selectedMemberId) {
-            alert("Select a member for trainer booking.");
-            return;
-        }
-        if (hasClassPackages && !selectedMemberId) {
-            alert("Select a member for class package purchase.");
-            return;
-        }
-        if (hasTraining) {
-            const invalid = cart.some(item => item.type === 'TRAINING' && (!item.date || !item.time || !item.duration));
-            if (invalid) {
-                alert("Please complete date, time, and duration for all training sessions.");
+            // Validation for Membership
+            const hasPlan = cart.some(item => item.type === 'PLAN');
+            if (hasPlan && !selectedMemberId) {
+                alert("A Member must be selected when purchasing a Membership Plan.");
                 return;
             }
-            const hasPastDateTime = cart.some((item) => {
-                if (item.type !== 'TRAINING') return false;
-                const scheduled = new Date(`${item.date}T${item.time}`);
-                return Number.isNaN(scheduled.getTime()) || scheduled <= new Date();
-            });
-            if (hasPastDateTime) {
-                alert("Past trainer booking schedule is not allowed.");
+            if (hasTraining && !selectedMemberId) {
+                alert("Select a member for trainer booking.");
                 return;
             }
-            const invalidSchedule = cart.some((item) => {
-                if (item.type !== 'TRAINING') return false;
-                const trainer = trainers.find((t) => t.id === item.trainerId);
-                const slots = getAvailableTimeSlotsForTrainer(trainer, item.date, item.duration);
-                return !slots.includes(item.time);
-            });
-            if (invalidSchedule) {
-                alert("One or more trainer bookings use unavailable time slots. Please reselect time.");
+            if (hasClassPackages && !selectedMemberId) {
+                alert("Select a member for class package purchase.");
                 return;
             }
-        }
 
-        setShowPaymentModal(true);
-        setAmountTendered('');
-        setPaymentMethod('');
-        setGcashReference('');
-        setGcashDate('');
-        setGcashTime('');
+            if (hasTraining) {
+                console.log("Validating training sessions...");
+                const invalid = cart.some(item => item.type === 'TRAINING' && (!item.date || !item.time || !item.duration));
+                if (invalid) {
+                    alert("Please complete date, time, and duration for all training sessions.");
+                    return;
+                }
+                const hasPastDateTime = cart.some((item) => {
+                    if (item.type !== 'TRAINING') return false;
+                    const scheduled = new Date(`${item.date}T${item.time}`);
+                    return Number.isNaN(scheduled.getTime()) || scheduled <= new Date();
+                });
+                if (hasPastDateTime) {
+                    alert("Past trainer booking schedule is not allowed.");
+                    return;
+                }
+                const invalidSchedule = cart.some((item) => {
+                    if (item.type !== 'TRAINING') return false;
+                    const trainer = trainers.find((t) => Number(t.id) === Number(item.trainerId));
+                    if (!trainer) {
+                        console.error("Trainer not found for item:", item);
+                        return true; // Consider invalid if trainer is missing
+                    }
+                    const slots = getAvailableTimeSlotsForTrainer(trainer, item.date, item.duration);
+                    return !slots.includes(item.time);
+                });
+                if (invalidSchedule) {
+                    alert("One or more trainer bookings use unavailable time slots or trainer not found. Please reselect time.");
+                    return;
+                }
+            }
+
+            console.log("Validation passed. Opening payment modal...");
+            openModal('payment');
+        } catch (error) {
+            console.error("Checkout Error:", error);
+            alert("A system error occurred during checkout initialization: " + error.message);
+        }
     };
+
 
     const processPayment = async (method) => {
         setLoading(true);
         try {
+            const { amountTendered, gcashReference, gcashDate, gcashTime } = paymentDetails;
             const parsedTendered = method === 'CASH' ? Number(amountTendered) : null;
             if (method === 'CASH' && (!Number.isFinite(parsedTendered) || parsedTendered < cartTotal)) {
                 throw new Error("Cash tendered must be a valid amount and at least equal to the total.");
@@ -509,13 +335,19 @@ export default function POS() {
             const tendered = method === 'CASH' ? parsedTendered : null;
             const change = method === 'CASH' ? Number((parsedTendered - cartTotal).toFixed(2)) : null;
 
-            if (hasTraining) {
-                const memberId = selectedMemberId ? Number(selectedMemberId) : null;
+            const trainingItems = cart.filter(i => i.type === 'TRAINING');
+            const otherItems = cart.filter(i => i.type !== 'TRAINING');
+            const memberId = selectedMemberId ? Number(selectedMemberId) : null;
+
+            let mainTransaction = null;
+            const externalDate = (gcashDate && gcashTime) ? `${gcashDate}T${gcashTime}` : null;
+
+            // 1. Process Training Items (if any)
+            if (trainingItems.length > 0) {
                 if (!memberId) throw new Error("Member is required for training sessions");
 
-                const externalDate = (gcashDate && gcashTime) ? `${gcashDate}T${gcashTime}` : null;
-                for (const item of cart.filter(i => i.type === 'TRAINING')) {
-                    await axios.post(withApiBase('/api/staff/book-training'), {
+                for (const item of trainingItems) {
+                    const res = await axios.post(withApiBase('/api/staff/book-training'), {
                         memberId,
                         trainerId: item.trainerId,
                         date: item.date,
@@ -526,80 +358,58 @@ export default function POS() {
                         externalRef: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(method) ? gcashReference : null,
                         externalDate: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(method) ? externalDate : null
                     }, { headers: authHeaders() });
+
+                    if (!mainTransaction) {
+                        mainTransaction = { id: 'TRAINING', amount: cartTotal, type: 'TRAINING', method };
+                    }
                 }
-
-                const memberData = members.find(m => m.id === Number(selectedMemberId));
-                setLastTransaction({
-                    transaction: { id: 'TRAINING', amount: cartTotal, type: 'TRAINING', method },
-                    items: cart,
-                    member: memberData,
-                    discount: discount,
-                    cashierName: user?.name,
-                    paymentDetails: { method, tendered, change }
-                });
-
-                setShowPaymentModal(false);
-                setShowReceiptPreview(true);
-                setCart([]);
-                setDiscount(0);
-                setSelectedMemberId('');
-                setLoading(false);
-                return;
             }
 
-            const hasPlan = cart.some(item => item.type === 'PLAN');
-            const hasPackage = cart.some(item => item.type === 'CLASS_PACKAGE');
-            const paymentType = hasPlan ? 'MEMBERSHIP' : hasPackage ? 'CLASS_PACKAGE' : 'POS_SALE';
+            // 2. Process Non-Training Items (if any)
+            if (otherItems.length > 0) {
+                const hasPlan = otherItems.some(item => item.type === 'PLAN');
+                const hasPackage = otherItems.some(item => item.type === 'CLASS_PACKAGE');
+                const paymentType = hasPlan ? 'MEMBERSHIP' : hasPackage ? 'CLASS_PACKAGE' : 'POS_SALE';
 
-            const externalDate = (gcashDate && gcashTime) ? `${gcashDate}T${gcashTime}` : null;
-            const res = await axios.post(withApiBase('/api/payments'), {
-                amount: cartTotal,
-                type: paymentType,
-                method: method,
-                items: cart,
-                discount: discount,
-                memberId: selectedMemberId || null,
-                cashTendered: tendered,
-                changeDue: change,
-                externalRef: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(method) ? gcashReference : null,
-                externalDate: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(method) ? externalDate : null
-            }, {
-                headers: authHeaders()
-            });
+                const res = await axios.post(withApiBase('/api/payments'), {
+                    amount: cartTotal, // This might need careful handling if sub-totals are different, but usually cartTotal is fine for the single swipe
+                    type: paymentType,
+                    method: method,
+                    items: otherItems,
+                    discount: discount,
+                    memberId: memberId || null,
+                    cashTendered: tendered,
+                    changeDue: change,
+                    externalRef: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(method) ? gcashReference : null,
+                    externalDate: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(method) ? externalDate : null
+                }, { headers: authHeaders() });
 
-            // Prepare Reciept Data
-            const transactionData = res.data;
-            const memberData = members.find(m => m.id === Number(selectedMemberId));
+                mainTransaction = res.data;
+            }
 
-            setLastTransaction({
-                transaction: transactionData,
+            // Summary Reciept Data
+            const memberData = members.find(m => m.id === memberId);
+            openModal('receiptPreview', {
+                transaction: mainTransaction || { id: 'MIXED', amount: cartTotal, type: 'MIXED', method },
                 items: cart,
                 member: memberData,
                 discount: discountAmount,
                 cashierName: user?.name,
-                paymentDetails: {
-                    method: method,
-                    tendered: tendered,
-                    change: change
-                }
+                paymentDetails: { method, tendered, change }
             });
 
-            // Show Preview
-            setShowPaymentModal(false);
-            setShowReceiptPreview(true);
-
-            // Clear Cart (will happen after modal close or separate)
-            setCart([]);
-            setDiscount(0);
-            setSelectedMemberId('');
-            fetchProducts(); // Refresh stock levels
+            closeModal('payment');
+            clearCart();
+            fetchProducts();
             fetchClassPackages();
+            setLoading(false);
+
         } catch (e) {
             alert("Transaction Failed: " + (e.response?.data?.error || e.message));
-        } finally {
             setLoading(false);
         }
     };
+
 
     const openReceiptTemplatePreview = () => {
         const previewItems = cart.length > 0
@@ -619,7 +429,7 @@ export default function POS() {
         const previewSubtotal = previewItems.reduce((sum, item) => sum + (Number(item.price) * Number(item.quantity)), 0);
         const previewDiscount = cart.length > 0 ? discountAmount : 0;
 
-        setLastTransaction({
+        openModal('receiptPreview', {
             transaction: {
                 id: 'PREVIEW',
                 amount: Math.max(0, previewSubtotal - previewDiscount),
@@ -637,8 +447,8 @@ export default function POS() {
                 change: 0
             }
         });
-        setShowReceiptPreview(true);
     };
+
 
     const renderStatusBadge = (status) => {
         const value = status || 'COMPLETED';
@@ -902,16 +712,6 @@ export default function POS() {
                     >
                         In App Purchases
                     </button>
-                    <button
-                        type="button"
-                        onClick={() => setCollectCashTab('EXCEPTIONS')}
-                        className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${collectCashTab === 'EXCEPTIONS'
-                            ? 'bg-primary text-background'
-                            : 'text-text-secondary hover:text-white bg-white/5'
-                            }`}
-                    >
-                        Exceptions
-                    </button>
                 </div>
 
                 {collectCashTab === 'BOOKINGS' && (
@@ -950,9 +750,7 @@ export default function POS() {
                                             <div className="flex items-center gap-2">
                                                 <button
                                                     onClick={() => {
-                                                        setCollectSession(bookingGroup);
-                                                        setCollectTendered('');
-                                                        setShowCollectModal(true);
+                                                        openModal('collectCash', bookingGroup);
                                                     }}
                                                     className="text-xs font-bold px-3 py-1 rounded-lg border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
                                                 >
@@ -1017,9 +815,7 @@ export default function POS() {
                                             <div className="flex items-center gap-2">
                                                 <button
                                                     onClick={() => {
-                                                        setCollectPurchase(payment);
-                                                        setCollectTendered('');
-                                                        setShowCollectPurchaseModal(true);
+                                                        openModal('collectPurchase', payment);
                                                     }}
                                                     className="text-xs font-bold px-3 py-1 rounded-lg border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
                                                 >
@@ -1048,149 +844,20 @@ export default function POS() {
                     </div>
                 )}
 
-                {collectCashTab === 'EXCEPTIONS' && (
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                        <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
-                            <div className="px-6 py-4 border-b border-white/10">
-                                <h3 className="text-white font-bold">Refund Exceptions</h3>
-                            </div>
-                            <table className="w-full text-left text-sm text-text-secondary">
-                                <thead className="bg-white/5 text-text-muted uppercase text-xs font-bold tracking-wider">
-                                    <tr>
-                                        <th className="px-6 py-4">Session</th>
-                                        <th className="px-6 py-4">Member</th>
-                                        <th className="px-6 py-4">Trainer</th>
-                                        <th className="px-6 py-4">Reason</th>
-                                        <th className="px-6 py-4">Requested</th>
-                                        <th className="px-6 py-4">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-white/5">
-                                    {refundExceptionRequests.length === 0 && (
-                                        <tr><td colSpan="6" className="p-6 text-center text-text-muted">No pending refund exception requests.</td></tr>
-                                    )}
-                                    {refundExceptionRequests.map((session) => (
-                                        <tr key={session.id} className="hover:bg-white/5 transition-colors">
-                                            <td className="px-6 py-4 text-white font-medium">
-                                                {new Date(session.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(session.date).toLocaleTimeString()}</span>
-                                            </td>
-                                            <td className="px-6 py-4 text-white">
-                                                {session.member ? `${session.member.firstName} ${session.member.lastName}` : 'N/A'}
-                                            </td>
-                                            <td className="px-6 py-4 text-white">{session.trainer?.name || 'N/A'}</td>
-                                            <td className="px-6 py-4 text-white">
-                                                <div className="space-y-1">
-                                                    <span className="px-2 py-1 rounded text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                                                        {session.refundException?.request?.reason || 'OTHER'}
-                                                    </span>
-                                                    {session.refundException?.request?.details && (
-                                                        <p className="text-xs text-text-muted max-w-[220px] truncate" title={session.refundException.request.details}>
-                                                            {session.refundException.request.details}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4 text-white">
-                                                {session.refundException?.request?.requestedAt
-                                                    ? new Date(session.refundException.request.requestedAt).toLocaleString()
-                                                    : 'Unknown'}
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <div className="flex items-center gap-2">
-                                                    <button
-                                                        onClick={() => resolveRefundException(session, 'APPROVE')}
-                                                        className="text-xs font-bold px-3 py-1 rounded-lg border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
-                                                    >
-                                                        Approve
-                                                    </button>
-                                                    <button
-                                                        onClick={() => resolveRefundException(session, 'REJECT')}
-                                                        className="text-xs font-bold px-3 py-1 rounded-lg border border-red-500/30 text-red-300 hover:bg-red-500/10"
-                                                    >
-                                                        Reject
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
-                            <div className="px-6 py-4 border-b border-white/10">
-                                <h3 className="text-white font-bold">Trainer Change Requests</h3>
-                            </div>
-                            <table className="w-full text-left text-sm text-text-secondary">
-                                <thead className="bg-white/5 text-text-muted uppercase text-xs font-bold tracking-wider">
-                                    <tr>
-                                        <th className="px-6 py-4">Session</th>
-                                        <th className="px-6 py-4">Member</th>
-                                        <th className="px-6 py-4">Trainer</th>
-                                        <th className="px-6 py-4">Reason</th>
-                                        <th className="px-6 py-4">Preferred</th>
-                                        <th className="px-6 py-4">Requested</th>
-                                        <th className="px-6 py-4">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-white/5">
-                                    {trainerChangeRequests.length === 0 && (
-                                        <tr><td colSpan="7" className="p-6 text-center text-text-muted">No pending trainer change requests.</td></tr>
-                                    )}
-                                    {trainerChangeRequests.map((session) => (
-                                        <tr key={session.id} className="hover:bg-white/5 transition-colors">
-                                            <td className="px-6 py-4 text-white font-medium">
-                                                {new Date(session.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(session.date).toLocaleTimeString()}</span>
-                                            </td>
-                                            <td className="px-6 py-4 text-white">
-                                                {session.member ? `${session.member.firstName} ${session.member.lastName}` : 'N/A'}
-                                            </td>
-                                            <td className="px-6 py-4 text-white">{session.trainer?.name || 'N/A'}</td>
-                                            <td className="px-6 py-4 text-white">
-                                                <p className="text-xs max-w-[220px] truncate" title={session.trainerChangeRequest?.request?.reason || ''}>
-                                                    {session.trainerChangeRequest?.request?.reason || 'No reason provided'}
-                                                </p>
-                                            </td>
-                                            <td className="px-6 py-4 text-white">
-                                                {session.trainerChangeRequest?.request?.preferred
-                                                    ? new Date(session.trainerChangeRequest.request.preferred).toLocaleString()
-                                                    : <span className="text-text-muted">None</span>}
-                                            </td>
-                                            <td className="px-6 py-4 text-white">
-                                                {session.trainerChangeRequest?.request?.requestedAt
-                                                    ? new Date(session.trainerChangeRequest.request.requestedAt).toLocaleString()
-                                                    : 'Unknown'}
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <button
-                                                    onClick={() => openTrainerChangeResolutionModal(session)}
-                                                    className="text-xs font-bold px-3 py-1 rounded-lg border border-blue-500/30 text-blue-300 hover:bg-blue-500/10"
-                                                >
-                                                    Resolve
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                )}
-
-                {showCollectModal && collectSession && (
+                {modals.collectCash && collectData.session && (
                     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
                         <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6">
                             <div className="mb-4">
                                 <h2 className="text-xl font-bold text-white">Collect Cash</h2>
                                 <p className="text-text-muted text-sm">
-                                    {collectSession.member?.firstName} {collectSession.member?.lastName} � {collectSession.trainer?.name}
-                                    {collectSession.count > 1 ? ` (${collectSession.count} sessions)` : ''}
+                                    {collectData.session.member?.firstName} {collectData.session.member?.lastName} • {collectData.session.trainer?.name}
+                                    {collectData.session.count > 1 ? ` (${collectData.session.count} sessions)` : ''}
                                 </p>
                             </div>
                             <div className="space-y-4">
                                 <div className="flex justify-between items-center">
                                     <span className="text-text-muted">Amount Due</span>
-                                    <span className="text-white font-bold text-lg">{formatPrice(collectSession.totalAmount || collectSession.price || 0)}</span>
+                                    <span className="text-white font-bold text-lg">{formatPrice(collectData.session.totalAmount || collectData.session.price || 0)}</span>
                                 </div>
                                 <div>
                                     <label className="block text-text-muted text-sm font-medium mb-2">Cash Tendered</label>
@@ -1198,42 +865,42 @@ export default function POS() {
                                         type="number"
                                         className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-3 px-4 text-white text-base focus:border-primary outline-none"
                                         placeholder="0.00"
-                                        value={collectTendered}
-                                        onChange={(e) => setCollectTendered(e.target.value)}
+                                        value={collectData.tendered}
+                                        onChange={(e) => setCollectField('tendered', e.target.value)}
                                     />
                                 </div>
                                 <div className="bg-white/5 rounded-xl p-4 flex justify-between items-center">
                                     <span className="text-text-secondary">Change Due:</span>
-                                    {formatPrice(Math.max(0, (parseFloat(collectTendered) || 0) - (collectSession.totalAmount || collectSession.price || 0)))}
+                                    {formatPrice(Math.max(0, (parseFloat(collectData.tendered) || 0) - (collectData.session.totalAmount || collectData.session.price || 0)))}
                                 </div>
                                 <div className="flex gap-3">
                                     <button
-                                        onClick={() => setShowCollectModal(false)}
+                                        onClick={() => closeModal('collectCash')}
                                         className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 rounded-xl"
                                     >
                                         Cancel
                                     </button>
                                     <button
                                         onClick={async () => {
-                                            const amountDue = collectSession.totalAmount || collectSession.price || 0;
-                                            if ((parseFloat(collectTendered) || 0) < amountDue) return;
+                                            const amountDue = collectData.session.totalAmount || collectData.session.price || 0;
+                                            if ((parseFloat(collectData.tendered) || 0) < amountDue) return;
                                             setCollectLoading(true);
                                             try {
                                                 await axios.post(withApiBase('/api/staff/training-sessions/collect-batch'), {
-                                                    sessionIds: collectSession.sessionIds || [collectSession.id],
+                                                    sessionIds: collectData.session.sessionIds || [collectData.session.id],
                                                     method: 'CASH',
-                                                    cashTendered: parseFloat(collectTendered)
+                                                    cashTendered: parseFloat(collectData.tendered)
                                                 }, { headers: authHeaders() });
                                                 await fetchTrainingBookings();
                                                 await fetchHistory();
-                                                setShowCollectModal(false);
+                                                closeModal('collectCash');
                                             } catch (e) {
                                                 alert("Failed to collect payment");
                                             } finally {
                                                 setCollectLoading(false);
                                             }
                                         }}
-                                        disabled={collectLoading || (parseFloat(collectTendered) || 0) < (collectSession.totalAmount || collectSession.price || 0)}
+                                        disabled={collectLoading || (parseFloat(collectData.tendered) || 0) < (collectData.session.totalAmount || collectData.session.price || 0)}
                                         className="flex-1 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl"
                                     >
                                         {collectLoading ? 'Collecting...' : 'Collect'}
@@ -1244,19 +911,20 @@ export default function POS() {
                     </div>
                 )}
 
-                {showCollectPurchaseModal && collectPurchase && (
+
+                {modals.collectPurchase && collectData.purchase && (
                     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
                         <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6">
                             <div className="mb-4">
                                 <h2 className="text-xl font-bold text-white">Collect Cash</h2>
                                 <p className="text-text-muted text-sm">
-                                    {collectPurchase.member?.firstName} {collectPurchase.member?.lastName} � {collectPurchase.type}
+                                    {collectData.purchase.member?.firstName} {collectData.purchase.member?.lastName} • {collectData.purchase.type}
                                 </p>
                             </div>
                             <div className="space-y-4">
                                 <div className="flex justify-between items-center">
                                     <span className="text-text-muted">Amount Due</span>
-                                    <span className="text-white font-bold text-lg">{formatPrice(collectPurchase.amount)}</span>
+                                    <span className="text-white font-bold text-lg">{formatPrice(collectData.purchase.amount)}</span>
                                 </div>
                                 <div>
                                     <label className="block text-text-muted text-sm font-medium mb-2">Cash Tendered</label>
@@ -1264,38 +932,38 @@ export default function POS() {
                                         type="number"
                                         className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-3 px-4 text-white text-base focus:border-primary outline-none"
                                         placeholder="0.00"
-                                        value={collectTendered}
-                                        onChange={(e) => setCollectTendered(e.target.value)}
+                                        value={collectData.tendered}
+                                        onChange={(e) => setCollectField('tendered', e.target.value)}
                                     />
                                 </div>
                                 <div className="bg-white/5 rounded-xl p-4 flex justify-between items-center">
                                     <span className="text-text-secondary">Change Due:</span>
-                                    {formatPrice(Math.max(0, (parseFloat(collectTendered) || 0) - collectPurchase.amount))}
+                                    {formatPrice(Math.max(0, (parseFloat(collectData.tendered) || 0) - collectData.purchase.amount))}
                                 </div>
                                 <div className="flex gap-3">
                                     <button
-                                        onClick={() => setShowCollectPurchaseModal(false)}
+                                        onClick={() => closeModal('collectPurchase')}
                                         className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 rounded-xl"
                                     >
                                         Cancel
                                     </button>
                                     <button
                                         onClick={async () => {
-                                            if ((parseFloat(collectTendered) || 0) < collectPurchase.amount) return;
+                                            if ((parseFloat(collectData.tendered) || 0) < collectData.purchase.amount) return;
                                             setCollectLoading(true);
                                             try {
-                                                await axios.post(withApiBase(`/api/payments/${collectPurchase.id}/collect-cash`), {
-                                                    cashTendered: parseFloat(collectTendered)
+                                                await axios.post(withApiBase(`/api/payments/${collectData.purchase.id}/collect-cash`), {
+                                                    cashTendered: parseFloat(collectData.tendered)
                                                 }, { headers: authHeaders() });
                                                 await Promise.all([fetchPendingInAppPurchases(), fetchHistory()]);
-                                                setShowCollectPurchaseModal(false);
+                                                closeModal('collectPurchase');
                                             } catch (e) {
                                                 alert(e.response?.data?.error || "Failed to collect payment");
                                             } finally {
                                                 setCollectLoading(false);
                                             }
                                         }}
-                                        disabled={collectLoading || (parseFloat(collectTendered) || 0) < collectPurchase.amount}
+                                        disabled={collectLoading || (parseFloat(collectData.tendered) || 0) < collectData.purchase.amount}
                                         className="flex-1 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl"
                                     >
                                         {collectLoading ? 'Collecting...' : 'Collect'}
@@ -1306,95 +974,6 @@ export default function POS() {
                     </div>
                 )}
 
-                {trainerChangeModalSession && (
-                    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-                        <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4">
-                            <div>
-                                <h2 className="text-xl font-bold text-white">Resolve Trainer Change Request</h2>
-                                <p className="text-text-muted text-sm mt-1">
-                                    {trainerChangeModalSession.member?.firstName} {trainerChangeModalSession.member?.lastName} � {trainerChangeModalSession.trainer?.name}
-                                </p>
-                            </div>
-
-                            <div className="bg-white/5 rounded-xl p-3 text-xs text-text-muted space-y-1">
-                                <p><span className="text-white font-semibold">Current session:</span> {new Date(trainerChangeModalSession.date).toLocaleString()}</p>
-                                <p><span className="text-white font-semibold">Reason:</span> {trainerChangeModalSession.trainerChangeRequest?.request?.reason || 'N/A'}</p>
-                                <p><span className="text-white font-semibold">Preferred:</span> {trainerChangeModalSession.trainerChangeRequest?.request?.preferred ? new Date(trainerChangeModalSession.trainerChangeRequest.request.preferred).toLocaleString() : 'None'}</p>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-white mb-2">Action</label>
-                                <select
-                                    value={trainerChangeResolution.action}
-                                    onChange={(e) => setTrainerChangeResolution((prev) => ({ ...prev, action: e.target.value }))}
-                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
-                                >
-                                    <option style={{ color: '#111', backgroundColor: '#fff' }} value="MOVE">Move Session</option>
-                                    <option style={{ color: '#111', backgroundColor: '#fff' }} value="CANCEL_CREDIT">Cancel & Credit</option>
-                                    <option style={{ color: '#111', backgroundColor: '#fff' }} value="CANCEL_REFUND">Cancel & Refund</option>
-                                    <option style={{ color: '#111', backgroundColor: '#fff' }} value="DENY">Deny Request</option>
-                                </select>
-                            </div>
-
-                            {trainerChangeResolution.action === 'MOVE' && (
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="block text-sm font-medium text-white mb-2">New Date</label>
-                                        <input
-                                            type="date"
-                                            value={trainerChangeResolution.date}
-                                            onChange={(e) => setTrainerChangeResolution((prev) => ({ ...prev, date: e.target.value }))}
-                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-white mb-2">New Time</label>
-                                        <input
-                                            type="time"
-                                            value={trainerChangeResolution.time}
-                                            onChange={(e) => setTrainerChangeResolution((prev) => ({ ...prev, time: e.target.value }))}
-                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
-                                        />
-                                    </div>
-                                </div>
-                            )}
-
-                            <div>
-                                <label className="block text-sm font-medium text-white mb-2">Note (optional)</label>
-                                <textarea
-                                    rows={3}
-                                    value={trainerChangeResolution.note}
-                                    onChange={(e) => setTrainerChangeResolution((prev) => ({ ...prev, note: e.target.value }))}
-                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
-                                    placeholder="Add resolution note..."
-                                />
-                            </div>
-
-                            {trainerChangeError && (
-                                <div className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
-                                    {trainerChangeError}
-                                </div>
-                            )}
-
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={() => setTrainerChangeModalSession(null)}
-                                    disabled={trainerChangeSubmitting}
-                                    className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 disabled:opacity-50 rounded-xl"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={submitTrainerChangeResolution}
-                                    disabled={trainerChangeSubmitting}
-                                    className="flex-1 py-3 bg-primary hover:brightness-110 disabled:opacity-50 text-background font-bold rounded-xl"
-                                >
-                                    {trainerChangeSubmitting ? 'Submitting...' : 'Submit Resolution'}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
             </div>
         );
     }
@@ -1403,12 +982,12 @@ export default function POS() {
         <div className="flex h-[calc(100vh-4rem)] gap-6 overflow-hidden relative">
 
             {/* Receipt Preview Modal */}
-            {showReceiptPreview && lastTransaction && (
+            {modals.receiptPreview && lastTransaction && (
                 <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
                     <div className="bg-white text-black rounded-lg shadow-2xl w-auto max-w-[95vw] flex flex-col max-h-[90vh]">
                         <div className="p-4 border-b flex justify-between items-center bg-gray-100 rounded-t-lg">
                             <h3 className="font-bold text-lg">Receipt Preview</h3>
-                            <button onClick={() => setShowReceiptPreview(false)} className="text-gray-500 hover:text-gray-700">
+                            <button onClick={() => closeModal('receiptPreview')} className="text-gray-500 hover:text-gray-700">
                                 <span className="material-icons-round">close</span>
                             </button>
                         </div>
@@ -1426,7 +1005,7 @@ export default function POS() {
                         </div>
                         <div className="p-4 border-t bg-gray-50 flex gap-4">
                             <button
-                                onClick={() => setShowReceiptPreview(false)}
+                                onClick={() => closeModal('receiptPreview')}
                                 className="flex-1 py-3 rounded-lg font-bold border border-gray-300 hover:bg-gray-100 transition-colors"
                             >
                                 Close
@@ -1443,8 +1022,9 @@ export default function POS() {
             )}
 
 
+
             {/* Payment Method Selection Modal */}
-            {showPaymentModal && (
+            {modals.payment && (
                 <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
                     <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6 animate-scale-up">
                         <div className="text-center mb-6">
@@ -1453,14 +1033,14 @@ export default function POS() {
                             <p className="text-4xl font-bold text-primary mt-1">{formatCartPrice(cartTotal)}</p>
                         </div>
 
-                        {!paymentMethod ? (
+                        {!paymentDetails.method ? (
                             <div className="grid grid-cols-2 gap-4">
                                 {PAYMENT_METHODS.filter(m => m.value !== 'LOYALTY_POINTS').map((method) => (
                                     <button
                                         key={method.value}
                                         onClick={() => {
                                             if (['CASH', 'GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(method.value)) {
-                                                setPaymentMethod(method.value);
+                                                setPaymentField('method', method.value);
                                             } else {
                                                 processPayment(method.value);
                                             }
@@ -1486,21 +1066,21 @@ export default function POS() {
                         ) : (
                             <div className="space-y-6">
                                 {/* E-Wallet / Card / Bank Transfer Details */}
-                                {['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(paymentMethod) && (
+                                {['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(paymentDetails.method) && (
                                     <div className="space-y-4">
                                         <div>
                                             <label className="block text-text-muted text-sm font-medium mb-2">
-                                                {paymentMethod === 'CARD' ? 'Terminal / Reference ID' :
-                                                    paymentMethod === 'GCASH' ? 'GCash Reference ID' :
-                                                        paymentMethod === 'PAYMAYA' ? 'PayMaya Reference ID' :
+                                                {paymentDetails.method === 'CARD' ? 'Terminal / Reference ID' :
+                                                    paymentDetails.method === 'GCASH' ? 'GCash Reference ID' :
+                                                        paymentDetails.method === 'PAYMAYA' ? 'PayMaya Reference ID' :
                                                             'Bank Reference ID'}
                                             </label>
                                             <input
                                                 type="text"
                                                 className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-4 px-4 text-white text-base font-bold focus:border-primary outline-none"
-                                                placeholder={paymentMethod === 'CARD' ? "Enter terminal transaction ID" : "Enter transaction reference ID"}
-                                                value={gcashReference}
-                                                onChange={(e) => setGcashReference(e.target.value)}
+                                                placeholder={paymentDetails.method === 'CARD' ? "Enter terminal transaction ID" : "Enter transaction reference ID"}
+                                                value={paymentDetails.gcashReference}
+                                                onChange={(e) => setPaymentField('gcashReference', e.target.value)}
                                             />
                                         </div>
                                         <div className="grid grid-cols-2 gap-3">
@@ -1509,8 +1089,8 @@ export default function POS() {
                                                 <input
                                                     type="date"
                                                     className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-4 px-4 text-white text-base focus:border-primary outline-none"
-                                                    value={gcashDate}
-                                                    onChange={(e) => setGcashDate(e.target.value)}
+                                                    value={paymentDetails.gcashDate}
+                                                    onChange={(e) => setPaymentField('gcashDate', e.target.value)}
                                                 />
                                             </div>
                                             <div>
@@ -1518,14 +1098,14 @@ export default function POS() {
                                                 <input
                                                     type="time"
                                                     className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-4 px-4 text-white text-base focus:border-primary outline-none"
-                                                    value={gcashTime}
-                                                    onChange={(e) => setGcashTime(e.target.value)}
+                                                    value={paymentDetails.gcashTime}
+                                                    onChange={(e) => setPaymentField('gcashTime', e.target.value)}
                                                 />
                                             </div>
                                         </div>
                                     </div>
                                 )}
-                                {paymentMethod === 'CASH' && (
+                                {paymentDetails.method === 'CASH' && (
                                     <>
                                         <div>
                                             <label className="block text-text-muted text-sm font-medium mb-2">Amount Tendered</label>
@@ -1536,16 +1116,16 @@ export default function POS() {
                                                     autoFocus
                                                     className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-4 pl-8 pr-4 text-white text-xl font-bold focus:border-green-500 outline-none"
                                                     placeholder="0.00"
-                                                    value={amountTendered}
-                                                    onChange={(e) => setAmountTendered(e.target.value)}
+                                                    value={paymentDetails.amountTendered}
+                                                    onChange={(e) => setPaymentField('amountTendered', e.target.value)}
                                                 />
                                             </div>
                                         </div>
 
                                         <div className="bg-white/5 rounded-xl p-4 flex justify-between items-center">
                                             <span className="text-text-secondary">Change Due:</span>
-                                            <span className={`text-2xl font-bold ${(parseFloat(amountTendered) || 0) >= cartTotal ? 'text-green-400' : 'text-red-400'}`}>
-                                                {formatPrice(Math.max(0, (parseFloat(amountTendered) || 0) - cartTotal))}
+                                            <span className={`text-2xl font-bold ${(parseFloat(paymentDetails.amountTendered) || 0) >= cartTotal ? 'text-green-400' : 'text-red-400'}`}>
+                                                {formatPrice(Math.max(0, (parseFloat(paymentDetails.amountTendered) || 0) - cartTotal))}
                                             </span>
                                         </div>
                                     </>
@@ -1553,16 +1133,16 @@ export default function POS() {
 
                                 <div className="flex gap-3">
                                     <button
-                                        onClick={() => setPaymentMethod('')}
+                                        onClick={() => setPaymentField('method', '')}
                                         className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 rounded-xl"
                                     >
                                         Back
                                     </button>
                                     <button
-                                        onClick={() => processPayment(paymentMethod)}
+                                        onClick={() => processPayment(paymentDetails.method)}
                                         disabled={
-                                            (paymentMethod === 'CASH' && (parseFloat(amountTendered) || 0) < cartTotal) ||
-                                            (['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(paymentMethod) && (!gcashReference || !gcashDate || !gcashTime))
+                                            (paymentDetails.method === 'CASH' && (parseFloat(paymentDetails.amountTendered) || 0) < cartTotal) ||
+                                            (['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(paymentDetails.method) && (!paymentDetails.gcashReference || !paymentDetails.gcashDate || !paymentDetails.gcashTime))
                                         }
                                         className="flex-1 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl flex items-center justify-center gap-2"
                                     >
@@ -1573,9 +1153,9 @@ export default function POS() {
                             </div>
                         )}
 
-                        {!paymentMethod && (
+                        {!paymentDetails.method && (
                             <button
-                                onClick={() => setShowPaymentModal(false)}
+                                onClick={() => closeModal('payment')}
                                 className="w-full mt-6 py-3 text-text-muted hover:text-white transition-colors"
                             >
                                 Cancel
@@ -1584,6 +1164,7 @@ export default function POS() {
                     </div>
                 </div>
             )}
+
 
             {/* Left: Product Grid */}
             <div className="flex-1 flex flex-col min-w-0">
@@ -1604,7 +1185,7 @@ export default function POS() {
                             {['All', ...Object.values(POS_VIEWS)].map(cat => (
                                 <button
                                     key={cat}
-                                    onClick={() => setSelectedCategory(cat)}
+                                    onClick={() => setCategory(cat)}
                                     className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${selectedCategory === cat
                                         ? 'bg-primary/10 text-primary shadow-sm'
                                         : 'text-text-muted hover:text-text-secondary'
@@ -1614,6 +1195,7 @@ export default function POS() {
                                 </button>
                             ))}
                         </div>
+
                     </div>
                 </header>
 
@@ -1631,7 +1213,12 @@ export default function POS() {
                                 onClick={() => {
                                     if (isSoldOut) return;
                                     if (isTrainer) {
-                                        addToCart(item, 'TRAINING');
+                                        addToCart({
+                                            ...item,
+                                            trainerId: item.id,
+                                            price: item.sessionPrice ?? 0,
+                                            duration: Number(item.sessionDurations?.split(',')[0]?.trim()) || 60
+                                        }, 'TRAINING');
                                     } else if (isPackage) {
                                         addToCart(item, 'CLASS_PACKAGE');
                                     } else {
@@ -1766,7 +1353,7 @@ export default function POS() {
                                         {item.type !== 'TRAINING' && (
                                             <div className="flex items-center gap-2 mt-1.5">
                                                 <button
-                                                    onClick={(e) => { e.stopPropagation(); updateQuantity(item.id, item.type, item.quantity - 1); }}
+                                                    onClick={(e) => { e.stopPropagation(); updateQuantity(item.cartLineId, item.quantity - 1, item.stock); }}
                                                     className="w-6 h-6 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded text-white transition-colors"
                                                 >
                                                     <span className="material-icons-round text-xs">remove</span>
@@ -1776,10 +1363,10 @@ export default function POS() {
                                                     className="w-10 bg-transparent text-center text-text-muted text-sm font-medium focus:text-white outline-none border-b border-transparent focus:border-white/30 transition-colors"
                                                     value={item.quantity}
                                                     onClick={(e) => e.stopPropagation()}
-                                                    onChange={(e) => updateQuantity(item.id, item.type, Math.max(1, parseInt(e.target.value) || 1))}
+                                                    onChange={(e) => updateQuantity(item.cartLineId, Math.max(1, parseInt(e.target.value) || 1), item.stock)}
                                                 />
                                                 <button
-                                                    onClick={(e) => { e.stopPropagation(); updateQuantity(item.id, item.type, item.quantity + 1); }}
+                                                    onClick={(e) => { e.stopPropagation(); updateQuantity(item.cartLineId, item.quantity + 1, item.stock); }}
                                                     className="w-6 h-6 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded text-white transition-colors"
                                                 >
                                                     <span className="material-icons-round text-xs">add</span>
@@ -1793,7 +1380,7 @@ export default function POS() {
                                             <p className="text-text-muted text-[10px]">{formatCartPrice(item.price)} each</p>
                                         </div>
                                         <button
-                                            onClick={(e) => { e.stopPropagation(); removeFromCart(item.id, item.type, item.cartLineId || null); }}
+                                            onClick={(e) => { e.stopPropagation(); removeFromCart(item.cartLineId); }}
                                             className="w-6 h-6 flex items-center justify-center bg-white/10 text-text-muted hover:bg-red-500/20 hover:text-red-500 rounded-full transition-colors opacity-0 group-hover:opacity-100"
                                         >
                                             <span className="material-icons-round text-[14px]">close</span>
@@ -1843,7 +1430,7 @@ export default function POS() {
                                                         {(() => {
                                                             const month = getCalendarMonthForLine(item.cartLineId);
                                                             const cells = getCalendarCells(month);
-                                                            const trainer = trainers.find(t => t.id === item.trainerId);
+                                                            const trainer = trainers.find(t => Number(t.id) === Number(item.trainerId));
                                                             const todayIso = toIsoDate(new Date());
                                                             return cells.map((day, idx) => {
                                                                 if (!day) return <div key={`blank-${idx}`} className="h-7" />;
@@ -1857,17 +1444,10 @@ export default function POS() {
                                                                         type="button"
                                                                         disabled={isPast || unavailable}
                                                                         onClick={() => {
-                                                                            setCart(prev => prev.map(ci => {
-                                                                                const isTarget = (item.cartLineId && ci.cartLineId === item.cartLineId) || ci === item;
-                                                                                if (!isTarget) return ci;
-                                                                                const lineTrainer = trainers.find(t => t.id === ci.trainerId);
-                                                                                const slots = getAvailableTimeSlotsForTrainer(lineTrainer, iso, ci.duration);
-                                                                                return {
-                                                                                    ...ci,
-                                                                                    date: iso,
-                                                                                    time: slots.includes(ci.time) ? ci.time : ''
-                                                                                };
-                                                                            }));
+                                                                            const lineTrainer = trainers.find(t => Number(t.id) === Number(item.trainerId));
+                                                                            const slots = getAvailableTimeSlotsForTrainer(lineTrainer, iso, item.duration);
+                                                                            updateTrainingDetails(item.cartLineId, 'date', iso);
+                                                                            updateTrainingDetails(item.cartLineId, 'time', slots.includes(item.time) ? item.time : '');
                                                                             setOpenCalendarLineId(null);
                                                                         }}
                                                                         className={`h-7 rounded text-[10px] font-semibold ${selected
@@ -1889,18 +1469,12 @@ export default function POS() {
                                         <select
                                             className="bg-surfaceHighlight border border-white/10 rounded-lg px-2 py-1.5 text-white"
                                             value={item.time}
-                                            onChange={(e) => {
-                                                const nextTime = e.target.value;
-                                                setCart(prev => prev.map(ci => {
-                                                    const isTarget = (item.cartLineId && ci.cartLineId === item.cartLineId) || ci === item;
-                                                    return isTarget ? { ...ci, time: nextTime } : ci;
-                                                }));
-                                            }}
+                                            onChange={(e) => updateTrainingDetails(item.cartLineId, 'time', e.target.value)}
                                             disabled={!item.date}
                                         >
                                             <option value="">{item.date ? 'Select Time' : 'Select Date First'}</option>
                                             {(() => {
-                                                const trainer = trainers.find(t => t.id === item.trainerId);
+                                                const trainer = trainers.find(t => Number(t.id) === Number(item.trainerId));
                                                 const slots = item.date ? getAvailableTimeSlotsForTrainer(trainer, item.date, item.duration) : [];
                                                 return slots.map(slot => (
                                                     <option key={slot} value={slot}>{formatTimeLabel(slot)}</option>
@@ -1912,20 +1486,13 @@ export default function POS() {
                                             value={item.duration}
                                             onChange={(e) => {
                                                 const nextDuration = Number(e.target.value);
-                                                setCart(prev => prev.map(ci => {
-                                                    const isTarget = (item.cartLineId && ci.cartLineId === item.cartLineId) || ci === item;
-                                                    if (!isTarget) return ci;
-                                                    const trainer = trainers.find(t => t.id === ci.trainerId);
-                                                    const slots = ci.date ? getAvailableTimeSlotsForTrainer(trainer, ci.date, nextDuration) : [];
-                                                    return {
-                                                        ...ci,
-                                                        duration: nextDuration,
-                                                        time: slots.includes(ci.time) ? ci.time : ''
-                                                    };
-                                                }));
+                                                const trainer = trainers.find(t => Number(t.id) === Number(item.trainerId));
+                                                const slots = item.date ? getAvailableTimeSlotsForTrainer(trainer, item.date, nextDuration) : [];
+                                                updateTrainingDetails(item.cartLineId, 'duration', nextDuration);
+                                                updateTrainingDetails(item.cartLineId, 'time', slots.includes(item.time) ? item.time : '');
                                             }}
                                         >
-                                            {(trainers.find(t => t.id === item.trainerId)?.sessionDurations || '60')
+                                            {(trainers.find(t => Number(t.id) === Number(item.trainerId))?.sessionDurations || '60')
                                                 .split(',')
                                                 .map((d) => Number(String(d).trim()))
                                                 .filter((d) => Number.isFinite(d) && d > 0)
@@ -1938,12 +1505,10 @@ export default function POS() {
                                             className="bg-surfaceHighlight border border-white/10 rounded-lg px-2 py-1.5 text-white"
                                             placeholder="Notes"
                                             value={item.notes || ''}
-                                            onChange={(e) => setCart(prev => prev.map(ci => {
-                                                const isTarget = (item.cartLineId && ci.cartLineId === item.cartLineId) || ci === item;
-                                                return isTarget ? { ...ci, notes: e.target.value } : ci;
-                                            }))}
+                                            onChange={(e) => updateTrainingDetails(item.cartLineId, 'notes', e.target.value)}
                                         />
                                     </div>
+
                                 )}
                             </div>
                         ))

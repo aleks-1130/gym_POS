@@ -21,7 +21,7 @@ const checkout = async (req, res) => {
         const method = isDeferredTrainerMaterial ? 'COMMISSION_DEDUCTION' : (isPendingCash ? 'CASH' : requestedMethod);
         const status = isDeferredTrainerMaterial ? 'COMPLETED' : (isPendingCash ? 'PENDING' : 'COMPLETED');
         const { PAYMENT_METHODS } = require('../../config/businessConfig');
-        const allowedMethods = PAYMENT_METHODS.map(m => m.id).concat(['COMMISSION_DEDUCTION', 'CARD']);
+        const allowedMethods = PAYMENT_METHODS.map(m => m.value).concat(['COMMISSION_DEDUCTION', 'CARD']);
         if (!allowedMethods.includes(method)) {
             return res.status(400).json({ error: "Invalid payment method" });
         }
