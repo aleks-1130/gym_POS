@@ -27,7 +27,6 @@ logs
 .env.production.local
 
 # Prisma
-prisma/migrations/
 
 # IDE and editor directories
 .vscode/*
