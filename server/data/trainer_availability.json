@@ -185,7 +185,7 @@
         "available": false
       }
     },
-    "bookingStatus": "OPEN"
+    "bookingStatus": "CLOSED"
   },
   "123": {
     "availabilityByDay": {

@@ -451,8 +451,8 @@ export default function TrainerAvailability() {
                 : 'bg-rose-500/15 border-rose-500/35'
                 }`}>
                 <div className="space-y-3">
-                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                        <div>
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
                             <p className="text-sm font-semibold text-white">Booking Access</p>
                             <p className={`text-xs mt-1 ${bookingStatus === 'OPEN' ? 'text-emerald-100/90' : 'text-rose-100/90'}`}>
                                 Control whether members can create new bookings. Existing confirmed sessions remain valid.
@@ -472,7 +472,7 @@ export default function TrainerAvailability() {
                             aria-checked={bookingStatus === 'OPEN'}
                             onClick={() => requestBookingStatusChange(nextBookingStatus)}
                             disabled={savingBookingStatus}
-                            className={`relative inline-flex h-8 w-14 items-center rounded-full border transition-colors ${bookingStatus === 'OPEN'
+                            className={`relative inline-flex h-8 w-14 shrink-0 items-center rounded-full border transition-colors ${bookingStatus === 'OPEN'
                                 ? 'bg-emerald-500 border-emerald-300/70'
                                 : 'bg-rose-500 border-rose-300/70'
                                 } disabled:opacity-60`}
@@ -489,7 +489,10 @@ export default function TrainerAvailability() {
                         <p className={`text-[11px] mt-2 ${bookingStatus === 'OPEN' ? 'text-emerald-100/90' : 'text-rose-100/90'}`}>Updating booking status...</p>
                     )}
                     {bookingStatusSuccess && (
-                        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2 mt-2 text-xs text-emerald-200">
+                        <div className={`rounded-lg p-2 mt-2 text-xs border ${bookingStatus === 'OPEN'
+                            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-200'
+                            : 'bg-rose-500/10 border-rose-500/20 text-rose-200'
+                            }`}>
                             {bookingStatusSuccess}
                         </div>
                     )}
