@@ -5,6 +5,16 @@ const MEMBER_RESCHEDULE_NOTICE_HOURS = 24;
 const MEMBER_RESCHEDULE_WINDOW_DAYS = 7;
 const COMPLETE_GRACE_MINUTES = 5;
 const NO_SHOW_GRACE_MINUTES = 10;
+const FINALIZED_SESSION_STATUSES = ['CANCELLED', 'COMPLETED', 'NO_SHOW', 'DECLINED'];
+
+const toLocalIsoDate = (value) => {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+};
 
 const appendPolicyNote = (existingNotes, extraLine) => {
     const base = (existingNotes || '').trim();
@@ -43,6 +53,29 @@ const checkBookingConflict = async (trainerId, startDateTime, durationMinutes, e
         const sessionEnd = new Date(sessionStart.getTime() + (Number(session.duration) || 0) * 60000);
         return startDateTime < sessionEnd && endDateTime > sessionStart;
     });
+};
+
+const shouldTemporarilyOpenTrainerForDate = async ({ trainerId, date, now = new Date() }) => {
+    const requestedIso = String(date || '').trim();
+    const todayIso = toLocalIsoDate(now);
+    if (!requestedIso || !todayIso || requestedIso !== todayIso) return false;
+
+    const endOfDay = new Date(now);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const session = await prisma.trainingSession.findFirst({
+        where: {
+            trainerId: Number(trainerId),
+            date: {
+                gte: now,
+                lte: endOfDay
+            },
+            status: { notIn: FINALIZED_SESSION_STATUSES }
+        },
+        select: { id: true }
+    });
+
+    return Boolean(session);
 };
 
 const getTrainerUserId = async (trainerId) => {
@@ -338,11 +371,16 @@ const updateSession = async (req, res) => {
             }
             const composedDate = composed.toISOString().slice(0, 10);
             const composedTime = `${String(composed.getHours()).padStart(2, '0')}:${String(composed.getMinutes()).padStart(2, '0')}`;
+            const allowClosedBookingToday = await shouldTemporarilyOpenTrainerForDate({
+                trainerId: Number(session.trainerId),
+                date: composedDate
+            });
             if (!isTimeAllowedForTrainer({
                 trainerId: Number(session.trainerId),
                 date: composedDate,
                 time: composedTime,
-                duration: Number(session.duration)
+                duration: Number(session.duration),
+                enforceBookingStatus: !allowClosedBookingToday
             })) {
                 return res.status(400).json({ error: "Selected schedule is outside trainer availability" });
             }
@@ -643,11 +681,16 @@ const memberRescheduleSession = async (req, res) => {
 
         const hhmm = `${String(nextDateTime.getHours()).padStart(2, '0')}:${String(nextDateTime.getMinutes()).padStart(2, '0')}`;
         const yyyyMmDd = nextDateTime.toISOString().slice(0, 10);
+        const allowClosedBookingToday = await shouldTemporarilyOpenTrainerForDate({
+            trainerId: Number(session.trainerId),
+            date: yyyyMmDd
+        });
         if (!isTimeAllowedForTrainer({
             trainerId: Number(session.trainerId),
             date: yyyyMmDd,
             time: hhmm,
-            duration: Number(session.duration)
+            duration: Number(session.duration),
+            enforceBookingStatus: !allowClosedBookingToday
         })) {
             return res.status(400).json({ error: "Selected schedule is outside trainer availability" });
         }

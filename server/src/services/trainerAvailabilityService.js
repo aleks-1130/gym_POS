@@ -231,9 +231,9 @@ const timeToMinutes = (timeString) => {
     return h * 60 + m;
 };
 
-const isTimeAllowedForAvailability = ({ availability, date, time, duration }) => {
+const isTimeAllowedForAvailability = ({ availability, date, time, duration, enforceBookingStatus = true }) => {
     if (!availability) return true;
-    if (normalizeBookingStatus(availability.bookingStatus, 'OPEN') === 'CLOSED') return false;
+    if (enforceBookingStatus && normalizeBookingStatus(availability.bookingStatus, 'OPEN') === 'CLOSED') return false;
 
     const specificDate = availability?.specificDateAvailability?.[String(date || '')];
     if (specificDate) {
@@ -272,9 +272,9 @@ const isTimeAllowedForAvailability = ({ availability, date, time, duration }) =>
     return offset % step === 0;
 };
 
-const isTimeAllowedForTrainer = ({ trainerId, date, time, duration }) => {
+const isTimeAllowedForTrainer = ({ trainerId, date, time, duration, enforceBookingStatus = true }) => {
     const availability = getTrainerAvailability(trainerId);
-    return isTimeAllowedForAvailability({ availability, date, time, duration });
+    return isTimeAllowedForAvailability({ availability, date, time, duration, enforceBookingStatus });
 };
 
 module.exports = {

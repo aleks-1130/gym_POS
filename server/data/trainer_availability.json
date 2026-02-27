@@ -173,7 +173,19 @@
     ],
     "availabilityStart": "09:00",
     "availabilityEnd": "18:00",
-    "availabilityIntervalMinutes": 30
+    "availabilityIntervalMinutes": 30,
+    "specificDateAvailability": {
+      "2026-03-12": {
+        "available": false
+      },
+      "2026-03-11": {
+        "available": false
+      },
+      "2026-03-10": {
+        "available": false
+      }
+    },
+    "bookingStatus": "OPEN"
   },
   "123": {
     "availabilityByDay": {

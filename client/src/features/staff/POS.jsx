@@ -487,6 +487,11 @@ export default function POS() {
         return `${y}-${m}-${d}`;
     };
 
+    const isTrainerTemporarilyOpenForDate = (trainer, isoDate) => {
+        if (!trainer || !isoDate) return false;
+        return Boolean(trainer.temporarilyOpenToday) && isoDate === toIsoDate(new Date());
+    };
+
     const toMinutes = (timeString) => {
         const [h, m] = String(timeString || '').split(':').map(Number);
         if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
@@ -505,7 +510,8 @@ export default function POS() {
 
     const getTrainerDateWindow = (trainer, isoDate) => {
         if (!trainer || !isoDate) return null;
-        if (String(trainer.bookingStatus || 'OPEN').toUpperCase() === 'CLOSED') return null;
+        const isClosed = String(trainer.bookingStatus || 'OPEN').toUpperCase() === 'CLOSED';
+        if (isClosed && !isTrainerTemporarilyOpenForDate(trainer, isoDate)) return null;
         const dateObj = new Date(`${isoDate}T00:00:00`);
         if (Number.isNaN(dateObj.getTime())) return null;
 

@@ -29,6 +29,16 @@ const toLocalTime = (value) => {
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
+const hasUpcomingSessionOnIsoDate = ({ sessions, isoDate, now = new Date() }) => {
+    return (sessions || []).some((session) => {
+        const sessionDate = new Date(session.date);
+        if (Number.isNaN(sessionDate.getTime())) return false;
+        if (sessionDate < now) return false;
+        if (FINALIZED_SESSION_STATUSES.includes(String(session.status || '').toUpperCase())) return false;
+        return toLocalIsoDate(sessionDate) === isoDate;
+    });
+};
+
 const findAvailabilityConflicts = (sessions, nextAvailability) => {
     return (sessions || [])
         .filter((session) => {
@@ -40,7 +50,8 @@ const findAvailabilityConflicts = (sessions, nextAvailability) => {
                 availability: nextAvailability,
                 date,
                 time,
-                duration
+                duration,
+                enforceBookingStatus: false
             });
         })
         .map((session) => ({
@@ -54,21 +65,41 @@ const findAvailabilityConflicts = (sessions, nextAvailability) => {
 
 const getAllTrainers = async (req, res) => {
     try {
+        const now = new Date();
+        const todayIso = toLocalIsoDate(now);
         const trainers = await prisma.trainer.findMany({
             include: {
                 classes: true,
                 trainingSessions: {
                     where: {
-                        date: { gte: new Date() },
+                        date: { gte: now },
                         status: { not: 'CANCELLED' }
                     },
                 }
             },
             orderBy: { name: 'asc' }
         });
-        const hydrated = trainers.map(withTrainerAvailability);
+        const hydrated = trainers.map((trainer) => {
+            const normalized = withTrainerAvailability(trainer);
+            const bookingStatus = String(normalized.bookingStatus || 'OPEN').toUpperCase();
+            return {
+                ...normalized,
+                temporarilyOpenToday: bookingStatus === 'CLOSED'
+                    ? hasUpcomingSessionOnIsoDate({
+                        sessions: trainer.trainingSessions,
+                        isoDate: todayIso,
+                        now
+                    })
+                    : false
+            };
+        });
         if (req.user?.role === 'MEMBER') {
-            return res.json(hydrated.filter((trainer) => String(trainer.bookingStatus || 'OPEN').toUpperCase() === 'OPEN'));
+            return res.json(
+                hydrated.filter((trainer) => {
+                    const bookingStatus = String(trainer.bookingStatus || 'OPEN').toUpperCase();
+                    return bookingStatus === 'OPEN' || Boolean(trainer.temporarilyOpenToday);
+                })
+            );
         }
         res.json(hydrated);
     } catch (e) {
