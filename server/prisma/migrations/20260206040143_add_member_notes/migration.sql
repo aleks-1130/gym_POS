@@ -1,0 +1,10 @@
+-- CreateTable
+CREATE TABLE "MemberNote" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "memberId" INTEGER NOT NULL,
+    "content" TEXT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdBy" INTEGER,
+    CONSTRAINT "MemberNote_memberId_fkey" FOREIGN KEY ("memberId") REFERENCES "Member" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT "MemberNote_createdBy_fkey" FOREIGN KEY ("createdBy") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);

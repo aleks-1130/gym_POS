@@ -5,7 +5,6 @@ import { ROLES } from '../constants/roles';
 import Sidebar from '../components/Sidebar';
 import BottomNav from '../components/BottomNav';
 import PWAInstallPrompt from '../components/PWAInstallPrompt';
-import FullscreenController from '../components/FullscreenController';
 
 // Auth & Public
 import Landing from '../features/shared/Landing';
@@ -60,6 +59,7 @@ import TrainerPurchaseHistory from '../features/trainer/TrainerPurchaseHistory';
 import TrainerGymTraffic from '../features/trainer/TrainerGymTraffic';
 import TrainerCommissionHistory from '../features/trainer/TrainerCommissionHistory';
 import TrainerLoyalty from '../features/trainer/TrainerLoyalty';
+import TrainerAvailability from '../features/trainer/TrainerAvailability';
 
 // Member Pages
 import Schedule from '../features/member/Schedule';
@@ -129,7 +129,6 @@ export default function AppRoutes() {
     return (
         <div className="flex-1 w-full bg-background overflow-auto relative">
             <PWAInstallPrompt user={user} />
-            <FullscreenController enabled={Boolean(user)} />
             <Routes>
                 {/* --- PUBLIC ROUTES --- */}
                 <Route path="/" element={<Landing />} />
@@ -346,6 +345,14 @@ export default function AppRoutes() {
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
                             <TrainerLoyalty />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/trainer/availability"
+                    element={
+                        <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+                            <TrainerAvailability />
                         </ProtectedRoute>
                     }
                 />

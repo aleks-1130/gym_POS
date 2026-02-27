@@ -503,21 +503,44 @@ export default function POS() {
         return `${hour12}:${String(minute).padStart(2, '0')} ${suffix}`;
     };
 
+    const getTrainerDateWindow = (trainer, isoDate) => {
+        if (!trainer || !isoDate) return null;
+        if (String(trainer.bookingStatus || 'OPEN').toUpperCase() === 'CLOSED') return null;
+        const dateObj = new Date(`${isoDate}T00:00:00`);
+        if (Number.isNaN(dateObj.getTime())) return null;
+
+        const specificDate = trainer.specificDateAvailability?.[isoDate];
+        if (specificDate) {
+            if (specificDate.available === false) return null;
+            return {
+                start: specificDate.start || '09:00',
+                end: specificDate.end || '18:00'
+            };
+        }
+
+        const availabilityDays = Array.isArray(trainer.availabilityDays)
+            ? trainer.availabilityDays.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+            : [];
+        if (availabilityDays.length > 0 && !availabilityDays.includes(dateObj.getDay())) return null;
+
+        const dayKey = String(dateObj.getDay());
+        const dayConfig = trainer.availabilityByDay?.[dayKey];
+        return {
+            start: dayConfig?.start || trainer.availabilityStart || '09:00',
+            end: dayConfig?.end || trainer.availabilityEnd || '18:00'
+        };
+    };
+
     const getAvailableTimeSlotsForTrainer = (trainer, isoDate, duration) => {
         if (!trainer || !isoDate || !duration) return [];
         const dateObj = new Date(`${isoDate}T00:00:00`);
         if (Number.isNaN(dateObj.getTime())) return [];
 
-        const availabilityDays = Array.isArray(trainer.availabilityDays)
-            ? trainer.availabilityDays.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
-            : [];
-        if (availabilityDays.length > 0 && !availabilityDays.includes(dateObj.getDay())) return [];
-
-        const dayKey = String(dateObj.getDay());
+        const window = getTrainerDateWindow(trainer, isoDate);
+        if (!window) return [];
         const interval = Number(trainer.availabilityIntervalMinutes) || 30;
-        const dayConfig = trainer.availabilityByDay?.[dayKey];
-        const start = toMinutes(dayConfig?.start || trainer.availabilityStart || '09:00');
-        const end = toMinutes(dayConfig?.end || trainer.availabilityEnd || '18:00');
+        const start = toMinutes(window.start);
+        const end = toMinutes(window.end);
         if (start === null || end === null || end <= start) return [];
 
         const bookedSessions = (trainer.trainingSessions || [])
@@ -558,9 +581,6 @@ export default function POS() {
 
     const getAvailableDatesForTrainer = (trainer, daysAhead = 45) => {
         if (!trainer) return [];
-        const availabilityDays = Array.isArray(trainer.availabilityDays)
-            ? trainer.availabilityDays.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
-            : [];
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
@@ -568,10 +588,11 @@ export default function POS() {
         for (let i = 0; i <= daysAhead; i += 1) {
             const current = new Date(today);
             current.setDate(today.getDate() + i);
-            if (availabilityDays.length > 0 && !availabilityDays.includes(current.getDay())) {
-                continue;
-            }
-            dates.push(toIsoDate(current));
+            const iso = toIsoDate(current);
+            const window = getTrainerDateWindow(trainer, iso);
+            const start = window ? toMinutes(window.start) : null;
+            const end = window ? toMinutes(window.end) : null;
+            if (window && start !== null && end !== null && end > start) dates.push(iso);
         }
         return dates;
     };

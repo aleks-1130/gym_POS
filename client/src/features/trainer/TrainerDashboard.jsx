@@ -84,6 +84,8 @@ export default function TrainerDashboard() {
     const upcomingCount = upcomingSessions.length;
     const completedCount = sessions.filter((s) => s.status === 'COMPLETED').length;
     const commissionSummary = commissions?.summary || {};
+    const loyaltyPoints = Number(trainer?.loyaltyPoints || 0);
+    const checkIns = Number(trainer?.checkIns || 0);
 
     return (
         <div className="space-y-4 pb-20 px-4 max-w-2xl mx-auto">
@@ -138,6 +140,20 @@ export default function TrainerDashboard() {
             </div>
 
             <div className="grid grid-cols-2 gap-3">
+                <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
+                    <div className="flex flex-col h-full">
+                        <span className="material-icons-round text-yellow-500 text-2xl mb-2">stars</span>
+                        <p className="text-text-muted text-xs font-medium mb-1">Loyalty Points</p>
+                        <h3 className="text-2xl font-bold text-white">{loyaltyPoints}</h3>
+                    </div>
+                </div>
+                <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
+                    <div className="flex flex-col h-full">
+                        <span className="material-icons-round text-primary text-2xl mb-2">how_to_reg</span>
+                        <p className="text-text-muted text-xs font-medium mb-1">Check-ins</p>
+                        <h3 className="text-2xl font-bold text-white">{checkIns}</h3>
+                    </div>
+                </div>
                 <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
                     <div className="flex flex-col h-full">
                         <span className="material-icons-round text-primary text-2xl mb-2">event_available</span>

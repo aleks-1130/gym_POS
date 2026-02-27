@@ -3,11 +3,54 @@ const bcrypt = require('bcryptjs');
 const {
     withTrainerAvailability,
     setTrainerAvailability,
-    removeTrainerAvailability
+    removeTrainerAvailability,
+    getTrainerAvailability,
+    normalizeAvailability,
+    isTimeAllowedForAvailability
 } = require('../../services/trainerAvailabilityService');
 const { syncToNeonAuth } = require('../../services/neonAuthSync');
 const crypto = require('crypto');
 const { sendActivationEmail } = require('../../services/emailService');
+
+const FINALIZED_SESSION_STATUSES = ['CANCELLED', 'COMPLETED', 'NO_SHOW', 'DECLINED'];
+
+const toLocalIsoDate = (value) => {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+};
+
+const toLocalTime = (value) => {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
+const findAvailabilityConflicts = (sessions, nextAvailability) => {
+    return (sessions || [])
+        .filter((session) => {
+            const date = toLocalIsoDate(session.date);
+            const time = toLocalTime(session.date);
+            const duration = Number(session.duration) || 0;
+            if (!date || !time || duration <= 0) return false;
+            return !isTimeAllowedForAvailability({
+                availability: nextAvailability,
+                date,
+                time,
+                duration
+            });
+        })
+        .map((session) => ({
+            id: session.id,
+            date: session.date,
+            duration: Number(session.duration) || 0,
+            status: session.status,
+            memberName: session.member ? `${session.member.firstName || ''} ${session.member.lastName || ''}`.trim() : 'Member'
+        }));
+};
 
 const getAllTrainers = async (req, res) => {
     try {
@@ -23,7 +66,11 @@ const getAllTrainers = async (req, res) => {
             },
             orderBy: { name: 'asc' }
         });
-        res.json(trainers.map(withTrainerAvailability));
+        const hydrated = trainers.map(withTrainerAvailability);
+        if (req.user?.role === 'MEMBER') {
+            return res.json(hydrated.filter((trainer) => String(trainer.bookingStatus || 'OPEN').toUpperCase() === 'OPEN'));
+        }
+        res.json(hydrated);
     } catch (e) {
         res.status(500).json({ error: "Failed to fetch trainers" });
     }
@@ -58,22 +105,32 @@ const getMe = async (req, res) => {
     try {
         const trainerId = req.user.trainerId;
         if (!trainerId) return res.status(400).json({ error: "Trainer account is not linked" });
-        const trainer = await prisma.trainer.findUnique({
-            where: { id: Number(trainerId) },
-            include: {
-                classes: true,
-                user: {
-                    select: {
-                        id: true,
-                        loyaltyPoints: true
+        const numericTrainerId = Number(trainerId);
+        const [trainer, checkIns] = await Promise.all([
+            prisma.trainer.findUnique({
+                where: { id: numericTrainerId },
+                include: {
+                    classes: true,
+                    user: {
+                        select: {
+                            id: true,
+                            loyaltyPoints: true
+                        }
                     }
                 }
-            }
-        });
+            }),
+            prisma.accessLog.count({
+                where: {
+                    trainerId: numericTrainerId,
+                    status: { not: 'DENIED' }
+                }
+            })
+        ]);
         if (!trainer) return res.status(404).json({ error: "Trainer not found" });
         res.json({
             ...withTrainerAvailability(trainer),
-            loyaltyPoints: Number(trainer.user?.loyaltyPoints || 0)
+            loyaltyPoints: Number(trainer.user?.loyaltyPoints || 0),
+            checkIns: Number(checkIns || 0)
         });
     } catch (e) {
         res.status(500).json({ error: "Failed to fetch trainer profile" });
@@ -225,6 +282,57 @@ const getMyCommissions = async (req, res) => {
     } catch (e) {
         console.error("Failed to fetch trainer commissions:", e);
         return res.status(500).json({ error: "Failed to fetch trainer commissions" });
+    }
+};
+
+const updateMyAvailability = async (req, res) => {
+    try {
+        const trainerId = Number(req.user?.trainerId);
+        if (!trainerId) {
+            return res.status(400).json({ error: "Trainer account is not linked" });
+        }
+
+        const trainer = await prisma.trainer.findUnique({
+            where: { id: trainerId },
+            select: { id: true, name: true }
+        });
+        if (!trainer) {
+            return res.status(404).json({ error: "Trainer not found" });
+        }
+
+        const currentAvailability = getTrainerAvailability(trainerId);
+        const nextAvailability = normalizeAvailability(req.body || {}, { previous: currentAvailability });
+        const now = new Date();
+        const upcomingSessions = await prisma.trainingSession.findMany({
+            where: {
+                trainerId,
+                date: { gte: now },
+                status: { notIn: FINALIZED_SESSION_STATUSES }
+            },
+            select: {
+                id: true,
+                date: true,
+                duration: true,
+                status: true,
+                member: {
+                    select: { firstName: true, lastName: true }
+                }
+            },
+            orderBy: { date: 'asc' }
+        });
+
+        const conflicts = findAvailabilityConflicts(upcomingSessions, nextAvailability);
+        if (conflicts.length > 0) {
+            return res.status(409).json({
+                error: "Cannot save availability because some existing bookings would become unavailable.",
+                conflicts
+            });
+        }
+
+        const availability = setTrainerAvailability(trainerId, nextAvailability);
+        return res.json({ ...trainer, ...availability });
+    } catch (e) {
+        return res.status(500).json({ error: e.message || "Failed to update trainer availability" });
     }
 };
 
@@ -487,6 +595,7 @@ module.exports = {
     getTrainerById,
     getMe,
     getMyCommissions,
+    updateMyAvailability,
     createTrainer,
     updateTrainer,
     deleteTrainer,

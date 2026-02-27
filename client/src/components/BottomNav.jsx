@@ -29,6 +29,7 @@ export default function BottomNav() {
         { to: "/trainer/profile", icon: User, label: "Profile" },
     ];
     const trainerSecondaryNav = [
+        { to: "/trainer/availability", icon: Calendar, label: "Availability" },
         { to: "/trainer/gym-traffic", icon: Activity, label: "Traffic" },
         { to: "/trainer/loyalty", icon: Gift, label: "Rewards" },
         { to: "/trainer/commission-history", icon: Gift, label: "Commissions" },
