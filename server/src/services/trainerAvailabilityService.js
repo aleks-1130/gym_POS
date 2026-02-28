@@ -1,8 +1,4 @@
-const fs = require('fs');
-const path = require('path');
-
-const DATA_DIR = path.join(__dirname, '../../data');
-const DATA_FILE = path.join(DATA_DIR, 'trainer_availability.json');
+const prisma = require('../config/prisma');
 
 const DAY_TO_INDEX = {
     sunday: 0,
@@ -16,27 +12,6 @@ const DAY_TO_INDEX = {
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj || {}, key);
-
-const ensureStore = () => {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, JSON.stringify({}, null, 2), 'utf8');
-};
-
-const readStore = () => {
-    ensureStore();
-    try {
-        const raw = fs.readFileSync(DATA_FILE, 'utf8');
-        const parsed = JSON.parse(raw || '{}');
-        return parsed && typeof parsed === 'object' ? parsed : {};
-    } catch (_) {
-        return {};
-    }
-};
-
-const writeStore = (value) => {
-    ensureStore();
-    fs.writeFileSync(DATA_FILE, JSON.stringify(value, null, 2), 'utf8');
-};
 
 const normalizeDays = (input) => {
     const raw = Array.isArray(input)
@@ -185,32 +160,74 @@ const normalizeAvailability = (inputValue = {}, options = {}) => {
     };
 };
 
-const getTrainerAvailability = (trainerId) => {
-    const store = readStore();
-    const raw = store[String(trainerId)];
-    if (!raw) return null;
-    return normalizeAvailability(raw);
+const getTrainerAvailability = async (trainerId) => {
+    const normalizedTrainerId = Number(trainerId);
+    if (!Number.isInteger(normalizedTrainerId) || normalizedTrainerId <= 0) return null;
+
+    const record = await prisma.trainerAvailability.findUnique({
+        where: { trainerId: normalizedTrainerId }
+    });
+    if (!record) return null;
+
+    return normalizeAvailability(record.settings || {});
 };
 
-const setTrainerAvailability = (trainerId, availabilityInput) => {
-    const store = readStore();
-    const current = store[String(trainerId)] ? normalizeAvailability(store[String(trainerId)]) : null;
-    store[String(trainerId)] = normalizeAvailability(availabilityInput, { previous: current });
-    writeStore(store);
-    return store[String(trainerId)];
-};
+const getTrainerAvailabilityMap = async (trainerIds = []) => {
+    const uniqueTrainerIds = [...new Set(
+        (Array.isArray(trainerIds) ? trainerIds : [])
+            .map((id) => Number(id))
+            .filter((id) => Number.isInteger(id) && id > 0)
+    )];
 
-const removeTrainerAvailability = (trainerId) => {
-    const store = readStore();
-    if (store[String(trainerId)]) {
-        delete store[String(trainerId)];
-        writeStore(store);
+    const result = new Map();
+    if (uniqueTrainerIds.length === 0) return result;
+
+    const records = await prisma.trainerAvailability.findMany({
+        where: { trainerId: { in: uniqueTrainerIds } }
+    });
+
+    for (const record of records) {
+        result.set(record.trainerId, normalizeAvailability(record.settings || {}));
     }
+
+    return result;
 };
 
-const withTrainerAvailability = (trainer) => {
+const setTrainerAvailability = async (trainerId, availabilityInput) => {
+    const normalizedTrainerId = Number(trainerId);
+    if (!Number.isInteger(normalizedTrainerId) || normalizedTrainerId <= 0) {
+        throw new Error('Invalid trainer ID for availability');
+    }
+
+    const current = await getTrainerAvailability(normalizedTrainerId);
+    const normalized = normalizeAvailability(availabilityInput, { previous: current });
+
+    await prisma.trainerAvailability.upsert({
+        where: { trainerId: normalizedTrainerId },
+        create: {
+            trainerId: normalizedTrainerId,
+            settings: normalized
+        },
+        update: {
+            settings: normalized
+        }
+    });
+
+    return normalized;
+};
+
+const removeTrainerAvailability = async (trainerId) => {
+    const normalizedTrainerId = Number(trainerId);
+    if (!Number.isInteger(normalizedTrainerId) || normalizedTrainerId <= 0) return;
+
+    await prisma.trainerAvailability.deleteMany({
+        where: { trainerId: normalizedTrainerId }
+    });
+};
+
+const withTrainerAvailability = async (trainer) => {
     if (!trainer) return trainer;
-    const availability = getTrainerAvailability(trainer.id);
+    const availability = await getTrainerAvailability(trainer.id);
     if (!availability) {
         return {
             ...trainer,
@@ -272,13 +289,14 @@ const isTimeAllowedForAvailability = ({ availability, date, time, duration, enfo
     return offset % step === 0;
 };
 
-const isTimeAllowedForTrainer = ({ trainerId, date, time, duration, enforceBookingStatus = true }) => {
-    const availability = getTrainerAvailability(trainerId);
+const isTimeAllowedForTrainer = async ({ trainerId, date, time, duration, enforceBookingStatus = true }) => {
+    const availability = await getTrainerAvailability(trainerId);
     return isTimeAllowedForAvailability({ availability, date, time, duration, enforceBookingStatus });
 };
 
 module.exports = {
     getTrainerAvailability,
+    getTrainerAvailabilityMap,
     setTrainerAvailability,
     removeTrainerAvailability,
     withTrainerAvailability,

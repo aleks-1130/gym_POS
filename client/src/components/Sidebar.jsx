@@ -35,6 +35,28 @@ export default function Sidebar() {
         </NavLink>
     );
 
+    const FooterNavItem = ({ to, icon, label, tone = 'default' }) => (
+        <NavLink
+            to={to}
+            onClick={() => setIsMobileOpen(false)}
+            className={({ isActive }) => `
+                relative group flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200
+                ${tone === 'default'
+                    ? (isActive
+                        ? 'bg-primary/20 border border-primary/30 text-white'
+                        : 'border border-transparent text-text-secondary hover:bg-white/5 hover:text-white')
+                    : 'border border-transparent text-text-secondary hover:bg-red-500/10 hover:text-red-400'
+                }
+                ${isCollapsed ? 'lg:justify-center' : ''}
+            `}
+        >
+            <span className="material-icons-round text-[19px] flex-shrink-0">{icon}</span>
+            <span className={`font-semibold text-[13px] whitespace-nowrap transition-all duration-300 ${isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'}`}>
+                {label}
+            </span>
+        </NavLink>
+    );
+
     const SectionDivider = ({ label }) => (
         <div className="px-3 mt-4 mb-1.5">
             <div className={`flex items-center gap-2 transition-all duration-300 ${isCollapsed ? 'lg:justify-center' : ''}`}>
@@ -87,9 +109,7 @@ export default function Sidebar() {
                 section: "Management", items: [
                     { to: "/payroll", icon: "payments", label: "Payroll" },
                     { to: "/inventory", icon: "inventory_2", label: "Inventory" },
-                    { to: "/suppliers", icon: "local_shipping", label: "Suppliers" },
                     { to: "/expenses", icon: "monetization_on", label: "Expenses" },
-                    { to: "/pos-settings", icon: "pin", label: "POS Settings" },
                     { to: "/trainers", icon: "fitness_center", label: "Trainers" },
                     { to: "/classes", icon: "event", label: "Classes" },
                     { to: "/training-manager", icon: "assignment", label: "Training Sessions" },
@@ -97,7 +117,6 @@ export default function Sidebar() {
             },
             {
                 section: "Insights", items: [
-                    { to: "/schedule", icon: "calendar_month", label: "Schedule" },
                     { to: "/analytics", icon: "analytics", label: "Analytics" },
                     { to: "/transactions", icon: "history", label: "Transactions" },
                     { to: "/refunds", icon: "assignment_return", label: "Refunds" },
@@ -120,10 +139,8 @@ export default function Sidebar() {
                     { to: "/audit", icon: "verified_user", label: "Audit Logs" },
                     { to: "/refunds", icon: "assignment_return", label: "Refunds" },
                     { to: "/projections", icon: "trending_up", label: "Projections" },
-                    { to: "/settings", icon: "tune", label: "Settings" },
-                    { to: "/suppliers", icon: "local_shipping", label: "Suppliers" },
+                    { to: "/inventory", icon: "inventory_2", label: "Inventory" },
                     { to: "/expenses", icon: "monetization_on", label: "Expenses" },
-                    { to: "/pos-settings", icon: "pin", label: "POS Settings" },
                 ]
             }
         ],
@@ -145,6 +162,15 @@ export default function Sidebar() {
     };
 
     const currentMenu = menuConfig[user?.role] || [];
+
+    const footerSettingsLinks = [];
+    if (user?.role === ROLES.OWNER || user?.role === ROLES.ADMIN) {
+        footerSettingsLinks.push({ to: '/settings', icon: 'tune', label: 'System Settings' });
+        footerSettingsLinks.push({ to: '/profile', icon: 'manage_accounts', label: 'Account Settings' });
+        footerSettingsLinks.push({ to: '/pos-settings', icon: 'pin', label: 'POS Settings' });
+    } else if (user?.role === ROLES.STAFF) {
+        footerSettingsLinks.push({ to: '/profile', icon: 'manage_accounts', label: 'Account Settings' });
+    }
 
     return (
         <>
@@ -214,6 +240,19 @@ export default function Sidebar() {
 
                 {/* User Profile & Logout */}
                 <div className="border-t border-white/5 p-3 space-y-2">
+                    {footerSettingsLinks.length > 0 && (
+                        <div className="space-y-1.5 pb-2">
+                            {!isCollapsed && (
+                                <p className="px-3 text-[10px] font-bold text-text-muted uppercase tracking-wider">
+                                    Settings
+                                </p>
+                            )}
+                            {footerSettingsLinks.map((item) => (
+                                <FooterNavItem key={item.to} {...item} />
+                            ))}
+                        </div>
+                    )}
+
                     {/* User Info */}
                     <div className={`flex items-center gap-3 px-3 py-2 rounded-xl bg-white/5 transition-all duration-300 ${isCollapsed ? 'lg:justify-center' : ''}`}>
                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-orange-600 flex items-center justify-center flex-shrink-0 shadow-md">

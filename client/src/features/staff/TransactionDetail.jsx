@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import { useReactToPrint } from 'react-to-print';
 import Receipt from '../../components/Receipt';
@@ -9,6 +9,8 @@ import { useConfirm } from '../../context/ConfirmContext';
 
 export default function TransactionDetail() {
     const { id } = useParams();
+    const location = useLocation();
+    const navigate = useNavigate();
     const { formatPrice } = useCurrency();
     const { alert: showAlert } = useConfirm();
     const [payment, setPayment] = useState(null);
@@ -166,128 +168,165 @@ export default function TransactionDetail() {
         ? explicitItems.map((item) => ({
             name: item.name,
             price: item.unitPrice,
-            quantity: item.quantity
+            quantity: item.quantity,
+            returnedQuantity: Number(item.returnedQuantity || 0)
         }))
         : trainingSessions.length > 0
             ? trainingSessions.map((session, index) => ({
                 name: `${session.trainer?.name || 'Trainer'} Session #${index + 1} (${new Date(session.date).toLocaleDateString()} ${new Date(session.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`,
                 price: Number(session.price || 0),
-                quantity: 1
+                quantity: 1,
+                returnedQuantity: 0
             }))
             : [{
                 name: String(payment.type || 'Transaction').replaceAll('_', ' '),
                 price: Number(payment.amount || 0),
-                quantity: 1
+                quantity: 1,
+                returnedQuantity: 0
             }];
+    const statusValue = String(payment.status || 'COMPLETED').toUpperCase();
+    const statusStyles = {
+        COMPLETED: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+        PENDING: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30',
+        RETURNED: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+        VOIDED: 'bg-red-500/15 text-red-300 border-red-500/30'
+    };
+    const statusClass = statusStyles[statusValue] || 'bg-slate-500/15 text-slate-300 border-slate-500/30';
+    const totalItemQuantity = receiptItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    const grossTotal = receiptItems.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 0)), 0);
+    const discountRate = Number(payment.discount || 0);
+    const discountAmount = Number((grossTotal * (discountRate / 100)).toFixed(2));
+    const refundedAmount = Number(payment.refundedAmount || 0);
+    const netCollected = Number(Math.max(0, Number(payment.amount || 0) - refundedAmount).toFixed(2));
+    const memberName = payment.member ? `${payment.member.firstName} ${payment.member.lastName}` : 'Walk-in';
+    const transactionType = String(payment.type || 'Transaction').replaceAll('_', ' ');
+    const handleBackToTransactions = () => {
+        const fallbackPath = location.state?.from || '/transactions';
+        if (window.history.length > 1) {
+            navigate(-1);
+            return;
+        }
+        navigate(fallbackPath);
+    };
 
     return (
         <div className="space-y-6">
-            <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-white">Transaction #{payment.id}</h1>
-                    <p className="text-text-muted">{new Date(payment.date).toLocaleString()}</p>
+            <header className="bg-surface rounded-3xl border border-white/10 p-5 lg:p-6 shadow-sm">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                        <h1 className="text-2xl lg:text-3xl font-bold text-white">Transaction #{payment.id}</h1>
+                        <p className="text-text-muted text-sm">{new Date(payment.date).toLocaleString()}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        <span className={`inline-flex items-center px-3 py-1.5 rounded-xl border text-xs font-bold tracking-wide ${statusClass}`}>
+                            {statusValue}
+                        </span>
+                        <span className="inline-flex items-center px-3 py-1.5 rounded-xl border border-white/10 bg-white/5 text-text-secondary text-xs font-bold tracking-wide">
+                            {payment.method || 'N/A'}
+                        </span>
+                        <span className="inline-flex items-center px-3 py-1.5 rounded-xl border border-white/10 bg-white/5 text-text-secondary text-xs font-bold tracking-wide">
+                            {transactionType}
+                        </span>
+                    </div>
                 </div>
-                <div className="flex flex-wrap gap-3">
-                    <button
-                        onClick={handlePrint}
-                        className="px-4 py-2 rounded-xl bg-white/10 text-white font-bold hover:bg-white/20"
-                    >
-                        Print Receipt
-                    </button>
-                    {payment.status === 'PENDING' && (
-                        <button
-                            onClick={() => setCompleteModalOpen(true)}
-                            className="px-4 py-2 rounded-xl bg-green-500 text-white font-bold shadow-lg shadow-green-500/20 hover:bg-green-600 transition-all animation-pulse"
-                        >
-                            Complete Payment
-                        </button>
-                    )}
-                    <button
-                        onClick={openReturnModal}
-                        disabled={payment.status === 'VOIDED'}
-                        className="px-4 py-2 rounded-xl bg-amber-500/10 text-amber-400 font-bold border border-amber-500/20 hover:bg-amber-500/20 disabled:opacity-40"
-                    >
-                        Return Items
-                    </button>
-                    <button
-                        onClick={openVoidModal}
-                        disabled={payment.status !== 'COMPLETED'}
-                        className="px-4 py-2 rounded-xl bg-red-500/10 text-red-400 font-bold border border-red-500/20 hover:bg-red-500/20 disabled:opacity-40"
-                    >
-                        Void Transaction
-                    </button>
+
+                <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+                    <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                        <p className="text-[11px] font-bold tracking-widest uppercase text-text-muted">Member</p>
+                        <p className="text-sm text-white font-semibold mt-1 truncate">{memberName}</p>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                        <p className="text-[11px] font-bold tracking-widest uppercase text-text-muted">Cashier</p>
+                        <p className="text-sm text-white font-semibold mt-1 truncate">{payment.cashier?.name || 'N/A'}</p>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                        <p className="text-[11px] font-bold tracking-widest uppercase text-text-muted">Cash Tendered</p>
+                        <p className="text-sm text-white font-semibold mt-1">{payment.method === 'CASH' ? formatPrice(payment.cashTendered || 0) : 'N/A'}</p>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                        <p className="text-[11px] font-bold tracking-widest uppercase text-text-muted">Change Due</p>
+                        <p className="text-sm text-white font-semibold mt-1">{payment.method === 'CASH' ? formatPrice(payment.changeDue || 0) : 'N/A'}</p>
+                    </div>
                 </div>
             </header>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                <div className="lg:col-span-7 bg-surface rounded-3xl border border-white/5 p-6 shadow-sm">
-                    <h3 className="text-lg font-bold text-white mb-4">Items</h3>
-                    <div className="space-y-2">
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+                <div className="xl:col-span-7 bg-surface rounded-3xl border border-white/10 p-5 lg:p-6 shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+                        <h3 className="text-lg font-bold text-white">Items</h3>
+                        <span className="text-xs font-semibold uppercase tracking-widest text-text-muted">
+                            {totalItemQuantity} total item{totalItemQuantity === 1 ? '' : 's'}
+                        </span>
+                    </div>
+
+                    <div className="rounded-2xl border border-white/10 overflow-hidden">
+                        <div className="hidden md:grid md:grid-cols-12 px-4 py-3 bg-white/[0.03] text-[11px] font-bold uppercase tracking-widest text-text-muted">
+                            <span className="md:col-span-6">Item</span>
+                            <span className="md:col-span-2 text-right">Qty</span>
+                            <span className="md:col-span-2 text-right">Unit</span>
+                            <span className="md:col-span-2 text-right">Total</span>
+                        </div>
+                        <div className="divide-y divide-white/10">
                         {receiptItems.map((item, index) => (
-                            <div key={`${item.name}-${index}`} className="flex items-center justify-between gap-4 p-3 rounded-2xl bg-white/5 border border-white/5">
-                                <div className="min-w-0">
-                                    <p className="text-white font-semibold truncate">{item.name}</p>
-                                    <p className="text-xs text-text-muted">
-                                        {item.quantity} x {formatPrice(item.price)}
-                                    </p>
-                                </div>
-                                <div className="text-right">
-                                    <p className="text-sm font-bold text-white">{formatPrice(item.price * item.quantity)}</p>
+                                <div key={`${item.name}-${index}`} className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-4 px-4 py-3 bg-white/[0.02]">
+                                    <div className="md:col-span-6 min-w-0">
+                                        <p className="text-sm text-white font-semibold truncate">{item.name}</p>
+                                    </div>
+                                    <div className="md:col-span-2 text-left md:text-right">
+                                        <p className="text-sm text-white">{item.quantity}</p>
+                                    </div>
+                                    <div className="md:col-span-2 text-left md:text-right">
+                                        <p className="text-sm text-white">{formatPrice(item.price)}</p>
+                                    </div>
+                                    <div className="md:col-span-2 text-left md:text-right">
+                                        <p className="text-sm font-bold text-white">{formatPrice(item.price * item.quantity)}</p>
                                     {item.returnedQuantity > 0 && (
-                                        <p className="text-[10px] text-amber-400">Returned: {item.returnedQuantity}</p>
+                                            <p className="text-[10px] text-amber-400 mt-0.5">Returned: {item.returnedQuantity}</p>
                                     )}
+                                    </div>
                                 </div>
-                            </div>
                         ))}
+                        </div>
+                    </div>
+
+                    <div className="mt-6 border-t border-white/10 pt-5">
+                        <h4 className="text-sm font-bold text-white mb-3">Transaction Summary</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                                <p className="text-[11px] uppercase tracking-widest font-bold text-text-muted">Items Gross</p>
+                                <p className="mt-1 text-base font-bold text-white">{formatPrice(grossTotal)}</p>
+                            </div>
+                            <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                                <p className="text-[11px] uppercase tracking-widest font-bold text-text-muted">Charged Total</p>
+                                <p className="mt-1 text-base font-bold text-white">{formatPrice(payment.amount)}</p>
+                            </div>
+                            {discountRate > 0 && (
+                                <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-3">
+                                    <p className="text-[11px] uppercase tracking-widest font-bold text-cyan-200">Discount ({discountRate}%)</p>
+                                    <p className="mt-1 text-base font-bold text-cyan-200">-{formatPrice(discountAmount)}</p>
+                                </div>
+                            )}
+                            <div className={`rounded-xl border px-4 py-3 ${refundedAmount > 0 ? 'border-amber-500/20 bg-amber-500/10' : 'border-white/10 bg-white/[0.03]'}`}>
+                                <p className={`text-[11px] uppercase tracking-widest font-bold ${refundedAmount > 0 ? 'text-amber-200' : 'text-text-muted'}`}>Refunded</p>
+                                <p className={`mt-1 text-base font-bold ${refundedAmount > 0 ? 'text-amber-200' : 'text-white'}`}>
+                                    {refundedAmount > 0 ? `-${formatPrice(refundedAmount)}` : formatPrice(0)}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="mt-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3">
+                            <div className="flex items-center justify-between">
+                                <p className="text-[11px] uppercase tracking-widest font-bold text-emerald-200">Net Collected</p>
+                                <p className="text-lg font-bold text-emerald-200">{formatPrice(netCollected)}</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <div className="lg:col-span-5 bg-surface rounded-3xl border border-white/5 p-6 shadow-sm">
-                    <h3 className="text-lg font-bold text-white mb-4">Summary</h3>
-                    <div className="space-y-2 text-sm">
-                        <div className="flex justify-between text-text-muted">
-                            <span>Member</span>
-                            <span className="text-white">{payment.member ? `${payment.member.firstName} ${payment.member.lastName}` : 'Walk-in'}</span>
-                        </div>
-                        <div className="flex justify-between text-text-muted">
-                            <span>Cashier</span>
-                            <span className="text-white">{payment.cashier?.name || 'N/A'}</span>
-                        </div>
-                        <div className="flex justify-between text-text-muted">
-                            <span>Method</span>
-                            <span className="text-white">{payment.method}</span>
-                        </div>
-                        {payment.method === 'CASH' && (
-                            <>
-                                <div className="flex justify-between text-text-muted">
-                                    <span>Cash Tendered</span>
-                                    <span className="text-white">{formatPrice(payment.cashTendered || 0)}</span>
-                                </div>
-                                <div className="flex justify-between text-text-muted">
-                                    <span>Change Due</span>
-                                    <span className="text-white">{formatPrice(payment.changeDue || 0)}</span>
-                                </div>
-                            </>
-                        )}
-                        <div className="flex justify-between text-text-muted">
-                            <span>Status</span>
-                            <span className="text-white">{payment.status}</span>
-                        </div>
-                        <div className="flex justify-between text-text-muted">
-                            <span>Total</span>
-                            <span className="text-white font-bold">{formatPrice(payment.amount)}</span>
-                        </div>
-                        {payment.refundedAmount > 0 && (
-                            <div className="flex justify-between text-text-muted">
-                                <span>Refunded</span>
-                                <span className="text-amber-400 font-bold">-{formatPrice(payment.refundedAmount)}</span>
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="mt-6 border-t border-white/10 pt-4">
-                        <h4 className="text-sm font-bold text-white mb-2">Receipt Preview</h4>
-                        <div className="bg-white text-black rounded-lg p-3">
+                <div className="xl:col-span-5">
+                    <div className="bg-surface rounded-3xl border border-white/10 p-5 lg:p-6 shadow-sm xl:sticky xl:top-6">
+                        <h4 className="text-sm font-bold text-white mb-1">Receipt Preview</h4>
+                        <p className="text-xs text-text-muted mb-3">This is the printable receipt layout.</p>
+                        <div className="bg-white text-black rounded-lg p-3 max-h-[55vh] overflow-auto">
                             <Receipt
                                 ref={receiptRef}
                                 transaction={payment}
@@ -303,6 +342,52 @@ export default function TransactionDetail() {
                                 receiptSettings={receiptSettings}
                             />
                         </div>
+
+                        <div className="mt-4 pt-4 border-t border-white/10">
+                            <div className="flex w-full gap-2">
+                                <button
+                                    onClick={handlePrint}
+                                    className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 text-white font-bold hover:bg-white/20 transition-colors"
+                                >
+                                    <span className="material-icons-round text-base">print</span>
+                                    Print
+                                </button>
+                                {payment.status === 'PENDING' && (
+                                    <button
+                                        onClick={() => setCompleteModalOpen(true)}
+                                        className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-green-500 text-white font-bold shadow-lg shadow-green-500/20 hover:bg-green-600 transition-all"
+                                    >
+                                        <span className="material-icons-round text-base">task_alt</span>
+                                        Complete
+                                    </button>
+                                )}
+                                <button
+                                    onClick={openReturnModal}
+                                    disabled={payment.status === 'VOIDED'}
+                                    className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500/10 text-amber-400 font-bold border border-amber-500/20 hover:bg-amber-500/20 disabled:opacity-40 transition-colors"
+                                >
+                                    <span className="material-icons-round text-base">undo</span>
+                                    Return
+                                </button>
+                                <button
+                                    onClick={openVoidModal}
+                                    disabled={payment.status !== 'COMPLETED'}
+                                    className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-red-500/10 text-red-400 font-bold border border-red-500/20 hover:bg-red-500/20 disabled:opacity-40 transition-colors"
+                                >
+                                    <span className="material-icons-round text-base">block</span>
+                                    Void
+                                </button>
+                            </div>
+                            <div className="mt-2">
+                                <button
+                                    onClick={handleBackToTransactions}
+                                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-white/10 text-white font-bold hover:bg-white/10 transition-colors"
+                                >
+                                    <span className="material-icons-round text-base">arrow_back</span>
+                                    Back to Transactions
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -314,10 +399,10 @@ export default function TransactionDetail() {
                         <p className="text-text-muted text-sm mb-4">Select quantities to return and enter the return PIN.</p>
 
                         <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
-                            {payment.items.filter(item => item.productId).length === 0 && (
+                            {explicitItems.filter(item => item.productId).length === 0 && (
                                 <p className="text-sm text-text-muted">No returnable items in this transaction.</p>
                             )}
-                            {payment.items.filter(item => item.productId).map((item) => {
+                            {explicitItems.filter(item => item.productId).map((item) => {
                                 const available = item.quantity - (item.returnedQuantity || 0);
                                 return (
                                     <div key={item.id} className="flex items-center justify-between gap-3 bg-white/5 p-3 rounded-xl">

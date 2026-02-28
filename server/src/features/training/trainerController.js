@@ -5,6 +5,7 @@ const {
     setTrainerAvailability,
     removeTrainerAvailability,
     getTrainerAvailability,
+    getTrainerAvailabilityMap,
     normalizeAvailability,
     isTimeAllowedForAvailability
 } = require('../../services/trainerAvailabilityService');
@@ -79,8 +80,19 @@ const getAllTrainers = async (req, res) => {
             },
             orderBy: { name: 'asc' }
         });
+        const availabilityMap = await getTrainerAvailabilityMap(trainers.map((trainer) => trainer.id));
         const hydrated = trainers.map((trainer) => {
-            const normalized = withTrainerAvailability(trainer);
+            const normalized = {
+                ...trainer,
+                ...(availabilityMap.get(trainer.id) || {
+                    availabilityDays: [],
+                    availabilityStart: '',
+                    availabilityEnd: '',
+                    availabilityIntervalMinutes: 30,
+                    specificDateAvailability: {},
+                    bookingStatus: 'OPEN'
+                })
+            };
             const bookingStatus = String(normalized.bookingStatus || 'OPEN').toUpperCase();
             return {
                 ...normalized,
@@ -126,7 +138,7 @@ const getTrainerById = async (req, res) => {
                 }
             }
         });
-        res.json(withTrainerAvailability(trainer));
+        res.json(await withTrainerAvailability(trainer));
     } catch (e) {
         res.status(500).json({ error: "Failed to fetch trainer profile" });
     }
@@ -158,8 +170,9 @@ const getMe = async (req, res) => {
             })
         ]);
         if (!trainer) return res.status(404).json({ error: "Trainer not found" });
+        const trainerWithAvailability = await withTrainerAvailability(trainer);
         res.json({
-            ...withTrainerAvailability(trainer),
+            ...trainerWithAvailability,
             loyaltyPoints: Number(trainer.user?.loyaltyPoints || 0),
             checkIns: Number(checkIns || 0)
         });
@@ -331,7 +344,7 @@ const updateMyAvailability = async (req, res) => {
             return res.status(404).json({ error: "Trainer not found" });
         }
 
-        const currentAvailability = getTrainerAvailability(trainerId);
+        const currentAvailability = await getTrainerAvailability(trainerId);
         const nextAvailability = normalizeAvailability(req.body || {}, { previous: currentAvailability });
         const now = new Date();
         const upcomingSessions = await prisma.trainingSession.findMany({
@@ -360,7 +373,7 @@ const updateMyAvailability = async (req, res) => {
             });
         }
 
-        const availability = setTrainerAvailability(trainerId, nextAvailability);
+        const availability = await setTrainerAvailability(trainerId, nextAvailability);
         return res.json({ ...trainer, ...availability });
     } catch (e) {
         return res.status(500).json({ error: e.message || "Failed to update trainer availability" });
@@ -477,7 +490,7 @@ const createTrainer = async (req, res) => {
             }
         }
 
-        const availability = setTrainerAvailability(trainer.id, req.body);
+        const availability = await setTrainerAvailability(trainer.id, req.body);
         res.json({ ...trainer, ...availability });
     } catch (e) {
         res.status(500).json({ error: e.message || 'Failed to create trainer' });
@@ -544,7 +557,7 @@ const updateTrainer = async (req, res) => {
             }
         });
 
-        const availability = setTrainerAvailability(trainer.id, req.body);
+        const availability = await setTrainerAvailability(trainer.id, req.body);
         res.json({ ...trainer, ...availability });
     } catch (e) {
         res.status(500).json({ error: e.message || 'Failed to update trainer' });
@@ -555,7 +568,7 @@ const deleteTrainer = async (req, res) => {
     const trainerId = Number(req.params.id);
     try {
         await prisma.trainer.delete({ where: { id: trainerId } });
-        removeTrainerAvailability(trainerId);
+        await removeTrainerAvailability(trainerId);
         res.json({ message: 'Trainer deleted' });
     } catch (e) {
         res.status(500).json({ error: e.message || 'Failed to delete trainer' });

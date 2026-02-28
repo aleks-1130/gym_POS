@@ -172,7 +172,7 @@ const Suppliers = () => {
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        navigate(`/inventory?supplierId=${supplier.id}`);
+                                        navigate('/inventory?tab=products');
                                     }}
                                     className="text-xs font-bold text-white bg-white/5 px-3 py-1.5 rounded-lg border border-white/5 hover:bg-primary hover:border-primary transition-colors cursor-pointer"
                                 >

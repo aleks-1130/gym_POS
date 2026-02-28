@@ -239,13 +239,13 @@ const bookTraining = async (req, res) => {
             return res.status(400).json({ error: "Invalid date or time" });
         }
         const allowClosedBookingToday = await shouldTemporarilyOpenTrainerForDate({ trainerId: Number(trainerId), date });
-        if (!isTimeAllowedForTrainer({
+        if (!(await isTimeAllowedForTrainer({
             trainerId: Number(trainerId),
             date,
             time,
             duration: Number(duration),
             enforceBookingStatus: !allowClosedBookingToday
-        })) {
+        }))) {
             return res.status(400).json({ error: "Selected schedule is outside trainer availability" });
         }
 
@@ -641,13 +641,13 @@ const resolveTrainerChangeRequest = async (req, res) => {
                 trainerId: Number(session.trainerId),
                 date
             });
-            if (!isTimeAllowedForTrainer({
+            if (!(await isTimeAllowedForTrainer({
                 trainerId: Number(session.trainerId),
                 date,
                 time,
                 duration: Number(session.duration),
                 enforceBookingStatus: !allowClosedBookingToday
-            })) {
+            }))) {
                 return res.status(400).json({ error: "Selected schedule is outside trainer availability" });
             }
             if (await checkBookingConflict(Number(session.trainerId), nextDateTime, Number(session.duration), session.id)) {

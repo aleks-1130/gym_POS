@@ -8,7 +8,8 @@ const MIN_PIN_LENGTH = 4;
 
 const TABS = {
     SECURITY: 'SECURITY',
-    RECEIPT: 'RECEIPT'
+    RECEIPT: 'RECEIPT',
+    DISCOUNTS: 'DISCOUNTS'
 };
 
 const DEFAULT_RECEIPT_SETTINGS = {
@@ -31,18 +32,44 @@ const DEFAULT_RECEIPT_SETTINGS = {
     thankYouMessage: 'Thank you for training with us!'
 };
 
+const DISCOUNT_ICON_OPTIONS = [
+    'local_offer',
+    'percent',
+    'sell',
+    'workspace_premium',
+    'card_giftcard',
+    'celebration',
+    'school',
+    'military_tech',
+    'elderly',
+    'badge'
+];
+
+const normalizeDiscountPresetsForUi = (presets = []) => {
+    if (!Array.isArray(presets)) return [];
+    return presets.map((preset, index) => ({
+        id: String(preset?.id || `preset_${index + 1}`),
+        name: String(preset?.name || '').trim(),
+        rate: Number(preset?.rate || 0),
+        icon: String(preset?.icon || 'local_offer').trim() || 'local_offer'
+    })).filter((preset) => preset.name);
+};
+
 export default function PosSettings() {
     const { alert: showAlert } = useConfirm();
     const [activeTab, setActiveTab] = useState(TABS.SECURITY);
 
     const [loading, setLoading] = useState(false);
     const [receiptSaving, setReceiptSaving] = useState(false);
+    const [discountSaving, setDiscountSaving] = useState(false);
     const [status, setStatus] = useState({ hasVoidPin: false, hasReturnPin: false });
     const [voidPin, setVoidPin] = useState('');
     const [returnPin, setReturnPin] = useState('');
     const [clearVoidPin, setClearVoidPin] = useState(false);
     const [clearReturnPin, setClearReturnPin] = useState(false);
     const [receiptSettings, setReceiptSettings] = useState(DEFAULT_RECEIPT_SETTINGS);
+    const [discountPresets, setDiscountPresets] = useState([]);
+    const [discountDraft, setDiscountDraft] = useState({ name: '', rate: '', icon: 'local_offer' });
 
     const authHeaders = () => {
         const token = sessionStorage.getItem('token') || localStorage.getItem('token');
@@ -66,6 +93,7 @@ export default function PosSettings() {
                 ...prev,
                 ...(res.data?.receiptSettings || {})
             }));
+            setDiscountPresets(normalizeDiscountPresetsForUi(res.data?.discountPresets));
         } catch (e) {
             console.error('Failed to load POS settings', e);
         }
@@ -150,6 +178,93 @@ export default function PosSettings() {
         setReceiptSettings((prev) => ({ ...prev, [key]: value }));
     };
 
+    const handleAddDiscountPreset = async () => {
+        const name = String(discountDraft.name || '').trim();
+        const rate = Number(discountDraft.rate);
+        const iconInput = String(discountDraft.icon || 'local_offer').trim();
+        const icon = /^[a-z0-9_]+$/i.test(iconInput) ? iconInput : 'local_offer';
+
+        if (!name) {
+            await showAlert({ title: 'Required', message: 'Discount name is required.', type: 'warning' });
+            return;
+        }
+        if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+            await showAlert({ title: 'Invalid Rate', message: 'Discount rate must be between 0 and 100.', type: 'warning' });
+            return;
+        }
+        if (discountPresets.some((preset) => preset.name.toLowerCase() === name.toLowerCase())) {
+            await showAlert({ title: 'Duplicate Name', message: 'A discount with this name already exists.', type: 'warning' });
+            return;
+        }
+
+        setDiscountPresets((prev) => ([
+            ...prev,
+            {
+                id: `preset_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                name,
+                rate: Number(rate.toFixed(2)),
+                icon
+            }
+        ]));
+        setDiscountDraft({ name: '', rate: '', icon: 'local_offer' });
+    };
+
+    const updateDiscountPreset = (id, field, value) => {
+        setDiscountPresets((prev) => prev.map((preset) => {
+            if (preset.id !== id) return preset;
+            if (field === 'rate') {
+                const parsed = Number(value);
+                return { ...preset, rate: Number.isFinite(parsed) ? parsed : 0 };
+            }
+            return { ...preset, [field]: value };
+        }));
+    };
+
+    const removeDiscountPreset = (id) => {
+        setDiscountPresets((prev) => prev.filter((preset) => preset.id !== id));
+    };
+
+    const handleSaveDiscountPresets = async () => {
+        const normalizedPresets = discountPresets.map((preset) => ({
+            id: String(preset.id || '').trim(),
+            name: String(preset.name || '').trim(),
+            rate: Number(preset.rate),
+            icon: String(preset.icon || 'local_offer').trim() || 'local_offer'
+        }));
+
+        const hasInvalid = normalizedPresets.some((preset) =>
+            !preset.name || !Number.isFinite(preset.rate) || preset.rate < 0 || preset.rate > 100
+        );
+        if (hasInvalid) {
+            await showAlert({ title: 'Invalid Presets', message: 'Each discount must have a name and a rate between 0 and 100.', type: 'warning' });
+            return;
+        }
+
+        const uniqueNames = new Set(normalizedPresets.map((preset) => preset.name.toLowerCase()));
+        if (uniqueNames.size !== normalizedPresets.length) {
+            await showAlert({ title: 'Duplicate Names', message: 'Discount names must be unique.', type: 'warning' });
+            return;
+        }
+
+        setDiscountSaving(true);
+        try {
+            await axios.post(withApiBase('/api/pos/settings'), {
+                discountPresets: normalizedPresets.map((preset) => ({
+                    ...preset,
+                    rate: Number(preset.rate.toFixed(2))
+                }))
+            }, {
+                headers: authHeaders()
+            });
+            await fetchPosSettings();
+            await showAlert({ title: 'Settings Saved', message: 'POS discount presets updated.', type: 'success' });
+        } catch (e) {
+            await showAlert({ title: 'Update Failed', message: e.response?.data?.error || 'Failed to update discount presets', type: 'danger' });
+        } finally {
+            setDiscountSaving(false);
+        }
+    };
+
 
     const receiptPreviewData = useMemo(() => ({
         transaction: {
@@ -174,7 +289,7 @@ export default function PosSettings() {
         <div className="space-y-6 w-full">
             <header>
                 <h1 className="text-3xl font-bold text-white">POS Settings</h1>
-                <p className="text-text-muted mt-1">Configure POS security, BIR receipt details, and payroll settings.</p>
+                <p className="text-text-muted mt-1">Configure POS security, receipt details, and discount presets.</p>
             </header>
 
             <div className="bg-surface rounded-3xl border border-white/5 p-2 shadow-sm flex flex-wrap gap-2">
@@ -182,11 +297,19 @@ export default function PosSettings() {
                     active={activeTab === TABS.SECURITY}
                     onClick={() => setActiveTab(TABS.SECURITY)}
                     label="Security"
+                    icon="shield"
                 />
                 <TabButton
                     active={activeTab === TABS.RECEIPT}
                     onClick={() => setActiveTab(TABS.RECEIPT)}
                     label="Receipt"
+                    icon="receipt_long"
+                />
+                <TabButton
+                    active={activeTab === TABS.DISCOUNTS}
+                    onClick={() => setActiveTab(TABS.DISCOUNTS)}
+                    label="Discounts"
+                    icon="local_offer"
                 />
             </div>
 
@@ -363,19 +486,143 @@ export default function PosSettings() {
                 </div>
             )}
 
+            {activeTab === TABS.DISCOUNTS && (
+                <div className="space-y-6">
+                    <div className="bg-surface rounded-3xl border border-white/5 p-6 shadow-sm">
+                        <h3 className="text-xl font-bold text-white mb-1 flex items-center gap-2">
+                            <span className="material-icons-round text-primary">local_offer</span>
+                            Discount Presets
+                        </h3>
+                        <p className="text-text-muted text-sm mb-6">Create reusable discounts for POS checkout. Staff and Admin will be able to select these in transactions.</p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-[180px,1fr,150px,auto] gap-3">
+                            <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 material-icons-round text-base text-text-muted">{discountDraft.icon || 'local_offer'}</span>
+                                <select
+                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl pl-10 pr-3 py-3 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                                    value={discountDraft.icon}
+                                    onChange={(e) => setDiscountDraft((prev) => ({ ...prev, icon: e.target.value }))}
+                                >
+                                    {DISCOUNT_ICON_OPTIONS.map((icon) => (
+                                        <option key={icon} value={icon}>{icon}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <input
+                                type="text"
+                                className="bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                                placeholder="Discount name (e.g., Senior Citizen)"
+                                value={discountDraft.name}
+                                onChange={(e) => setDiscountDraft((prev) => ({ ...prev, name: e.target.value }))}
+                            />
+                            <div className="relative">
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    step="0.01"
+                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 pr-8 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                                    placeholder="0.00"
+                                    value={discountDraft.rate}
+                                    onChange={(e) => setDiscountDraft((prev) => ({ ...prev, rate: e.target.value }))}
+                                />
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">%</span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleAddDiscountPreset}
+                                className="px-4 py-3 rounded-xl bg-white/10 text-white font-bold hover:bg-white/20 transition-colors inline-flex items-center justify-center gap-2"
+                            >
+                                <span className="material-icons-round text-base">add_circle</span>
+                                Add Preset
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="bg-surface rounded-3xl border border-white/5 p-6 shadow-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                            <h3 className="text-lg font-bold text-white">Saved Presets</h3>
+                            <span className="text-xs text-text-muted uppercase tracking-widest">{discountPresets.length} preset(s)</span>
+                        </div>
+
+                        {discountPresets.length === 0 ? (
+                            <p className="text-text-muted text-sm">No discount presets configured yet.</p>
+                        ) : (
+                            <div className="space-y-3">
+                                {discountPresets.map((preset) => (
+                                    <div key={preset.id} className="grid grid-cols-1 md:grid-cols-[180px,1fr,150px,auto] gap-3 bg-surfaceHighlight rounded-2xl border border-white/10 p-3">
+                                        <div className="relative">
+                                            <span className="absolute left-3 top-1/2 -translate-y-1/2 material-icons-round text-base text-text-muted">{preset.icon || 'local_offer'}</span>
+                                            <select
+                                                className="w-full bg-transparent border border-white/10 rounded-xl pl-10 pr-3 py-2 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                                                value={preset.icon || 'local_offer'}
+                                                onChange={(e) => updateDiscountPreset(preset.id, 'icon', e.target.value)}
+                                            >
+                                                {DISCOUNT_ICON_OPTIONS.map((icon) => (
+                                                    <option key={icon} value={icon}>{icon}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <input
+                                            type="text"
+                                            className="bg-transparent border border-white/10 rounded-xl px-3 py-2 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                                            value={preset.name}
+                                            onChange={(e) => updateDiscountPreset(preset.id, 'name', e.target.value)}
+                                        />
+                                        <div className="relative">
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="100"
+                                                step="0.01"
+                                                className="w-full bg-transparent border border-white/10 rounded-xl px-3 py-2 pr-8 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                                                value={preset.rate}
+                                                onChange={(e) => updateDiscountPreset(preset.id, 'rate', e.target.value)}
+                                            />
+                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted text-sm">%</span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => removeDiscountPreset(preset.id)}
+                                            className="px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 font-bold hover:bg-red-500/20 transition-colors inline-flex items-center justify-center gap-2"
+                                        >
+                                            <span className="material-icons-round text-base">delete</span>
+                                            Remove
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        <div className="flex justify-end pt-5">
+                            <button
+                                type="button"
+                                disabled={discountSaving}
+                                onClick={handleSaveDiscountPresets}
+                                className="px-6 py-3 rounded-xl bg-primary hover:bg-orange-600 text-white font-bold shadow-lg shadow-primary/20 disabled:opacity-50 inline-flex items-center gap-2"
+                            >
+                                <span className="material-icons-round text-base">{discountSaving ? 'sync' : 'save'}</span>
+                                {discountSaving ? 'Saving...' : 'Save Discount Presets'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
         </div>
     );
 }
 
-const TabButton = ({ active, label, onClick }) => (
+const TabButton = ({ active, label, onClick, icon }) => (
     <button
         type="button"
         onClick={onClick}
-        className={`px-4 py-2 rounded-2xl text-sm font-bold transition-colors ${active
+        className={`px-4 py-2 rounded-2xl text-sm font-bold transition-colors inline-flex items-center gap-2 ${active
             ? 'bg-primary text-white'
             : 'bg-surfaceHighlight text-text-muted hover:text-white hover:bg-white/10'
             }`}
     >
+        {icon && <span className="material-icons-round text-base">{icon}</span>}
         {label}
     </button>
 );

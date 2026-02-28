@@ -8,6 +8,7 @@ const prisma = require('./src/config/prisma');
 const bcrypt = require('bcryptjs');
 const { authenticateToken, authorize } = require('./src/middleware/authMiddleware');
 const logAudit = require('./src/services/auditService');
+const { migrateInventoryDataToDatabase } = require('./src/features/inventory/inventoryDataMigrationService');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -41,6 +42,7 @@ app.use('/api/payments', require('./src/features/pos/paymentRoutes'));
 app.use('/api/pos', require('./src/features/pos/paymentRoutes')); // Alias for POS settings frontend
 app.use('/api/access', require('./src/features/members/accessRoutes'));
 app.use('/api/products', require('./src/features/inventory/productRoutes'));
+app.use('/api/inventory', require('./src/features/inventory/inventoryRoutes'));
 app.use('/api/inventory', require('./src/features/inventory/productRoutes')); // Alias for restock
 app.use('/api/suppliers', require('./src/features/inventory/supplierRoutes'));
 app.use('/api/trainers', require('./src/features/training/trainerRoutes'));
@@ -82,6 +84,8 @@ app.listen(PORT, '0.0.0.0', async () => {
             });
             console.log(`Database seeded! Admin: ${process.env.INITIAL_ADMIN_EMAIL || 'admin@gym.com'}`);
         }
+
+        await migrateInventoryDataToDatabase();
     } catch (e) {
         const msg = (e && e.message) ? e.message : '';
         if (msg.includes("Can't reach database server")) {

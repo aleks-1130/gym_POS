@@ -1,7 +1,4 @@
-const fs = require('fs/promises');
-const path = require('path');
-
-const RECEIPT_SETTINGS_FILE = path.join(__dirname, '../../data/receipt_settings.json');
+const prisma = require('../config/prisma');
 
 const DEFAULT_RECEIPT_SETTINGS = {
     invoiceTitle: 'SALES INVOICE',
@@ -53,23 +50,34 @@ const mergeWithDefaults = (value) => sanitizeReceiptSettings({
 });
 
 async function getReceiptSettings() {
-    try {
-        const raw = await fs.readFile(RECEIPT_SETTINGS_FILE, 'utf8');
-        return mergeWithDefaults(JSON.parse(raw));
-    } catch (error) {
-        if (error.code === 'ENOENT') {
-            const defaults = mergeWithDefaults();
-            await saveReceiptSettings(defaults);
-            return defaults;
-        }
-        throw error;
+    const record = await prisma.receiptSettings.findUnique({
+        where: { id: 1 }
+    });
+    if (!record) {
+        const defaults = mergeWithDefaults();
+        await prisma.receiptSettings.create({
+            data: {
+                id: 1,
+                settings: defaults
+            }
+        });
+        return defaults;
     }
+    return mergeWithDefaults(record.settings || {});
 }
 
 async function saveReceiptSettings(settings) {
     const merged = mergeWithDefaults(settings);
-    await fs.mkdir(path.dirname(RECEIPT_SETTINGS_FILE), { recursive: true });
-    await fs.writeFile(RECEIPT_SETTINGS_FILE, JSON.stringify(merged, null, 2), 'utf8');
+    await prisma.receiptSettings.upsert({
+        where: { id: 1 },
+        create: {
+            id: 1,
+            settings: merged
+        },
+        update: {
+            settings: merged
+        }
+    });
     return merged;
 }
 

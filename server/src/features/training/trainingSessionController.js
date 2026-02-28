@@ -360,13 +360,13 @@ const updateSession = async (req, res) => {
                 trainerId: Number(session.trainerId),
                 date: composedDate
             });
-            if (!isTimeAllowedForTrainer({
+            if (!(await isTimeAllowedForTrainer({
                 trainerId: Number(session.trainerId),
                 date: composedDate,
                 time: composedTime,
                 duration: Number(session.duration),
                 enforceBookingStatus: !allowClosedBookingToday
-            })) {
+            }))) {
                 return res.status(400).json({ error: "Selected schedule is outside trainer availability" });
             }
             if (await checkBookingConflict(Number(session.trainerId), composed, Number(session.duration), session.id)) {
@@ -670,13 +670,13 @@ const memberRescheduleSession = async (req, res) => {
             trainerId: Number(session.trainerId),
             date: yyyyMmDd
         });
-        if (!isTimeAllowedForTrainer({
+        if (!(await isTimeAllowedForTrainer({
             trainerId: Number(session.trainerId),
             date: yyyyMmDd,
             time: hhmm,
             duration: Number(session.duration),
             enforceBookingStatus: !allowClosedBookingToday
-        })) {
+        }))) {
             return res.status(400).json({ error: "Selected schedule is outside trainer availability" });
         }
 

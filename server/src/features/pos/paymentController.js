@@ -4,6 +4,56 @@ const { getReceiptSettings, saveReceiptSettings } = require('../../services/rece
 const bcrypt = require('bcryptjs');
 
 const POS_PIN_MIN_LENGTH = 4;
+const MAX_DISCOUNT_PRESETS = 50;
+
+const normalizeDiscountPresets = (rawPresets) => {
+    if (rawPresets === undefined || rawPresets === null) return [];
+    if (!Array.isArray(rawPresets)) {
+        throw new Error("Discount presets must be an array");
+    }
+    if (rawPresets.length > MAX_DISCOUNT_PRESETS) {
+        throw new Error(`Maximum of ${MAX_DISCOUNT_PRESETS} discount presets allowed`);
+    }
+
+    return rawPresets.map((preset, index) => {
+        const name = String(preset?.name || '').trim();
+        const rate = Number(preset?.rate);
+        const id = String(preset?.id || `preset_${index + 1}`).trim();
+        const iconInput = String(preset?.icon || 'local_offer').trim();
+        const icon = /^[a-z0-9_]+$/i.test(iconInput) ? iconInput : 'local_offer';
+
+        if (!name) {
+            throw new Error(`Discount preset #${index + 1} is missing a name`);
+        }
+        if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+            throw new Error(`Discount preset "${name}" must be between 0 and 100`);
+        }
+
+        return {
+            id,
+            name,
+            rate: Number(rate.toFixed(2)),
+            icon
+        };
+    });
+};
+
+const getStoredDiscountPresets = async (configId) => {
+    const rows = await prisma.$queryRawUnsafe(
+        'SELECT "discountPresets" FROM "PosConfig" WHERE "id" = $1 LIMIT 1',
+        Number(configId)
+    );
+    const rawPresets = Array.isArray(rows) && rows.length > 0 ? rows[0]?.discountPresets : null;
+    return normalizeDiscountPresets(rawPresets);
+};
+
+const saveDiscountPresets = async (configId, presets) => {
+    await prisma.$executeRawUnsafe(
+        'UPDATE "PosConfig" SET "discountPresets" = $1::jsonb WHERE "id" = $2',
+        JSON.stringify(presets || []),
+        Number(configId)
+    );
+};
 
 const getPlanClassSessions = (plan) => {
     if (!plan || !plan.includesClasses) return 0;
@@ -120,7 +170,9 @@ const createPayment = async (req, res) => {
         if (!allowedMethods.includes(method)) badRequest("Invalid payment method");
 
         const normalizedDiscount = discount !== undefined ? Number(discount) : 0;
-        if (!Number.isFinite(normalizedDiscount) || normalizedDiscount < 0) badRequest("Invalid discount value");
+        if (!Number.isFinite(normalizedDiscount) || normalizedDiscount < 0 || normalizedDiscount > 100) {
+            badRequest("Invalid discount value");
+        }
 
         const normalizedItems = Array.isArray(items)
             ? items.map((item) => ({
@@ -211,15 +263,18 @@ const createPayment = async (req, res) => {
             badRequest("Invalid payment amount");
         }
 
+        const discountValue = Number((authoritativeAmount * (normalizedDiscount / 100)).toFixed(2));
+        const discountedAmount = Number(Math.max(0, authoritativeAmount - discountValue).toFixed(2));
+
         const normalizedCashTendered = method === 'CASH'
             ? (cashTendered !== undefined && cashTendered !== null && cashTendered !== '' ? Number(cashTendered) : null)
             : null;
-        if (method === 'CASH' && (!Number.isFinite(normalizedCashTendered) || normalizedCashTendered < authoritativeAmount)) {
+        if (method === 'CASH' && (!Number.isFinite(normalizedCashTendered) || normalizedCashTendered < discountedAmount)) {
             badRequest("Cash tendered is invalid or less than amount");
         }
 
         const normalizedChangeDue = method === 'CASH'
-            ? (changeDue !== undefined && changeDue !== null && changeDue !== '' ? Number(changeDue) : (normalizedCashTendered - authoritativeAmount))
+            ? (changeDue !== undefined && changeDue !== null && changeDue !== '' ? Number(changeDue) : (normalizedCashTendered - discountedAmount))
             : null;
         if (method === 'CASH' && !Number.isFinite(normalizedChangeDue)) badRequest("Invalid change due");
 
@@ -231,12 +286,12 @@ const createPayment = async (req, res) => {
         }
 
         const { LOYALTY_CONFIG } = require('../../config/businessConfig');
-        const pointsAwarded = resolvedMemberId ? Math.floor(authoritativeAmount * LOYALTY_CONFIG.POINTS_PER_CURRENCY_UNIT) : 0;
+        const pointsAwarded = resolvedMemberId ? Math.floor(discountedAmount * LOYALTY_CONFIG.POINTS_PER_CURRENCY_UNIT) : 0;
         const resolvedCashierId = req.user.role === 'MEMBER' ? null : req.user.id;
 
         const payment = await prisma.$transaction(async (tx) => {
             const paymentCreateData = {
-                amount: authoritativeAmount,
+                amount: discountedAmount,
                 type,
                 method,
                 ...(resolvedMemberId ? { member: { connect: { id: Number(resolvedMemberId) } } } : {}),
@@ -442,11 +497,19 @@ const getAllPayments = async (req, res) => {
     // Staff/Admin: see all
     const { startDate, endDate, page, limit } = req.query;
     const where = {};
-    if (startDate && endDate) {
-        where.date = {
-            gte: new Date(startDate),
-            lte: new Date(new Date(endDate).setHours(23, 59, 59, 999))
-        };
+    if (startDate || endDate) {
+        const date = {};
+        if (startDate) {
+            const parsedStart = new Date(startDate);
+            if (Number.isNaN(parsedStart.getTime())) return res.status(400).json({ error: "Invalid startDate" });
+            date.gte = parsedStart;
+        }
+        if (endDate) {
+            const parsedEnd = new Date(new Date(endDate).setHours(23, 59, 59, 999));
+            if (Number.isNaN(parsedEnd.getTime())) return res.status(400).json({ error: "Invalid endDate" });
+            date.lte = parsedEnd;
+        }
+        where.date = date;
     }
 
     if (page && limit) {
@@ -481,7 +544,7 @@ const getAllPayments = async (req, res) => {
 
     const payments = await prisma.payment.findMany({
         where,
-        take: startDate ? undefined : 50,
+        take: (startDate || endDate) ? undefined : 50,
         orderBy: { date: 'desc' },
         include: {
             member: true,
@@ -753,10 +816,12 @@ const getPosSettings = async (req, res) => {
             getPosConfig(),
             getReceiptSettings()
         ]);
+        const discountPresets = await getStoredDiscountPresets(config.id);
         res.json({
             hasVoidPin: Boolean(config.voidPinHash),
             hasReturnPin: Boolean(config.returnPinHash),
-            receiptSettings
+            receiptSettings,
+            discountPresets
         });
     } catch (e) {
         res.status(500).json({ error: "Failed to load POS settings" });
@@ -764,14 +829,15 @@ const getPosSettings = async (req, res) => {
 };
 
 const updatePosSettings = async (req, res) => {
-    const { voidPin, returnPin, receiptSettings } = req.body;
+    const { voidPin, returnPin, receiptSettings, discountPresets } = req.body;
     try {
         const body = req.body || {};
         const hasVoidPinInput = Object.prototype.hasOwnProperty.call(body, 'voidPin');
         const hasReturnPinInput = Object.prototype.hasOwnProperty.call(body, 'returnPin');
         const hasReceiptSettingsInput = Object.prototype.hasOwnProperty.call(body, 'receiptSettings');
+        const hasDiscountPresetsInput = Object.prototype.hasOwnProperty.call(body, 'discountPresets');
 
-        if (!hasVoidPinInput && !hasReturnPinInput && !hasReceiptSettingsInput) {
+        if (!hasVoidPinInput && !hasReturnPinInput && !hasReceiptSettingsInput && !hasDiscountPresetsInput) {
             const [config, currentReceiptSettings] = await Promise.all([
                 getPosConfig(),
                 getReceiptSettings()
@@ -780,11 +846,13 @@ const updatePosSettings = async (req, res) => {
                 message: "No changes submitted",
                 hasVoidPin: Boolean(config.voidPinHash),
                 hasReturnPin: Boolean(config.returnPinHash),
-                receiptSettings: currentReceiptSettings
+                receiptSettings: currentReceiptSettings,
+                discountPresets: await getStoredDiscountPresets(config.id)
             });
         }
 
         const data = {};
+        let normalizedDiscountPresets = null;
 
         if (hasVoidPinInput) {
             if (voidPin === '' || voidPin === null) {
@@ -806,12 +874,25 @@ const updatePosSettings = async (req, res) => {
             }
         }
 
+        if (hasDiscountPresetsInput) {
+            try {
+                normalizedDiscountPresets = normalizeDiscountPresets(discountPresets);
+            } catch (validationError) {
+                return res.status(400).json({ error: validationError.message });
+            }
+        }
+
+        const config = await getPosConfig();
+
         if (Object.keys(data).length > 0) {
-            const config = await getPosConfig();
             await prisma.posConfig.update({
                 where: { id: config.id },
                 data
             });
+        }
+
+        if (hasDiscountPresetsInput) {
+            await saveDiscountPresets(config.id, normalizedDiscountPresets);
         }
 
         let savedReceiptSettings = null;
@@ -821,7 +902,8 @@ const updatePosSettings = async (req, res) => {
 
         res.json({
             message: "POS settings updated",
-            receiptSettings: savedReceiptSettings
+            receiptSettings: savedReceiptSettings,
+            discountPresets: hasDiscountPresetsInput ? normalizedDiscountPresets : undefined
         });
     } catch (e) {
         console.error("updatePosSettings Error:", e);
@@ -835,6 +917,16 @@ const getPosReceiptSettings = async (_req, res) => {
         res.json(settings);
     } catch (e) {
         res.status(500).json({ error: "Failed to load receipt settings" });
+    }
+};
+
+const getPosDiscountOptions = async (_req, res) => {
+    try {
+        const config = await getPosConfig();
+        const discountPresets = await getStoredDiscountPresets(config.id);
+        res.json(discountPresets);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to load discount presets" });
     }
 };
 
@@ -1027,6 +1119,7 @@ module.exports = {
     completePayment,
     getPosSettings,
     getPosReceiptSettings,
+    getPosDiscountOptions,
     updatePosSettings,
     getMyTransactions,
     collectPendingCashPayment,
