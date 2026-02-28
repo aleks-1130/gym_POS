@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { PRODUCT_CATEGORIES } from '../../constants/categories'; // Added import
+import { PRODUCT_CATEGORIES } from '../../constants/categories';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useCurrency } from '../../context/CurrencyContext';
 import axios from 'axios';
 import DataTable from '../../components/common/DataTable';
+import { useConfirm } from '../../context/ConfirmContext';
 
 export default function Inventory() {
     const { user } = useAuth();
     const { formatPrice } = useCurrency();
+    const { alert: showAlert, confirm: showConfirm } = useConfirm();
     const [products, setProducts] = useState([]);
     const [suppliers, setSuppliers] = useState([]); // New state for suppliers
     const [loading, setLoading] = useState(false);
@@ -104,17 +106,18 @@ export default function Inventory() {
             fetchProducts();
         } catch (error) {
             console.error(error);
-            alert(error.response?.data?.error || "Operation failed");
+            await showAlert({ title: 'Save Failed', message: error.response?.data?.error || 'Operation failed', type: 'danger' });
         }
     };
 
     const handleDelete = async (id) => {
-        if (!window.confirm("Delete this product?")) return;
+        const confirmed = await showConfirm({ title: 'Delete Product?', message: 'Delete this product permanently?', confirmLabel: 'Delete', type: 'danger' });
+        if (!confirmed) return;
         try {
             await axios.delete(`/api/products/${id}`);
             fetchProducts();
         } catch (e) {
-            alert("Failed to delete");
+            await showAlert({ title: 'Delete Failed', message: 'Failed to delete product', type: 'danger' });
         }
     };
 
@@ -139,13 +142,13 @@ export default function Inventory() {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            alert('Restock successful! Expense recorded.');
+            await showAlert({ title: 'Restock Successful', message: 'Stock updated and expense recorded.', type: 'success' });
             setShowRestockModal(false);
             setRestockProduct(null);
             fetchProducts();
         } catch (error) {
             console.error("Restock failed", error);
-            alert('Restock failed');
+            await showAlert({ title: 'Restock Failed', message: 'Failed to record restock. Please try again.', type: 'danger' });
         }
     };
 

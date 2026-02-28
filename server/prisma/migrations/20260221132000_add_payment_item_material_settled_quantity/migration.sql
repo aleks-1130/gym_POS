@@ -1,2 +1,0 @@
-ALTER TABLE "PaymentItem"
-ADD COLUMN IF NOT EXISTS "materialSettledQuantity" INTEGER NOT NULL DEFAULT 0;

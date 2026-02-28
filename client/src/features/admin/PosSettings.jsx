@@ -1,3 +1,4 @@
+﻿import { useConfirm } from '../../context/ConfirmContext';
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import Receipt from '../../components/Receipt';
@@ -31,6 +32,7 @@ const DEFAULT_RECEIPT_SETTINGS = {
 };
 
 export default function PosSettings() {
+    const { alert: showAlert } = useConfirm();
     const [activeTab, setActiveTab] = useState(TABS.SECURITY);
 
     const [loading, setLoading] = useState(false);
@@ -78,7 +80,7 @@ export default function PosSettings() {
             payload.voidPin = '';
         } else if (voidPin) {
             if (String(voidPin).length < MIN_PIN_LENGTH) {
-                return alert(`Void PIN must be at least ${MIN_PIN_LENGTH} digits.`);
+                await showAlert({ title: "Validation", message: `Void PIN must be at least ${MIN_PIN_LENGTH} digits.`, type: "warning" }); return;
             }
             payload.voidPin = voidPin;
         }
@@ -87,13 +89,13 @@ export default function PosSettings() {
             payload.returnPin = '';
         } else if (returnPin) {
             if (String(returnPin).length < MIN_PIN_LENGTH) {
-                return alert(`Return PIN must be at least ${MIN_PIN_LENGTH} digits.`);
+                await showAlert({ title: "Validation", message: `Return PIN must be at least ${MIN_PIN_LENGTH} digits.`, type: "warning" }); return;
             }
             payload.returnPin = returnPin;
         }
 
         if (payload.voidPin === undefined && payload.returnPin === undefined) {
-            return alert('Nothing to update.');
+            await showAlert({ title: 'No Changes', message: 'Nothing to update.', type: 'info' }); return;
         }
 
         setLoading(true);
@@ -107,9 +109,9 @@ export default function PosSettings() {
             setClearVoidPin(false);
             setClearReturnPin(false);
             await fetchPosSettings();
-            alert('POS PIN settings updated.');
+            await showAlert({ title: 'Settings Saved', message: 'POS PIN settings updated.', type: 'success' });
         } catch (e) {
-            alert(e.response?.data?.error || 'Failed to update POS settings');
+            await showAlert({ title: 'Update Failed', message: e.response?.data?.error || 'Failed to update POS settings', type: 'danger' });
         } finally {
             setLoading(false);
         }
@@ -119,13 +121,13 @@ export default function PosSettings() {
         e.preventDefault();
 
         if (!String(receiptSettings.invoiceTitle || '').trim()) {
-            return alert('Receipt title is required.');
+            await showAlert({ title: 'Required', message: 'Receipt title is required.', type: 'warning' }); return;
         }
         if (!String(receiptSettings.businessName || '').trim()) {
-            return alert('Business name is required for the receipt.');
+            await showAlert({ title: 'Required', message: 'Business name is required for the receipt.', type: 'warning' }); return;
         }
         if (!String(receiptSettings.branchAddress || '').trim()) {
-            return alert('Branch address is required for the receipt.');
+            await showAlert({ title: 'Required', message: 'Branch address is required for the receipt.', type: 'warning' }); return;
         }
 
         setReceiptSaving(true);
@@ -136,9 +138,9 @@ export default function PosSettings() {
                 headers: authHeaders()
             });
             await fetchPosSettings();
-            alert('Receipt settings updated.');
+            await showAlert({ title: 'Settings Saved', message: 'Receipt settings updated.', type: 'success' });
         } catch (e) {
-            alert(e.response?.data?.error || 'Failed to update receipt settings');
+            await showAlert({ title: 'Update Failed', message: e.response?.data?.error || 'Failed to update receipt settings', type: 'danger' });
         } finally {
             setReceiptSaving(false);
         }
@@ -403,3 +405,5 @@ const StatusCard = ({ label, enabled }) => (
         </span>
     </div>
 );
+
+

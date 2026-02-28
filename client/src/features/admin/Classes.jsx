@@ -1,3 +1,4 @@
+﻿import { useConfirm } from '../../context/ConfirmContext';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Calendar, Users, Clock, X, User, CheckCircle2, AlertCircle, Plus, Pencil, Trash2 } from 'lucide-react';
@@ -7,6 +8,7 @@ import { ROLES } from '../../constants/roles';
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 export default function Classes() {
+    const { alert: showAlert, confirm: showConfirm } = useConfirm();
     const { user } = useAuth();
     const isAdmin = user?.role === ROLES.ADMIN;
     const [classes, setClasses] = useState([]);
@@ -111,8 +113,8 @@ export default function Classes() {
 
     const handleSaveClass = async (e) => {
         e.preventDefault();
-        if (!formData.name.trim()) return alert('Class name is required.');
-        if (!formData.trainerId) return alert('Trainer is required.');
+        if (!formData.name.trim()) { await showAlert({ title: 'Validation', message: 'Class name is required.', type: 'warning' }); return; }
+        if (!formData.trainerId) { await showAlert({ title: 'Validation', message: 'Trainer is required.', type: 'warning' }); return; }
         setSaving(true);
         try {
             if (formMode === 'create') {
@@ -124,35 +126,45 @@ export default function Classes() {
             setEditingClass(null);
             await fetchClasses();
         } catch (error) {
-            alert(error?.response?.data?.error || 'Failed to save class.');
+            showAlert({ title: 'Save Failed', message: error?.response?.data?.error || 'Failed to save class.', type: 'danger' });
         } finally {
             setSaving(false);
         }
     };
 
     const handleDeleteClass = async (cls) => {
-        const confirmed = confirm(`Delete class ${cls.name}?`);
+        const confirmed = await showConfirm({
+            title: 'Delete Class?',
+            message: `Delete class ${cls.name}?`,
+            confirmLabel: 'Delete',
+            type: 'danger'
+        });
         if (!confirmed) return;
         try {
             await axios.delete(`/api/classes/${cls.id}`);
             await fetchClasses();
         } catch (error) {
-            alert(error?.response?.data?.error || 'Failed to delete class.');
+            showAlert({ title: 'Delete Failed', message: error?.response?.data?.error || 'Failed to delete class.', type: 'danger' });
         }
     };
 
     const handleCompleteClass = async (cls) => {
-        const confirmed = confirm(`Mark "${cls.name}" as completed for today? This will record attendance and calculate trainer commission.`);
+        const confirmed = await showConfirm({
+            title: 'Complete Class?',
+            message: `Mark "${cls.name}" as completed for today? This will record attendance and calculate trainer commission.`,
+            confirmLabel: 'Complete',
+            type: 'info'
+        });
         if (!confirmed) return;
         try {
             const token = localStorage.getItem('token');
             const res = await axios.post(`/api/classes/${cls.id}/complete`, {}, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            alert(`Class completed! ${res.data.attendeeCount} attendees — Commission: ₱${res.data.commissionAmount?.toFixed(2)}`);
+            showAlert({ title: "Class Completed!", message: `Class completed! ${res.data.attendeeCount} attendees.`, type: "success" });
             await fetchClasses();
         } catch (error) {
-            alert(error?.response?.data?.error || 'Failed to complete class.');
+            showAlert({ title: 'Complete Failed', message: error?.response?.data?.error || 'Failed to complete class.', type: 'danger' });
         }
     };
 
@@ -559,3 +571,5 @@ export default function Classes() {
         </div>
     );
 }
+
+

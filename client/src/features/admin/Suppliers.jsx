@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { useConfirm } from '../../context/ConfirmContext';
 
 const Suppliers = () => {
     const navigate = useNavigate();
+    const { alert: showAlert, confirm: showConfirm } = useConfirm();
     const [suppliers, setSuppliers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
@@ -52,7 +54,7 @@ const Suppliers = () => {
             setEditingId(null);
             fetchSuppliers();
         } catch (error) {
-            alert('Operation failed');
+            await showAlert({ title: 'Save Failed', message: 'Operation failed. Please try again.', type: 'danger' });
         }
     };
 
@@ -69,7 +71,8 @@ const Suppliers = () => {
     };
 
     const handleDelete = async (id) => {
-        if (!window.confirm('Delete this supplier?')) return;
+        const confirmed = await showConfirm({ title: 'Delete Supplier?', message: 'Delete this supplier? Suppliers with linked products cannot be deleted.', confirmLabel: 'Delete', type: 'danger' });
+        if (!confirmed) return;
         try {
             const token = localStorage.getItem('token');
             await axios.delete(`/api/suppliers/${id}`, {
@@ -77,7 +80,7 @@ const Suppliers = () => {
             });
             fetchSuppliers();
         } catch (error) {
-            alert('Failed to delete (Supplier may have linked products)');
+            await showAlert({ title: 'Delete Failed', message: 'Failed to delete supplier. It may have linked products.', type: 'danger' });
         }
     };
 

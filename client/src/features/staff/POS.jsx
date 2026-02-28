@@ -11,11 +11,13 @@ import { withApiBase } from '../../config/api';
 import { PAYMENT_METHODS } from '../../config/businessConfig';
 
 import { usePOSStore } from '../../stores/usePOSStore';
+import { useConfirm } from '../../context/ConfirmContext';
 
 export default function POS() {
     const { user } = useAuth();
     const { isSidebarCollapsed } = useUIStore();
     const { formatPrice } = useCurrency();
+    const { alert: showAlert, confirm: showConfirm } = useConfirm();
 
     // Zustand Store Selectors (Prevents Lag)
     const {
@@ -259,7 +261,7 @@ export default function POS() {
     // Cart logic now handled by usePOSStore
 
 
-    const initiateCheckout = () => {
+    const initiateCheckout = async () => {
         try {
             console.log("initiateCheckout triggered. Cart:", cart);
             if (cart.length === 0) return;
@@ -270,15 +272,15 @@ export default function POS() {
             // Validation for Membership
             const hasPlan = cart.some(item => item.type === 'PLAN');
             if (hasPlan && !selectedMemberId) {
-                alert("A Member must be selected when purchasing a Membership Plan.");
+                await showAlert({ title: 'Member Required', message: 'A Member must be selected when purchasing a Membership Plan.', type: 'warning' });
                 return;
             }
             if (hasTraining && !selectedMemberId) {
-                alert("Select a member for trainer booking.");
+                await showAlert({ title: 'Member Required', message: 'Select a member for trainer booking.', type: 'warning' });
                 return;
             }
             if (hasClassPackages && !selectedMemberId) {
-                alert("Select a member for class package purchase.");
+                await showAlert({ title: 'Member Required', message: 'Select a member for class package purchase.', type: 'warning' });
                 return;
             }
 
@@ -286,7 +288,7 @@ export default function POS() {
                 console.log("Validating training sessions...");
                 const invalid = cart.some(item => item.type === 'TRAINING' && (!item.date || !item.time || !item.duration));
                 if (invalid) {
-                    alert("Please complete date, time, and duration for all training sessions.");
+                    await showAlert({ title: 'Incomplete Details', message: 'Please complete date, time, and duration for all training sessions.', type: 'warning' });
                     return;
                 }
                 const hasPastDateTime = cart.some((item) => {
@@ -295,7 +297,7 @@ export default function POS() {
                     return Number.isNaN(scheduled.getTime()) || scheduled <= new Date();
                 });
                 if (hasPastDateTime) {
-                    alert("Past trainer booking schedule is not allowed.");
+                    await showAlert({ title: 'Invalid Schedule', message: 'Past trainer booking schedule is not allowed.', type: 'warning' });
                     return;
                 }
                 const invalidSchedule = cart.some((item) => {
@@ -303,13 +305,13 @@ export default function POS() {
                     const trainer = trainers.find((t) => Number(t.id) === Number(item.trainerId));
                     if (!trainer) {
                         console.error("Trainer not found for item:", item);
-                        return true; // Consider invalid if trainer is missing
+                        return true;
                     }
                     const slots = getAvailableTimeSlotsForTrainer(trainer, item.date, item.duration);
                     return !slots.includes(item.time);
                 });
                 if (invalidSchedule) {
-                    alert("One or more trainer bookings use unavailable time slots or trainer not found. Please reselect time.");
+                    await showAlert({ title: 'Unavailable Slot', message: 'One or more trainer bookings use unavailable time slots or trainer not found. Please reselect time.', type: 'warning' });
                     return;
                 }
             }
@@ -318,7 +320,7 @@ export default function POS() {
             openModal('payment');
         } catch (error) {
             console.error("Checkout Error:", error);
-            alert("A system error occurred during checkout initialization: " + error.message);
+            await showAlert({ title: 'System Error', message: 'A system error occurred during checkout initialization: ' + error.message, type: 'danger' });
         }
     };
 
@@ -405,7 +407,7 @@ export default function POS() {
             setLoading(false);
 
         } catch (e) {
-            alert("Transaction Failed: " + (e.response?.data?.error || e.message));
+            await showAlert({ title: 'Transaction Failed', message: e.response?.data?.error || e.message, type: 'danger' });
             setLoading(false);
         }
     };
@@ -785,7 +787,13 @@ export default function POS() {
                                                 </button>
                                                 <button
                                                     onClick={async () => {
-                                                        if (!window.confirm(`Decline ${bookingGroup.count} booking(s)?`)) return;
+                                                        const confirmed = await showConfirm({
+                                                            title: 'Decline Booking?',
+                                                            message: `Decline ${bookingGroup.count} booking(s)?`,
+                                                            confirmLabel: 'Decline',
+                                                            type: 'danger'
+                                                        });
+                                                        if (!confirmed) return;
                                                         try {
                                                             await Promise.all(
                                                                 bookingGroup.sessionIds.map((sessionId) =>
@@ -796,7 +804,7 @@ export default function POS() {
                                                         } catch (e) {
                                                             const message = e.response?.data?.error || "Failed to decline booking";
                                                             const detail = e.response?.data?.detail;
-                                                            alert(detail ? `${message}\n\nDetails: ${detail}` : message);
+                                                            await showAlert({ title: 'Decline Failed', message: detail ? `${message}\n\nDetails: ${detail}` : message, type: 'danger' });
                                                         }
                                                     }}
                                                     className="text-xs font-bold px-3 py-1 rounded-lg border border-red-500/30 text-red-300 hover:bg-red-500/10"
@@ -810,198 +818,211 @@ export default function POS() {
                             </tbody>
                         </table>
                     </div>
-                )}
+                )
+                }
 
-                {collectCashTab === 'IN_APP_PURCHASES' && (
-                    <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
-                        <table className="w-full text-left text-sm text-text-secondary">
-                            <thead className="bg-white/5 text-text-muted uppercase text-xs font-bold tracking-wider">
-                                <tr>
-                                    <th className="px-6 py-4">Date</th>
-                                    <th className="px-6 py-4">Member</th>
-                                    <th className="px-6 py-4">Type</th>
-                                    <th className="px-6 py-4">Amount</th>
-                                    <th className="px-6 py-4">Status</th>
-                                    <th className="px-6 py-4">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-white/5">
-                                {pendingInAppPurchases.length === 0 && (
-                                    <tr><td colSpan="6" className="p-6 text-center text-text-muted">No pending in-app cash purchases found.</td></tr>
-                                )}
-                                {pendingInAppPurchases.map((payment) => (
-                                    <tr key={payment.id} className="hover:bg-white/5 transition-colors">
-                                        <td className="px-6 py-4 text-white font-medium">
-                                            {new Date(payment.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(payment.date).toLocaleTimeString()}</span>
-                                        </td>
-                                        <td className="px-6 py-4 text-white">{getBuyerLabel(payment)}</td>
-                                        <td className="px-6 py-4 text-white">{payment.type}</td>
-                                        <td className="px-6 py-4 text-white font-bold">{formatPrice(payment.amount)}</td>
-                                        <td className="px-6 py-4">{renderStatusBadge(payment.status)}</td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-2">
-                                                <button
-                                                    onClick={() => {
-                                                        openModal('collectPurchase', payment);
-                                                    }}
-                                                    className="text-xs font-bold px-3 py-1 rounded-lg border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
-                                                >
-                                                    Accept
-                                                </button>
-                                                <button
-                                                    onClick={async () => {
-                                                        if (!window.confirm('Decline this pending cash purchase?')) return;
-                                                        try {
-                                                            await axios.post(withApiBase(`/api/payments/${payment.id}/decline-cash`), {}, { headers: authHeaders() });
-                                                            await Promise.all([fetchPendingInAppPurchases(), fetchHistory()]);
-                                                        } catch (e) {
-                                                            alert(e.response?.data?.error || "Failed to decline payment");
-                                                        }
-                                                    }}
-                                                    className="text-xs font-bold px-3 py-1 rounded-lg border border-red-500/30 text-red-300 hover:bg-red-500/10"
-                                                >
-                                                    Decline
-                                                </button>
-                                            </div>
-                                        </td>
+                {
+                    collectCashTab === 'IN_APP_PURCHASES' && (
+                        <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
+                            <table className="w-full text-left text-sm text-text-secondary">
+                                <thead className="bg-white/5 text-text-muted uppercase text-xs font-bold tracking-wider">
+                                    <tr>
+                                        <th className="px-6 py-4">Date</th>
+                                        <th className="px-6 py-4">Member</th>
+                                        <th className="px-6 py-4">Type</th>
+                                        <th className="px-6 py-4">Amount</th>
+                                        <th className="px-6 py-4">Status</th>
+                                        <th className="px-6 py-4">Actions</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
+                                </thead>
+                                <tbody className="divide-y divide-white/5">
+                                    {pendingInAppPurchases.length === 0 && (
+                                        <tr><td colSpan="6" className="p-6 text-center text-text-muted">No pending in-app cash purchases found.</td></tr>
+                                    )}
+                                    {pendingInAppPurchases.map((payment) => (
+                                        <tr key={payment.id} className="hover:bg-white/5 transition-colors">
+                                            <td className="px-6 py-4 text-white font-medium">
+                                                {new Date(payment.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(payment.date).toLocaleTimeString()}</span>
+                                            </td>
+                                            <td className="px-6 py-4 text-white">{getBuyerLabel(payment)}</td>
+                                            <td className="px-6 py-4 text-white">{payment.type}</td>
+                                            <td className="px-6 py-4 text-white font-bold">{formatPrice(payment.amount)}</td>
+                                            <td className="px-6 py-4">{renderStatusBadge(payment.status)}</td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        onClick={() => {
+                                                            openModal('collectPurchase', payment);
+                                                        }}
+                                                        className="text-xs font-bold px-3 py-1 rounded-lg border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
+                                                    >
+                                                        Accept
+                                                    </button>
+                                                    <button
+                                                        onClick={async () => {
+                                                            const confirmed = await showConfirm({
+                                                                title: 'Decline Purchase?',
+                                                                message: 'Decline this pending cash purchase?',
+                                                                confirmLabel: 'Decline',
+                                                                type: 'danger'
+                                                            });
+                                                            if (!confirmed) return;
+                                                            try {
+                                                                await axios.post(withApiBase(`/api/payments/${payment.id}/decline-cash`), {}, { headers: authHeaders() });
+                                                                await Promise.all([fetchPendingInAppPurchases(), fetchHistory()]);
+                                                            } catch (e) {
+                                                                await showAlert({ title: 'Decline Failed', message: e.response?.data?.error || 'Failed to decline payment', type: 'danger' });
+                                                            }
+                                                        }}
+                                                        className="text-xs font-bold px-3 py-1 rounded-lg border border-red-500/30 text-red-300 hover:bg-red-500/10"
+                                                    >
+                                                        Decline
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )
+                }
 
-                {modals.collectCash && collectData.session && (
-                    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-                        <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6">
-                            <div className="mb-4">
-                                <h2 className="text-xl font-bold text-white">Collect Cash</h2>
-                                <p className="text-text-muted text-sm">
-                                    {collectData.session.member?.firstName} {collectData.session.member?.lastName} • {collectData.session.trainer?.name}
-                                    {collectData.session.count > 1 ? ` (${collectData.session.count} sessions)` : ''}
-                                </p>
-                            </div>
-                            <div className="space-y-4">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-text-muted">Amount Due</span>
-                                    <span className="text-white font-bold text-lg">{formatPrice(collectData.session.totalAmount || collectData.session.price || 0)}</span>
+                {
+                    modals.collectCash && collectData.session && (
+                        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                            <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6">
+                                <div className="mb-4">
+                                    <h2 className="text-xl font-bold text-white">Collect Cash</h2>
+                                    <p className="text-text-muted text-sm">
+                                        {collectData.session.member?.firstName} {collectData.session.member?.lastName} • {collectData.session.trainer?.name}
+                                        {collectData.session.count > 1 ? ` (${collectData.session.count} sessions)` : ''}
+                                    </p>
                                 </div>
-                                <div>
-                                    <label className="block text-text-muted text-sm font-medium mb-2">Cash Tendered</label>
-                                    <input
-                                        type="number"
-                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-3 px-4 text-white text-base focus:border-primary outline-none"
-                                        placeholder="0.00"
-                                        value={collectData.tendered}
-                                        onChange={(e) => setCollectField('tendered', e.target.value)}
-                                    />
-                                </div>
-                                <div className="bg-white/5 rounded-xl p-4 flex justify-between items-center">
-                                    <span className="text-text-secondary">Change Due:</span>
-                                    {formatPrice(Math.max(0, (parseFloat(collectData.tendered) || 0) - (collectData.session.totalAmount || collectData.session.price || 0)))}
-                                </div>
-                                <div className="flex gap-3">
-                                    <button
-                                        onClick={() => closeModal('collectCash')}
-                                        className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 rounded-xl"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        onClick={async () => {
-                                            const amountDue = collectData.session.totalAmount || collectData.session.price || 0;
-                                            if ((parseFloat(collectData.tendered) || 0) < amountDue) return;
-                                            setCollectLoading(true);
-                                            try {
-                                                await axios.post(withApiBase('/api/staff/training-sessions/collect-batch'), {
-                                                    sessionIds: collectData.session.sessionIds || [collectData.session.id],
-                                                    method: 'CASH',
-                                                    cashTendered: parseFloat(collectData.tendered)
-                                                }, { headers: authHeaders() });
-                                                await fetchTrainingBookings();
-                                                await fetchHistory();
-                                                closeModal('collectCash');
-                                            } catch (e) {
-                                                alert("Failed to collect payment");
-                                            } finally {
-                                                setCollectLoading(false);
-                                            }
-                                        }}
-                                        disabled={collectLoading || (parseFloat(collectData.tendered) || 0) < (collectData.session.totalAmount || collectData.session.price || 0)}
-                                        className="flex-1 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl"
-                                    >
-                                        {collectLoading ? 'Collecting...' : 'Collect'}
-                                    </button>
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-text-muted">Amount Due</span>
+                                        <span className="text-white font-bold text-lg">{formatPrice(collectData.session.totalAmount || collectData.session.price || 0)}</span>
+                                    </div>
+                                    <div>
+                                        <label className="block text-text-muted text-sm font-medium mb-2">Cash Tendered</label>
+                                        <input
+                                            type="number"
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-3 px-4 text-white text-base focus:border-primary outline-none"
+                                            placeholder="0.00"
+                                            value={collectData.tendered}
+                                            onChange={(e) => setCollectField('tendered', e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="bg-white/5 rounded-xl p-4 flex justify-between items-center">
+                                        <span className="text-text-secondary">Change Due:</span>
+                                        {formatPrice(Math.max(0, (parseFloat(collectData.tendered) || 0) - (collectData.session.totalAmount || collectData.session.price || 0)))}
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => closeModal('collectCash')}
+                                            className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 rounded-xl"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={async () => {
+                                                const amountDue = collectData.session.totalAmount || collectData.session.price || 0;
+                                                if ((parseFloat(collectData.tendered) || 0) < amountDue) return;
+                                                setCollectLoading(true);
+                                                try {
+                                                    await axios.post(withApiBase('/api/staff/training-sessions/collect-batch'), {
+                                                        sessionIds: collectData.session.sessionIds || [collectData.session.id],
+                                                        method: 'CASH',
+                                                        cashTendered: parseFloat(collectData.tendered)
+                                                    }, { headers: authHeaders() });
+                                                    await fetchTrainingBookings();
+                                                    await fetchHistory();
+                                                    closeModal('collectCash');
+                                                } catch (e) {
+                                                    await showAlert({ title: 'Collection Failed', message: 'Failed to collect payment', type: 'danger' });
+                                                } finally {
+                                                    setCollectLoading(false);
+                                                }
+                                            }}
+                                            disabled={collectLoading || (parseFloat(collectData.tendered) || 0) < (collectData.session.totalAmount || collectData.session.price || 0)}
+                                            className="flex-1 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl"
+                                        >
+                                            {collectLoading ? 'Collecting...' : 'Collect'}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                )}
+                    )
+                }
 
 
-                {modals.collectPurchase && collectData.purchase && (
-                    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-                        <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6">
-                            <div className="mb-4">
-                                <h2 className="text-xl font-bold text-white">Collect Cash</h2>
-                                <p className="text-text-muted text-sm">
-                                    {collectData.purchase.member?.firstName} {collectData.purchase.member?.lastName} • {collectData.purchase.type}
-                                </p>
-                            </div>
-                            <div className="space-y-4">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-text-muted">Amount Due</span>
-                                    <span className="text-white font-bold text-lg">{formatPrice(collectData.purchase.amount)}</span>
+                {
+                    modals.collectPurchase && collectData.purchase && (
+                        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                            <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6">
+                                <div className="mb-4">
+                                    <h2 className="text-xl font-bold text-white">Collect Cash</h2>
+                                    <p className="text-text-muted text-sm">
+                                        {collectData.purchase.member?.firstName} {collectData.purchase.member?.lastName} • {collectData.purchase.type}
+                                    </p>
                                 </div>
-                                <div>
-                                    <label className="block text-text-muted text-sm font-medium mb-2">Cash Tendered</label>
-                                    <input
-                                        type="number"
-                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-3 px-4 text-white text-base focus:border-primary outline-none"
-                                        placeholder="0.00"
-                                        value={collectData.tendered}
-                                        onChange={(e) => setCollectField('tendered', e.target.value)}
-                                    />
-                                </div>
-                                <div className="bg-white/5 rounded-xl p-4 flex justify-between items-center">
-                                    <span className="text-text-secondary">Change Due:</span>
-                                    {formatPrice(Math.max(0, (parseFloat(collectData.tendered) || 0) - collectData.purchase.amount))}
-                                </div>
-                                <div className="flex gap-3">
-                                    <button
-                                        onClick={() => closeModal('collectPurchase')}
-                                        className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 rounded-xl"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        onClick={async () => {
-                                            if ((parseFloat(collectData.tendered) || 0) < collectData.purchase.amount) return;
-                                            setCollectLoading(true);
-                                            try {
-                                                await axios.post(withApiBase(`/api/payments/${collectData.purchase.id}/collect-cash`), {
-                                                    cashTendered: parseFloat(collectData.tendered)
-                                                }, { headers: authHeaders() });
-                                                await Promise.all([fetchPendingInAppPurchases(), fetchHistory()]);
-                                                closeModal('collectPurchase');
-                                            } catch (e) {
-                                                alert(e.response?.data?.error || "Failed to collect payment");
-                                            } finally {
-                                                setCollectLoading(false);
-                                            }
-                                        }}
-                                        disabled={collectLoading || (parseFloat(collectData.tendered) || 0) < collectData.purchase.amount}
-                                        className="flex-1 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl"
-                                    >
-                                        {collectLoading ? 'Collecting...' : 'Collect'}
-                                    </button>
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-text-muted">Amount Due</span>
+                                        <span className="text-white font-bold text-lg">{formatPrice(collectData.purchase.amount)}</span>
+                                    </div>
+                                    <div>
+                                        <label className="block text-text-muted text-sm font-medium mb-2">Cash Tendered</label>
+                                        <input
+                                            type="number"
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-3 px-4 text-white text-base focus:border-primary outline-none"
+                                            placeholder="0.00"
+                                            value={collectData.tendered}
+                                            onChange={(e) => setCollectField('tendered', e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="bg-white/5 rounded-xl p-4 flex justify-between items-center">
+                                        <span className="text-text-secondary">Change Due:</span>
+                                        {formatPrice(Math.max(0, (parseFloat(collectData.tendered) || 0) - collectData.purchase.amount))}
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => closeModal('collectPurchase')}
+                                            className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 rounded-xl"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={async () => {
+                                                if ((parseFloat(collectData.tendered) || 0) < collectData.purchase.amount) return;
+                                                setCollectLoading(true);
+                                                try {
+                                                    await axios.post(withApiBase(`/api/payments/${collectData.purchase.id}/collect-cash`), {
+                                                        cashTendered: parseFloat(collectData.tendered)
+                                                    }, { headers: authHeaders() });
+                                                    await Promise.all([fetchPendingInAppPurchases(), fetchHistory()]);
+                                                    closeModal('collectPurchase');
+                                                } catch (e) {
+                                                    await showAlert({ title: 'Collection Failed', message: e.response?.data?.error || 'Failed to collect payment', type: 'danger' });
+                                                } finally {
+                                                    setCollectLoading(false);
+                                                }
+                                            }}
+                                            disabled={collectLoading || (parseFloat(collectData.tendered) || 0) < collectData.purchase.amount}
+                                            className="flex-1 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl"
+                                        >
+                                            {collectLoading ? 'Collecting...' : 'Collect'}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                )}
+                    )
+                }
 
-            </div>
+            </div >
         );
     }
 
@@ -1237,19 +1258,23 @@ export default function POS() {
                         return (
                             <div
                                 key={item.id}
-                                onClick={() => {
+                                onClick={async () => {
                                     if (isSoldOut) return;
+                                    let result;
                                     if (isTrainer) {
-                                        addToCart({
+                                        result = addToCart({
                                             ...item,
                                             trainerId: item.id,
                                             price: item.sessionPrice ?? 0,
                                             duration: Number(item.sessionDurations?.split(',')[0]?.trim()) || 60
                                         }, 'TRAINING');
                                     } else if (isPackage) {
-                                        addToCart(item, 'CLASS_PACKAGE');
+                                        result = addToCart(item, 'CLASS_PACKAGE');
                                     } else {
-                                        addToCart(item, selectedCategory === POS_VIEWS.MEMBERSHIP ? 'PLAN' : 'PRODUCT');
+                                        result = addToCart(item, selectedCategory === POS_VIEWS.MEMBERSHIP ? 'PLAN' : 'PRODUCT');
+                                    }
+                                    if (result && !result.success && result.error) {
+                                        await showAlert({ title: 'Cannot Add Item', message: result.error, type: 'warning' });
                                     }
                                 }}
                                 className={`group bg-surface hover:bg-primary/5 rounded-3xl p-3 cursor-pointer transition-all duration-300 border border-white/5 hover:border-primary/20 shadow-sm hover:shadow-primary/10 active:scale-95 ${selectedCategory === POS_VIEWS.MEMBERSHIP ? 'ring-1 ring-yellow-500/30' : ''} ${isSoldOut ? 'opacity-70 grayscale-[0.5] cursor-not-allowed' : ''}`}
@@ -1380,7 +1405,7 @@ export default function POS() {
                                         {item.type !== 'TRAINING' && (
                                             <div className="flex items-center gap-2 mt-1.5">
                                                 <button
-                                                    onClick={(e) => { e.stopPropagation(); updateQuantity(item.cartLineId, item.quantity - 1, item.stock); }}
+                                                    onClick={async (e) => { e.stopPropagation(); const r = updateQuantity(item.cartLineId, item.quantity - 1, item.stock); if (r && !r.success && r.error) await showAlert({ title: 'Stock Limit', message: r.error, type: 'warning' }); }}
                                                     className="w-6 h-6 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded text-white transition-colors"
                                                 >
                                                     <span className="material-icons-round text-xs">remove</span>
@@ -1390,10 +1415,10 @@ export default function POS() {
                                                     className="w-10 bg-transparent text-center text-text-muted text-sm font-medium focus:text-white outline-none border-b border-transparent focus:border-white/30 transition-colors"
                                                     value={item.quantity}
                                                     onClick={(e) => e.stopPropagation()}
-                                                    onChange={(e) => updateQuantity(item.cartLineId, Math.max(1, parseInt(e.target.value) || 1), item.stock)}
+                                                    onChange={async (e) => { const r = updateQuantity(item.cartLineId, Math.max(1, parseInt(e.target.value) || 1), item.stock); if (r && !r.success && r.error) await showAlert({ title: 'Stock Limit', message: r.error, type: 'warning' }); }}
                                                 />
                                                 <button
-                                                    onClick={(e) => { e.stopPropagation(); updateQuantity(item.cartLineId, item.quantity + 1, item.stock); }}
+                                                    onClick={async (e) => { e.stopPropagation(); const r = updateQuantity(item.cartLineId, item.quantity + 1, item.stock); if (r && !r.success && r.error) await showAlert({ title: 'Stock Limit', message: r.error, type: 'warning' }); }}
                                                     className="w-6 h-6 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded text-white transition-colors"
                                                 >
                                                     <span className="material-icons-round text-xs">add</span>

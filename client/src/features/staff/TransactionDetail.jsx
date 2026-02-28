@@ -5,10 +5,12 @@ import { useReactToPrint } from 'react-to-print';
 import Receipt from '../../components/Receipt';
 import { useCurrency } from '../../context/CurrencyContext';
 import { withApiBase } from '../../config/api';
+import { useConfirm } from '../../context/ConfirmContext';
 
 export default function TransactionDetail() {
     const { id } = useParams();
     const { formatPrice } = useCurrency();
+    const { alert: showAlert } = useConfirm();
     const [payment, setPayment] = useState(null);
     const [loading, setLoading] = useState(true);
     const [returnModalOpen, setReturnModalOpen] = useState(false);
@@ -90,7 +92,8 @@ export default function TransactionDetail() {
             .filter((item) => item.quantity > 0);
 
         if (items.length === 0) {
-            return alert('Select at least one item to return.');
+            await showAlert({ title: 'No Items Selected', message: 'Select at least one item to return.', type: 'warning' });
+            return;
         }
 
         setActionLoading(true);
@@ -104,7 +107,7 @@ export default function TransactionDetail() {
             setPayment(res.data);
             closeModals();
         } catch (e) {
-            alert(e.response?.data?.error || 'Return failed');
+            await showAlert({ title: 'Return Failed', message: e.response?.data?.error || 'Return failed', type: 'danger' });
         } finally {
             setActionLoading(false);
         }
@@ -120,7 +123,7 @@ export default function TransactionDetail() {
             setPayment(res.data);
             closeModals();
         } catch (e) {
-            alert(e.response?.data?.error || 'Void failed');
+            await showAlert({ title: 'Void Failed', message: e.response?.data?.error || 'Void failed', type: 'danger' });
         } finally {
             setActionLoading(false);
         }
@@ -129,22 +132,22 @@ export default function TransactionDetail() {
     const handleCompleteSubmit = async () => {
         if (!payment) return;
         if (!cashTendered || Number(cashTendered) < payment.amount) {
-            return alert(`Please enter at least ${formatPrice(payment.amount)}`);
+            await showAlert({ title: 'Insufficient Amount', message: `Please enter at least ${formatPrice(payment.amount)}`, type: 'warning' });
+            return;
         }
 
         setActionLoading(true);
         try {
-            // No PIN needed for completing a sale, just cash
             const res = await axios.post(withApiBase(`/api/payments/${payment.id}/complete`), {
                 cashTendered: Number(cashTendered)
             }, {
                 headers: authHeaders()
             });
-            alert("Payment Completed!");
-            fetchPayment(); // Refresh
+            await showAlert({ title: 'Payment Completed!', message: 'The transaction has been marked as completed.', type: 'success' });
+            fetchPayment();
             closeModals();
         } catch (e) {
-            alert(e.response?.data?.error || 'Completion failed');
+            await showAlert({ title: 'Completion Failed', message: e.response?.data?.error || 'Completion failed', type: 'danger' });
         } finally {
             setActionLoading(false);
         }

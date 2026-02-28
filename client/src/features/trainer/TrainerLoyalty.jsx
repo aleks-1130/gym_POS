@@ -1,8 +1,10 @@
+﻿import { useConfirm } from '../../context/ConfirmContext';
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { REWARD_CATEGORIES } from '../../constants/categories';
 
 export default function TrainerLoyalty() {
+    const { alert: showAlert } = useConfirm();
     const [rewards, setRewards] = useState([]);
     const [orders, setOrders] = useState([]);
     const [persistedPoints, setPersistedPoints] = useState(0);
@@ -164,7 +166,7 @@ export default function TrainerLoyalty() {
                                     </div>
 
                                     <button
-                                        onClick={() => alert('Reward redemption for trainers will be processed by front desk. Please show this reward selection there.')}
+                                        onClick={() => showAlert({ title: 'Redeem at Front Desk', message: 'Reward redemption for trainers will be processed by front desk. Please show this reward selection there.', type: 'info' })}
                                         disabled={!canRedeem}
                                         className={`w-full py-2.5 rounded-lg font-bold text-xs sm:text-sm transition-all active:scale-95 ${canRedeem ? 'bg-primary text-background hover:brightness-110' : 'bg-white/5 text-text-muted cursor-not-allowed'}`}
                                     >
@@ -179,3 +181,4 @@ export default function TrainerLoyalty() {
         </div>
     );
 }
+

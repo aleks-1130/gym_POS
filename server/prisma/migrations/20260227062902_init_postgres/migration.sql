@@ -562,4 +562,3 @@ ALTER TABLE "MemberNote" ADD CONSTRAINT "MemberNote_createdBy_fkey" FOREIGN KEY 
 
 -- AddForeignKey
 ALTER TABLE "MemberNote" ADD CONSTRAINT "MemberNote_memberId_fkey" FOREIGN KEY ("memberId") REFERENCES "Member"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-

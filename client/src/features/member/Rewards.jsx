@@ -2,9 +2,11 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { REWARD_CATEGORIES } from '../../constants/categories';
+import { useConfirm } from '../../context/ConfirmContext';
 
 export default function Rewards() {
     const { user } = useAuth();
+    const { alert: showAlert } = useConfirm();
     const [rewards, setRewards] = useState([]);
     const [myPoints, setMyPoints] = useState(0);
     const [loading, setLoading] = useState(true);
@@ -50,17 +52,17 @@ export default function Rewards() {
 
     const handleRedeem = async (reward) => {
         if (myPoints < reward.cost) {
-            alert("Insufficient points!");
+            await showAlert({ title: 'Insufficient Points', message: 'You do not have enough points for this reward.', type: 'warning' });
             return;
         }
         try {
             await axios.post(`/api/loyalty/redeem/${reward.id}`);
-            alert("Reward redeemed successfully!");
+            await showAlert({ title: 'Reward Redeemed!', message: 'Reward redeemed successfully!', type: 'success' });
             fetchMyPoints();
             fetchRewards();
             setShowRedeemModal(false);
         } catch (e) {
-            alert("Failed to redeem reward");
+            await showAlert({ title: 'Redemption Failed', message: 'Failed to redeem reward', type: 'danger' });
         }
     };
 

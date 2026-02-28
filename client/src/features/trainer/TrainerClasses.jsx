@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { useConfirm } from '../../context/ConfirmContext';
 
 export default function TrainerClasses() {
     const [classes, setClasses] = useState([]);
     const [loading, setLoading] = useState(true);
     const [updatingId, setUpdatingId] = useState(null);
+    const { alert: showAlert, confirm: showConfirm } = useConfirm();
 
     useEffect(() => {
         const fetchClasses = async () => {
@@ -32,7 +34,7 @@ export default function TrainerClasses() {
             await axios.patch(`/api/trainer/me/classes/${clsId}/attendees/${bookingId}`, { status });
             await refreshClasses();
         } catch (e) {
-            alert(e.response?.data?.error || "Failed to update attendance");
+            await showAlert({ title: 'Error', message: e.response?.data?.error || 'Failed to update attendance', type: 'danger' });
         } finally {
             setUpdatingId(null);
         }
@@ -138,18 +140,23 @@ export default function TrainerClasses() {
     );
 
     async function handleCompleteClass(classId) {
-        if (!window.confirm("Complete this class? This will record attendance for payroll based on current 'Attended' or 'Confirmed' bookings.")) return;
-
+        const confirmed = await showConfirm({
+            title: 'Complete Class?',
+            message: "This will record attendance for payroll based on current 'Attended' or 'Confirmed' bookings.",
+            confirmLabel: 'Complete & Pay',
+            type: 'info'
+        });
+        if (!confirmed) return;
         try {
             const token = localStorage.getItem('token');
             await axios.post(`/api/classes/${classId}/complete`, {}, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            alert("Class completed and commission recorded!");
+            await showAlert({ title: 'Success', message: 'Class completed and commission recorded!', type: 'success' });
             refreshClasses();
         } catch (error) {
             console.error("Complete Class Error:", error);
-            alert("Failed to complete class");
+            await showAlert({ title: 'Failed', message: 'Failed to complete class', type: 'danger' });
         }
     }
 }

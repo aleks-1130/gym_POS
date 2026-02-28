@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react';
+ï»¿import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useSettings } from '../../context/SettingsContext';
 import { withApiBase } from '../../config/api';
+import { useConfirm } from '../../context/ConfirmContext';
 
 export default function Settings() {
     const { formatPrice } = useCurrency();
     const { settings, updateSettings } = useSettings();
+    const { alert: showAlert, confirm: showConfirm } = useConfirm();
     const [activeTab, setActiveTab] = useState('plans');
 
     const [gymProfile, setGymProfile] = useState({
@@ -82,12 +84,13 @@ export default function Settings() {
     };
 
     const handleDeletePlan = async (id) => {
-        if (!window.confirm('Are you sure you want to delete this plan?')) return;
+        const confirmed = await showConfirm({ title: 'Delete Plan?', message: 'Are you sure you want to delete this plan?', confirmLabel: 'Delete', type: 'danger' });
+        if (!confirmed) return;
         try {
             await axios.delete(withApiBase(`/api/plans/${id}`));
             fetchPlans();
         } catch (e) {
-            alert(e.response?.data?.error || 'Failed to delete plan');
+            await showAlert({ title: 'Delete Failed', message: e.response?.data?.error || 'Failed to delete plan', type: 'danger' });
         }
     };
 
@@ -127,7 +130,7 @@ export default function Settings() {
             handleCancelEditPlan();
             fetchPlans();
         } catch (e) {
-            alert(e.response?.data?.error || 'Failed to update plan');
+            await showAlert({ title: 'Update Failed', message: e.response?.data?.error || 'Failed to update plan', type: 'danger' });
         } finally {
             setSavingPlanId(null);
         }
@@ -153,7 +156,7 @@ export default function Settings() {
             });
             fetchPlans();
         } catch (e) {
-            alert(e.response?.data?.error || 'Failed to create plan');
+            await showAlert({ title: 'Create Failed', message: e.response?.data?.error || 'Failed to create plan', type: 'danger' });
         } finally {
             setLoadingPlan(false);
         }
@@ -163,9 +166,9 @@ export default function Settings() {
         e.preventDefault();
         const success = await updateSettings(gymProfile);
         if (success) {
-            alert('Gym Branding Updated Successfully!');
+            await showAlert({ title: 'Branding Updated', message: 'Gym Branding Updated Successfully!', type: 'success' });
         } else {
-            alert('Failed to update branding.');
+            await showAlert({ title: 'Update Failed', message: 'Failed to update branding.', type: 'danger' });
         }
     };
 
@@ -182,7 +185,7 @@ export default function Settings() {
             setPackageFormData({ name: '', sessions: '', price: '', isActive: true });
             fetchSessionPackages();
         } catch (e) {
-            alert(e.response?.data?.error || 'Failed to create package');
+            await showAlert({ title: 'Create Failed', message: e.response?.data?.error || 'Failed to create package', type: 'danger' });
         } finally {
             setLoadingPackage(false);
         }
@@ -198,17 +201,18 @@ export default function Settings() {
             });
             fetchSessionPackages();
         } catch (e) {
-            alert(e.response?.data?.error || 'Failed to update package');
+            await showAlert({ title: 'Update Failed', message: e.response?.data?.error || 'Failed to update package', type: 'danger' });
         }
     };
 
     const handleDeletePackage = async (id) => {
-        if (!window.confirm('Delete this class session package?')) return;
+        const confirmed2 = await showConfirm({ title: 'Delete Package?', message: 'Delete this class session package?', confirmLabel: 'Delete', type: 'danger' });
+        if (!confirmed2) return;
         try {
             await axios.delete(withApiBase(`/api/plans/class-session-packages/${id}`));
             fetchSessionPackages();
         } catch (e) {
-            alert(e.response?.data?.error || 'Failed to delete package');
+            await showAlert({ title: 'Delete Failed', message: e.response?.data?.error || 'Failed to delete package', type: 'danger' });
         }
     };
 
@@ -321,7 +325,7 @@ export default function Settings() {
                                             <div>
                                                 <h4 className="text-white font-bold">{plan.name}</h4>
                                                 <p className="text-sm text-text-muted font-medium">
-                                                    {plan.duration} days • <span className="text-primary font-bold">{formatPrice(plan.price)}</span>
+                                                    {plan.duration} days â€¢ <span className="text-primary font-bold">{formatPrice(plan.price)}</span>
                                                 </p>
                                                 <p className="text-xs mt-1 text-text-muted">
                                                     {plan.includesClasses
@@ -430,7 +434,7 @@ export default function Settings() {
                                     <div className="flex items-center justify-between gap-3">
                                         <div>
                                             <h4 className="text-white font-bold">{item.name}</h4>
-                                            <p className="text-sm text-text-muted">{item.sessions} sessions • <span className="text-primary font-bold">{formatPrice(item.price)}</span></p>
+                                            <p className="text-sm text-text-muted">{item.sessions} sessions â€¢ <span className="text-primary font-bold">{formatPrice(item.price)}</span></p>
                                             <p className={`text-xs mt-1 ${item.isActive ? 'text-emerald-400' : 'text-red-400'}`}>
                                                 {item.isActive ? 'Active' : 'Inactive'}
                                             </p>
@@ -541,4 +545,6 @@ export default function Settings() {
         </div>
     );
 }
+
+
 

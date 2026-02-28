@@ -585,8 +585,9 @@ const returnPaymentItems = async (req, res) => {
             return res.status(400).json({ error: "Only completed payments can be returned" });
         }
 
+        // --- Pre-transaction: compute what to return ---
         let refundAmount = 0;
-        let totalReturnedQty = 0;
+        const validReturnItems = [];
 
         for (const reqItem of items) {
             const itemId = Number(reqItem.itemId);
@@ -602,55 +603,61 @@ const returnPaymentItems = async (req, res) => {
             if (returnQty <= 0) continue;
 
             refundAmount += returnQty * item.unitPrice;
-            totalReturnedQty += returnQty;
-
-            await prisma.paymentItem.update({
-                where: { id: item.id },
-                data: { returnedQuantity: { increment: returnQty } }
-            });
-
-            if (item.productId) {
-                await prisma.product.update({
-                    where: { id: item.productId },
-                    data: { stock: { increment: returnQty } }
-                });
-            }
+            validReturnItems.push({ item, returnQty });
         }
 
-        if (refundAmount <= 0) {
+        if (refundAmount <= 0 || validReturnItems.length === 0) {
             return res.status(400).json({ error: "Nothing to return" });
         }
 
         const trainerBuyerId = getTrainerBuyerIdFromPayment(payment);
         const pointsReversal = (payment.memberId || trainerBuyerId) ? Math.floor(refundAmount / 100) : 0;
-        if (pointsReversal > 0) {
-            if (payment.memberId) {
-                const member = await prisma.member.findUnique({ where: { id: payment.memberId } });
-                if (member) {
-                    await prisma.member.update({
-                        where: { id: payment.memberId },
-                        data: { points: { decrement: pointsReversal } }
-                    });
-                }
-            } else if (trainerBuyerId) {
-                const trainerUser = await prisma.user.findUnique({ where: { id: trainerBuyerId } });
-                if (trainerUser) {
-                    await prisma.user.update({
-                        where: { id: trainerBuyerId },
-                        data: { loyaltyPoints: { decrement: pointsReversal } }
-                    });
+
+        // --- Atomic transaction: all writes succeed or all roll back ---
+        const updated = await prisma.$transaction(async (tx) => {
+            // 1. Restore stock and mark items as returned
+            for (const { item, returnQty } of validReturnItems) {
+                await tx.paymentItem.update({
+                    where: { id: item.id },
+                    data: { returnedQuantity: { increment: returnQty } }
+                });
+                await tx.product.update({
+                    where: { id: item.productId },
+                    data: { stock: { increment: returnQty } }
+                });
+            }
+
+            // 2. Reverse loyalty points if applicable
+            if (pointsReversal > 0) {
+                if (payment.memberId) {
+                    const member = await tx.member.findUnique({ where: { id: payment.memberId } });
+                    if (member) {
+                        await tx.member.update({
+                            where: { id: payment.memberId },
+                            data: { points: { decrement: pointsReversal } }
+                        });
+                    }
+                } else if (trainerBuyerId) {
+                    const trainerUser = await tx.user.findUnique({ where: { id: trainerBuyerId } });
+                    if (trainerUser) {
+                        await tx.user.update({
+                            where: { id: trainerBuyerId },
+                            data: { loyaltyPoints: { decrement: pointsReversal } }
+                        });
+                    }
                 }
             }
-        }
 
-        const updated = await prisma.payment.update({
-            where: { id: paymentId },
-            data: {
-                status: 'RETURNED',
-                refundedAmount: { increment: refundAmount },
-                pointsReversed: { increment: pointsReversal }
-            },
-            include: { member: true, items: true }
+            // 3. Update payment status (final step — only reached if all above succeed)
+            return tx.payment.update({
+                where: { id: paymentId },
+                data: {
+                    status: 'RETURNED',
+                    refundedAmount: { increment: refundAmount },
+                    pointsReversed: { increment: pointsReversal }
+                },
+                include: { member: true, items: true }
+            });
         });
 
         res.json(updated);
@@ -687,45 +694,53 @@ const voidPayment = async (req, res) => {
             return res.status(400).json({ error: "Only completed payments can be voided" });
         }
 
-        for (const item of payment.items) {
-            if (item.productId) {
-                await prisma.product.update({
-                    where: { id: item.productId },
-                    data: { stock: { increment: item.quantity } }
-                });
-            }
-        }
-
         const trainerBuyerId = getTrainerBuyerIdFromPayment(payment);
         const pointsReversal = (payment.memberId || trainerBuyerId) ? (payment.pointsAwarded || 0) : 0;
-        if (pointsReversal > 0) {
-            if (payment.memberId) {
-                const member = await prisma.member.findUnique({ where: { id: payment.memberId } });
-                if (member) {
-                    await prisma.member.update({
-                        where: { id: payment.memberId },
-                        data: { points: { decrement: pointsReversal } }
-                    });
-                }
-            } else if (trainerBuyerId) {
-                const trainerUser = await prisma.user.findUnique({ where: { id: trainerBuyerId } });
-                if (trainerUser) {
-                    await prisma.user.update({
-                        where: { id: trainerBuyerId },
-                        data: { loyaltyPoints: { decrement: pointsReversal } }
+
+        // --- Atomic transaction: all writes succeed or all roll back ---
+        const updated = await prisma.$transaction(async (tx) => {
+            // 1. Restore stock for every product item
+            for (const item of payment.items) {
+                if (item.productId) {
+                    await tx.product.update({
+                        where: { id: item.productId },
+                        data: { stock: { increment: item.quantity } }
                     });
                 }
             }
-        }
 
-        const updated = await prisma.payment.update({
-            where: { id: paymentId },
-            data: {
-                status: 'VOIDED',
-                pointsReversed: { increment: pointsReversal }
-            },
-            include: { member: true, items: true }
+            // 2. Reverse loyalty points if applicable
+            if (pointsReversal > 0) {
+                if (payment.memberId) {
+                    const member = await tx.member.findUnique({ where: { id: payment.memberId } });
+                    if (member) {
+                        await tx.member.update({
+                            where: { id: payment.memberId },
+                            data: { points: { decrement: pointsReversal } }
+                        });
+                    }
+                } else if (trainerBuyerId) {
+                    const trainerUser = await tx.user.findUnique({ where: { id: trainerBuyerId } });
+                    if (trainerUser) {
+                        await tx.user.update({
+                            where: { id: trainerBuyerId },
+                            data: { loyaltyPoints: { decrement: pointsReversal } }
+                        });
+                    }
+                }
+            }
+
+            // 3. Mark payment as VOIDED (final step — only reached if all above succeed)
+            return tx.payment.update({
+                where: { id: paymentId },
+                data: {
+                    status: 'VOIDED',
+                    pointsReversed: { increment: pointsReversal }
+                },
+                include: { member: true, items: true }
+            });
         });
+
         res.json(updated);
     } catch (e) {
         res.status(500).json({ error: "Failed to void payment" });

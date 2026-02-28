@@ -1,9 +1,11 @@
+﻿import { useConfirm } from '../../context/ConfirmContext';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useAuth } from '../../context/AuthContext';
 
 const Payroll = () => {
+    const { alert: showAlert } = useConfirm();
     const { formatPrice } = useCurrency();
     const { user: currentUser } = useAuth();
     const [stats, setStats] = useState({ totalPayrollThisMonth: 0, pendingCommissions: 0, pendingMaterialDeductions: 0 });
@@ -169,17 +171,17 @@ const Payroll = () => {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            alert('Salary payment recorded successfully!');
+            showAlert({ title: 'Payment Recorded', message: 'Salary payment recorded successfully!', type: 'success' });
             setShowModal(false);
             fetchData();
         } catch (error) {
             console.error("Payment Error:", error);
-            alert(error.response?.data?.error || "Failed to record payment");
+            showAlert({ title: 'Payment Failed', message: error.response?.data?.error || "Failed to record payment", type: 'danger' });
         }
     };
 
     const submitCommissionPayment = async () => {
-        if (selectedSessions.length === 0 && selectedClasses.length === 0) return alert("Please select at least one item to pay.");
+        if (selectedSessions.length === 0 && selectedClasses.length === 0) { await showAlert({ title: "Select Items", message: "Please select at least one item to pay.", type: "warning" }); return; }
 
         try {
             const token = localStorage.getItem('token');
@@ -191,12 +193,12 @@ const Payroll = () => {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            alert('Commissions paid successfully!');
+            showAlert({ title: 'Paid!', message: 'Commissions paid successfully!', type: 'success' });
             setShowModal(false);
             fetchData();
         } catch (error) {
             console.error("Commission Payment Error:", error);
-            alert("Failed to pay commissions");
+            showAlert({ title: "Payment Failed", message: "Failed to pay commissions", type: "danger" });
         }
     };
 
@@ -209,12 +211,12 @@ const Payroll = () => {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            alert(`Auto payout completed for ${trainerName}.`);
+            showAlert({ title: "Auto-Pay Complete", message: `Auto payout completed for ${trainerName}.`, type: "success" });
             setShowModal(false);
             fetchData();
         } catch (error) {
             console.error("Auto Commission Payment Error:", error);
-            alert(error.response?.data?.error || "Failed to auto pay commissions");
+            showAlert({ title: "Auto-Pay Failed", message: error.response?.data?.error || "Failed to auto pay commissions", type: "danger" });
         }
     };
 
@@ -755,3 +757,5 @@ const Payroll = () => {
 };
 
 export default Payroll;
+
+

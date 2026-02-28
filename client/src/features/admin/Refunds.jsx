@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
 import DataTable from '../../components/common/DataTable';
+import { useConfirm } from '../../context/ConfirmContext';
 
 export default function Refunds() {
     const { formatPrice } = useCurrency();
+    const { alert: showAlert } = useConfirm();
 
     // Tab state
     const [activeTab, setActiveTab] = useState('HISTORY'); // 'HISTORY' | 'EXCEPTIONS'
@@ -22,7 +24,7 @@ export default function Refunds() {
     const [refundExceptionRequests, setRefundExceptionRequests] = useState([]);
     const [exceptionsLoading, setExceptionsLoading] = useState(false);
 
-    // ── Date filter effect ────────────────────────────────────────────────────
+    // ΓöÇΓöÇ Date filter effect ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
     useEffect(() => {
         if (dateFilterType === 'CUSTOM') return;
         const now = new Date();
@@ -69,7 +71,7 @@ export default function Refunds() {
         }
     }, [activeTab]);
 
-    // ── API calls ─────────────────────────────────────────────────────────────
+    // ΓöÇΓöÇ API calls ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
     const fetchHistory = async (page = 1) => {
         setLoading(true);
         try {
@@ -110,15 +112,24 @@ export default function Refunds() {
         }
     };
 
-    const resolveRefundException = async (session, decision) => {
-        const isApprove = decision === 'APPROVE';
-        const note = window.prompt(
-            isApprove ? 'Optional approval note (leave blank to continue):' : 'Reason for rejection:',
-            ''
-        ) ?? '';
+    const [resolveNote, setResolveNote] = useState('');
+    const [resolveNoteError, setResolveNoteError] = useState('');
+    const [pendingResolve, setPendingResolve] = useState(null); // { session, decision }
 
-        if (!isApprove && !String(note).trim()) {
-            alert('Rejection reason is required.');
+    const resolveRefundException = (session, decision) => {
+        setResolveNote('');
+        setResolveNoteError('');
+        setPendingResolve({ session, decision });
+    };
+
+    const confirmResolve = async () => {
+        if (!pendingResolve) return;
+        const { session, decision } = pendingResolve;
+        const isApprove = decision === 'APPROVE';
+        const note = resolveNote.trim();
+
+        if (!isApprove && !note) {
+            setResolveNoteError('Rejection reason is required.');
             return;
         }
 
@@ -126,19 +137,20 @@ export default function Refunds() {
             const token = localStorage.getItem('token');
             await axios.post(
                 `/api/staff/training-sessions/${session.id}/refund-exception/resolve`,
-                { decision, note: String(note).trim() },
+                { decision, note },
                 { headers: { Authorization: `Bearer ${token}` } }
             );
+            setPendingResolve(null);
             await fetchRefundExceptionRequests();
-            alert(`Refund exception ${isApprove ? 'approved' : 'rejected'}.`);
+            await showAlert({ title: 'Done!', message: `Refund exception ${isApprove ? 'approved' : 'rejected'}.`, type: 'success' });
         } catch (e) {
             const message = e.response?.data?.error || 'Failed to resolve refund exception';
             const detail = e.response?.data?.detail;
-            alert(detail ? `${message}\n\nDetails: ${detail}` : message);
+            await showAlert({ title: 'Resolve Failed', message: detail ? `${message}\n\nDetails: ${detail}` : message, type: 'danger' });
         }
     };
 
-    // ── Render ────────────────────────────────────────────────────────────────
+    // ΓöÇΓöÇ Render ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
     return (
         <div className="space-y-6">
             {/* Header */}
@@ -151,8 +163,8 @@ export default function Refunds() {
                             <button
                                 onClick={() => setActiveTab('HISTORY')}
                                 className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-colors ${activeTab === 'HISTORY'
-                                        ? 'bg-primary text-background'
-                                        : 'text-text-secondary hover:text-white'
+                                    ? 'bg-primary text-background'
+                                    : 'text-text-secondary hover:text-white'
                                     }`}
                             >
                                 History
@@ -160,16 +172,16 @@ export default function Refunds() {
                             <button
                                 onClick={() => setActiveTab('EXCEPTIONS')}
                                 className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-colors flex items-center gap-2 ${activeTab === 'EXCEPTIONS'
-                                        ? 'bg-primary text-background'
-                                        : 'text-text-secondary hover:text-white'
+                                    ? 'bg-primary text-background'
+                                    : 'text-text-secondary hover:text-white'
                                     }`}
                             >
                                 Exceptions
                                 {refundExceptionRequests.length > 0 && (
                                     <span
                                         className={`text-[10px] px-2 py-0.5 rounded-full font-black ${activeTab === 'EXCEPTIONS'
-                                                ? 'bg-background/20'
-                                                : 'bg-red-500 text-white'
+                                            ? 'bg-background/20'
+                                            : 'bg-red-500 text-white'
                                             }`}
                                     >
                                         {refundExceptionRequests.length}
@@ -208,7 +220,7 @@ export default function Refunds() {
                                     onChange={(e) => setDateRange((p) => ({ ...p, start: e.target.value }))}
                                     className="bg-transparent border-none text-white text-sm focus:ring-0 p-2 outline-none [color-scheme:dark]"
                                 />
-                                <span className="text-text-muted">→</span>
+                                <span className="text-text-muted">ΓåÆ</span>
                                 <input
                                     type="date"
                                     value={dateRange.end}
@@ -237,7 +249,7 @@ export default function Refunds() {
                 )}
             </div>
 
-            {/* ── HISTORY TAB ── */}
+            {/* ΓöÇΓöÇ HISTORY TAB ΓöÇΓöÇ */}
             {activeTab === 'HISTORY' && (
                 <>
                     <DataTable
@@ -324,11 +336,11 @@ export default function Refunds() {
                 </>
             )}
 
-            {/* ── EXCEPTIONS TAB ── */}
+            {/* ΓöÇΓöÇ EXCEPTIONS TAB ΓöÇΓöÇ */}
             {activeTab === 'EXCEPTIONS' && (
                 <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
                     {exceptionsLoading ? (
-                        <div className="p-12 text-center text-text-muted">Loading exceptions…</div>
+                        <div className="p-12 text-center text-text-muted">Loading exceptionsΓÇª</div>
                     ) : (
                         <table className="w-full text-left text-sm text-text-secondary">
                             <thead className="bg-white/5 text-text-muted uppercase text-xs font-bold tracking-wider">
@@ -406,6 +418,78 @@ export default function Refunds() {
                     )}
                 </div>
             )}
+            {/* ΓöÇΓöÇ RESOLVE EXCEPTION MODAL ΓöÇΓöÇ */}
+            {pendingResolve && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 min-h-[0px] h-full overflow-y-auto w-full">
+                    <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md border border-white/10 flex flex-col pointer-events-auto">
+                        <div className="flex items-center justify-between p-6 border-b border-white/5">
+                            <div className="flex items-center gap-3">
+                                <div className={`p-2 rounded-xl ${pendingResolve.decision === 'APPROVE' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                                    <span className="material-icons-round text-xl">
+                                        {pendingResolve.decision === 'APPROVE' ? 'check_circle' : 'cancel'}
+                                    </span>
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-bold text-white">
+                                        {pendingResolve.decision === 'APPROVE' ? 'Approve' : 'Reject'} Exception
+                                    </h2>
+                                    <p className="text-sm text-text-muted mt-0.5">
+                                        {pendingResolve.decision === 'APPROVE' ? 'Add an optional note' : 'A rejection reason is required'}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setPendingResolve(null)}
+                                className="text-text-muted hover:text-white transition-colors p-2 rounded-lg hover:bg-white/5"
+                            >
+                                <span className="material-icons-round">close</span>
+                            </button>
+                        </div>
+
+                        <div className="p-6">
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-text-secondary mb-1.5">
+                                        {pendingResolve.decision === 'APPROVE' ? 'Approval Note (Optional)' : 'Rejection Reason'}
+                                    </label>
+                                    <textarea
+                                        value={resolveNote}
+                                        onChange={(e) => {
+                                            setResolveNote(e.target.value);
+                                            if (resolveNoteError) setResolveNoteError('');
+                                        }}
+                                        className={`w-full bg-background border ${resolveNoteError ? 'border-red-500/50 focus:border-red-500' : 'border-white/10 focus:border-primary'} rounded-xl px-4 py-3 text-white placeholder-white/20 focus:outline-none transition-colors min-h-[100px] resize-none`}
+                                        placeholder={pendingResolve.decision === 'APPROVE' ? 'Enter any internal notes here...' : 'Explain why this request is being rejected...'}
+                                        autoFocus
+                                    />
+                                    {resolveNoteError && (
+                                        <p className="text-red-400 text-sm mt-1.5 flex items-center gap-1">
+                                            <span className="material-icons-round text-[16px]">error_outline</span>
+                                            {resolveNoteError}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="p-6 border-t border-white/5 bg-white/[0.02] flex gap-3">
+                            <button
+                                onClick={() => setPendingResolve(null)}
+                                className="flex-1 px-4 py-2.5 rounded-xl font-bold text-text-secondary hover:text-white hover:bg-white/10 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmResolve}
+                                className={`flex-1 px-4 py-2.5 rounded-xl font-bold text-white transition-colors ${pendingResolve.decision === 'APPROVE' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-red-500 hover:bg-red-600'}`}
+                            >
+                                {pendingResolve.decision === 'APPROVE' ? 'Confirm Approval' : 'Confirm Rejection'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
+

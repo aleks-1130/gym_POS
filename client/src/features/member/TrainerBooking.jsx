@@ -2,10 +2,12 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useCurrency } from '../../context/CurrencyContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 export default function TrainerBooking() {
     const { user } = useAuth();
     const { formatPrice } = useCurrency();
+    const { alert: showAlert, confirm: showConfirm } = useConfirm();
     const [trainers, setTrainers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedTrainer, setSelectedTrainer] = useState(null);
@@ -139,27 +141,33 @@ export default function TrainerBooking() {
     };
 
     const handleCancelSession = async (sessionId) => {
-        if (!confirm("Are you sure you want to cancel this session?")) return;
+        const confirmed = await showConfirm({
+            title: 'Cancel Session?',
+            message: 'Are you sure you want to cancel this session?',
+            confirmLabel: 'Cancel Session',
+            type: 'danger'
+        });
+        if (!confirmed) return;
 
         try {
             const token = sessionStorage.getItem('token') || localStorage.getItem('token');
             await axios.post(`/api/members/me/training-sessions/${sessionId}/cancel`, {}, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined
             });
-            alert("Session cancelled successfully.");
+            await showAlert({ title: 'Session Cancelled', message: 'Session cancelled successfully.', type: 'success' });
             fetchMemberSessions();
         } catch (error) {
             console.error("Failed to cancel session", error);
-            alert(error.response?.data?.error || "Failed to cancel session");
+            await showAlert({ title: 'Cancel Failed', message: error.response?.data?.error || 'Failed to cancel session', type: 'danger' });
         }
     };
 
-    const handleOpenRescheduleModal = (session) => {
+    const handleOpenRescheduleModal = async (session) => {
         const sessionDate = new Date(session.date);
         const now = new Date();
         const hoursUntil = (sessionDate.getTime() - now.getTime()) / (1000 * 60 * 60);
         if (hoursUntil < 24) {
-            alert("Reschedule is allowed only if requested at least 24 hours before your session.");
+            await showAlert({ title: 'Too Late to Reschedule', message: 'Rescheduling is only allowed at least 24 hours before your session.', type: 'warning' });
             return;
         }
 
@@ -203,7 +211,7 @@ export default function TrainerBooking() {
             }, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined
             });
-            alert("Session rescheduled successfully.");
+            await showAlert({ title: 'Rescheduled!', message: 'Session rescheduled successfully.', type: 'success' });
             setRescheduleSession(null);
             setRescheduleForm({ date: '', time: '', reason: '' });
             fetchMemberSessions();
@@ -218,20 +226,20 @@ export default function TrainerBooking() {
     const handleBookSession = async (e) => {
         e.preventDefault();
         if (!selectedTrainer || selectedDates.length === 0) {
-            alert("Please fill in all required fields");
+            await showAlert({ title: 'Missing Info', message: 'Please fill in all required fields', type: 'warning' });
             return;
         }
         if (!user?.id) {
-            alert("Member session not found. Please log in again.");
+            await showAlert({ title: 'Session Expired', message: 'Member session not found. Please log in again.', type: 'warning' });
             return;
         }
         if (!selectedMethodId && bookingData.paymentMethod !== 'CASH') {
-            alert("Please select a payment method.");
+            await showAlert({ title: 'Payment Required', message: 'Please select a payment method.', type: 'warning' });
             return;
         }
         const missingTimes = selectedDates.filter((date) => !selectedTimesByDate[date]);
         if (missingTimes.length > 0) {
-            alert("Please choose a time for all selected dates.");
+            await showAlert({ title: 'Missing Time', message: 'Please choose a time for all selected dates.', type: 'warning' });
             return;
         }
         const hasPastDateTime = selectedDates.some((date) => {
@@ -241,7 +249,7 @@ export default function TrainerBooking() {
             return Number.isNaN(scheduled.getTime()) || scheduled <= new Date();
         });
         if (hasPastDateTime) {
-            alert("Past date/time is not allowed. Please select a future schedule.");
+            await showAlert({ title: 'Invalid Date/Time', message: 'Past date/time is not allowed. Please select a future schedule.', type: 'warning' });
             return;
         }
 
@@ -283,7 +291,7 @@ export default function TrainerBooking() {
         } catch (error) {
             const errorMessage = error.response?.data?.error || error.response?.data?.message || "Failed to book training session";
             const errorDetail = error.response?.data?.detail;
-            alert(errorDetail ? `${errorMessage}\n\nDetails: ${errorDetail}` : errorMessage);
+            await showAlert({ title: 'Booking Failed', message: errorDetail ? `${errorMessage}\n\nDetails: ${errorDetail}` : errorMessage, type: 'danger' });
         } finally {
             setBookingLoading(false);
         }

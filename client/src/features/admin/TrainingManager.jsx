@@ -1,3 +1,4 @@
+﻿import { useConfirm } from '../../context/ConfirmContext';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
@@ -5,6 +6,7 @@ import { useCurrency } from '../../context/CurrencyContext';
 import { PRODUCT_CATEGORIES } from '../../constants/categories';
 
 export default function TrainingManager() {
+    const { alert: showAlert, confirm: showConfirm } = useConfirm();
     const { user } = useAuth();
     const { formatPrice } = useCurrency();
     const [sessions, setSessions] = useState([]);
@@ -223,7 +225,7 @@ export default function TrainingManager() {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            alert("Session completed successfully!");
+            showAlert({ title: "Session Completed", message: "Session completed successfully!", type: "success" });
             setSelectedSession(null);
             setAddedMaterials([]);
             setNotes('');
@@ -232,7 +234,7 @@ export default function TrainingManager() {
             setCustomCost('');
             fetchSessions();
         } catch (error) {
-            alert(error.response?.data?.error || "Failed to update session");
+            showAlert({ title: "Update Failed", message: error.response?.data?.error || "Failed to update session", type: "danger" });
         } finally {
             setSubmitting(false);
         }
@@ -363,7 +365,7 @@ export default function TrainingManager() {
                                                         });
                                                         setViewSession(res.data);
                                                     } catch (e) {
-                                                        alert("Failed to load details");
+                                                        showAlert({ title: "Load Error", message: "Failed to load session details", type: "danger" });
                                                     }
                                                 }}
                                                 className="ml-2 px-3 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 border border-emerald-500/20 rounded-xl transition-all"
@@ -691,3 +693,4 @@ export default function TrainingManager() {
         </div >
     );
 }
+

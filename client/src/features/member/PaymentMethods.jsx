@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 const CardIcon = ({ className = 'w-5 h-5' }) => (
     <svg viewBox="0 0 24 24" fill="none" className={className}>
@@ -24,6 +25,7 @@ const DefaultBadge = () => (
 
 export default function PaymentMethods() {
     const { user } = useAuth();
+    const { alert: showAlert } = useConfirm();
     const [methods, setMethods] = useState([]);
     const [loading, setLoading] = useState(true);
     const [activeForm, setActiveForm] = useState('E_WALLET');
@@ -69,7 +71,7 @@ export default function PaymentMethods() {
             setMethods((prev) => prev.map((m) => ({ ...m, isDefault: m.id === updated.id })));
         }).catch((error) => {
             console.error('Failed to set default method', error);
-            alert(error?.response?.data?.error || 'Failed to set default method.');
+            showAlert({ title: 'Update Failed', message: error?.response?.data?.error || 'Failed to set default method.', type: 'danger' });
         });
     };
 
@@ -82,7 +84,7 @@ export default function PaymentMethods() {
             setMethods((prev) => prev.filter((m) => m.id !== id));
         }).catch((error) => {
             console.error('Failed to remove method', error);
-            alert(error?.response?.data?.error || 'Failed to remove method.');
+            showAlert({ title: 'Remove Failed', message: error?.response?.data?.error || 'Failed to remove method.', type: 'danger' });
         });
     };
 
@@ -91,7 +93,7 @@ export default function PaymentMethods() {
         const phoneDigits = walletForm.phone.replace(/\D/g, '');
         if (!walletForm.phone.trim() || !walletForm.name.trim()) return;
         if (phoneDigits.length < 4) {
-            alert('Please enter a valid wallet number (at least 4 digits).');
+            showAlert({ title: 'Invalid Number', message: 'Please enter a valid wallet number (at least 4 digits).', type: 'warning' });
             return;
         }
 
@@ -111,7 +113,7 @@ export default function PaymentMethods() {
             setWalletForm((prev) => ({ ...prev, label: '', name: '', phone: '' }));
         }).catch((error) => {
             console.error('Failed to add e-wallet method', error);
-            alert(error?.response?.data?.error || 'Failed to add e-wallet method.');
+            showAlert({ title: 'Add Failed', message: error?.response?.data?.error || 'Failed to add e-wallet method.', type: 'danger' });
         });
     };
 
@@ -136,7 +138,7 @@ export default function PaymentMethods() {
             setCardForm({ label: '', name: '', brand: '', last4: '', expMonth: '', expYear: '' });
         }).catch((error) => {
             console.error('Failed to add card method', error);
-            alert(error?.response?.data?.error || 'Failed to add card method.');
+            showAlert({ title: 'Add Failed', message: error?.response?.data?.error || 'Failed to add card method.', type: 'danger' });
         });
     };
 
