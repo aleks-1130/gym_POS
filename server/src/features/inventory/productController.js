@@ -4,9 +4,13 @@ const { logAudit } = require('../../services/auditService');
 const normalizeProductPayload = (payload = {}) => {
     const name = String(payload.name || '').trim();
     const category = String(payload.category || '').trim();
-    const price = Number(payload.price);
+    const price = payload.price !== undefined && payload.price !== null && payload.price !== ''
+        ? Number(payload.price)
+        : Number(payload.cost);
     const stock = Number(payload.stock);
     const minStock = Number(payload.minStock);
+    const barcode = String(payload.barcode || payload.sku || '').trim();
+    const description = String(payload.description || '').trim();
     const supplyCost = payload.supplyCost === undefined || payload.supplyCost === null || payload.supplyCost === ''
         ? 0
         : Number(payload.supplyCost);
@@ -22,24 +26,94 @@ const normalizeProductPayload = (payload = {}) => {
         data: {
             name,
             category,
+            description: description || null,
             price,
             stock,
             minStock,
             imageUrl: payload.imageUrl || null,
+            sku: barcode || null,
             supplyCost,
             supplierId: payload.supplierId ? Number(payload.supplierId) : null
         }
     };
 };
 
+const serializeProduct = (product) => ({
+    ...product,
+    barcode: product.sku || '',
+    cost: product.price
+});
+
 const getAllProducts = async (req, res) => {
     try {
-        const products = await prisma.product.findMany({
-            orderBy: { name: 'asc' }
+        const page = Number.parseInt(req.query.page, 10);
+        const limit = Number.parseInt(req.query.limit, 10);
+        const category = String(req.query.category || '').trim();
+        const search = String(req.query.search || '').trim();
+        const where = {};
+
+        if (category) {
+            where.category = category;
+        }
+        if (search) {
+            where.OR = [
+                { name: { contains: search, mode: 'insensitive' } },
+                { sku: { contains: search, mode: 'insensitive' } }
+            ];
+        }
+
+        const isPaginated = Number.isInteger(page) && page > 0 && Number.isInteger(limit) && limit > 0;
+
+        if (!isPaginated) {
+            const products = await prisma.product.findMany({
+                where,
+                orderBy: { name: 'asc' }
+            });
+            return res.json(products.map(serializeProduct));
+        }
+
+        const [total, rows] = await Promise.all([
+            prisma.product.count({ where }),
+            prisma.product.findMany({
+                where,
+                orderBy: { name: 'asc' },
+                skip: (page - 1) * limit,
+                take: limit
+            })
+        ]);
+        const totalPages = Math.max(1, Math.ceil(total / limit));
+
+        res.json({
+            data: rows.map(serializeProduct),
+            meta: {
+                total,
+                page,
+                limit,
+                totalPages
+            }
         });
-        res.json(products);
     } catch (e) {
         res.status(500).json({ error: "Failed to fetch products" });
+    }
+};
+
+const getProductById = async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ error: "Invalid product id" });
+    }
+
+    try {
+        const product = await prisma.product.findUnique({
+            where: { id }
+        });
+        if (!product) {
+            return res.status(404).json({ error: "Product not found" });
+        }
+
+        res.json(serializeProduct(product));
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch product" });
     }
 };
 
@@ -48,38 +122,61 @@ const createProduct = async (req, res) => {
         const normalized = normalizeProductPayload(req.body);
         if (normalized.error) return res.status(400).json({ error: normalized.error });
 
+        const existingSku = normalized.data.sku
+            ? await prisma.product.findUnique({ where: { sku: normalized.data.sku } })
+            : null;
+        if (existingSku) {
+            return res.status(400).json({ error: "Barcode already exists" });
+        }
+
         const product = await prisma.product.create({
             data: normalized.data
         });
         await logAudit("CREATE_PRODUCT", req.user.id.toString(), `Product: ${product.name}`, "Created new product");
-        res.json(product);
+
+        res.json(serializeProduct(product));
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
 };
 
 const updateProduct = async (req, res) => {
-    const { id } = req.params;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ error: "Invalid product id" });
+    }
+
     try {
         const normalized = normalizeProductPayload(req.body);
         if (normalized.error) return res.status(400).json({ error: normalized.error });
 
+        if (normalized.data.sku) {
+            const existingSku = await prisma.product.findUnique({ where: { sku: normalized.data.sku } });
+            if (existingSku && existingSku.id !== id) {
+                return res.status(400).json({ error: "Barcode already exists" });
+            }
+        }
+
         const product = await prisma.product.update({
-            where: { id: Number(id) },
+            where: { id },
             data: normalized.data
         });
         await logAudit("UPDATE_PRODUCT", req.user.id.toString(), `Product: ${product.name}`, "Updated details");
-        res.json(product);
+        res.json(serializeProduct(product));
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
 };
 
 const deleteProduct = async (req, res) => {
-    const { id } = req.params;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ error: "Invalid product id" });
+    }
+
     try {
-        const product = await prisma.product.findUnique({ where: { id: Number(id) } });
-        await prisma.product.delete({ where: { id: Number(id) } });
+        const product = await prisma.product.findUnique({ where: { id } });
+        await prisma.product.delete({ where: { id } });
         await logAudit("DELETE_PRODUCT", req.user.id.toString(), product?.name, `ID: ${id}`);
         res.json({ message: "Product deleted" });
     } catch (e) {
@@ -146,6 +243,7 @@ const restockProduct = async (req, res) => {
 
 module.exports = {
     getAllProducts,
+    getProductById,
     createProduct,
     updateProduct,
     deleteProduct,

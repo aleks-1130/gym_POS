@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+﻿import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
 import { withApiBase } from '../../config/api';
+import { useConfirm } from '../../context/ConfirmContext';
 
 // Reusable Components
 import StatCard from '../../components/common/StatCard';
@@ -25,6 +26,7 @@ import { formatDate } from '../../utils/dateUtils';
 import { TABS, PAYMENT_METHODS, ACTIVITY_FILTERS } from '../../constants/memberConstants';
 
 export default function MemberDetail() {
+    const { alert: showAlert, confirm: showConfirm } = useConfirm();
     const { id } = useParams();
     const navigate = useNavigate();
     const { formatPrice } = useCurrency();
@@ -102,7 +104,7 @@ export default function MemberDetail() {
                 }));
             }
         } catch (e) {
-            alert("Member not found");
+            showAlert({ title: "Member Not Found", message: "Member not found", type: "danger" });
             navigate('/members');
         } finally {
             setLoading(false);
@@ -169,7 +171,7 @@ export default function MemberDetail() {
             }
         } catch (err) {
             console.error(err);
-            alert("Camera failed");
+            showAlert({ title: "Camera Error", message: "Camera failed to start", type: "danger" });
             setIsCameraOpen(false);
         }
     };
@@ -202,7 +204,7 @@ export default function MemberDetail() {
                 setShowPhotoModal(false);
                 fetchMember();
             } catch (_) {
-                alert("Failed to update photo");
+                showAlert({ title: "Photo Error", message: "Failed to update photo", type: "danger" });
             } finally {
                 setSubmittingPhoto(false);
             }
@@ -218,7 +220,7 @@ export default function MemberDetail() {
             setShowFreezeModal(false);
             fetchMember();
         } catch (e) {
-            alert("Failed to update status");
+            showAlert({ title: "Status Error", message: "Failed to update status", type: "danger" });
         }
     };
 
@@ -226,10 +228,10 @@ export default function MemberDetail() {
         try {
             await memberService.renewMembership(id, { ...renewData, ...paymentInfo });
             setShowRenewModal(false);
-            alert("Membership Renewed!");
+            showAlert({ title: "Renewed!", message: "Membership renewed successfully!", type: "success" });
             fetchMember();
         } catch (e) {
-            alert("Renewal failed");
+            showAlert({ title: "Renewal Failed", message: "Renewal failed. Please try again.", type: "danger" });
         }
     }, [id, renewData, fetchMember]);
 
@@ -268,7 +270,7 @@ export default function MemberDetail() {
         if (classSessionPurchaseData.method === 'CASH') {
             const tendered = Number(classSessionPurchaseData.cashTendered || 0);
             if (!Number.isFinite(tendered) || tendered <= 0) {
-                alert("Enter a valid tendered amount");
+                showAlert({ title: "Invalid Amount", message: "Enter a valid tendered amount", type: "warning" });
                 return;
             }
             payload.cashTendered = tendered;
@@ -276,7 +278,7 @@ export default function MemberDetail() {
 
         if (classSessionPurchaseData.method === 'GCASH') {
             if (!classSessionPurchaseData.gcashReference || !classSessionPurchaseData.gcashDate || !classSessionPurchaseData.gcashTime) {
-                alert("GCash reference, date, and time are required");
+                showAlert({ title: "Missing Info", message: "GCash reference, date, and time are required", type: "warning" });
                 return;
             }
             payload.gcashReference = classSessionPurchaseData.gcashReference;
@@ -295,11 +297,11 @@ export default function MemberDetail() {
                 gcashDate: '',
                 gcashTime: ''
             });
-            alert("Class sessions added successfully");
+            showAlert({ title: "Sessions Added", message: "Class sessions added successfully", type: "success" });
             fetchMember();
             fetchPayments();
         } catch (e) {
-            alert(e.response?.data?.error || "Failed to add class sessions");
+            showAlert({ title: "Add Failed", message: e.response?.data?.error || "Failed to add class sessions", type: "danger" });
         }
     };
 
@@ -309,9 +311,9 @@ export default function MemberDetail() {
             await memberService.setMemberPassword(member.email, passwordData);
             setShowPasswordModal(false);
             setPasswordData('');
-            alert("Password set successfully!");
+            showAlert({ title: "Password Set", message: "Password set successfully!", type: "success" });
         } catch (e) {
-            alert("Failed to set password");
+            showAlert({ title: "Password Error", message: "Failed to set password", type: "danger" });
         }
     }, [member, passwordData]);
 
@@ -333,9 +335,9 @@ export default function MemberDetail() {
             await memberService.updateMember(id, editFormData);
             setShowEditModal(false);
             fetchMember();
-            alert("Member details updated!");
+            showAlert({ title: "Updated!", message: "Member details updated!", type: "success" });
         } catch (e) {
-            alert("Failed to update member");
+            showAlert({ title: "Update Failed", message: "Failed to update member", type: "danger" });
         }
     }, [id, editFormData, fetchMember]);
 
@@ -849,7 +851,7 @@ export default function MemberDetail() {
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                     <div className="bg-surface p-8 rounded-[32px] w-full max-w-md border border-white/10 shadow-2xl">
                         <h3 className="text-xl font-bold text-white mb-6">Add Staff Note</h3>
-                        <form onSubmit={async e => { e.preventDefault(); if (!noteData.trim()) return; try { await axios.post(`/api/members/${id}/notes`, { content: noteData.trim() }); setNoteData(''); setShowNotesModal(false); fetchNotes(); } catch (e) { alert("Failed to save note"); } }} className="space-y-4">
+                        <form onSubmit={async e => { e.preventDefault(); if (!noteData.trim()) return; try { await axios.post(`/api/members/${id}/notes`, { content: noteData.trim() }); setNoteData(''); setShowNotesModal(false); fetchNotes(); } catch (e) { showAlert({ title: "Save Failed", message: "Failed to save note", type: "danger" }); } }} className="space-y-4">
                             <textarea required rows="5" className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white outline-none resize-none" placeholder="Enter note..." value={noteData} onChange={e => setNoteData(e.target.value)} />
                             <div className="flex justify-end gap-3"><button type="button" onClick={() => setShowNotesModal(false)} className="text-text-muted">Cancel</button><button type="submit" className="bg-primary text-white font-bold px-8 py-2.5 rounded-2xl">Save</button></div>
                         </form>
@@ -914,3 +916,4 @@ export default function MemberDetail() {
         </div>
     );
 }
+

@@ -3,27 +3,117 @@ const bcrypt = require('bcryptjs');
 const {
     withTrainerAvailability,
     setTrainerAvailability,
-    removeTrainerAvailability
+    removeTrainerAvailability,
+    getTrainerAvailability,
+    getTrainerAvailabilityMap,
+    normalizeAvailability,
+    isTimeAllowedForAvailability
 } = require('../../services/trainerAvailabilityService');
 const { syncToNeonAuth } = require('../../services/neonAuthSync');
 const crypto = require('crypto');
 const { sendActivationEmail } = require('../../services/emailService');
 
+const FINALIZED_SESSION_STATUSES = ['CANCELLED', 'COMPLETED', 'NO_SHOW', 'DECLINED'];
+
+const toLocalIsoDate = (value) => {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+};
+
+const toLocalTime = (value) => {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
+const hasUpcomingSessionOnIsoDate = ({ sessions, isoDate, now = new Date() }) => {
+    return (sessions || []).some((session) => {
+        const sessionDate = new Date(session.date);
+        if (Number.isNaN(sessionDate.getTime())) return false;
+        if (sessionDate < now) return false;
+        if (FINALIZED_SESSION_STATUSES.includes(String(session.status || '').toUpperCase())) return false;
+        return toLocalIsoDate(sessionDate) === isoDate;
+    });
+};
+
+const findAvailabilityConflicts = (sessions, nextAvailability) => {
+    return (sessions || [])
+        .filter((session) => {
+            const date = toLocalIsoDate(session.date);
+            const time = toLocalTime(session.date);
+            const duration = Number(session.duration) || 0;
+            if (!date || !time || duration <= 0) return false;
+            return !isTimeAllowedForAvailability({
+                availability: nextAvailability,
+                date,
+                time,
+                duration,
+                enforceBookingStatus: false
+            });
+        })
+        .map((session) => ({
+            id: session.id,
+            date: session.date,
+            duration: Number(session.duration) || 0,
+            status: session.status,
+            memberName: session.member ? `${session.member.firstName || ''} ${session.member.lastName || ''}`.trim() : 'Member'
+        }));
+};
+
 const getAllTrainers = async (req, res) => {
     try {
+        const now = new Date();
+        const todayIso = toLocalIsoDate(now);
         const trainers = await prisma.trainer.findMany({
             include: {
                 classes: true,
                 trainingSessions: {
                     where: {
-                        date: { gte: new Date() },
+                        date: { gte: now },
                         status: { not: 'CANCELLED' }
                     },
                 }
             },
             orderBy: { name: 'asc' }
         });
-        res.json(trainers.map(withTrainerAvailability));
+        const availabilityMap = await getTrainerAvailabilityMap(trainers.map((trainer) => trainer.id));
+        const hydrated = trainers.map((trainer) => {
+            const normalized = {
+                ...trainer,
+                ...(availabilityMap.get(trainer.id) || {
+                    availabilityDays: [],
+                    availabilityStart: '',
+                    availabilityEnd: '',
+                    availabilityIntervalMinutes: 30,
+                    specificDateAvailability: {},
+                    bookingStatus: 'OPEN'
+                })
+            };
+            const bookingStatus = String(normalized.bookingStatus || 'OPEN').toUpperCase();
+            return {
+                ...normalized,
+                temporarilyOpenToday: bookingStatus === 'CLOSED'
+                    ? hasUpcomingSessionOnIsoDate({
+                        sessions: trainer.trainingSessions,
+                        isoDate: todayIso,
+                        now
+                    })
+                    : false
+            };
+        });
+        if (req.user?.role === 'MEMBER') {
+            return res.json(
+                hydrated.filter((trainer) => {
+                    const bookingStatus = String(trainer.bookingStatus || 'OPEN').toUpperCase();
+                    return bookingStatus === 'OPEN' || Boolean(trainer.temporarilyOpenToday);
+                })
+            );
+        }
+        res.json(hydrated);
     } catch (e) {
         res.status(500).json({ error: "Failed to fetch trainers" });
     }
@@ -48,7 +138,7 @@ const getTrainerById = async (req, res) => {
                 }
             }
         });
-        res.json(withTrainerAvailability(trainer));
+        res.json(await withTrainerAvailability(trainer));
     } catch (e) {
         res.status(500).json({ error: "Failed to fetch trainer profile" });
     }
@@ -58,22 +148,33 @@ const getMe = async (req, res) => {
     try {
         const trainerId = req.user.trainerId;
         if (!trainerId) return res.status(400).json({ error: "Trainer account is not linked" });
-        const trainer = await prisma.trainer.findUnique({
-            where: { id: Number(trainerId) },
-            include: {
-                classes: true,
-                user: {
-                    select: {
-                        id: true,
-                        loyaltyPoints: true
+        const numericTrainerId = Number(trainerId);
+        const [trainer, checkIns] = await Promise.all([
+            prisma.trainer.findUnique({
+                where: { id: numericTrainerId },
+                include: {
+                    classes: true,
+                    user: {
+                        select: {
+                            id: true,
+                            loyaltyPoints: true
+                        }
                     }
                 }
-            }
-        });
+            }),
+            prisma.accessLog.count({
+                where: {
+                    trainerId: numericTrainerId,
+                    status: { not: 'DENIED' }
+                }
+            })
+        ]);
         if (!trainer) return res.status(404).json({ error: "Trainer not found" });
+        const trainerWithAvailability = await withTrainerAvailability(trainer);
         res.json({
-            ...withTrainerAvailability(trainer),
-            loyaltyPoints: Number(trainer.user?.loyaltyPoints || 0)
+            ...trainerWithAvailability,
+            loyaltyPoints: Number(trainer.user?.loyaltyPoints || 0),
+            checkIns: Number(checkIns || 0)
         });
     } catch (e) {
         res.status(500).json({ error: "Failed to fetch trainer profile" });
@@ -228,6 +329,57 @@ const getMyCommissions = async (req, res) => {
     }
 };
 
+const updateMyAvailability = async (req, res) => {
+    try {
+        const trainerId = Number(req.user?.trainerId);
+        if (!trainerId) {
+            return res.status(400).json({ error: "Trainer account is not linked" });
+        }
+
+        const trainer = await prisma.trainer.findUnique({
+            where: { id: trainerId },
+            select: { id: true, name: true }
+        });
+        if (!trainer) {
+            return res.status(404).json({ error: "Trainer not found" });
+        }
+
+        const currentAvailability = await getTrainerAvailability(trainerId);
+        const nextAvailability = normalizeAvailability(req.body || {}, { previous: currentAvailability });
+        const now = new Date();
+        const upcomingSessions = await prisma.trainingSession.findMany({
+            where: {
+                trainerId,
+                date: { gte: now },
+                status: { notIn: FINALIZED_SESSION_STATUSES }
+            },
+            select: {
+                id: true,
+                date: true,
+                duration: true,
+                status: true,
+                member: {
+                    select: { firstName: true, lastName: true }
+                }
+            },
+            orderBy: { date: 'asc' }
+        });
+
+        const conflicts = findAvailabilityConflicts(upcomingSessions, nextAvailability);
+        if (conflicts.length > 0) {
+            return res.status(409).json({
+                error: "Cannot save availability because some existing bookings would become unavailable.",
+                conflicts
+            });
+        }
+
+        const availability = await setTrainerAvailability(trainerId, nextAvailability);
+        return res.json({ ...trainer, ...availability });
+    } catch (e) {
+        return res.status(500).json({ error: e.message || "Failed to update trainer availability" });
+    }
+};
+
 const createTrainer = async (req, res) => {
     try {
         const {
@@ -338,7 +490,7 @@ const createTrainer = async (req, res) => {
             }
         }
 
-        const availability = setTrainerAvailability(trainer.id, req.body);
+        const availability = await setTrainerAvailability(trainer.id, req.body);
         res.json({ ...trainer, ...availability });
     } catch (e) {
         res.status(500).json({ error: e.message || 'Failed to create trainer' });
@@ -405,7 +557,7 @@ const updateTrainer = async (req, res) => {
             }
         });
 
-        const availability = setTrainerAvailability(trainer.id, req.body);
+        const availability = await setTrainerAvailability(trainer.id, req.body);
         res.json({ ...trainer, ...availability });
     } catch (e) {
         res.status(500).json({ error: e.message || 'Failed to update trainer' });
@@ -416,7 +568,7 @@ const deleteTrainer = async (req, res) => {
     const trainerId = Number(req.params.id);
     try {
         await prisma.trainer.delete({ where: { id: trainerId } });
-        removeTrainerAvailability(trainerId);
+        await removeTrainerAvailability(trainerId);
         res.json({ message: 'Trainer deleted' });
     } catch (e) {
         res.status(500).json({ error: e.message || 'Failed to delete trainer' });
@@ -487,6 +639,7 @@ module.exports = {
     getTrainerById,
     getMe,
     getMyCommissions,
+    updateMyAvailability,
     createTrainer,
     updateTrainer,
     deleteTrainer,

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useNavigate } from 'react-router-dom';
+import { useConfirm } from '../../context/ConfirmContext';
 
 const STORAGE_KEYS = {
     cart: 'trainerShopCart',
@@ -11,6 +12,7 @@ const STORAGE_KEYS = {
 export default function TrainerShop() {
     const { formatPrice } = useCurrency();
     const navigate = useNavigate();
+    const { alert: showAlert } = useConfirm();
     const [products, setProducts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [cart, setCart] = useState([]);
@@ -119,19 +121,19 @@ export default function TrainerShop() {
 
     const handleConfirmCheckout = async () => {
         if (!markAsSessionMaterial && selectedPaymentType === 'CARD' && cardMethods.length === 0) {
-            alert('No saved cards found. Add card in Trainer Payment Methods.');
+            await showAlert({ title: 'No Cards Found', message: 'No saved cards found. Add card in Trainer Payment Methods.', type: 'warning' });
             return;
         }
         if (!markAsSessionMaterial && selectedPaymentType === 'CARD' && !selectedMethodId) {
-            alert('Please select a saved card');
+            await showAlert({ title: 'Select a Card', message: 'Please select a saved card', type: 'warning' });
             return;
         }
         if (!markAsSessionMaterial && selectedPaymentType === 'E_WALLET' && walletMethods.length === 0) {
-            alert('No saved e-wallet found. Add GCash or Maya in Trainer Payment Methods.');
+            await showAlert({ title: 'No E-Wallets Found', message: 'No saved e-wallet found. Add GCash or Maya in Trainer Payment Methods.', type: 'warning' });
             return;
         }
         if (!markAsSessionMaterial && selectedPaymentType === 'E_WALLET' && !selectedMethodId) {
-            alert('Please select a saved e-wallet');
+            await showAlert({ title: 'Select an E-Wallet', message: 'Please select a saved e-wallet', type: 'warning' });
             return;
         }
 
@@ -160,13 +162,17 @@ export default function TrainerShop() {
             saveCart([]);
             setShowPaymentModal(false);
             setMarkAsSessionMaterial(false);
-            alert(markAsSessionMaterial
-                ? 'Material purchase saved. Cost will be deducted from trainer commission payout.'
-                : (selectedPaymentType === 'CASH' ? 'Order placed. Please pay at counter.' : 'Order placed successfully.'));
+            await showAlert({
+                title: 'Order Placed',
+                message: markAsSessionMaterial
+                    ? 'Material purchase saved. Cost will be deducted from trainer commission payout.'
+                    : (selectedPaymentType === 'CASH' ? 'Order placed. Please pay at counter.' : 'Order placed successfully.'),
+                type: 'success'
+            });
             navigate('/trainer/purchase-history');
         } catch (error) {
             console.error(error);
-            alert(`Checkout Failed: ${error.response?.data?.error || error.message}`);
+            await showAlert({ title: 'Checkout Failed', message: error.response?.data?.error || error.message, type: 'danger' });
         } finally {
             setIsCheckingOut(false);
         }

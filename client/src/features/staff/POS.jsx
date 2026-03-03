@@ -11,11 +11,13 @@ import { withApiBase } from '../../config/api';
 import { PAYMENT_METHODS } from '../../config/businessConfig';
 
 import { usePOSStore } from '../../stores/usePOSStore';
+import { useConfirm } from '../../context/ConfirmContext';
 
 export default function POS() {
     const { user } = useAuth();
     const { isSidebarCollapsed } = useUIStore();
     const { formatPrice } = useCurrency();
+    const { alert: showAlert, confirm: showConfirm } = useConfirm();
 
     // Zustand Store Selectors (Prevents Lag)
     const {
@@ -33,8 +35,17 @@ export default function POS() {
     const [trainers, setTrainers] = useState([]);
     const [classPackages, setClassPackages] = useState([]);
     const [members, setMembers] = useState([]);
+    const [discountOptions, setDiscountOptions] = useState([]);
+    const [selectedDiscountPresetId, setSelectedDiscountPresetId] = useState('');
     const [loading, setLoading] = useState(false);
     const [viewMode, setViewMode] = useState('POS');
+    const [catalogView, setCatalogView] = useState('GRID');
+    const [productSearch, setProductSearch] = useState('');
+    const [historySearch, setHistorySearch] = useState('');
+    const [historyStatusFilter, setHistoryStatusFilter] = useState('ALL');
+    const [historyMethodFilter, setHistoryMethodFilter] = useState('ALL');
+    const [collectSearch, setCollectSearch] = useState('');
+    const [collectStatusFilter, setCollectStatusFilter] = useState('ALL');
 
     const [collectCashTab, setCollectCashTab] = useState('BOOKINGS');
     const [history, setHistory] = useState([]);
@@ -126,6 +137,7 @@ export default function POS() {
         fetchClassPackages();
         fetchMembers();
         fetchReceiptSettings();
+        fetchPosDiscountOptions();
     }, []);
 
     useEffect(() => {
@@ -147,6 +159,15 @@ export default function POS() {
         if (!modals.receiptPreview) return;
         fetchReceiptSettings();
     }, [modals.receiptPreview]);
+
+    useEffect(() => {
+        if (!selectedDiscountPresetId) return;
+        const exists = discountOptions.some((preset) => preset.id === selectedDiscountPresetId);
+        if (!exists) {
+            setSelectedDiscountPresetId('');
+            setDiscount(0);
+        }
+    }, [discountOptions, selectedDiscountPresetId, setDiscount]);
 
     const fetchProducts = async () => {
         try {
@@ -200,6 +221,26 @@ export default function POS() {
             setMembers([]);
         }
     }
+
+    const fetchPosDiscountOptions = async () => {
+        try {
+            const res = await axios.get(withApiBase('/api/payments/discount-options'), {
+                headers: authHeaders()
+            });
+            const presets = normalizeList(res.data)
+                .map((preset, index) => ({
+                    id: String(preset?.id || `preset_${index + 1}`),
+                    name: String(preset?.name || '').trim(),
+                    rate: Number(preset?.rate || 0),
+                    icon: String(preset?.icon || 'local_offer').trim() || 'local_offer'
+                }))
+                .filter((preset) => preset.name && Number.isFinite(preset.rate) && preset.rate >= 0 && preset.rate <= 100);
+            setDiscountOptions(presets);
+        } catch (_) {
+            console.error("Failed to fetch POS discount presets");
+            setDiscountOptions([]);
+        }
+    };
 
     const fetchReceiptSettings = async () => {
         try {
@@ -259,7 +300,7 @@ export default function POS() {
     // Cart logic now handled by usePOSStore
 
 
-    const initiateCheckout = () => {
+    const initiateCheckout = async () => {
         try {
             console.log("initiateCheckout triggered. Cart:", cart);
             if (cart.length === 0) return;
@@ -270,15 +311,15 @@ export default function POS() {
             // Validation for Membership
             const hasPlan = cart.some(item => item.type === 'PLAN');
             if (hasPlan && !selectedMemberId) {
-                alert("A Member must be selected when purchasing a Membership Plan.");
+                await showAlert({ title: 'Member Required', message: 'A Member must be selected when purchasing a Membership Plan.', type: 'warning' });
                 return;
             }
             if (hasTraining && !selectedMemberId) {
-                alert("Select a member for trainer booking.");
+                await showAlert({ title: 'Member Required', message: 'Select a member for trainer booking.', type: 'warning' });
                 return;
             }
             if (hasClassPackages && !selectedMemberId) {
-                alert("Select a member for class package purchase.");
+                await showAlert({ title: 'Member Required', message: 'Select a member for class package purchase.', type: 'warning' });
                 return;
             }
 
@@ -286,7 +327,7 @@ export default function POS() {
                 console.log("Validating training sessions...");
                 const invalid = cart.some(item => item.type === 'TRAINING' && (!item.date || !item.time || !item.duration));
                 if (invalid) {
-                    alert("Please complete date, time, and duration for all training sessions.");
+                    await showAlert({ title: 'Incomplete Details', message: 'Please complete date, time, and duration for all training sessions.', type: 'warning' });
                     return;
                 }
                 const hasPastDateTime = cart.some((item) => {
@@ -295,7 +336,7 @@ export default function POS() {
                     return Number.isNaN(scheduled.getTime()) || scheduled <= new Date();
                 });
                 if (hasPastDateTime) {
-                    alert("Past trainer booking schedule is not allowed.");
+                    await showAlert({ title: 'Invalid Schedule', message: 'Past trainer booking schedule is not allowed.', type: 'warning' });
                     return;
                 }
                 const invalidSchedule = cart.some((item) => {
@@ -303,13 +344,13 @@ export default function POS() {
                     const trainer = trainers.find((t) => Number(t.id) === Number(item.trainerId));
                     if (!trainer) {
                         console.error("Trainer not found for item:", item);
-                        return true; // Consider invalid if trainer is missing
+                        return true;
                     }
                     const slots = getAvailableTimeSlotsForTrainer(trainer, item.date, item.duration);
                     return !slots.includes(item.time);
                 });
                 if (invalidSchedule) {
-                    alert("One or more trainer bookings use unavailable time slots or trainer not found. Please reselect time.");
+                    await showAlert({ title: 'Unavailable Slot', message: 'One or more trainer bookings use unavailable time slots or trainer not found. Please reselect time.', type: 'warning' });
                     return;
                 }
             }
@@ -318,7 +359,7 @@ export default function POS() {
             openModal('payment');
         } catch (error) {
             console.error("Checkout Error:", error);
-            alert("A system error occurred during checkout initialization: " + error.message);
+            await showAlert({ title: 'System Error', message: 'A system error occurred during checkout initialization: ' + error.message, type: 'danger' });
         }
     };
 
@@ -400,12 +441,13 @@ export default function POS() {
 
             closeModal('payment');
             clearCart();
+            setSelectedDiscountPresetId('');
             fetchProducts();
             fetchClassPackages();
             setLoading(false);
 
         } catch (e) {
-            alert("Transaction Failed: " + (e.response?.data?.error || e.message));
+            await showAlert({ title: 'Transaction Failed', message: e.response?.data?.error || e.message, type: 'danger' });
             setLoading(false);
         }
     };
@@ -487,6 +529,11 @@ export default function POS() {
         return `${y}-${m}-${d}`;
     };
 
+    const isTrainerTemporarilyOpenForDate = (trainer, isoDate) => {
+        if (!trainer || !isoDate) return false;
+        return Boolean(trainer.temporarilyOpenToday) && isoDate === toIsoDate(new Date());
+    };
+
     const toMinutes = (timeString) => {
         const [h, m] = String(timeString || '').split(':').map(Number);
         if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
@@ -503,21 +550,45 @@ export default function POS() {
         return `${hour12}:${String(minute).padStart(2, '0')} ${suffix}`;
     };
 
+    const getTrainerDateWindow = (trainer, isoDate) => {
+        if (!trainer || !isoDate) return null;
+        const isClosed = String(trainer.bookingStatus || 'OPEN').toUpperCase() === 'CLOSED';
+        if (isClosed && !isTrainerTemporarilyOpenForDate(trainer, isoDate)) return null;
+        const dateObj = new Date(`${isoDate}T00:00:00`);
+        if (Number.isNaN(dateObj.getTime())) return null;
+
+        const specificDate = trainer.specificDateAvailability?.[isoDate];
+        if (specificDate) {
+            if (specificDate.available === false) return null;
+            return {
+                start: specificDate.start || '09:00',
+                end: specificDate.end || '18:00'
+            };
+        }
+
+        const availabilityDays = Array.isArray(trainer.availabilityDays)
+            ? trainer.availabilityDays.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+            : [];
+        if (availabilityDays.length > 0 && !availabilityDays.includes(dateObj.getDay())) return null;
+
+        const dayKey = String(dateObj.getDay());
+        const dayConfig = trainer.availabilityByDay?.[dayKey];
+        return {
+            start: dayConfig?.start || trainer.availabilityStart || '09:00',
+            end: dayConfig?.end || trainer.availabilityEnd || '18:00'
+        };
+    };
+
     const getAvailableTimeSlotsForTrainer = (trainer, isoDate, duration) => {
         if (!trainer || !isoDate || !duration) return [];
         const dateObj = new Date(`${isoDate}T00:00:00`);
         if (Number.isNaN(dateObj.getTime())) return [];
 
-        const availabilityDays = Array.isArray(trainer.availabilityDays)
-            ? trainer.availabilityDays.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
-            : [];
-        if (availabilityDays.length > 0 && !availabilityDays.includes(dateObj.getDay())) return [];
-
-        const dayKey = String(dateObj.getDay());
+        const window = getTrainerDateWindow(trainer, isoDate);
+        if (!window) return [];
         const interval = Number(trainer.availabilityIntervalMinutes) || 30;
-        const dayConfig = trainer.availabilityByDay?.[dayKey];
-        const start = toMinutes(dayConfig?.start || trainer.availabilityStart || '09:00');
-        const end = toMinutes(dayConfig?.end || trainer.availabilityEnd || '18:00');
+        const start = toMinutes(window.start);
+        const end = toMinutes(window.end);
         if (start === null || end === null || end <= start) return [];
 
         const bookedSessions = (trainer.trainingSessions || [])
@@ -558,9 +629,6 @@ export default function POS() {
 
     const getAvailableDatesForTrainer = (trainer, daysAhead = 45) => {
         if (!trainer) return [];
-        const availabilityDays = Array.isArray(trainer.availabilityDays)
-            ? trainer.availabilityDays.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
-            : [];
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
@@ -568,10 +636,11 @@ export default function POS() {
         for (let i = 0; i <= daysAhead; i += 1) {
             const current = new Date(today);
             current.setDate(today.getDate() + i);
-            if (availabilityDays.length > 0 && !availabilityDays.includes(current.getDay())) {
-                continue;
-            }
-            dates.push(toIsoDate(current));
+            const iso = toIsoDate(current);
+            const window = getTrainerDateWindow(trainer, iso);
+            const start = window ? toMinutes(window.start) : null;
+            const end = window ? toMinutes(window.end) : null;
+            if (window && start !== null && end !== null && end > start) dates.push(iso);
         }
         return dates;
     };
@@ -610,9 +679,8 @@ export default function POS() {
 
     const filteredProducts = selectedCategory === 'All'
         ? products
-        : products.filter(p => p.category === selectedCategory);
+        : products.filter((product) => product.category === selectedCategory);
 
-    // Combine Products and Plans for display if category is Memberships
     const displayItems = selectedCategory === POS_VIEWS.MEMBERSHIP
         ? plans
         : selectedCategory === POS_VIEWS.TRAINERS
@@ -622,14 +690,202 @@ export default function POS() {
                 : filteredProducts;
     const safeDisplayItems = Array.isArray(displayItems) ? displayItems : [];
 
+    const catalogQuery = String(productSearch || '').trim().toLowerCase();
+    const searchedDisplayItems = safeDisplayItems.filter((item) => {
+        if (!catalogQuery) return true;
+
+        const searchFields = [
+            item?.name,
+            item?.description,
+            item?.category,
+            item?.barcode,
+            item?.sku,
+            item?.code,
+            item?.type,
+            item?.duration,
+            item?.sessions,
+            item?.sessionPrice
+        ];
+
+        return searchFields.some((field) => String(field || '').toLowerCase().includes(catalogQuery));
+    });
+
+    const historyQuery = String(historySearch || '').trim().toLowerCase();
+    const historyStatusOptions = ['ALL', ...Array.from(new Set(history.map((payment) => String(payment?.status || 'COMPLETED').toUpperCase())))];
+    const historyMethodOptions = ['ALL', ...Array.from(new Set(history.map((payment) => String(payment?.method || '').toUpperCase()).filter(Boolean)))];
+    const filteredHistory = history.filter((payment) => {
+        if (!historyQuery) return true;
+
+        const buyer = getBuyerLabel(payment);
+        const cashier = payment?.cashier?.name || '';
+        const method = getMethodLabel(payment?.method);
+        const type = payment?.type || '';
+        const status = payment?.status || '';
+        const amount = payment?.amount ?? '';
+
+        return [buyer, cashier, method, type, status, amount]
+            .some((field) => String(field || '').toLowerCase().includes(historyQuery));
+    }).filter((payment) => {
+        const normalizedStatus = String(payment?.status || 'COMPLETED').toUpperCase();
+        const normalizedMethod = String(payment?.method || '').toUpperCase();
+        const statusMatches = historyStatusFilter === 'ALL' || normalizedStatus === historyStatusFilter;
+        const methodMatches = historyMethodFilter === 'ALL' || normalizedMethod === historyMethodFilter;
+        return statusMatches && methodMatches;
+    });
+
+    const collectQuery = String(collectSearch || '').trim().toLowerCase();
+    const filteredBookingGroups = groupedTrainingBookings.filter((bookingGroup) => {
+        const statusMatches = collectStatusFilter === 'ALL' || collectStatusFilter === 'UNPAID';
+        if (!statusMatches) return false;
+        if (!collectQuery) return true;
+        const buyer = bookingGroup.member ? `${bookingGroup.member.firstName} ${bookingGroup.member.lastName}` : '';
+        const trainer = bookingGroup.trainer?.name || '';
+        return [buyer, trainer, bookingGroup.totalAmount, bookingGroup.totalDuration, bookingGroup.count]
+            .some((field) => String(field || '').toLowerCase().includes(collectQuery));
+    });
+    const filteredPendingPurchases = pendingInAppPurchases.filter((payment) => {
+        const normalizedStatus = String(payment?.status || 'PENDING').toUpperCase();
+        if (collectStatusFilter !== 'ALL' && normalizedStatus !== collectStatusFilter) return false;
+        if (!collectQuery) return true;
+        const buyer = getBuyerLabel(payment);
+        return [buyer, payment?.type, payment?.status, payment?.amount, payment?.method]
+            .some((field) => String(field || '').toLowerCase().includes(collectQuery));
+    });
+    const pendingPurchaseStatusOptions = ['ALL', ...Array.from(new Set(
+        pendingInAppPurchases.map((payment) => String(payment?.status || 'PENDING').toUpperCase())
+    ))];
+    const collectStatusOptions = collectCashTab === 'BOOKINGS'
+        ? ['ALL', 'UNPAID']
+        : pendingPurchaseStatusOptions;
+
+    const categoryTabs = ['All', ...Object.values(POS_VIEWS)];
+    const selectedDiscountPreset = discountOptions.find((preset) => preset.id === selectedDiscountPresetId) || null;
+    const commonInputClass = "w-full rounded-xl border border-white/10 bg-surface px-10 py-2.5 text-sm text-white outline-none transition-colors focus:border-primary";
+    const commonSelectClass = "w-full rounded-xl border border-white/10 bg-surface px-3 py-2.5 text-sm text-white outline-none transition-colors focus:border-primary";
+
+    const applyDiscountPreset = (presetId) => {
+        if (!presetId) {
+            setSelectedDiscountPresetId('');
+            setDiscount(0);
+            return;
+        }
+        const preset = discountOptions.find((item) => item.id === presetId);
+        if (!preset) {
+            setSelectedDiscountPresetId('');
+            setDiscount(0);
+            return;
+        }
+        setSelectedDiscountPresetId(preset.id);
+        setDiscount(Number(preset.rate));
+    };
+
+    const handleAddCatalogItem = async (item) => {
+        const isTrainer = selectedCategory === POS_VIEWS.TRAINERS;
+        const isPackage = selectedCategory === POS_VIEWS.PACKAGES;
+        const isSoldOut = !isTrainer && !isPackage && selectedCategory !== POS_VIEWS.MEMBERSHIP && Number(item?.stock || 0) <= 0;
+        if (isSoldOut) return;
+
+        let result;
+        if (isTrainer) {
+            result = addToCart({
+                ...item,
+                trainerId: item.id,
+                price: item.sessionPrice ?? 0,
+                duration: Number(item.sessionDurations?.split(',')[0]?.trim()) || 60
+            }, 'TRAINING');
+        } else if (isPackage) {
+            result = addToCart(item, 'CLASS_PACKAGE');
+        } else {
+            result = addToCart(item, selectedCategory === POS_VIEWS.MEMBERSHIP ? 'PLAN' : 'PRODUCT');
+        }
+
+        if (result && !result.success && result.error) {
+            await showAlert({ title: 'Cannot Add Item', message: result.error, type: 'warning' });
+        }
+    };
+
+    const openHistoryView = () => {
+        fetchHistory();
+        setViewMode('HISTORY');
+    };
+
+    const openCollectCashView = () => {
+        setCollectCashTab('BOOKINGS');
+        setCollectStatusFilter('ALL');
+        setViewMode('TRAINING_BOOKINGS');
+    };
+
+    const renderModeTabs = () => (
+        <div className="inline-flex rounded-2xl border border-white/10 bg-surface p-1 shadow-sm">
+            <button
+                type="button"
+                onClick={() => setViewMode('POS')}
+                className={`inline-flex items-center gap-1 rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${viewMode === 'POS' ? 'bg-primary text-background' : 'text-text-secondary hover:text-white'}`}
+            >
+                <span className="material-icons-round text-sm">point_of_sale</span>
+                POS
+            </button>
+            <button
+                type="button"
+                onClick={openHistoryView}
+                className={`inline-flex items-center gap-1 rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${viewMode === 'HISTORY' ? 'bg-primary text-background' : 'text-text-secondary hover:text-white'}`}
+            >
+                <span className="material-icons-round text-sm">history</span>
+                History
+            </button>
+            <button
+                type="button"
+                onClick={openCollectCashView}
+                className={`inline-flex items-center gap-1 rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${viewMode === 'TRAINING_BOOKINGS' ? 'bg-primary text-background' : 'text-text-secondary hover:text-white'}`}
+            >
+                <span className="material-icons-round text-sm">payments</span>
+                Collect Cash
+            </button>
+        </div>
+    );
+
     if (viewMode === 'HISTORY') {
         return (
-            <div className="space-y-6">
-                <div className="flex justify-between items-center">
-                    <h1 className="text-2xl font-bold text-white">Transaction History</h1>
-                    <button onClick={() => setViewMode('POS')} className="text-primary hover:text-orange-400 font-bold flex items-center gap-1">
-                        <span className="material-icons-round">arrow_back</span> Back to POS
-                    </button>
+            <div className="space-y-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h1 className="text-2xl font-bold text-white">Transaction History</h1>
+                        <p className="text-sm text-text-muted">Track sales with unified filtering and quick lookup.</p>
+                    </div>
+                    {renderModeTabs()}
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-surface p-4">
+                    <div className="grid gap-3 lg:grid-cols-[1fr,220px,220px]">
+                        <label className="relative block">
+                            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 material-icons-round text-base text-text-muted">search</span>
+                            <input
+                                type="text"
+                                value={historySearch}
+                                onChange={(event) => setHistorySearch(event.target.value)}
+                                placeholder="Search receipt, buyer, cashier, method, or amount"
+                                className={commonInputClass}
+                            />
+                        </label>
+                        <select
+                            value={historyStatusFilter}
+                            onChange={(event) => setHistoryStatusFilter(event.target.value)}
+                            className={commonSelectClass}
+                        >
+                            {historyStatusOptions.map((status) => (
+                                <option key={status} value={status}>{status === 'ALL' ? 'All Statuses' : status}</option>
+                            ))}
+                        </select>
+                        <select
+                            value={historyMethodFilter}
+                            onChange={(event) => setHistoryMethodFilter(event.target.value)}
+                            className={commonSelectClass}
+                        >
+                            {historyMethodOptions.map((method) => (
+                                <option key={method} value={method}>{method === 'ALL' ? 'All Methods' : getMethodLabel(method)}</option>
+                            ))}
+                        </select>
+                    </div>
                 </div>
 
                 <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
@@ -648,10 +904,10 @@ export default function POS() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                            {history.length === 0 && (
+                            {filteredHistory.length === 0 && (
                                 <tr><td colSpan="9" className="p-6 text-center text-text-muted">No transactions found.</td></tr>
                             )}
-                            {history.map(pay => (
+                            {filteredHistory.map((pay) => (
                                 <tr key={pay.id} className="hover:bg-white/5 transition-colors">
                                     <td className="px-6 py-4 text-white font-medium">{new Date(pay.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(pay.date).toLocaleTimeString()}</span></td>
                                     <td className="px-6 py-4"><span className="bg-white/10 text-text-secondary px-2 py-1 rounded text-xs font-bold">{pay.type}</span></td>
@@ -683,35 +939,66 @@ export default function POS() {
 
     if (viewMode === 'TRAINING_BOOKINGS') {
         return (
-            <div className="space-y-6">
-                <div className="flex justify-between items-center">
-                    <h1 className="text-2xl font-bold text-white">Collect Cash</h1>
-                    <button onClick={() => setViewMode('POS')} className="text-primary hover:text-orange-400 font-bold flex items-center gap-1">
-                        <span className="material-icons-round">arrow_back</span> Back to POS
-                    </button>
+            <div className="space-y-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h1 className="text-2xl font-bold text-white">Collect Cash</h1>
+                        <p className="text-sm text-text-muted">Manage unpaid sessions and pending cash settlements.</p>
+                    </div>
+                    {renderModeTabs()}
                 </div>
 
-                <div className="bg-surface rounded-2xl border border-white/10 p-2 inline-flex gap-2">
-                    <button
-                        type="button"
-                        onClick={() => setCollectCashTab('BOOKINGS')}
-                        className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${collectCashTab === 'BOOKINGS'
-                            ? 'bg-primary text-background'
-                            : 'text-text-secondary hover:text-white bg-white/5'
-                            }`}
-                    >
-                        Bookings
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setCollectCashTab('IN_APP_PURCHASES')}
-                        className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${collectCashTab === 'IN_APP_PURCHASES'
-                            ? 'bg-primary text-background'
-                            : 'text-text-secondary hover:text-white bg-white/5'
-                            }`}
-                    >
-                        In App Purchases
-                    </button>
+                <div className="rounded-2xl border border-white/10 bg-surface p-4 space-y-3">
+                    <div className="inline-flex gap-2 rounded-xl border border-white/10 bg-surfaceHighlight p-1">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setCollectCashTab('BOOKINGS');
+                                setCollectStatusFilter('ALL');
+                            }}
+                            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${collectCashTab === 'BOOKINGS'
+                                ? 'bg-primary text-background'
+                                : 'text-text-secondary hover:text-white'
+                                }`}
+                        >
+                            Trainer Bookings
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setCollectCashTab('IN_APP_PURCHASES');
+                                setCollectStatusFilter('ALL');
+                            }}
+                            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${collectCashTab === 'IN_APP_PURCHASES'
+                                ? 'bg-primary text-background'
+                                : 'text-text-secondary hover:text-white'
+                                }`}
+                        >
+                            In-App Purchases
+                        </button>
+                    </div>
+
+                    <div className="grid gap-3 lg:grid-cols-[1fr,220px]">
+                        <label className="relative block">
+                            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 material-icons-round text-base text-text-muted">search</span>
+                            <input
+                                type="text"
+                                value={collectSearch}
+                                onChange={(event) => setCollectSearch(event.target.value)}
+                                placeholder={collectCashTab === 'BOOKINGS' ? 'Search buyer, trainer, duration, or amount' : 'Search member, type, status, or amount'}
+                                className={commonInputClass}
+                            />
+                        </label>
+                        <select
+                            value={collectStatusFilter}
+                            onChange={(event) => setCollectStatusFilter(event.target.value)}
+                            className={commonSelectClass}
+                        >
+                            {collectStatusOptions.map((status) => (
+                                <option key={status} value={status}>{status === 'ALL' ? 'All Statuses' : status}</option>
+                            ))}
+                        </select>
+                    </div>
                 </div>
 
                 {collectCashTab === 'BOOKINGS' && (
@@ -729,10 +1016,10 @@ export default function POS() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-white/5">
-                                {groupedTrainingBookings.length === 0 && (
+                                {filteredBookingGroups.length === 0 && (
                                     <tr><td colSpan="7" className="p-6 text-center text-text-muted">No unpaid bookings found.</td></tr>
                                 )}
-                                {groupedTrainingBookings.map((bookingGroup) => (
+                                {filteredBookingGroups.map((bookingGroup) => (
                                     <tr key={bookingGroup.key} className="hover:bg-white/5 transition-colors">
                                         <td className="px-6 py-4 text-white font-medium">
                                             {bookingGroup.firstDate.toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{bookingGroup.firstDate.toLocaleTimeString()}</span>
@@ -741,7 +1028,7 @@ export default function POS() {
                                             {bookingGroup.member ? `${bookingGroup.member.firstName} ${bookingGroup.member.lastName}` : 'N/A'}
                                         </td>
                                         <td className="px-6 py-4 text-white">{bookingGroup.trainer?.name || 'N/A'}</td>
-                                        <td className="px-6 py-4 text-white">{bookingGroup.count} session(s) � {bookingGroup.totalDuration} min</td>
+                                        <td className="px-6 py-4 text-white">{bookingGroup.count} session(s) - {bookingGroup.totalDuration} min</td>
                                         <td className="px-6 py-4 text-white font-bold">{formatPrice(bookingGroup.totalAmount)}</td>
                                         <td className="px-6 py-4">
                                             <span className="px-2 py-1 rounded text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">UNPAID</span>
@@ -758,7 +1045,13 @@ export default function POS() {
                                                 </button>
                                                 <button
                                                     onClick={async () => {
-                                                        if (!window.confirm(`Decline ${bookingGroup.count} booking(s)?`)) return;
+                                                        const confirmed = await showConfirm({
+                                                            title: 'Decline Booking?',
+                                                            message: `Decline ${bookingGroup.count} booking(s)?`,
+                                                            confirmLabel: 'Decline',
+                                                            type: 'danger'
+                                                        });
+                                                        if (!confirmed) return;
                                                         try {
                                                             await Promise.all(
                                                                 bookingGroup.sessionIds.map((sessionId) =>
@@ -769,7 +1062,7 @@ export default function POS() {
                                                         } catch (e) {
                                                             const message = e.response?.data?.error || "Failed to decline booking";
                                                             const detail = e.response?.data?.detail;
-                                                            alert(detail ? `${message}\n\nDetails: ${detail}` : message);
+                                                            await showAlert({ title: 'Decline Failed', message: detail ? `${message}\n\nDetails: ${detail}` : message, type: 'danger' });
                                                         }
                                                     }}
                                                     className="text-xs font-bold px-3 py-1 rounded-lg border border-red-500/30 text-red-300 hover:bg-red-500/10"
@@ -783,198 +1076,211 @@ export default function POS() {
                             </tbody>
                         </table>
                     </div>
-                )}
+                )
+                }
 
-                {collectCashTab === 'IN_APP_PURCHASES' && (
-                    <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
-                        <table className="w-full text-left text-sm text-text-secondary">
-                            <thead className="bg-white/5 text-text-muted uppercase text-xs font-bold tracking-wider">
-                                <tr>
-                                    <th className="px-6 py-4">Date</th>
-                                    <th className="px-6 py-4">Member</th>
-                                    <th className="px-6 py-4">Type</th>
-                                    <th className="px-6 py-4">Amount</th>
-                                    <th className="px-6 py-4">Status</th>
-                                    <th className="px-6 py-4">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-white/5">
-                                {pendingInAppPurchases.length === 0 && (
-                                    <tr><td colSpan="6" className="p-6 text-center text-text-muted">No pending in-app cash purchases found.</td></tr>
-                                )}
-                                {pendingInAppPurchases.map((payment) => (
-                                    <tr key={payment.id} className="hover:bg-white/5 transition-colors">
-                                        <td className="px-6 py-4 text-white font-medium">
-                                            {new Date(payment.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(payment.date).toLocaleTimeString()}</span>
-                                        </td>
-                                        <td className="px-6 py-4 text-white">{getBuyerLabel(payment)}</td>
-                                        <td className="px-6 py-4 text-white">{payment.type}</td>
-                                        <td className="px-6 py-4 text-white font-bold">{formatPrice(payment.amount)}</td>
-                                        <td className="px-6 py-4">{renderStatusBadge(payment.status)}</td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-2">
-                                                <button
-                                                    onClick={() => {
-                                                        openModal('collectPurchase', payment);
-                                                    }}
-                                                    className="text-xs font-bold px-3 py-1 rounded-lg border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
-                                                >
-                                                    Accept
-                                                </button>
-                                                <button
-                                                    onClick={async () => {
-                                                        if (!window.confirm('Decline this pending cash purchase?')) return;
-                                                        try {
-                                                            await axios.post(withApiBase(`/api/payments/${payment.id}/decline-cash`), {}, { headers: authHeaders() });
-                                                            await Promise.all([fetchPendingInAppPurchases(), fetchHistory()]);
-                                                        } catch (e) {
-                                                            alert(e.response?.data?.error || "Failed to decline payment");
-                                                        }
-                                                    }}
-                                                    className="text-xs font-bold px-3 py-1 rounded-lg border border-red-500/30 text-red-300 hover:bg-red-500/10"
-                                                >
-                                                    Decline
-                                                </button>
-                                            </div>
-                                        </td>
+                {
+                    collectCashTab === 'IN_APP_PURCHASES' && (
+                        <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
+                            <table className="w-full text-left text-sm text-text-secondary">
+                                <thead className="bg-white/5 text-text-muted uppercase text-xs font-bold tracking-wider">
+                                    <tr>
+                                        <th className="px-6 py-4">Date</th>
+                                        <th className="px-6 py-4">Member</th>
+                                        <th className="px-6 py-4">Type</th>
+                                        <th className="px-6 py-4">Amount</th>
+                                        <th className="px-6 py-4">Status</th>
+                                        <th className="px-6 py-4">Actions</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
+                                </thead>
+                                <tbody className="divide-y divide-white/5">
+                                    {filteredPendingPurchases.length === 0 && (
+                                        <tr><td colSpan="6" className="p-6 text-center text-text-muted">No pending in-app cash purchases found.</td></tr>
+                                    )}
+                                    {filteredPendingPurchases.map((payment) => (
+                                        <tr key={payment.id} className="hover:bg-white/5 transition-colors">
+                                            <td className="px-6 py-4 text-white font-medium">
+                                                {new Date(payment.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(payment.date).toLocaleTimeString()}</span>
+                                            </td>
+                                            <td className="px-6 py-4 text-white">{getBuyerLabel(payment)}</td>
+                                            <td className="px-6 py-4 text-white">{payment.type}</td>
+                                            <td className="px-6 py-4 text-white font-bold">{formatPrice(payment.amount)}</td>
+                                            <td className="px-6 py-4">{renderStatusBadge(payment.status)}</td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        onClick={() => {
+                                                            openModal('collectPurchase', payment);
+                                                        }}
+                                                        className="text-xs font-bold px-3 py-1 rounded-lg border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
+                                                    >
+                                                        Accept
+                                                    </button>
+                                                    <button
+                                                        onClick={async () => {
+                                                            const confirmed = await showConfirm({
+                                                                title: 'Decline Purchase?',
+                                                                message: 'Decline this pending cash purchase?',
+                                                                confirmLabel: 'Decline',
+                                                                type: 'danger'
+                                                            });
+                                                            if (!confirmed) return;
+                                                            try {
+                                                                await axios.post(withApiBase(`/api/payments/${payment.id}/decline-cash`), {}, { headers: authHeaders() });
+                                                                await Promise.all([fetchPendingInAppPurchases(), fetchHistory()]);
+                                                            } catch (e) {
+                                                                await showAlert({ title: 'Decline Failed', message: e.response?.data?.error || 'Failed to decline payment', type: 'danger' });
+                                                            }
+                                                        }}
+                                                        className="text-xs font-bold px-3 py-1 rounded-lg border border-red-500/30 text-red-300 hover:bg-red-500/10"
+                                                    >
+                                                        Decline
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )
+                }
 
-                {modals.collectCash && collectData.session && (
-                    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-                        <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6">
-                            <div className="mb-4">
-                                <h2 className="text-xl font-bold text-white">Collect Cash</h2>
-                                <p className="text-text-muted text-sm">
-                                    {collectData.session.member?.firstName} {collectData.session.member?.lastName} • {collectData.session.trainer?.name}
-                                    {collectData.session.count > 1 ? ` (${collectData.session.count} sessions)` : ''}
-                                </p>
-                            </div>
-                            <div className="space-y-4">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-text-muted">Amount Due</span>
-                                    <span className="text-white font-bold text-lg">{formatPrice(collectData.session.totalAmount || collectData.session.price || 0)}</span>
+                {
+                    modals.collectCash && collectData.session && (
+                        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                            <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6">
+                                <div className="mb-4">
+                                    <h2 className="text-xl font-bold text-white">Collect Cash</h2>
+                                    <p className="text-text-muted text-sm">
+                                        {collectData.session.member?.firstName} {collectData.session.member?.lastName} • {collectData.session.trainer?.name}
+                                        {collectData.session.count > 1 ? ` (${collectData.session.count} sessions)` : ''}
+                                    </p>
                                 </div>
-                                <div>
-                                    <label className="block text-text-muted text-sm font-medium mb-2">Cash Tendered</label>
-                                    <input
-                                        type="number"
-                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-3 px-4 text-white text-base focus:border-primary outline-none"
-                                        placeholder="0.00"
-                                        value={collectData.tendered}
-                                        onChange={(e) => setCollectField('tendered', e.target.value)}
-                                    />
-                                </div>
-                                <div className="bg-white/5 rounded-xl p-4 flex justify-between items-center">
-                                    <span className="text-text-secondary">Change Due:</span>
-                                    {formatPrice(Math.max(0, (parseFloat(collectData.tendered) || 0) - (collectData.session.totalAmount || collectData.session.price || 0)))}
-                                </div>
-                                <div className="flex gap-3">
-                                    <button
-                                        onClick={() => closeModal('collectCash')}
-                                        className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 rounded-xl"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        onClick={async () => {
-                                            const amountDue = collectData.session.totalAmount || collectData.session.price || 0;
-                                            if ((parseFloat(collectData.tendered) || 0) < amountDue) return;
-                                            setCollectLoading(true);
-                                            try {
-                                                await axios.post(withApiBase('/api/staff/training-sessions/collect-batch'), {
-                                                    sessionIds: collectData.session.sessionIds || [collectData.session.id],
-                                                    method: 'CASH',
-                                                    cashTendered: parseFloat(collectData.tendered)
-                                                }, { headers: authHeaders() });
-                                                await fetchTrainingBookings();
-                                                await fetchHistory();
-                                                closeModal('collectCash');
-                                            } catch (e) {
-                                                alert("Failed to collect payment");
-                                            } finally {
-                                                setCollectLoading(false);
-                                            }
-                                        }}
-                                        disabled={collectLoading || (parseFloat(collectData.tendered) || 0) < (collectData.session.totalAmount || collectData.session.price || 0)}
-                                        className="flex-1 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl"
-                                    >
-                                        {collectLoading ? 'Collecting...' : 'Collect'}
-                                    </button>
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-text-muted">Amount Due</span>
+                                        <span className="text-white font-bold text-lg">{formatPrice(collectData.session.totalAmount || collectData.session.price || 0)}</span>
+                                    </div>
+                                    <div>
+                                        <label className="block text-text-muted text-sm font-medium mb-2">Cash Tendered</label>
+                                        <input
+                                            type="number"
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-3 px-4 text-white text-base focus:border-primary outline-none"
+                                            placeholder="0.00"
+                                            value={collectData.tendered}
+                                            onChange={(e) => setCollectField('tendered', e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="bg-white/5 rounded-xl p-4 flex justify-between items-center">
+                                        <span className="text-text-secondary">Change Due:</span>
+                                        {formatPrice(Math.max(0, (parseFloat(collectData.tendered) || 0) - (collectData.session.totalAmount || collectData.session.price || 0)))}
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => closeModal('collectCash')}
+                                            className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 rounded-xl"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={async () => {
+                                                const amountDue = collectData.session.totalAmount || collectData.session.price || 0;
+                                                if ((parseFloat(collectData.tendered) || 0) < amountDue) return;
+                                                setCollectLoading(true);
+                                                try {
+                                                    await axios.post(withApiBase('/api/staff/training-sessions/collect-batch'), {
+                                                        sessionIds: collectData.session.sessionIds || [collectData.session.id],
+                                                        method: 'CASH',
+                                                        cashTendered: parseFloat(collectData.tendered)
+                                                    }, { headers: authHeaders() });
+                                                    await fetchTrainingBookings();
+                                                    await fetchHistory();
+                                                    closeModal('collectCash');
+                                                } catch (e) {
+                                                    await showAlert({ title: 'Collection Failed', message: 'Failed to collect payment', type: 'danger' });
+                                                } finally {
+                                                    setCollectLoading(false);
+                                                }
+                                            }}
+                                            disabled={collectLoading || (parseFloat(collectData.tendered) || 0) < (collectData.session.totalAmount || collectData.session.price || 0)}
+                                            className="flex-1 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl"
+                                        >
+                                            {collectLoading ? 'Collecting...' : 'Collect'}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                )}
+                    )
+                }
 
 
-                {modals.collectPurchase && collectData.purchase && (
-                    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-                        <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6">
-                            <div className="mb-4">
-                                <h2 className="text-xl font-bold text-white">Collect Cash</h2>
-                                <p className="text-text-muted text-sm">
-                                    {collectData.purchase.member?.firstName} {collectData.purchase.member?.lastName} • {collectData.purchase.type}
-                                </p>
-                            </div>
-                            <div className="space-y-4">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-text-muted">Amount Due</span>
-                                    <span className="text-white font-bold text-lg">{formatPrice(collectData.purchase.amount)}</span>
+                {
+                    modals.collectPurchase && collectData.purchase && (
+                        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                            <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-md w-full p-6">
+                                <div className="mb-4">
+                                    <h2 className="text-xl font-bold text-white">Collect Cash</h2>
+                                    <p className="text-text-muted text-sm">
+                                        {collectData.purchase.member?.firstName} {collectData.purchase.member?.lastName} • {collectData.purchase.type}
+                                    </p>
                                 </div>
-                                <div>
-                                    <label className="block text-text-muted text-sm font-medium mb-2">Cash Tendered</label>
-                                    <input
-                                        type="number"
-                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-3 px-4 text-white text-base focus:border-primary outline-none"
-                                        placeholder="0.00"
-                                        value={collectData.tendered}
-                                        onChange={(e) => setCollectField('tendered', e.target.value)}
-                                    />
-                                </div>
-                                <div className="bg-white/5 rounded-xl p-4 flex justify-between items-center">
-                                    <span className="text-text-secondary">Change Due:</span>
-                                    {formatPrice(Math.max(0, (parseFloat(collectData.tendered) || 0) - collectData.purchase.amount))}
-                                </div>
-                                <div className="flex gap-3">
-                                    <button
-                                        onClick={() => closeModal('collectPurchase')}
-                                        className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 rounded-xl"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        onClick={async () => {
-                                            if ((parseFloat(collectData.tendered) || 0) < collectData.purchase.amount) return;
-                                            setCollectLoading(true);
-                                            try {
-                                                await axios.post(withApiBase(`/api/payments/${collectData.purchase.id}/collect-cash`), {
-                                                    cashTendered: parseFloat(collectData.tendered)
-                                                }, { headers: authHeaders() });
-                                                await Promise.all([fetchPendingInAppPurchases(), fetchHistory()]);
-                                                closeModal('collectPurchase');
-                                            } catch (e) {
-                                                alert(e.response?.data?.error || "Failed to collect payment");
-                                            } finally {
-                                                setCollectLoading(false);
-                                            }
-                                        }}
-                                        disabled={collectLoading || (parseFloat(collectData.tendered) || 0) < collectData.purchase.amount}
-                                        className="flex-1 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl"
-                                    >
-                                        {collectLoading ? 'Collecting...' : 'Collect'}
-                                    </button>
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-text-muted">Amount Due</span>
+                                        <span className="text-white font-bold text-lg">{formatPrice(collectData.purchase.amount)}</span>
+                                    </div>
+                                    <div>
+                                        <label className="block text-text-muted text-sm font-medium mb-2">Cash Tendered</label>
+                                        <input
+                                            type="number"
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl py-3 px-4 text-white text-base focus:border-primary outline-none"
+                                            placeholder="0.00"
+                                            value={collectData.tendered}
+                                            onChange={(e) => setCollectField('tendered', e.target.value)}
+                                        />
+                                    </div>
+                                    <div className="bg-white/5 rounded-xl p-4 flex justify-between items-center">
+                                        <span className="text-text-secondary">Change Due:</span>
+                                        {formatPrice(Math.max(0, (parseFloat(collectData.tendered) || 0) - collectData.purchase.amount))}
+                                    </div>
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => closeModal('collectPurchase')}
+                                            className="flex-1 py-3 text-white font-bold bg-white/10 hover:bg-white/20 rounded-xl"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={async () => {
+                                                if ((parseFloat(collectData.tendered) || 0) < collectData.purchase.amount) return;
+                                                setCollectLoading(true);
+                                                try {
+                                                    await axios.post(withApiBase(`/api/payments/${collectData.purchase.id}/collect-cash`), {
+                                                        cashTendered: parseFloat(collectData.tendered)
+                                                    }, { headers: authHeaders() });
+                                                    await Promise.all([fetchPendingInAppPurchases(), fetchHistory()]);
+                                                    closeModal('collectPurchase');
+                                                } catch (e) {
+                                                    await showAlert({ title: 'Collection Failed', message: e.response?.data?.error || 'Failed to collect payment', type: 'danger' });
+                                                } finally {
+                                                    setCollectLoading(false);
+                                                }
+                                            }}
+                                            disabled={collectLoading || (parseFloat(collectData.tendered) || 0) < collectData.purchase.amount}
+                                            className="flex-1 py-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl"
+                                        >
+                                            {collectLoading ? 'Collecting...' : 'Collect'}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                )}
+                    )
+                }
 
-            </div>
+            </div >
         );
     }
 
@@ -1168,63 +1474,117 @@ export default function POS() {
 
             {/* Left: Product Grid */}
             <div className="flex-1 flex flex-col min-w-0">
-                <header className="mb-6 flex flex-wrap justify-between items-center gap-4">
-                    <div>
-                        <h1 className="text-2xl font-bold text-white">Touch-First POS</h1>
-                        <p className="text-text-muted text-sm">Select items to add to cart</p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-4">
-                        <button onClick={() => { fetchHistory(); setViewMode('HISTORY'); }} className="text-text-secondary hover:text-primary flex items-center gap-1 transition-colors">
-                            <span className="material-icons-round">history</span> History
-                        </button>
-                        <button onClick={() => { setCollectCashTab('BOOKINGS'); setViewMode('TRAINING_BOOKINGS'); }} className="text-text-secondary hover:text-primary flex items-center gap-1 transition-colors">
-                            <span className="material-icons-round">payments</span> Collect Cash
-                        </button>
-                        {/* Category Filter */}
-                        <div className="flex flex-wrap gap-2 bg-surface p-1 rounded-xl border border-white/10">
-                            {['All', ...Object.values(POS_VIEWS)].map(cat => (
-                                <button
-                                    key={cat}
-                                    onClick={() => setCategory(cat)}
-                                    className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${selectedCategory === cat
-                                        ? 'bg-primary/10 text-primary shadow-sm'
-                                        : 'text-text-muted hover:text-text-secondary'
-                                        }`}
-                                >
-                                    {cat === POS_VIEWS.TRAINERS ? 'TRAINERS' : cat}
-                                </button>
-                            ))}
+                <header className="mb-5 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <h1 className="text-2xl font-bold text-white">Point of Sale</h1>
+                            <p className="text-sm text-text-muted">Fast checkout with barcode and SKU search.</p>
                         </div>
+                        {renderModeTabs()}
+                    </div>
 
+                    <div className="grid gap-3 lg:grid-cols-[1fr,auto]">
+                        <label className="relative block">
+                            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 material-icons-round text-base text-text-muted">search</span>
+                            <input
+                                type="text"
+                                value={productSearch}
+                                onChange={(event) => setProductSearch(event.target.value)}
+                                placeholder="Search products by name, category, barcode, or SKU"
+                                className="w-full rounded-xl border border-white/10 bg-surface px-10 py-3 text-sm text-white outline-none transition-colors focus:border-primary"
+                            />
+                        </label>
+                        <div className="inline-flex items-center rounded-xl border border-white/10 bg-surface p-1">
+                            <button
+                                type="button"
+                                onClick={() => setCatalogView('GRID')}
+                                className={`inline-flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${catalogView === 'GRID' ? 'bg-primary text-background' : 'text-text-secondary hover:text-white'}`}
+                            >
+                                <span className="material-icons-round text-sm">grid_view</span>
+                                Grid
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setCatalogView('LIST')}
+                                className={`inline-flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${catalogView === 'LIST' ? 'bg-primary text-background' : 'text-text-secondary hover:text-white'}`}
+                            >
+                                <span className="material-icons-round text-sm">view_list</span>
+                                List
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 rounded-xl border border-white/10 bg-surface p-2">
+                        {categoryTabs.map((cat) => (
+                            <button
+                                key={cat}
+                                type="button"
+                                onClick={() => setCategory(cat)}
+                                className={`rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wide transition-all ${selectedCategory === cat
+                                    ? 'bg-primary text-background'
+                                    : 'bg-white/5 text-text-secondary hover:text-white'
+                                    }`}
+                            >
+                                {cat}
+                            </button>
+                        ))}
                     </div>
                 </header>
 
-                <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 overflow-y-auto pb-20 pr-2 scrollbar-hide">
-                    {safeDisplayItems.length === 0 && (
-                        <div className="col-span-full text-center text-text-muted py-10">No items found in this category.</div>
+                <div className={catalogView === 'GRID'
+                    ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 overflow-y-auto pb-20 pr-2 scrollbar-hide'
+                    : 'space-y-3 overflow-y-auto pb-20 pr-2 scrollbar-hide'}
+                >
+                    {searchedDisplayItems.length === 0 && (
+                        <div className="col-span-full text-center text-text-muted py-10">No items match your category and search filters.</div>
                     )}
-                    {safeDisplayItems.map(item => {
+                    {searchedDisplayItems.map((item) => {
                         const isTrainer = selectedCategory === 'TRAINERS';
                         const isPackage = selectedCategory === 'PACKAGES';
                         const isSoldOut = !isTrainer && !isPackage && selectedCategory !== 'MEMBERSHIP' && item.stock <= 0;
+                        const addLabel = isSoldOut ? 'Sold Out' : 'Add';
+
+                        if (catalogView === 'LIST') {
+                            return (
+                                <div
+                                    key={item.id}
+                                    className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-surface p-3 transition-colors ${isSoldOut ? 'border-red-500/20 opacity-70' : 'border-white/10 hover:border-primary/40'}`}
+                                >
+                                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                                        <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-xl bg-white/5">
+                                            {item.imageUrl ? (
+                                                <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover" />
+                                            ) : (
+                                                <div className="flex h-full w-full items-center justify-center text-text-muted">
+                                                    <span className="material-icons-round text-lg">{selectedCategory === POS_VIEWS.MEMBERSHIP ? 'card_membership' : isTrainer ? 'person' : isPackage ? 'redeem' : 'inventory_2'}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="min-w-0">
+                                            <p className="truncate text-sm font-semibold text-white">{item.name}</p>
+                                            <p className="truncate text-xs text-text-muted">{item.category || (isTrainer ? 'Trainer Service' : isPackage ? 'Class Package' : 'Product')}</p>
+                                            <p className="truncate text-[11px] font-mono text-text-secondary">Barcode/SKU: {item.barcode || item.sku || 'N/A'}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <p className="text-sm font-bold text-primary">{isTrainer ? formatPrice(item.sessionPrice ?? 0, true) : formatPrice(item.price)}</p>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleAddCatalogItem(item)}
+                                            disabled={isSoldOut}
+                                            className="rounded-lg border border-primary/30 bg-primary/15 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/25 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            {addLabel}
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        }
+
                         return (
                             <div
                                 key={item.id}
-                                onClick={() => {
-                                    if (isSoldOut) return;
-                                    if (isTrainer) {
-                                        addToCart({
-                                            ...item,
-                                            trainerId: item.id,
-                                            price: item.sessionPrice ?? 0,
-                                            duration: Number(item.sessionDurations?.split(',')[0]?.trim()) || 60
-                                        }, 'TRAINING');
-                                    } else if (isPackage) {
-                                        addToCart(item, 'CLASS_PACKAGE');
-                                    } else {
-                                        addToCart(item, selectedCategory === POS_VIEWS.MEMBERSHIP ? 'PLAN' : 'PRODUCT');
-                                    }
-                                }}
+                                onClick={() => handleAddCatalogItem(item)}
                                 className={`group bg-surface hover:bg-primary/5 rounded-3xl p-3 cursor-pointer transition-all duration-300 border border-white/5 hover:border-primary/20 shadow-sm hover:shadow-primary/10 active:scale-95 ${selectedCategory === POS_VIEWS.MEMBERSHIP ? 'ring-1 ring-yellow-500/30' : ''} ${isSoldOut ? 'opacity-70 grayscale-[0.5] cursor-not-allowed' : ''}`}
                             >
                                 <div className="aspect-[4/3] rounded-2xl overflow-hidden mb-3 relative bg-white/5">
@@ -1269,6 +1629,7 @@ export default function POS() {
                                 </div>
                                 <div className="px-1 mt-2">
                                     <h3 className="text-white font-bold truncate text-sm">{item.name}</h3>
+                                    <p className="mt-0.5 truncate text-[11px] font-mono text-text-secondary">Barcode/SKU: {item.barcode || item.sku || 'N/A'}</p>
                                     <div className="flex justify-between items-center mt-1">
                                         <p className="text-primary font-bold">
                                             {isTrainer ? formatPrice(item.sessionPrice ?? 0, true) : formatPrice(item.price)}
@@ -1330,6 +1691,53 @@ export default function POS() {
                             </div>
                         )}
                     </div>
+
+                    <div className="mt-4 pt-4 border-t border-white/5">
+                        <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs font-bold uppercase tracking-widest text-text-muted">Discounts</p>
+                            <span className="text-[11px] text-text-muted">{discount > 0 ? `${discount}% Applied` : 'No Discount'}</span>
+                        </div>
+
+                        {discountOptions.length > 0 ? (
+                            <div className="grid grid-cols-2 gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => applyDiscountPreset('')}
+                                    className={`rounded-xl border p-2 text-left transition-colors ${!selectedDiscountPresetId
+                                        ? 'border-primary/60 bg-primary/10 text-primary'
+                                        : 'border-white/10 bg-surfaceHighlight text-text-secondary hover:text-white'
+                                        }`}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <span className="material-icons-round text-base">remove_circle_outline</span>
+                                        <span className="text-xs font-semibold">No Discount</span>
+                                    </div>
+                                </button>
+
+                                {discountOptions.map((preset) => (
+                                    <button
+                                        key={preset.id}
+                                        type="button"
+                                        onClick={() => applyDiscountPreset(preset.id)}
+                                        className={`rounded-xl border p-2 text-left transition-colors ${selectedDiscountPresetId === preset.id
+                                            ? 'border-primary/60 bg-primary/10 text-primary'
+                                            : 'border-white/10 bg-surfaceHighlight text-text-secondary hover:text-white'
+                                            }`}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <span className="material-icons-round text-base">{preset.icon || 'local_offer'}</span>
+                                            <div className="min-w-0">
+                                                <p className="truncate text-xs font-semibold">{preset.name}</p>
+                                                <p className="text-[11px] opacity-80">{preset.rate}%</p>
+                                            </div>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="text-[11px] text-text-muted">No discount presets configured in POS Settings.</p>
+                        )}
+                    </div>
                 </div>
 
                 {/* Cart Items */}
@@ -1353,7 +1761,7 @@ export default function POS() {
                                         {item.type !== 'TRAINING' && (
                                             <div className="flex items-center gap-2 mt-1.5">
                                                 <button
-                                                    onClick={(e) => { e.stopPropagation(); updateQuantity(item.cartLineId, item.quantity - 1, item.stock); }}
+                                                    onClick={async (e) => { e.stopPropagation(); const r = updateQuantity(item.cartLineId, item.quantity - 1, item.stock); if (r && !r.success && r.error) await showAlert({ title: 'Stock Limit', message: r.error, type: 'warning' }); }}
                                                     className="w-6 h-6 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded text-white transition-colors"
                                                 >
                                                     <span className="material-icons-round text-xs">remove</span>
@@ -1363,10 +1771,10 @@ export default function POS() {
                                                     className="w-10 bg-transparent text-center text-text-muted text-sm font-medium focus:text-white outline-none border-b border-transparent focus:border-white/30 transition-colors"
                                                     value={item.quantity}
                                                     onClick={(e) => e.stopPropagation()}
-                                                    onChange={(e) => updateQuantity(item.cartLineId, Math.max(1, parseInt(e.target.value) || 1), item.stock)}
+                                                    onChange={async (e) => { const r = updateQuantity(item.cartLineId, Math.max(1, parseInt(e.target.value) || 1), item.stock); if (r && !r.success && r.error) await showAlert({ title: 'Stock Limit', message: r.error, type: 'warning' }); }}
                                                 />
                                                 <button
-                                                    onClick={(e) => { e.stopPropagation(); updateQuantity(item.cartLineId, item.quantity + 1, item.stock); }}
+                                                    onClick={async (e) => { e.stopPropagation(); const r = updateQuantity(item.cartLineId, item.quantity + 1, item.stock); if (r && !r.success && r.error) await showAlert({ title: 'Stock Limit', message: r.error, type: 'warning' }); }}
                                                     className="w-6 h-6 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded text-white transition-colors"
                                                 >
                                                     <span className="material-icons-round text-xs">add</span>
@@ -1522,29 +1930,12 @@ export default function POS() {
                         <span>{formatCartPrice(subtotal)}</span>
                     </div>
 
-                    {/* Discount Input */}
-                    <div className="mb-6 space-y-2">
-                        <div className="flex justify-between items-center">
-                            <span className="text-text-secondary text-sm font-medium">Discount (%)</span>
-                            <input
-                                type="number"
-                                min="0"
-                                max="100"
-                                className="w-24 bg-surfaceHighlight border border-white/10 rounded-lg px-2 py-1 text-right text-white text-sm focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
-                                value={discount}
-                                onChange={(e) => {
-                                    const val = parseFloat(e.target.value) || 0;
-                                    setDiscount(Math.min(100, Math.max(0, val)));
-                                }}
-                            />
+                    {discount > 0 && (
+                        <div className="mb-6 flex justify-between items-center text-xs text-green-400">
+                            <span>Less {selectedDiscountPreset ? `${selectedDiscountPreset.name}` : 'Discount'}</span>
+                            <span>-{formatPrice(discountAmount)}</span>
                         </div>
-                        {discount > 0 && (
-                            <div className="flex justify-between items-center text-xs text-green-400">
-                                <span>Less</span>
-                                <span>-{formatPrice(discountAmount)}</span>
-                            </div>
-                        )}
-                    </div>
+                    )}
 
                     <div className="flex justify-between items-end mb-6">
                         <span className="text-white font-bold text-lg">Total</span>

@@ -2,10 +2,12 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useCurrency } from '../../context/CurrencyContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 export default function TrainerBooking() {
     const { user } = useAuth();
     const { formatPrice } = useCurrency();
+    const { alert: showAlert, confirm: showConfirm } = useConfirm();
     const [trainers, setTrainers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedTrainer, setSelectedTrainer] = useState(null);
@@ -105,7 +107,12 @@ export default function TrainerBooking() {
             const res = await axios.get('/api/trainers', {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined
             });
-            setTrainers(res.data);
+            const visible = (res.data || []).filter(
+                (trainer) =>
+                    String(trainer?.bookingStatus || 'OPEN').toUpperCase() === 'OPEN'
+                    || Boolean(trainer?.temporarilyOpenToday)
+            );
+            setTrainers(visible);
         } catch (error) {
             console.error("Failed to fetch trainers");
         } finally {
@@ -134,27 +141,33 @@ export default function TrainerBooking() {
     };
 
     const handleCancelSession = async (sessionId) => {
-        if (!confirm("Are you sure you want to cancel this session?")) return;
+        const confirmed = await showConfirm({
+            title: 'Cancel Session?',
+            message: 'Are you sure you want to cancel this session?',
+            confirmLabel: 'Cancel Session',
+            type: 'danger'
+        });
+        if (!confirmed) return;
 
         try {
             const token = sessionStorage.getItem('token') || localStorage.getItem('token');
             await axios.post(`/api/members/me/training-sessions/${sessionId}/cancel`, {}, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined
             });
-            alert("Session cancelled successfully.");
+            await showAlert({ title: 'Session Cancelled', message: 'Session cancelled successfully.', type: 'success' });
             fetchMemberSessions();
         } catch (error) {
             console.error("Failed to cancel session", error);
-            alert(error.response?.data?.error || "Failed to cancel session");
+            await showAlert({ title: 'Cancel Failed', message: error.response?.data?.error || 'Failed to cancel session', type: 'danger' });
         }
     };
 
-    const handleOpenRescheduleModal = (session) => {
+    const handleOpenRescheduleModal = async (session) => {
         const sessionDate = new Date(session.date);
         const now = new Date();
         const hoursUntil = (sessionDate.getTime() - now.getTime()) / (1000 * 60 * 60);
         if (hoursUntil < 24) {
-            alert("Reschedule is allowed only if requested at least 24 hours before your session.");
+            await showAlert({ title: 'Too Late to Reschedule', message: 'Rescheduling is only allowed at least 24 hours before your session.', type: 'warning' });
             return;
         }
 
@@ -198,7 +211,7 @@ export default function TrainerBooking() {
             }, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined
             });
-            alert("Session rescheduled successfully.");
+            await showAlert({ title: 'Rescheduled!', message: 'Session rescheduled successfully.', type: 'success' });
             setRescheduleSession(null);
             setRescheduleForm({ date: '', time: '', reason: '' });
             fetchMemberSessions();
@@ -213,20 +226,20 @@ export default function TrainerBooking() {
     const handleBookSession = async (e) => {
         e.preventDefault();
         if (!selectedTrainer || selectedDates.length === 0) {
-            alert("Please fill in all required fields");
+            await showAlert({ title: 'Missing Info', message: 'Please fill in all required fields', type: 'warning' });
             return;
         }
         if (!user?.id) {
-            alert("Member session not found. Please log in again.");
+            await showAlert({ title: 'Session Expired', message: 'Member session not found. Please log in again.', type: 'warning' });
             return;
         }
         if (!selectedMethodId && bookingData.paymentMethod !== 'CASH') {
-            alert("Please select a payment method.");
+            await showAlert({ title: 'Payment Required', message: 'Please select a payment method.', type: 'warning' });
             return;
         }
         const missingTimes = selectedDates.filter((date) => !selectedTimesByDate[date]);
         if (missingTimes.length > 0) {
-            alert("Please choose a time for all selected dates.");
+            await showAlert({ title: 'Missing Time', message: 'Please choose a time for all selected dates.', type: 'warning' });
             return;
         }
         const hasPastDateTime = selectedDates.some((date) => {
@@ -236,7 +249,7 @@ export default function TrainerBooking() {
             return Number.isNaN(scheduled.getTime()) || scheduled <= new Date();
         });
         if (hasPastDateTime) {
-            alert("Past date/time is not allowed. Please select a future schedule.");
+            await showAlert({ title: 'Invalid Date/Time', message: 'Past date/time is not allowed. Please select a future schedule.', type: 'warning' });
             return;
         }
 
@@ -278,7 +291,7 @@ export default function TrainerBooking() {
         } catch (error) {
             const errorMessage = error.response?.data?.error || error.response?.data?.message || "Failed to book training session";
             const errorDetail = error.response?.data?.detail;
-            alert(errorDetail ? `${errorMessage}\n\nDetails: ${errorDetail}` : errorMessage);
+            await showAlert({ title: 'Booking Failed', message: errorDetail ? `${errorMessage}\n\nDetails: ${errorDetail}` : errorMessage, type: 'danger' });
         } finally {
             setBookingLoading(false);
         }
@@ -342,6 +355,11 @@ export default function TrainerBooking() {
         return `${y}-${m}-${d}`;
     };
 
+    const isTrainerTemporarilyOpenForDate = (trainer, isoDate) => {
+        if (!trainer || !isoDate) return false;
+        return Boolean(trainer.temporarilyOpenToday) && isoDate === toIsoDate(new Date());
+    };
+
     const toMinutes = (timeString) => {
         const [h, m] = String(timeString || '').split(':').map(Number);
         if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
@@ -358,6 +376,43 @@ export default function TrainerBooking() {
         return `${hour12}:${String(minute).padStart(2, '0')} ${suffix}`;
     };
 
+    const getTrainerDateWindow = (trainer, isoDate) => {
+        if (!trainer || !isoDate) return null;
+        const isClosed = String(trainer.bookingStatus || 'OPEN').toUpperCase() === 'CLOSED';
+        if (isClosed && !isTrainerTemporarilyOpenForDate(trainer, isoDate)) return null;
+        const dateObj = new Date(`${isoDate}T00:00:00`);
+        if (Number.isNaN(dateObj.getTime())) return null;
+
+        const specificDate = trainer.specificDateAvailability?.[isoDate];
+        if (specificDate) {
+            if (specificDate.available === false) return null;
+            return {
+                start: specificDate.start || '09:00',
+                end: specificDate.end || '18:00'
+            };
+        }
+
+        const availabilityDays = Array.isArray(trainer.availabilityDays)
+            ? trainer.availabilityDays.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+            : [];
+        if (availabilityDays.length > 0 && !availabilityDays.includes(dateObj.getDay())) return null;
+
+        const dayKey = String(dateObj.getDay());
+        const dayConfig = trainer.availabilityByDay?.[dayKey];
+        return {
+            start: dayConfig?.start || trainer.availabilityStart || '09:00',
+            end: dayConfig?.end || trainer.availabilityEnd || '18:00'
+        };
+    };
+
+    const isTrainerDateAvailable = (trainer, isoDate) => {
+        const window = getTrainerDateWindow(trainer, isoDate);
+        if (!window) return false;
+        const start = toMinutes(window.start);
+        const end = toMinutes(window.end);
+        return start !== null && end !== null && end > start;
+    };
+
     const getRescheduleAvailableTimeSlots = useCallback((session, isoDate) => {
         if (!session || !isoDate) return [];
         const trainerId = Number(session.trainer?.id || session.trainerId);
@@ -367,16 +422,11 @@ export default function TrainerBooking() {
         const dateObj = new Date(`${isoDate}T00:00:00`);
         if (Number.isNaN(dateObj.getTime())) return [];
 
-        const availabilityDays = Array.isArray(trainer.availabilityDays)
-            ? trainer.availabilityDays.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
-            : [];
-        if (availabilityDays.length > 0 && !availabilityDays.includes(dateObj.getDay())) return [];
-
-        const dayKey = String(dateObj.getDay());
+        const window = getTrainerDateWindow(trainer, isoDate);
+        if (!window) return [];
         const interval = Number(trainer.availabilityIntervalMinutes) || 30;
-        const dayConfig = trainer.availabilityByDay?.[dayKey];
-        const start = toMinutes(dayConfig?.start || trainer.availabilityStart || '09:00');
-        const end = toMinutes(dayConfig?.end || trainer.availabilityEnd || '18:00');
+        const start = toMinutes(window.start);
+        const end = toMinutes(window.end);
         if (start === null || end === null || end <= start) return [];
 
         const bookedSessions = (trainer.trainingSessions || [])
@@ -462,32 +512,16 @@ export default function TrainerBooking() {
         return trainers.find((t) => Number(t.id) === trainerId) || null;
     }, [rescheduleSession, trainers]);
 
-    const rescheduleAvailabilityDays = useMemo(() => {
-        if (!rescheduleTrainer) return [];
-        return Array.isArray(rescheduleTrainer.availabilityDays)
-            ? rescheduleTrainer.availabilityDays.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
-            : [];
-    }, [rescheduleTrainer]);
-
-    const availabilityDays = useMemo(() => {
-        if (!selectedTrainer) return [];
-        return Array.isArray(selectedTrainer.availabilityDays)
-            ? selectedTrainer.availabilityDays.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
-            : [];
-    }, [selectedTrainer]);
-
     const getAvailableTimeSlots = useCallback((isoDate) => {
         if (!selectedTrainer) return [];
         const dateObj = new Date(`${isoDate}T00:00:00`);
         if (Number.isNaN(dateObj.getTime())) return [];
 
-        const dayKey = String(dateObj.getDay());
-        if (availabilityDays.length > 0 && !availabilityDays.includes(dateObj.getDay())) return [];
-
+        const window = getTrainerDateWindow(selectedTrainer, isoDate);
+        if (!window) return [];
         const interval = Number(selectedTrainer.availabilityIntervalMinutes) || 30;
-        const dayConfig = selectedTrainer.availabilityByDay?.[dayKey];
-        const start = toMinutes(dayConfig?.start || selectedTrainer.availabilityStart || '09:00');
-        const end = toMinutes(dayConfig?.end || selectedTrainer.availabilityEnd || '18:00');
+        const start = toMinutes(window.start);
+        const end = toMinutes(window.end);
 
         if (start === null || end === null || end <= start) return [];
 
@@ -530,7 +564,7 @@ export default function TrainerBooking() {
             }
         }
         return slots;
-    }, [selectedTrainer, availabilityDays, bookingData.duration]);
+    }, [selectedTrainer, bookingData.duration]);
 
     useEffect(() => {
         if (selectedDates.length === 0) return;
@@ -989,8 +1023,7 @@ export default function TrainerBooking() {
                                                     const iso = toIsoDate(day);
                                                     const todayIso = toIsoDate(new Date());
                                                     const isPast = iso < todayIso;
-                                                    const dayOfWeek = day.getDay();
-                                                    const unavailableDay = availabilityDays.length > 0 && !availabilityDays.includes(dayOfWeek);
+                                                    const unavailableDay = !isTrainerDateAvailable(selectedTrainer, iso);
                                                     const selected = selectedDates.includes(iso);
                                                     return (
                                                         <button
@@ -1370,7 +1403,7 @@ export default function TrainerBooking() {
                                             const iso = toIsoDate(day);
                                             const todayIso = toIsoDate(new Date());
                                             const isPast = iso < todayIso;
-                                            const unavailableDay = rescheduleAvailabilityDays.length > 0 && !rescheduleAvailabilityDays.includes(day.getDay());
+                                            const unavailableDay = !isTrainerDateAvailable(rescheduleTrainer, iso);
                                             const selected = rescheduleForm.date === iso;
                                             return (
                                                 <button

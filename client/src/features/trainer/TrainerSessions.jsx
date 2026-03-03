@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { useConfirm } from '../../context/ConfirmContext';
 
 export default function TrainerSessions() {
     const COMPLETE_GRACE_MINUTES = 5;
     const NO_SHOW_GRACE_MINUTES = 10;
+    const { alert: showAlert } = useConfirm();
     const [sessions, setSessions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [activeView, setActiveView] = useState('calendar'); // calendar | history
@@ -57,7 +59,7 @@ export default function TrainerSessions() {
             await axios.post(`/api/trainer/me/sessions/${sessionId}/complete`);
             await refreshSessions();
         } catch (e) {
-            alert(e.response?.data?.error || "Failed to mark session completed");
+            await showAlert({ title: 'Error', message: e.response?.data?.error || 'Failed to mark session completed', type: 'danger' });
         } finally {
             setCompletingId(null);
         }
@@ -159,7 +161,7 @@ export default function TrainerSessions() {
             await handleUpdateSession(editingSession.id, { notes: notesDraft });
             setEditingSession(null);
         } catch (e) {
-            alert(e.response?.data?.error || "Failed to update notes");
+            await showAlert({ title: 'Error', message: e.response?.data?.error || 'Failed to update notes', type: 'danger' });
         }
     };
 
@@ -229,7 +231,7 @@ export default function TrainerSessions() {
         try {
             await handleUpdateSession(session.id, { date: dateStr, time: timeStr });
         } catch (e) {
-            alert(e.response?.data?.error || "Failed to reschedule");
+            await showAlert({ title: 'Reschedule Failed', message: e.response?.data?.error || 'Failed to reschedule', type: 'danger' });
         } finally {
             setDraggingId(null);
         }
@@ -471,8 +473,8 @@ export default function TrainerSessions() {
                                             Unable To Attend
                                         </button>
                                     )}
-                                        <button
-                                            onClick={() => handleOpenNotes(session)}
+                                    <button
+                                        onClick={() => handleOpenNotes(session)}
                                         className="px-4 py-2 rounded-xl bg-white/5 text-white border border-white/10 text-xs font-bold uppercase tracking-widest hover:bg-white/10 transition-all"
                                     >
                                         Notes

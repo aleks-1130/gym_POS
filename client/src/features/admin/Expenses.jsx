@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useCurrency } from '../../context/CurrencyContext';
 import axios from 'axios';
 import DataTable from '../../components/common/DataTable';
@@ -53,11 +53,7 @@ const Expenses = () => {
             });
             fetchExpenses();
         } catch (error) {
-            alert({
-                title: 'Error',
-                message: 'Failed to delete expense. Please try again.',
-                type: 'danger'
-            });
+            showAlert({ title: 'Error', message: 'Failed to delete expense. Please try again.', type: 'danger' });
         }
     };
 
@@ -78,11 +74,7 @@ const Expenses = () => {
             });
             fetchExpenses();
         } catch (error) {
-            alert({
-                title: 'Submission Failed',
-                message: 'Failed to add expense. Please check your inputs.',
-                type: 'danger'
-            });
+            showAlert({ title: 'Submission Failed', message: 'Failed to add expense. Please check your inputs.', type: 'danger' });
         }
     };
 
@@ -393,3 +385,4 @@ const Expenses = () => {
 };
 
 export default Expenses;
+

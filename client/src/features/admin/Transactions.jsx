@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
 import DataTable from '../../components/common/DataTable';
@@ -9,17 +9,28 @@ export default function Transactions() {
     const [loading, setLoading] = useState(true);
     const [currentPage, setCurrentPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
+    const [appliedStartDate, setAppliedStartDate] = useState('');
+    const [appliedEndDate, setAppliedEndDate] = useState('');
     const LIMIT = 15;
 
     useEffect(() => {
-        fetchHistory(currentPage);
-    }, [currentPage]);
+        fetchHistory(currentPage, appliedStartDate, appliedEndDate);
+    }, [currentPage, appliedStartDate, appliedEndDate]);
 
-    const fetchHistory = async (page = 1) => {
+    const fetchHistory = async (page = 1, dateFrom = '', dateTo = '') => {
         setLoading(true);
         try {
             const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-            const res = await axios.get(`/api/payments?page=${page}&limit=${LIMIT}`, {
+            const params = new URLSearchParams({
+                page: String(page),
+                limit: String(LIMIT)
+            });
+            if (dateFrom) params.set('startDate', dateFrom);
+            if (dateTo) params.set('endDate', dateTo);
+
+            const res = await axios.get(`/api/payments?${params.toString()}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             if (res.data.meta) {
@@ -33,6 +44,31 @@ export default function Transactions() {
         } finally {
             setLoading(false);
         }
+    };
+
+    const summary = useMemo(() => {
+        const counts = { completed: 0, voided: 0, returned: 0 };
+        for (const payment of history) {
+            const status = String(payment?.status || 'COMPLETED').toUpperCase();
+            if (status === 'VOIDED') counts.voided += 1;
+            else if (status === 'RETURNED') counts.returned += 1;
+            else counts.completed += 1;
+        }
+        return counts;
+    }, [history]);
+
+    const applyDateFilters = () => {
+        setCurrentPage(1);
+        setAppliedStartDate(startDate);
+        setAppliedEndDate(endDate);
+    };
+
+    const clearDateFilters = () => {
+        setStartDate('');
+        setEndDate('');
+        setAppliedStartDate('');
+        setAppliedEndDate('');
+        setCurrentPage(1);
     };
 
     const renderStatusBadge = (status) => {
@@ -53,12 +89,67 @@ export default function Transactions() {
                     <h1 className="text-2xl font-bold text-white">Transaction History</h1>
                     <p className="text-text-muted text-sm">All POS transactions</p>
                 </div>
-                <button
-                    onClick={fetchHistory}
-                    className="text-text-secondary hover:text-primary flex items-center gap-1 transition-colors"
-                >
-                    <span className="material-icons-round">refresh</span> Refresh
-                </button>
+            </div>
+
+            <div className="bg-surface rounded-2xl border border-white/10 p-4">
+                <div className="grid grid-cols-1 md:grid-cols-[1fr,1fr,auto,auto] gap-3 items-end">
+                    <div>
+                        <label className="block text-xs font-bold uppercase tracking-widest text-text-muted mb-1">Start Date</label>
+                        <input
+                            type="date"
+                            value={startDate}
+                            onChange={(e) => setStartDate(e.target.value)}
+                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold uppercase tracking-widest text-text-muted mb-1">End Date</label>
+                        <input
+                            type="date"
+                            value={endDate}
+                            onChange={(e) => setEndDate(e.target.value)}
+                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                        />
+                    </div>
+                    <button
+                        type="button"
+                        onClick={applyDateFilters}
+                        className="px-4 py-2.5 rounded-xl bg-primary text-white font-bold hover:bg-orange-600 transition-colors"
+                    >
+                        Apply Filters
+                    </button>
+                    <button
+                        type="button"
+                        onClick={clearDateFilters}
+                        className="px-4 py-2.5 rounded-xl border border-white/10 text-white hover:bg-white/10 transition-colors"
+                    >
+                        Clear
+                    </button>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <SummaryCard
+                    label="Completed Transactions"
+                    value={summary.completed}
+                    icon="check_circle"
+                    toneClass="text-emerald-300"
+                    badgeClass="bg-emerald-500/15 border-emerald-500/30 text-emerald-300"
+                />
+                <SummaryCard
+                    label="Voided Transactions"
+                    value={summary.voided}
+                    icon="cancel"
+                    toneClass="text-red-300"
+                    badgeClass="bg-red-500/15 border-red-500/30 text-red-300"
+                />
+                <SummaryCard
+                    label="Returned Transactions"
+                    value={summary.returned}
+                    icon="undo"
+                    toneClass="text-amber-300"
+                    badgeClass="bg-amber-500/15 border-amber-500/30 text-amber-300"
+                />
             </div>
 
             <DataTable
@@ -135,3 +226,15 @@ export default function Transactions() {
         </div>
     );
 }
+
+const SummaryCard = ({ label, value, icon, toneClass, badgeClass }) => (
+    <div className="bg-surface rounded-2xl border border-white/10 p-4 flex items-center justify-between">
+        <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-text-muted">{label}</p>
+            <p className={`text-2xl font-bold mt-1 ${toneClass}`}>{value}</p>
+        </div>
+        <div className={`w-10 h-10 rounded-xl border flex items-center justify-center ${badgeClass}`}>
+            <span className="material-icons-round text-lg">{icon}</span>
+        </div>
+    </div>
+);

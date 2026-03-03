@@ -139,6 +139,10 @@ export default function TrainerProfile() {
                         <span className="material-icons-round text-primary text-xl block mb-1">event</span>
                         <span className="text-xs font-medium text-white block">My Sessions</span>
                     </a>
+                    <a href="/trainer/availability" className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center">
+                        <span className="material-icons-round text-primary text-xl block mb-1">schedule</span>
+                        <span className="text-xs font-medium text-white block">Availability</span>
+                    </a>
                 </div>
             </div>
 

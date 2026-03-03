@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { REWARD_CATEGORIES } from '../../constants/categories';
+import { useConfirm } from '../../context/ConfirmContext';
 
 export default function LoyaltyManager() {
+    const { alert: showAlert, confirm: showConfirm } = useConfirm();
     const [rewards, setRewards] = useState([]);
     const [members, setMembers] = useState([]); // All members (for search)
     const [filteredMembers, setFilteredMembers] = useState([]);
@@ -65,13 +67,23 @@ export default function LoyaltyManager() {
 
     // --- REDEMPTION LOGIC ---
     const handleRedeem = async (reward) => {
-        if (!selectedMember) return alert("Please select a member first.");
-
-        if (selectedMember.points < reward.cost) {
-            return alert(`Insufficient points! ${selectedMember.firstName} needs ${reward.cost - selectedMember.points} more points.`);
+        if (!selectedMember) {
+            await showAlert({ title: 'No Member Selected', message: 'Please select a member first.', type: 'warning' });
+            return;
         }
 
-        if (!window.confirm(`Redeem '${reward.name}' for ${reward.cost} points?`)) return;
+        if (selectedMember.points < reward.cost) {
+            await showAlert({ title: 'Insufficient Points', message: `${selectedMember.firstName} needs ${reward.cost - selectedMember.points} more points.`, type: 'warning' });
+            return;
+        }
+
+        const confirmed = await showConfirm({
+            title: 'Redeem Reward?',
+            message: `Redeem '${reward.name}' for ${reward.cost} points?`,
+            confirmLabel: 'Redeem',
+            type: 'info'
+        });
+        if (!confirmed) return;
 
         try {
             await axios.post(`/api/members/${selectedMember.id}/points`, {
@@ -79,24 +91,24 @@ export default function LoyaltyManager() {
                 type: 'REDEEM'
             });
 
-            // Refresh member data locally
             const updatedMember = { ...selectedMember, points: selectedMember.points - reward.cost };
             setSelectedMember(updatedMember);
-
-            // Update in the big list too so search results stay fresh
             setMembers(prev => prev.map(m => m.id === updatedMember.id ? updatedMember : m));
-            setTotalPoints(prev => prev - reward.cost); // Update stat
+            setTotalPoints(prev => prev - reward.cost);
 
-            alert(`🎉 Successfully redeemed ${reward.name}!`);
+            await showAlert({ title: 'Redeemed!', message: `Successfully redeemed ${reward.name}!`, type: 'success' });
         } catch (e) {
-            alert(e.response?.data?.error || "Redemption failed");
+            await showAlert({ title: 'Redemption Failed', message: e.response?.data?.error || 'Redemption failed', type: 'danger' });
         }
     };
 
-    // --- MANUAL ADJUSTMENT (Friend's Feature Integrated) ---
+    // --- MANUAL ADJUSTMENT ---
     const handleManualAdjust = async (e) => {
         e.preventDefault();
-        if (!selectedMember) return alert("Select a member first!");
+        if (!selectedMember) {
+            await showAlert({ title: 'No Member Selected', message: 'Select a member first!', type: 'warning' });
+            return;
+        }
 
         try {
             await axios.post(`/api/members/${selectedMember.id}/points`, {
@@ -104,7 +116,6 @@ export default function LoyaltyManager() {
                 type: manualAction
             });
 
-            // Refresh Logic
             const impact = manualAction === 'ADD' ? Number(manualPoints) : -Number(manualPoints);
             const updatedMember = { ...selectedMember, points: selectedMember.points + impact };
 
@@ -112,11 +123,11 @@ export default function LoyaltyManager() {
             setMembers(prev => prev.map(m => m.id === updatedMember.id ? updatedMember : m));
             setTotalPoints(prev => prev + impact);
 
-            alert("Points updated successfully!");
+            await showAlert({ title: 'Points Updated', message: 'Points updated successfully!', type: 'success' });
             setShowManualModal(false);
             setManualPoints('');
         } catch (e) {
-            alert(e.response?.data?.error || "Failed updates");
+            await showAlert({ title: 'Update Failed', message: e.response?.data?.error || 'Failed to update points', type: 'danger' });
         }
     };
 
@@ -142,17 +153,18 @@ export default function LoyaltyManager() {
             setRewardFormData({ name: '', cost: '', category: 'MERCHANDISE', description: '', imageUrl: '' });
         } catch (e) {
             console.error(e);
-            alert("Failed to save reward: " + (e.response?.data?.error || e.message));
+            await showAlert({ title: 'Save Failed', message: 'Failed to save reward: ' + (e.response?.data?.error || e.message), type: 'danger' });
         }
     };
 
     const handleDeleteReward = async (id) => {
-        if (!window.confirm("Delete this reward?")) return;
+        const confirmed = await showConfirm({ title: 'Delete Reward?', message: 'Delete this reward? This cannot be undone.', confirmLabel: 'Delete', type: 'danger' });
+        if (!confirmed) return;
         try {
             await axios.delete(`/api/loyalty/rewards/${id}`);
             fetchRewards();
         } catch (e) {
-            alert("Failed to delete reward");
+            await showAlert({ title: 'Delete Failed', message: 'Failed to delete reward', type: 'danger' });
         }
     };
 
@@ -186,7 +198,7 @@ export default function LoyaltyManager() {
                     </div>
 
                     <button
-                        onClick={() => { if (!selectedMember) return alert("Select a member first!"); setShowManualModal(true); }}
+                        onClick={async () => { if (!selectedMember) { await showAlert({ title: 'No Member Selected', message: 'Select a member first!', type: 'warning' }); return; } setShowManualModal(true); }}
                         className="bg-surfaceHighlight hover:bg-white/10 text-white px-5 py-2.5 rounded-2xl font-bold border border-white/10 flex items-center gap-2 transition-all shadow-sm"
                     >
                         <span className="material-icons-round">tune</span>

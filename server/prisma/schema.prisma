@@ -29,6 +29,7 @@ model User {
   payments    Payment[]    @relation("PaymentCashier")
   trainer     Trainer?     @relation("TrainerUser", fields: [trainerId], references: [id])
   expenses    Expense[]    @relation("StaffExpense")
+  stockOrdersCreated StockOrder[] @relation("StockOrderCreator")
 }
 
 model AuditLog {
@@ -232,12 +233,14 @@ model Supplier {
   updatedAt DateTime  @updatedAt
   expenses  Expense[]
   products  Product[]
+  stockOrders StockOrder[]
 }
 
 model Product {
   id               Int               @id @default(autoincrement())
   name             String
   category         String
+  description      String?
   price            Float
   stock            Int               @default(0)
   minStock         Int               @default(5)
@@ -249,8 +252,57 @@ model Product {
   supplyCost       Float             @default(0)
   orderItems       OrderItem[]
   paymentItems     PaymentItem[]
+  stockOrderItems  StockOrderItem[]
   supplier         Supplier?         @relation(fields: [supplierId], references: [id])
   sessionMaterials SessionMaterial[]
+}
+
+model Category {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model StockOrder {
+  id             Int              @id @default(autoincrement())
+  orderNumber    String           @unique
+  supplierId     Int
+  status         String           @default("PENDING")
+  notes          String?
+  createdBy      Int?
+  subtotal       Float            @default(0)
+  totalQuantity  Int              @default(0)
+  totalLineItems Int              @default(0)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  receivedAt     DateTime?
+  cancelledAt    DateTime?
+  supplier       Supplier         @relation(fields: [supplierId], references: [id])
+  creator        User?            @relation("StockOrderCreator", fields: [createdBy], references: [id])
+  items          StockOrderItem[]
+
+  @@index([createdAt])
+  @@index([status])
+  @@index([supplierId])
+}
+
+model StockOrderItem {
+  id           Int        @id @default(autoincrement())
+  stockOrderId Int
+  productId    Int?
+  name         String
+  barcode      String?
+  imageUrl     String?
+  category     String
+  quantity     Int
+  cost         Float
+  stockOrder   StockOrder @relation(fields: [stockOrderId], references: [id])
+  product      Product?   @relation(fields: [productId], references: [id])
+
+  @@index([stockOrderId])
+  @@index([productId])
 }
 
 model Trainer {
@@ -276,9 +328,21 @@ model Trainer {
   classes          Class[]
   classHistory     ClassHistory[]
   trainingSessions TrainingSession[]
-  user             User?             @relation("TrainerUser")
+  user             User?                @relation("TrainerUser")
+  availability     TrainerAvailability?
   expenses         Expense[]
   accessLogs       AccessLog[]
+}
+
+model TrainerAvailability {
+  id        Int      @id @default(autoincrement())
+  trainerId Int      @unique
+  settings  Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  trainer   Trainer  @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+
+  @@index([updatedAt])
 }
 
 model SessionMaterial {
@@ -385,7 +449,17 @@ model PosConfig {
   id            Int      @id @default(autoincrement())
   voidPinHash   String?
   returnPinHash String?
+  discountPresets Json?
   updatedAt     DateTime @updatedAt
+}
+
+model ReceiptSettings {
+  id        Int      @id @default(1)
+  settings  Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("receipt_settings")
 }
 
 model Notification {

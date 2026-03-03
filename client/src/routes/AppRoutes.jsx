@@ -5,7 +5,6 @@ import { ROLES } from '../constants/roles';
 import Sidebar from '../components/Sidebar';
 import BottomNav from '../components/BottomNav';
 import PWAInstallPrompt from '../components/PWAInstallPrompt';
-import FullscreenController from '../components/FullscreenController';
 
 // Auth & Public
 import Landing from '../features/shared/Landing';
@@ -29,7 +28,6 @@ import AuditLogs from '../features/shared/AuditLogs';
 // Admin Pages
 import Analytics from '../features/admin/Analytics';
 import Expenses from '../features/admin/Expenses';
-import Suppliers from '../features/admin/Suppliers';
 import TrainingManager from '../features/admin/TrainingManager';
 import PosSettings from '../features/admin/PosSettings';
 import Transactions from '../features/admin/Transactions';
@@ -44,7 +42,7 @@ import Payroll from '../features/admin/Payroll';
 import Projections from '../features/admin/Projections';
 
 // Staff Pages
-import Inventory from '../features/staff/Inventory';
+import Inventory from '../features/admin/Inventory';
 import Members from '../features/staff/Members';
 import MemberDetail from '../features/staff/MemberDetail';
 import TransactionDetail from '../features/staff/TransactionDetail';
@@ -60,6 +58,7 @@ import TrainerPurchaseHistory from '../features/trainer/TrainerPurchaseHistory';
 import TrainerGymTraffic from '../features/trainer/TrainerGymTraffic';
 import TrainerCommissionHistory from '../features/trainer/TrainerCommissionHistory';
 import TrainerLoyalty from '../features/trainer/TrainerLoyalty';
+import TrainerAvailability from '../features/trainer/TrainerAvailability';
 
 // Member Pages
 import Schedule from '../features/member/Schedule';
@@ -129,7 +128,6 @@ export default function AppRoutes() {
     return (
         <div className="flex-1 w-full bg-background overflow-auto relative">
             <PWAInstallPrompt user={user} />
-            <FullscreenController enabled={Boolean(user)} />
             <Routes>
                 {/* --- PUBLIC ROUTES --- */}
                 <Route path="/" element={<Landing />} />
@@ -179,7 +177,7 @@ export default function AppRoutes() {
                 <Route
                     path="/payments"
                     element={
-                        <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER]}>
+                        <ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER]}>
                             <Payments />
                         </ProtectedRoute>
                     }
@@ -244,6 +242,38 @@ export default function AppRoutes() {
                 />
                 <Route
                     path="/inventory"
+                    element={
+                        <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
+                            <Inventory />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/inventory/products/new"
+                    element={
+                        <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
+                            <Inventory />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/inventory/products/:id/edit"
+                    element={
+                        <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
+                            <Inventory />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/inventory/stock-orders/new"
+                    element={
+                        <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
+                            <Inventory />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/inventory/stock-orders/:id/edit"
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
                             <Inventory />
@@ -349,6 +379,14 @@ export default function AppRoutes() {
                         </ProtectedRoute>
                     }
                 />
+                <Route
+                    path="/trainer/availability"
+                    element={
+                        <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+                            <TrainerAvailability />
+                        </ProtectedRoute>
+                    }
+                />
 
                 {/* Admin / Owner Features */}
                 <Route
@@ -386,7 +424,7 @@ export default function AppRoutes() {
                 <Route
                     path="/settings"
                     element={
-                        <ProtectedRoute allowedRoles={[ROLES.OWNER]}>
+                        <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
                             <Settings />
                         </ProtectedRoute>
                     }
@@ -419,7 +457,7 @@ export default function AppRoutes() {
                     path="/suppliers"
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
-                            <Suppliers />
+                            <Navigate to="/inventory?tab=suppliers" replace />
                         </ProtectedRoute>
                     }
                 />
@@ -468,7 +506,7 @@ export default function AppRoutes() {
                 <Route
                     path="/schedule"
                     element={
-                        <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.MEMBER, ROLES.ADMIN, ROLES.STAFF]}>
+                        <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.MEMBER, ROLES.STAFF]}>
                             <Schedule />
                         </ProtectedRoute>
                     }

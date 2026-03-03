@@ -3,12 +3,14 @@ import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 export default function MemberShop() {
     const { user } = useAuth();
     const isTrainer = user?.role === 'TRAINER';
     const { formatPrice } = useCurrency();
     const navigate = useNavigate();
+    const { alert: showAlert } = useConfirm();
     const [products, setProducts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [cart, setCart] = useState([]);
@@ -158,7 +160,7 @@ export default function MemberShop() {
 
     const handleConfirmCheckout = async () => {
         if (isTrainer && selectedPaymentType !== 'CASH') {
-            alert("Trainer shop currently supports cash checkout only.");
+            await showAlert({ title: 'Cash Only', message: 'Trainer shop currently supports cash checkout only.', type: 'warning' });
             return;
         }
 
@@ -167,12 +169,12 @@ export default function MemberShop() {
         const walletMethods = paymentMethods.filter((m) => ['GCASH', 'MAYA'].includes(String(m.type || '').toUpperCase()));
 
         if (selectedPaymentType === 'CARD' && (!selectedMethodId || !selectedMethod || !cardMethods.some((m) => Number(m.id) === Number(selectedMethodId)))) {
-            alert("Please select a card method");
+            await showAlert({ title: 'Select Card', message: 'Please select a card method', type: 'warning' });
             return;
         }
 
         if (selectedPaymentType === 'E_WALLET' && (!selectedMethodId || !selectedMethod || !walletMethods.some((m) => Number(m.id) === Number(selectedMethodId)))) {
-            alert("Please select an e-wallet method");
+            await showAlert({ title: 'Select Wallet', message: 'Please select an e-wallet method', type: 'warning' });
             return;
         }
 
@@ -194,23 +196,21 @@ export default function MemberShop() {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
-            // Success
             setCart([]);
             saveCart([]);
             setShowPaymentModal(false);
 
             if (selectedPaymentType === 'CASH') {
-                alert("Order Placed! Please proceed to the cash register to complete your payment.");
+                await showAlert({ title: 'Order Placed!', message: 'Please proceed to the cash register to complete your payment.', type: 'info' });
             } else {
-                alert("Payment Successful! Order placed.");
+                await showAlert({ title: 'Payment Successful!', message: 'Order placed successfully.', type: 'success' });
             }
         } catch (error) {
             console.error(error);
-            alert("Checkout Failed: " + (error.response?.data?.error || error.message));
+            await showAlert({ title: 'Checkout Failed', message: error.response?.data?.error || error.message, type: 'danger' });
         } finally {
             setIsCheckingOut(false);
         }
-
     };
 
     if (loading) {

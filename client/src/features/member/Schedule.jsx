@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { withApiBase } from '../../config/api';
+import { useConfirm } from '../../context/ConfirmContext';
 
 export default function Schedule() {
+    const { alert: showAlert, confirm: showConfirm } = useConfirm();
     const [classes, setClasses] = useState([]);
     const [sessionInfo, setSessionInfo] = useState({
         classSessionsRemaining: 0,
@@ -57,21 +59,22 @@ export default function Schedule() {
     const handleBook = async (classId) => {
         try {
             await axios.post(withApiBase('/api/members/book'), { classId });
-            alert('Joined class successfully!');
+            await showAlert({ title: 'Joined!', message: 'Joined class successfully!', type: 'success' });
             fetchClasses();
         } catch (error) {
-            alert(error.response?.data?.error || 'Booking failed');
+            await showAlert({ title: 'Booking Failed', message: error.response?.data?.error || 'Booking failed', type: 'danger' });
         }
     };
 
     const handleCancel = async (classId) => {
-        if (!window.confirm('Cancel this booking?')) return;
+        const confirmed = await showConfirm({ title: 'Leave Class?', message: 'Cancel this booking?', confirmLabel: 'Leave', type: 'danger' });
+        if (!confirmed) return;
         try {
             await axios.post(withApiBase('/api/members/cancel-booking'), { classId });
-            alert('Booking cancelled');
+            await showAlert({ title: 'Cancelled', message: 'Booking cancelled successfully.', type: 'success' });
             fetchClasses();
         } catch (error) {
-            alert(error.response?.data?.error || 'Failed to cancel');
+            await showAlert({ title: 'Cancel Failed', message: error.response?.data?.error || 'Failed to cancel', type: 'danger' });
         }
     };
 
@@ -152,11 +155,10 @@ export default function Schedule() {
                         <button
                             key={f.value}
                             onClick={() => setFilter(f.value)}
-                            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all active:scale-95 ${
-                                filter === f.value
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all active:scale-95 ${filter === f.value
                                     ? 'bg-primary text-background shadow-lg'
                                     : 'bg-surface text-text-muted hover:text-white border border-white/5'
-                            }`}
+                                }`}
                         >
                             <span className="material-icons-round text-base">{f.icon}</span>
                             <span className="hidden sm:inline">{f.label}</span>
@@ -172,11 +174,10 @@ export default function Schedule() {
                         <button
                             key={day.value}
                             onClick={() => setSelectedDay(selectedDay === day.value ? null : day.value)}
-                            className={`w-full h-9 rounded-lg font-bold text-[10px] sm:text-xs transition-all active:scale-95 ${
-                                selectedDay === day.value
+                            className={`w-full h-9 rounded-lg font-bold text-[10px] sm:text-xs transition-all active:scale-95 ${selectedDay === day.value
                                     ? 'bg-primary text-background shadow-lg'
                                     : 'bg-surface text-text-muted hover:text-white border border-white/5'
-                            }`}
+                                }`}
                         >
                             {day.label}
                         </button>
@@ -202,11 +203,10 @@ export default function Schedule() {
                         return (
                             <div
                                 key={cls.id}
-                                className={`bg-surface rounded-xl p-4 border transition-all ${
-                                    cls.isBooked
+                                className={`bg-surface rounded-xl p-4 border transition-all ${cls.isBooked
                                         ? 'border-primary/30 bg-primary/5'
                                         : 'border-white/5 hover:border-white/10'
-                                }`}
+                                    }`}
                             >
                                 <div className="flex gap-4">
                                     <div className="flex-shrink-0 w-16 text-center">
@@ -238,21 +238,19 @@ export default function Schedule() {
                                         <div className="mb-3">
                                             <div className="flex items-center justify-between mb-1.5">
                                                 <span className="text-xs text-text-muted">{cls.enrolled} / {cls.capacity} spots filled</span>
-                                                <span className={`text-xs font-bold ${
-                                                    isFull ? 'text-red-400' :
+                                                <span className={`text-xs font-bold ${isFull ? 'text-red-400' :
                                                         capacityPercent > 75 ? 'text-yellow-400' :
                                                             'text-emerald-400'
-                                                }`}>
+                                                    }`}>
                                                     {isFull ? 'Full' : `${cls.capacity - cls.enrolled} left`}
                                                 </span>
                                             </div>
                                             <div className="w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
                                                 <div
-                                                    className={`h-full transition-all ${
-                                                        isFull ? 'bg-red-500' :
+                                                    className={`h-full transition-all ${isFull ? 'bg-red-500' :
                                                             capacityPercent > 75 ? 'bg-yellow-500' :
                                                                 'bg-emerald-500'
-                                                    }`}
+                                                        }`}
                                                     style={{ width: `${Math.min(capacityPercent, 100)}%` }}
                                                 ></div>
                                             </div>
@@ -270,11 +268,10 @@ export default function Schedule() {
                                             <button
                                                 onClick={() => handleBook(cls.id)}
                                                 disabled={cannotJoin}
-                                                className={`w-full py-2.5 rounded-lg font-bold transition-all text-sm flex items-center justify-center gap-1 ${
-                                                    cannotJoin
+                                                className={`w-full py-2.5 rounded-lg font-bold transition-all text-sm flex items-center justify-center gap-1 ${cannotJoin
                                                         ? 'bg-white/5 text-text-muted cursor-not-allowed border border-white/5'
                                                         : 'bg-primary text-background hover:brightness-110 active:scale-95 shadow-lg'
-                                                }`}
+                                                    }`}
                                             >
                                                 <span className="material-icons-round text-base">
                                                     {isFull ? 'block' : noSessionsLeft ? 'lock' : 'add_circle'}

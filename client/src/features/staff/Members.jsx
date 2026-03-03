@@ -6,7 +6,8 @@ import QRCode from 'react-qr-code';
 import { useCurrency } from '../../context/CurrencyContext';
 import { withApiBase } from '../../config/api';
 import DataTable from '../../components/common/DataTable';
-import Modal from '../../components/common/Modal'; // Import reusable Modal
+import Modal from '../../components/common/Modal';
+import { useConfirm } from '../../context/ConfirmContext';
 
 class ErrorBoundary extends React.Component {
     constructor(props) {
@@ -45,6 +46,7 @@ class ErrorBoundary extends React.Component {
 export default function Members() {
     const navigate = useNavigate();
     const { formatPrice } = useCurrency();
+    const { alert: showAlert } = useConfirm();
     const [members, setMembers] = useState([]);
     const [plans, setPlans] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -151,7 +153,7 @@ export default function Members() {
             }
         } catch (err) {
             console.error("Error accessing camera:", err);
-            alert("Could not access camera. Please ensure permissions are granted.");
+            await showAlert({ title: 'Camera Error', message: 'Could not access camera. Please ensure permissions are granted.', type: 'danger' });
             setIsCameraOpen(false);
         }
     };
@@ -181,7 +183,7 @@ export default function Members() {
 
     const submitRegistration = async (paymentInfo = {}) => {
         if (!formData.agreedToTC) {
-            alert("Member must agree to the Terms and Conditions to proceed.");
+            await showAlert({ title: 'Agreement Required', message: 'Member must agree to the Terms and Conditions to proceed.', type: 'warning' });
             return;
         }
         setSubmitting(true);
@@ -211,7 +213,7 @@ export default function Members() {
             }
         } catch (e) {
             console.error(e);
-            alert(e.response?.data?.error || "Failed to register member. Check connection and required fields.");
+            await showAlert({ title: 'Registration Failed', message: e.response?.data?.error || 'Failed to register member. Check connection and required fields.', type: 'danger' });
         } finally {
             setSubmitting(false);
         }
@@ -220,7 +222,7 @@ export default function Members() {
     const handleRegister = (e) => {
         e.preventDefault();
         if (!formData.agreedToTC) {
-            alert("Member must agree to the Terms and Conditions to proceed.");
+            showAlert({ title: 'Agreement Required', message: 'Member must agree to the Terms and Conditions to proceed.', type: 'warning' });
             return;
         }
         if (formData.paymentMethod === 'CASH' || formData.paymentMethod === 'GCASH') {
@@ -245,7 +247,7 @@ export default function Members() {
             setMemberToDelete(null);
         } catch (e) {
             console.error("Failed to delete member", e);
-            alert("Failed to delete member. Please try again.");
+            await showAlert({ title: 'Delete Failed', message: 'Failed to delete member. Please try again.', type: 'danger' });
         } finally {
             setIsDeleting(false);
         }

@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
+import { useConfirm } from '../../context/ConfirmContext';
 
 export default function UserManagement() {
     const { user: currentUser } = useAuth();
+    const { alert: showAlert, confirm: showConfirm } = useConfirm();
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -23,32 +25,41 @@ export default function UserManagement() {
     };
 
     const handleRoleChange = async (targetId, newRole, currentRole) => {
-        if (!window.confirm(`Are you sure you want to change role from ${currentRole} to ${newRole}?`)) return;
+        const confirmed = await showConfirm({
+            title: 'Change Role?',
+            message: `Change role from ${currentRole} to ${newRole}?`,
+            confirmLabel: 'Confirm',
+            type: 'info'
+        });
+        if (!confirmed) return;
 
         try {
             await axios.post('/api/owner/role-change', {
                 targetUserId: targetId,
                 newRole
             });
-            alert("Role updated successfully");
+            await showAlert({ title: 'Role Updated', message: 'Role updated successfully.', type: 'success' });
             fetchUsers();
         } catch (error) {
-            alert(error.response?.data?.error || "Failed to update role");
+            await showAlert({ title: 'Update Failed', message: error.response?.data?.error || 'Failed to update role', type: 'danger' });
         }
     };
 
     const handleTransferOwnership = async (newOwnerId) => {
-        const confirmText = prompt("Type 'TRANSFER' to confirm absolute ownership transfer. You will be demoted.");
-        if (confirmText !== 'TRANSFER') return;
+        const confirmed = await showConfirm({
+            title: '⚠️ Transfer Ownership?',
+            message: 'This will permanently transfer ownership to this user. You will be demoted to Admin. This action cannot be undone.',
+            confirmLabel: 'Transfer Ownership',
+            type: 'danger'
+        });
+        if (!confirmed) return;
 
         try {
-            await axios.post('/api/owner/transfer-ownership', {
-                newOwnerId
-            });
-            alert("Ownership transferred. Logging you out.");
-            window.location.reload(); // Force re-login
+            await axios.post('/api/owner/transfer-ownership', { newOwnerId });
+            await showAlert({ title: 'Ownership Transferred', message: 'Ownership transferred. You will be logged out.', type: 'success' });
+            window.location.reload();
         } catch (error) {
-            alert(error.response?.data?.error || "Transfer failed");
+            await showAlert({ title: 'Transfer Failed', message: error.response?.data?.error || 'Transfer failed', type: 'danger' });
         }
     };
 

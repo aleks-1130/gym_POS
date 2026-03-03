@@ -1,3 +1,4 @@
+﻿import { useConfirm } from '../../context/ConfirmContext';
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -21,6 +22,7 @@ export default function Trainers() {
     const { user } = useAuth();
     const isAdmin = user?.role === ROLES.ADMIN;
     const queryClient = useQueryClient();
+    const { alert: showAlert, confirm: showConfirm } = useConfirm();
 
     // -- State --
     const [selectedTrainer, setSelectedTrainer] = useState(null);
@@ -98,7 +100,7 @@ export default function Trainers() {
             setShowForm(false);
         },
         onError: (error) => {
-            alert(error?.response?.data?.error || 'Failed to create trainer.');
+            showAlert({ title: 'Create Failed', message: error?.response?.data?.error || 'Failed to create trainer.', type: 'danger' });
         }
     });
 
@@ -111,7 +113,7 @@ export default function Trainers() {
             setShowForm(false);
         },
         onError: (error) => {
-            alert(error?.response?.data?.error || 'Failed to update trainer.');
+            showAlert({ title: 'Update Failed', message: error?.response?.data?.error || 'Failed to update trainer.', type: 'danger' });
         }
     });
 
@@ -123,7 +125,7 @@ export default function Trainers() {
             queryClient.invalidateQueries(['trainers']);
         },
         onError: (error) => {
-            alert(error?.response?.data?.error || 'Failed to delete trainer.');
+            showAlert({ title: 'Delete Failed', message: error?.response?.data?.error || 'Failed to delete trainer.', type: 'danger' });
         }
     });
 
@@ -134,10 +136,10 @@ export default function Trainers() {
         onSuccess: () => {
             queryClient.invalidateQueries(['trainer-change-requests']);
             setResolveModalSession(null);
-            alert('Trainer change request resolved.');
+            showAlert({ title: 'Resolved', message: 'Trainer change request resolved.', type: 'success' });
         },
         onError: (error) => {
-            alert(error?.response?.data?.error || 'Failed to resolve request.');
+            showAlert({ title: 'Resolve Failed', message: error?.response?.data?.error || 'Failed to resolve request.', type: 'danger' });
         }
     });
 
@@ -148,10 +150,10 @@ export default function Trainers() {
         onSuccess: () => {
             setShowLoginModal(false);
             setLoginTrainer(null);
-            alert('Trainer login created successfully.');
+            showAlert({ title: 'Login Created', message: 'Trainer login created successfully.', type: 'success' });
         },
         onError: (error) => {
-            alert(error?.response?.data?.error || 'Failed to create trainer login.');
+            showAlert({ title: 'Login Failed', message: error?.response?.data?.error || 'Failed to create trainer login.', type: 'danger' });
         }
     });
 
@@ -252,12 +254,12 @@ export default function Trainers() {
         setFormData((prev) => ({ ...prev, [field]: value }));
     };
 
-    const handleSaveTrainer = (e) => {
+    const handleSaveTrainer = async (e) => {
         e.preventDefault();
-        if (!formData.name.trim()) return alert('Trainer name is required.');
+        if (!formData.name.trim()) { await showAlert({ title: 'Validation', message: 'Trainer name is required.', type: 'warning' }); return; }
         if (formMode === 'create' && formData.createLogin) {
             if (!formData.email) {
-                return alert('Trainer email is required to create trainer access.');
+                await showAlert({ title: 'Validation', message: 'Trainer email is required to create trainer access.', type: 'warning' }); return;
             }
         }
 
@@ -278,8 +280,8 @@ export default function Trainers() {
         }
     };
 
-    const handleDeleteTrainer = (trainer) => {
-        if (confirm(`Delete trainer ${trainer.name}?`)) {
+    const handleDeleteTrainer = async (trainer) => {
+        if (await showConfirm({ title: "Delete Trainer?", message: `Delete trainer ${trainer.name}?`, confirmLabel: "Delete", type: "danger" })) {
             deleteTrainerMutation.mutate(trainer.id);
         }
     };
@@ -289,11 +291,11 @@ export default function Trainers() {
         setShowLoginModal(true);
     };
 
-    const handleCreateLogin = (e) => {
+    const handleCreateLogin = async (e) => {
         e.preventDefault();
         if (!loginTrainer) return;
         if (!loginTrainer.email) {
-            return alert('Trainer does not have an email address set. Please edit the trainer first.');
+            await showAlert({ title: 'No Email', message: 'Trainer does not have an email address set. Please edit the trainer first.', type: 'warning' }); return;
         }
         createLoginMutation.mutate({
             id: loginTrainer.id,
@@ -301,12 +303,12 @@ export default function Trainers() {
         });
     };
 
-    const handleSubmitResolution = () => {
+    const handleSubmitResolution = async () => {
         if (!resolveModalSession) return;
         const payload = { action: resolveForm.action, note: resolveForm.note };
         if (payload.action === 'MOVE') {
             if (!resolveForm.date || !resolveForm.time) {
-                return alert('Date and time are required for MOVE action.');
+                await showAlert({ title: 'Validation', message: 'Date and time are required for MOVE action.', type: 'warning' }); return;
             }
             payload.date = resolveForm.date;
             payload.time = resolveForm.time;
@@ -1260,3 +1262,6 @@ export default function Trainers() {
         </div>
     );
 }
+
+
+

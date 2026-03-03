@@ -46,44 +46,39 @@ export const usePOSStore = create((set, get) => ({
 
     // Cart Actions
     addToCart: (item, type = 'PRODUCT') => {
-        set((state) => {
-            const existing = state.cart.find(p => p.id === item.id && p.type === type);
+        const state = get();
+        const existing = state.cart.find(p => p.id === item.id && p.type === type);
 
-            // Stock Check for Products
-            if (type === 'PRODUCT') {
-                const currentQty = existing ? existing.quantity : 0;
-                if (item.stock !== undefined && (currentQty + 1) > item.stock) {
-                    alert(`Not enough stock! Only ${item.stock} left.`);
-                    return { cart: state.cart };
-                }
+        // Stock Check for Products
+        if (type === 'PRODUCT') {
+            const currentQty = existing ? existing.quantity : 0;
+            if (item.stock !== undefined && (currentQty + 1) > item.stock) {
+                return { success: false, error: `Not enough stock! Only ${item.stock} left.` };
             }
+        }
 
-            if (existing) {
-                // Prevent duplicate trainers or membership plans if not allowed
-                if (type === 'TRAINING' || type === 'PLAN') {
-                    alert(`This ${type.toLowerCase()} is already in your cart.`);
-                    return { cart: state.cart };
-                }
-
-                return {
-                    cart: state.cart.map(p =>
-                        (p.id === item.id && p.type === type)
-                            ? { ...p, quantity: p.quantity + 1 }
-                            : p
-                    )
-                };
+        if (existing) {
+            if (type === 'TRAINING' || type === 'PLAN') {
+                return { success: false, error: `This ${type.toLowerCase()} is already in your cart.` };
             }
+            set({
+                cart: state.cart.map(p =>
+                    (p.id === item.id && p.type === type)
+                        ? { ...p, quantity: p.quantity + 1 }
+                        : p
+                )
+            });
+            return { success: true };
+        }
 
-            // Default new item structure
-            const newItem = {
-                ...item,
-                type,
-                quantity: 1,
-                cartLineId: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-            };
-
-            return { cart: [...state.cart, newItem] };
-        });
+        const newItem = {
+            ...item,
+            type,
+            quantity: 1,
+            cartLineId: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        };
+        set({ cart: [...state.cart, newItem] });
+        return { success: true };
     },
 
     removeFromCart: (cartLineId) => {
@@ -93,17 +88,16 @@ export const usePOSStore = create((set, get) => ({
     },
 
     updateQuantity: (cartLineId, quantity, stockLimit) => {
-        if (quantity < 1) return;
+        if (quantity < 1) return { success: false, error: null };
         if (stockLimit && quantity > stockLimit) {
-            alert(`Cannot exceed available stock (${stockLimit})`);
-            return;
+            return { success: false, error: `Cannot exceed available stock (${stockLimit})` };
         }
-
         set((state) => ({
             cart: state.cart.map(item =>
                 item.cartLineId === cartLineId ? { ...item, quantity } : item
             )
         }));
+        return { success: true };
     },
 
     clearCart: () => set({ cart: [], discount: 0, selectedMemberId: '' }),
