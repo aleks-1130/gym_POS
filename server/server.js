@@ -28,6 +28,10 @@ app.get('/', (req, res) => {
     res.send('Gym POS API is running...');
 });
 
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString(), message: 'Gym POS API is healthy' });
+});
+
 // --- MODULE ROUTES ---
 // --- MODULE ROUTES ---
 app.use('/api/auth', require('./src/features/auth/authRoutes'));
