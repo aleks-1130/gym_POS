@@ -25,6 +25,8 @@ model User {
   status      String       @default("ACTIVE")
   activationToken String?  @unique
   activationExpires DateTime?
+  resetPasswordToken  String?   @unique
+  resetPasswordExpires DateTime?
   memberNotes MemberNote[]
   payments    Payment[]    @relation("PaymentCashier")
   trainer     Trainer?     @relation("TrainerUser", fields: [trainerId], references: [id])
@@ -75,6 +77,8 @@ model Member {
   trainingSessions       TrainingSession[]
   activationToken        String?            @unique
   activationExpires      DateTime?
+  resetPasswordToken     String?            @unique
+  resetPasswordExpires   DateTime?
 
   @@index([status])
   @@index([createdAt])

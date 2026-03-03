@@ -7,6 +7,8 @@ const { authenticateToken, authorize } = require('../../middleware/authMiddlewar
 router.post('/login', authController.login);
 router.post('/member-setup', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), authController.setupMemberPassword);
 router.post('/activate', authController.activateAccount);
+router.post('/forgot-password', authController.forgotPassword);
+router.post('/reset-password', authController.resetPassword);
 router.get('/verify-token', authController.verifyToken);
 router.get('/me', authenticateToken, authController.getMe);
 
