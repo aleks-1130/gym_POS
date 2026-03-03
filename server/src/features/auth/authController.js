@@ -208,10 +208,132 @@ const activateAccount = async (req, res) => {
     }
 };
 
+const crypto = require('crypto');
+const { sendPasswordResetEmail } = require('../../services/emailService');
+
+const forgotPassword = async (req, res) => {
+    const { email } = req.body;
+    if (!email) {
+        return res.status(400).json({ error: "Email is required" });
+    }
+
+    const normalizedEmail = String(email).trim().toLowerCase();
+
+    try {
+        // Find in User or Member
+        let account = await prisma.user.findFirst({ where: { email: { equals: normalizedEmail, mode: 'insensitive' } } });
+        let isMember = false;
+
+        if (!account) {
+            account = await prisma.member.findFirst({ where: { email: { equals: normalizedEmail, mode: 'insensitive' } } });
+            isMember = true;
+        }
+
+        // We return a generic message even if not found to prevent email enumeration
+        if (!account) {
+            console.log(`[ForgotPassword] Request for unknown email: ${normalizedEmail}`);
+            return res.json({ message: "If an account with that email exists, a password reset link has been sent." });
+        }
+
+        // Generate a secure raw token and a hash
+        const rawToken = crypto.randomBytes(32).toString('hex');
+        const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+        const expiration = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+        // Save hash to DB
+        if (isMember) {
+            await prisma.member.update({
+                where: { id: account.id },
+                data: { resetPasswordToken: hashedToken, resetPasswordExpires: expiration }
+            });
+        } else {
+            await prisma.user.update({
+                where: { id: account.id },
+                data: { resetPasswordToken: hashedToken, resetPasswordExpires: expiration }
+            });
+        }
+
+        // Send email with the RAW token
+        const fullName = isMember ? `${account.firstName} ${account.lastName}` : account.name;
+        await sendPasswordResetEmail(account.email, fullName, rawToken);
+
+        res.json({ message: "If an account with that email exists, a password reset link has been sent." });
+    } catch (e) {
+        console.error("[ForgotPassword] Error:", e.message);
+        res.status(500).json({ error: "Failed to process password reset request." });
+    }
+};
+
+const resetPassword = async (req, res) => {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword) {
+        return res.status(400).json({ error: "Token and new password are required" });
+    }
+
+    try {
+        // Hash the incoming token to look it up in the database
+        const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+        let account = await prisma.user.findFirst({ where: { resetPasswordToken: hashedToken } });
+        let isMember = false;
+
+        if (!account) {
+            account = await prisma.member.findFirst({ where: { resetPasswordToken: hashedToken } });
+            isMember = true;
+        }
+
+        if (!account) {
+            return res.status(400).json({ error: "Invalid or expired password reset token" });
+        }
+
+        if (account.resetPasswordExpires && new Date() > new Date(account.resetPasswordExpires)) {
+            return res.status(400).json({ error: "Password reset token has expired" });
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+        if (isMember) {
+            await prisma.member.update({
+                where: { id: account.id },
+                data: {
+                    password: hashedPassword,
+                    resetPasswordToken: null,
+                    resetPasswordExpires: null
+                }
+            });
+        } else {
+            await prisma.user.update({
+                where: { id: account.id },
+                data: {
+                    password: hashedPassword,
+                    resetPasswordToken: null,
+                    resetPasswordExpires: null
+                }
+            });
+        }
+
+        // Sync to Neon Auth
+        try {
+            const fullName = isMember ? `${account.firstName} ${account.lastName}` : account.name;
+            await syncToNeonAuth(fullName, account.email, newPassword);
+        } catch (syncErr) {
+            console.error("Neon Auth Sync Warning:", syncErr.message);
+        }
+
+        res.json({ message: "Password has been successfully reset. You can now log in." });
+    } catch (e) {
+        console.error("[ResetPassword] Error:", e.message);
+        res.status(500).json({ error: "Failed to reset password." });
+    }
+};
+
+
 module.exports = {
     login,
     setupMemberPassword,
     getMe,
     verifyToken,
-    activateAccount
+    activateAccount,
+    forgotPassword,
+    resetPassword
 };

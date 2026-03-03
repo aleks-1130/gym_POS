@@ -11,6 +11,8 @@ import Landing from '../features/shared/Landing';
 import Signup from '../features/auth/Signup';
 import Login from '../features/auth/Login';
 import ActivateAccount from '../features/auth/ActivateAccount';
+import ForgotPassword from '../features/auth/ForgotPassword';
+import ResetPassword from '../features/auth/ResetPassword';
 
 // Shared
 import Dashboard from '../features/shared/Dashboard';
@@ -135,6 +137,8 @@ export default function AppRoutes() {
                 <Route path="/signup" element={<Signup />} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/activate" element={<ActivateAccount />} />
+                <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
 
 
                 {/* --- PROTECTED ROUTES --- */}
