@@ -3,8 +3,13 @@ const { isTimeAllowedForTrainer } = require('../../services/trainerAvailabilityS
 const { sendActivationEmail } = require('../../services/emailService');
 const crypto = require('crypto');
 const { PAYMENT_METHODS } = require('../../config/businessConfig');
+const {
+    resolveClassSessionStart,
+    getDayBounds
+} = require('../training/classScheduleUtils');
 
 const FINALIZED_SESSION_STATUSES = ['CANCELLED', 'COMPLETED', 'NO_SHOW', 'DECLINED'];
+const ACTIVE_CLASS_BOOKING_STATUSES = ['CONFIRMED', 'ATTENDED'];
 
 const toLocalIsoDate = (value) => {
     const d = new Date(value);
@@ -14,6 +19,8 @@ const toLocalIsoDate = (value) => {
     const day = String(d.getDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
 };
+
+const toSessionKey = (classId, sessionDate) => `${Number(classId)}|${new Date(sessionDate).getTime()}`;
 
 const createPaymentCompat = async (tx, data) => {
     const paymentData = { ...data };
@@ -253,17 +260,23 @@ const deleteMember = async (req, res) => {
 const getAvailableClasses = async (req, res) => {
     try {
         const memberId = Number(req.user.id);
-        const [member, classes] = await Promise.all([
+        const now = new Date();
+        const [member, classes, memberBookings] = await Promise.all([
             prisma.member.findUnique({
                 where: { id: memberId },
                 include: { plan: true }
             }),
             prisma.class.findMany({
-                include: {
-                    trainer: true,
-                    bookings: {
-                        where: { memberId }
-                    }
+                include: { trainer: true }
+            }),
+            prisma.booking.findMany({
+                where: {
+                    memberId,
+                    status: { in: ACTIVE_CLASS_BOOKING_STATUSES }
+                },
+                select: {
+                    classId: true,
+                    sessionDate: true
                 }
             })
         ]);
@@ -285,10 +298,45 @@ const getAvailableClasses = async (req, res) => {
             });
         }
         const canBookClasses = classSessionsRemaining > 0;
-        const classesWithBooking = classes.map(c => ({
-            ...c,
-            isBooked: c.bookings.length > 0
+
+        const bookKeySet = new Set(
+            memberBookings
+                .filter((booking) => booking.sessionDate)
+                .map((booking) => toSessionKey(booking.classId, booking.sessionDate))
+        );
+        const legacyBookedClassIds = new Set(
+            memberBookings
+                .filter((booking) => !booking.sessionDate)
+                .map((booking) => Number(booking.classId))
+        );
+
+        const classRows = await Promise.all(classes.map(async (cls) => {
+            const sessionDate = resolveClassSessionStart(cls, {
+                now,
+                preferToday: false,
+                includePastOneTime: false
+            });
+            if (!sessionDate) return null;
+
+            const enrolled = await prisma.booking.count({
+                where: {
+                    classId: cls.id,
+                    sessionDate,
+                    status: { in: ACTIVE_CLASS_BOOKING_STATUSES }
+                }
+            });
+
+            return {
+                ...cls,
+                sessionDate,
+                enrolled,
+                isBooked: bookKeySet.has(toSessionKey(cls.id, sessionDate)) || legacyBookedClassIds.has(Number(cls.id))
+            };
         }));
+
+        const classesWithBooking = classRows
+            .filter(Boolean)
+            .sort((a, b) => new Date(a.sessionDate).getTime() - new Date(b.sessionDate).getTime());
 
         res.json({
             sessionInfo: {
@@ -308,7 +356,7 @@ const getAvailableClasses = async (req, res) => {
 
 // Book a Class
 const bookClass = async (req, res) => {
-    const { classId } = req.body;
+    const { classId, sessionDate: requestedSessionDate } = req.body;
     const memberId = Number(req.user.id);
 
     // Safety check: Ensure user is a member
@@ -321,6 +369,7 @@ const bookClass = async (req, res) => {
         }
 
         const bookingResult = await prisma.$transaction(async (tx) => {
+            const now = new Date();
             const [member, cls] = await Promise.all([
                 tx.member.findUnique({ where: { id: memberId } }),
                 tx.class.findUnique({ where: { id: parsedClassId } })
@@ -332,29 +381,72 @@ const bookClass = async (req, res) => {
             if (!cls) {
                 return { error: "Class not found", status: 404 };
             }
+
+            const resolvedSessionDate = resolveClassSessionStart(cls, {
+                now,
+                requestedSessionDate,
+                preferToday: false,
+                includePastOneTime: false
+            });
+            if (!resolvedSessionDate) {
+                return { error: "No available session date for this class", status: 400 };
+            }
+            const sessionBounds = getDayBounds(resolvedSessionDate);
+            if (!sessionBounds) {
+                return { error: "Invalid class session date", status: 400 };
+            }
+
+            const alreadyCompleted = await tx.classHistory.findFirst({
+                where: {
+                    classId: parsedClassId,
+                    date: { gte: sessionBounds.start, lt: sessionBounds.end }
+                }
+            });
+            if (alreadyCompleted) {
+                return { error: "This class session is already completed", status: 400 };
+            }
+
             if (Number(member.classSessionsRemaining || 0) <= 0) {
                 return {
                     error: "No class sessions remaining. Please purchase a class session package.",
                     status: 400
                 };
             }
-            if (cls.enrolled >= cls.capacity) {
+
+            const enrolled = await tx.booking.count({
+                where: {
+                    classId: parsedClassId,
+                    sessionDate: resolvedSessionDate,
+                    status: { in: ACTIVE_CLASS_BOOKING_STATUSES }
+                }
+            });
+
+            if (enrolled >= cls.capacity) {
                 return { error: "Class is full", status: 400 };
             }
 
             const existing = await tx.booking.findFirst({
-                where: { memberId, classId: parsedClassId, status: 'CONFIRMED' }
+                where: {
+                    memberId,
+                    classId: parsedClassId,
+                    status: { in: ACTIVE_CLASS_BOOKING_STATUSES },
+                    OR: [
+                        { sessionDate: resolvedSessionDate },
+                        { sessionDate: null }
+                    ]
+                }
             });
             if (existing) {
                 return { error: "Already booked", status: 400 };
             }
 
             await tx.booking.create({
-                data: { memberId, classId: parsedClassId, status: 'CONFIRMED' }
-            });
-            await tx.class.update({
-                where: { id: parsedClassId },
-                data: { enrolled: { increment: 1 } }
+                data: {
+                    memberId,
+                    classId: parsedClassId,
+                    sessionDate: resolvedSessionDate,
+                    status: 'CONFIRMED'
+                }
             });
             await tx.member.update({
                 where: { id: memberId },
@@ -379,7 +471,7 @@ const bookClass = async (req, res) => {
 
 // Cancel Booking
 const cancelBooking = async (req, res) => {
-    const { classId } = req.body;
+    const { classId, sessionDate: requestedSessionDate } = req.body;
     const memberId = Number(req.user.id);
 
     try {
@@ -389,8 +481,36 @@ const cancelBooking = async (req, res) => {
         }
 
         const cancelResult = await prisma.$transaction(async (tx) => {
+            const cls = await tx.class.findUnique({ where: { id: parsedClassId } });
+            if (!cls) {
+                return { error: "Class not found", status: 404 };
+            }
+
+            const resolvedSessionDate = requestedSessionDate
+                ? resolveClassSessionStart(cls, {
+                    now: new Date(),
+                    requestedSessionDate,
+                    includePastOneTime: true
+                })
+                : null;
+            if (requestedSessionDate && !resolvedSessionDate) {
+                return { error: "Invalid session date for this class", status: 400 };
+            }
+
             const booking = await tx.booking.findFirst({
-                where: { memberId, classId: parsedClassId, status: 'CONFIRMED' }
+                where: resolvedSessionDate
+                    ? {
+                        memberId,
+                        classId: parsedClassId,
+                        status: { in: ACTIVE_CLASS_BOOKING_STATUSES },
+                        sessionDate: resolvedSessionDate
+                    }
+                    : {
+                        memberId,
+                        classId: parsedClassId,
+                        status: { in: ACTIVE_CLASS_BOOKING_STATUSES }
+                    },
+                orderBy: { sessionDate: 'asc' }
             });
 
             if (!booking) {
@@ -398,17 +518,6 @@ const cancelBooking = async (req, res) => {
             }
 
             await tx.booking.delete({ where: { id: booking.id } });
-            await tx.class.update({
-                where: { id: parsedClassId },
-                data: { enrolled: { decrement: 1 } }
-            });
-            await tx.member.update({
-                where: { id: memberId },
-                data: {
-                    classSessionsRemaining: { increment: 1 },
-                    classSessionsUsed: { decrement: 1 }
-                }
-            });
 
             return { success: true };
         });
@@ -417,7 +526,7 @@ const cancelBooking = async (req, res) => {
             return res.status(cancelResult.status || 400).json({ error: cancelResult.error || "Cancellation failed" });
         }
 
-        res.json({ message: "Booking cancelled" });
+        res.json({ message: "Booking cancelled. Session remains consumed." });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

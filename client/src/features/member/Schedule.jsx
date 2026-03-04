@@ -3,8 +3,58 @@ import axios from 'axios';
 import { withApiBase } from '../../config/api';
 import { useConfirm } from '../../context/ConfirmContext';
 
+const parseTimeToMinutes = (timeValue) => {
+    const raw = String(timeValue || '').trim().toUpperCase();
+    if (!raw) return null;
+
+    const hhmm24 = raw.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+    if (hhmm24) return (Number(hhmm24[1]) * 60) + Number(hhmm24[2]);
+
+    const hhmm12 = raw.match(/^(0?\d|1[0-2]):([0-5]\d)\s*(AM|PM)$/);
+    if (!hhmm12) return null;
+
+    let hours = Number(hhmm12[1]) % 12;
+    const minutes = Number(hhmm12[2]);
+    if (hhmm12[3] === 'PM') hours += 12;
+    return (hours * 60) + minutes;
+};
+
+const minutesTo12Hour = (minutes) => {
+    const normalized = ((Number(minutes) % 1440) + 1440) % 1440;
+    const hour24 = Math.floor(normalized / 60);
+    const minute = normalized % 60;
+    const suffix = hour24 >= 12 ? 'PM' : 'AM';
+    const hour12 = ((hour24 + 11) % 12) + 1;
+    return `${hour12}:${String(minute).padStart(2, '0')} ${suffix}`;
+};
+
+const getClassTimeRange = (time, duration) => {
+    const startMinutes = parseTimeToMinutes(time);
+    const durationMinutes = Number(duration);
+    if (startMinutes === null || !Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+        return {
+            start: String(time || 'TBA'),
+            end: '',
+            label: String(time || 'TBA')
+        };
+    }
+    const endMinutes = startMinutes + durationMinutes;
+    return {
+        start: minutesTo12Hour(startMinutes),
+        end: minutesTo12Hour(endMinutes),
+        label: `${minutesTo12Hour(startMinutes)} - ${minutesTo12Hour(endMinutes)}`
+    };
+};
+
+const formatDateLabel = (value) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'short', day: 'numeric' }).format(date);
+};
+
 export default function Schedule() {
     const { alert: showAlert, confirm: showConfirm } = useConfirm();
+    const sessionPolicyNote = 'Joining a class consumes 1 session. If you leave later, that session is still consumed and not refunded.';
     const [classes, setClasses] = useState([]);
     const [sessionInfo, setSessionInfo] = useState({
         classSessionsRemaining: 0,
@@ -56,9 +106,16 @@ export default function Schedule() {
         };
     }, [fetchClasses]);
 
-    const handleBook = async (classId) => {
+    const handleBook = async (classId, sessionDate) => {
+        const confirmed = await showConfirm({
+            title: 'Session Policy',
+            message: `${sessionPolicyNote} Continue joining this class?`,
+            confirmLabel: 'Join Class'
+        });
+        if (!confirmed) return;
+
         try {
-            await axios.post(withApiBase('/api/members/book'), { classId });
+            await axios.post(withApiBase('/api/members/book'), { classId, sessionDate });
             await showAlert({ title: 'Joined!', message: 'Joined class successfully!', type: 'success' });
             fetchClasses();
         } catch (error) {
@@ -66,12 +123,26 @@ export default function Schedule() {
         }
     };
 
-    const handleCancel = async (classId) => {
-        const confirmed = await showConfirm({ title: 'Leave Class?', message: 'Cancel this booking?', confirmLabel: 'Leave', type: 'danger' });
-        if (!confirmed) return;
+    const handleCancel = async (classId, sessionDate) => {
+        const policyConfirmed = await showConfirm({
+            title: 'Leave Class?',
+            message: 'Leaving this class will NOT refund your session. Your session remains consumed.',
+            confirmLabel: 'I Understand',
+            type: 'danger'
+        });
+        if (!policyConfirmed) return;
+
+        const finalConfirmed = await showConfirm({
+            title: 'Final Confirmation',
+            message: 'Are you sure you want to leave this class?',
+            confirmLabel: 'Leave Anyway',
+            type: 'danger'
+        });
+        if (!finalConfirmed) return;
+
         try {
-            await axios.post(withApiBase('/api/members/cancel-booking'), { classId });
-            await showAlert({ title: 'Cancelled', message: 'Booking cancelled successfully.', type: 'success' });
+            await axios.post(withApiBase('/api/members/cancel-booking'), { classId, sessionDate });
+            await showAlert({ title: 'Left Class', message: 'You left the class. Your session is still counted as used.', type: 'success' });
             fetchClasses();
         } catch (error) {
             await showAlert({ title: 'Cancel Failed', message: error.response?.data?.error || 'Failed to cancel', type: 'danger' });
@@ -124,7 +195,13 @@ export default function Schedule() {
         <div className="pb-20 px-4 max-w-5xl mx-auto">
             <div className="pt-4 pb-3">
                 <h1 className="text-xl font-bold text-white">Gym Class Schedule</h1>
-                <p className="text-text-muted text-xs mt-0.5">Join class sessions</p>
+                <p className="text-text-muted text-xs mt-0.5">Join class sessions (session consumed on join, no refund on leave)</p>
+            </div>
+
+            <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
+                <p className="text-[11px] sm:text-xs text-amber-200 leading-relaxed">
+                    <span className="font-bold">Important:</span> {sessionPolicyNote}
+                </p>
             </div>
 
             <div className="mb-4 bg-surface border border-white/10 rounded-xl p-4">
@@ -199,6 +276,8 @@ export default function Schedule() {
                         const capacityPercent = (cls.enrolled / cls.capacity) * 100;
                         const noSessionsLeft = sessionInfo.classSessionsRemaining <= 0;
                         const cannotJoin = isFull || noSessionsLeft;
+                        const classTime = getClassTimeRange(cls.time, cls.duration);
+                        const scheduleType = String(cls.scheduleType || 'RECURRING').toUpperCase();
 
                         return (
                             <div
@@ -211,11 +290,11 @@ export default function Schedule() {
                                 <div className="flex gap-4">
                                     <div className="flex-shrink-0 w-16 text-center">
                                         <div className="bg-white/5 rounded-lg p-2 border border-white/5">
-                                            <div className="text-primary font-bold text-lg leading-none mb-1">
-                                                {cls.time?.split(':')[0] || '00'}
+                                            <div className="text-primary font-bold text-[11px] leading-tight mb-1">
+                                                {classTime.start}
                                             </div>
-                                            <div className="text-text-muted text-xs font-medium">
-                                                {cls.time?.includes('AM') || cls.time?.includes('PM') ? cls.time.slice(-2) : 'MIN'}
+                                            <div className="text-text-muted text-[10px] font-medium">
+                                                {classTime.end ? `to ${classTime.end}` : `${cls.duration} min`}
                                             </div>
                                         </div>
                                         {cls.isBooked && (
@@ -231,7 +310,10 @@ export default function Schedule() {
                                             <div className="flex items-center gap-3 text-xs text-text-muted flex-wrap">
                                                 <span className="flex items-center gap-1"><span className="material-icons-round text-sm">person</span>{cls.trainer?.name || 'TBA'}</span>
                                                 <span className="flex items-center gap-1"><span className="material-icons-round text-sm">calendar_today</span>{cls.dayOfWeek}</span>
-                                                <span className="flex items-center gap-1"><span className="material-icons-round text-sm">schedule</span>{cls.duration}min</span>
+                                                <span className="flex items-center gap-1"><span className="material-icons-round text-sm">schedule</span>{classTime.label}</span>
+                                                {scheduleType === 'ONE_TIME' && (
+                                                    <span className="flex items-center gap-1"><span className="material-icons-round text-sm">event</span>{formatDateLabel(cls.oneTimeDate || cls.sessionDate)}</span>
+                                                )}
                                             </div>
                                         </div>
 
@@ -258,15 +340,15 @@ export default function Schedule() {
 
                                         {cls.isBooked ? (
                                             <button
-                                                onClick={() => handleCancel(cls.id)}
+                                                onClick={() => handleCancel(cls.id, cls.sessionDate)}
                                                 className="w-full py-2.5 rounded-lg bg-red-500/10 text-red-400 font-bold hover:bg-red-500/20 active:scale-95 transition-all text-sm border border-red-500/20 flex items-center justify-center gap-1"
                                             >
                                                 <span className="material-icons-round text-base">cancel</span>
-                                                Leave Class
+                                                Leave Class (Session Stays Used)
                                             </button>
                                         ) : (
                                             <button
-                                                onClick={() => handleBook(cls.id)}
+                                                onClick={() => handleBook(cls.id, cls.sessionDate)}
                                                 disabled={cannotJoin}
                                                 className={`w-full py-2.5 rounded-lg font-bold transition-all text-sm flex items-center justify-center gap-1 ${cannotJoin
                                                         ? 'bg-white/5 text-text-muted cursor-not-allowed border border-white/5'

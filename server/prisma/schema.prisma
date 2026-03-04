@@ -367,6 +367,8 @@ model Class {
   id        Int       @id @default(autoincrement())
   name      String
   trainerId Int
+  scheduleType String @default("RECURRING")
+  oneTimeDate DateTime?
   dayOfWeek String
   time      String
   duration  Int
@@ -400,10 +402,14 @@ model Booking {
   id        Int      @id @default(autoincrement())
   memberId  Int
   classId   Int
+  sessionDate DateTime?
   status    String   @default("CONFIRMED")
   createdAt DateTime @default(now())
   class     Class    @relation(fields: [classId], references: [id])
   member    Member   @relation(fields: [memberId], references: [id])
+
+  @@index([classId, sessionDate])
+  @@index([memberId, sessionDate])
 }
 
 model Order {
