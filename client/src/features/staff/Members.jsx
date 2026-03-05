@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useReactToPrint } from 'react-to-print';
@@ -15,7 +15,7 @@ class ErrorBoundary extends React.Component {
         this.state = { hasError: false, error: null, errorInfo: null };
     }
 
-    static getDerivedStateFromError(error) {
+    static getDerivedStateFromError() {
         return { hasError: true };
     }
 
@@ -58,6 +58,7 @@ export default function Members() {
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
+    const [totalMembers, setTotalMembers] = useState(0);
     const LIMIT = 12; // Items per page
 
     // Standard State
@@ -114,7 +115,9 @@ export default function Members() {
         try {
             const res = await axios.get(withApiBase('/api/plans'));
             setPlans(res.data);
-        } catch (e) { console.error("Failed to fetch plans"); }
+        } catch {
+            console.error("Failed to fetch plans");
+        }
     };
 
     const fetchData = async (page = 1, search = '') => {
@@ -125,9 +128,11 @@ export default function Members() {
             if (res.data.meta) {
                 setMembers(res.data.data);
                 setTotalPages(res.data.meta.totalPages);
+                setTotalMembers(Number(res.data.meta.total || res.data.data?.length || 0));
             } else {
                 // Fallback for non-paginated API (shouldn't happen with updated backend)
                 setMembers(res.data);
+                setTotalMembers(Array.isArray(res.data) ? res.data.length : 0);
             }
         } catch (e) {
             console.error("Failed to fetch members", e);
@@ -260,7 +265,20 @@ export default function Members() {
     };
 
     // Server-side filtered members are directly in 'members' state
-    const filteredMembers = Array.isArray(members) ? members : [];
+    const filteredMembers = useMemo(() => (Array.isArray(members) ? members : []), [members]);
+    const getStatusLabel = (status) => String(status || 'UNKNOWN').replace(/_/g, ' ');
+    const memberStats = useMemo(() => {
+        const active = filteredMembers.filter((member) => String(member?.status || '').toUpperCase() === 'ACTIVE').length;
+        const freezed = filteredMembers.filter((member) => String(member?.status || '').toUpperCase() === 'FREEZED').length;
+        const expired = filteredMembers.filter((member) => String(member?.status || '').toUpperCase() === 'EXPIRED').length;
+        const total = Number(totalMembers || filteredMembers.length || 0);
+        return [
+            { label: 'Total Members', value: total, icon: 'groups', tone: 'text-primary' },
+            { label: 'Active', value: active, icon: 'verified', tone: 'text-emerald-400' },
+            { label: 'On Freeze', value: freezed, icon: 'pause_circle', tone: 'text-blue-400' },
+            { label: 'Expired', value: expired, icon: 'event_busy', tone: 'text-red-400' }
+        ];
+    }, [filteredMembers, totalMembers]);
 
     const selectedPlan = plans.find(plan => plan.id === Number(formData.planId));
     const getMemberPlan = (member) => member?.plan || plans.find(plan => plan.id === Number(member?.planId));
@@ -282,49 +300,56 @@ export default function Members() {
 
     return (
         <ErrorBoundary>
-            <div className="space-y-6">
-                <header className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-                    <div>
-                        <h1 className="text-3xl font-bold text-white">Members</h1>
-                        <p className="text-text-muted mt-1">Manage memberships and access</p>
+            <div className="space-y-4">
+                <header className="space-y-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                            <h1 className="text-3xl font-bold text-white">Members</h1>
+                            <p className="mt-1 text-sm text-text-muted">Manage profiles, membership status, and gym access records.</p>
+                        </div>
+                        <button
+                            onClick={() => setIsModalOpen(true)}
+                            className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/20 transition-colors hover:bg-orange-600"
+                        >
+                            <span className="material-icons-round text-base">person_add</span>
+                            New Member
+                        </button>
                     </div>
-                    <div className="flex flex-wrap gap-4 items-center">
-                        <div className="relative">
+
+                    <div className="grid gap-3 rounded-2xl border border-white/10 bg-surface px-4 py-3 lg:grid-cols-[minmax(0,1fr),auto,auto] lg:items-center">
+                        <label className="relative block">
+                            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 material-icons-round text-[18px] text-text-muted">search</span>
                             <input
                                 type="text"
-                                placeholder="Search members..."
-                                className="bg-surfaceHighlight border border-white/10 pl-10 pr-4 py-2 rounded-xl text-sm focus:ring-primary focus:border-primary outline-none w-64 text-white shadow-sm transition-all"
+                                placeholder="Search by name, email, phone"
+                                className="w-full rounded-xl border border-white/10 bg-surfaceHighlight py-2.5 pl-10 pr-4 text-sm text-white outline-none transition-colors focus:border-primary"
                                 value={searchTerm}
-                                onChange={e => setSearchTerm(e.target.value)}
+                                onChange={(e) => setSearchTerm(e.target.value)}
                             />
-                            <span className="material-icons-round absolute left-3 top-2.5 text-text-muted text-[18px]">search</span>
-                        </div>
+                        </label>
 
-                        {/* View Toggles */}
-                        <div className="bg-surfaceHighlight border border-white/10 rounded-xl p-1 flex">
+                        <div className="inline-flex rounded-xl border border-white/10 bg-surfaceHighlight p-1">
                             <button
                                 onClick={() => setViewMode('list')}
-                                className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white/10 text-white shadow-sm' : 'text-text-muted hover:text-white'}`}
+                                className={`inline-flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-semibold transition-all ${viewMode === 'list' ? 'bg-primary text-background' : 'text-text-muted hover:text-white'}`}
                                 title="List View"
                             >
-                                <span className="material-icons-round text-lg">format_list_bulleted</span>
+                                <span className="material-icons-round text-sm">format_list_bulleted</span>
+                                List
                             </button>
                             <button
                                 onClick={() => setViewMode('grid')}
-                                className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white/10 text-white shadow-sm' : 'text-text-muted hover:text-white'}`}
+                                className={`inline-flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-semibold transition-all ${viewMode === 'grid' ? 'bg-primary text-background' : 'text-text-muted hover:text-white'}`}
                                 title="Grid View"
                             >
-                                <span className="material-icons-round text-lg">grid_view</span>
+                                <span className="material-icons-round text-sm">grid_view</span>
+                                Grid
                             </button>
                         </div>
 
-                        <button
-                            onClick={() => setIsModalOpen(true)}
-                            className="bg-primary hover:bg-orange-600 text-white font-bold py-2 px-4 rounded-xl shadow-lg shadow-primary/20 flex items-center gap-2 transition-colors"
-                        >
-                            <span className="material-icons-round">person_add</span>
-                            New Member
-                        </button>
+                        <div className="rounded-xl border border-white/10 bg-surfaceHighlight px-3 py-2 text-xs text-text-secondary">
+                            Showing <span className="font-bold text-white">{filteredMembers.length}</span> of <span className="font-bold text-white">{totalMembers || filteredMembers.length}</span>
+                        </div>
                     </div>
                 </header>
 
@@ -335,23 +360,31 @@ export default function Members() {
                     </div>
                 )}
 
-                {/* Pagination Controls - Top */}
-                <div className="flex items-center justify-between bg-surface border border-white/5 px-4 py-2 rounded-xl">
-                    <span className="text-text-muted text-sm">
-                        Page <span className="text-white font-bold">{currentPage}</span> of {totalPages}
-                    </span>
-                    <div className="flex gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-surface px-3 py-2.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                        {memberStats.map((stat) => (
+                            <span key={stat.label} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-surfaceHighlight px-2.5 py-1 text-[11px] text-text-secondary">
+                                <span className={`material-icons-round text-sm ${stat.tone}`}>{stat.icon}</span>
+                                <span className="text-text-muted">{stat.label}:</span>
+                                <span className="font-bold text-white">{stat.value}</span>
+                            </span>
+                        ))}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm text-text-muted">
+                            Page <span className="font-bold text-white">{currentPage}</span> / <span className="font-bold text-white">{Math.max(totalPages, 1)}</span>
+                        </span>
                         <button
                             onClick={() => handlePageChange(currentPage - 1)}
                             disabled={currentPage === 1}
-                            className="p-1 px-3 rounded-lg border border-white/10 text-white hover:bg-white/10 disabled:opacity-50 disabled:hover:bg-transparent transition-all"
+                            className="rounded-lg border border-white/10 px-3 py-1.5 text-sm text-white transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                             Prev
                         </button>
                         <button
                             onClick={() => handlePageChange(currentPage + 1)}
                             disabled={currentPage === totalPages}
-                            className="p-1 px-3 rounded-lg border border-white/10 text-white hover:bg-white/10 disabled:opacity-50 disabled:hover:bg-transparent transition-all"
+                            className="rounded-lg border border-white/10 px-3 py-1.5 text-sm text-white transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                             Next
                         </button>
@@ -360,9 +393,8 @@ export default function Members() {
 
                 {/* Content Area */}
                 {viewMode === 'list' ? (
-                    // LIST VIEW
-                    // LIST VIEW
                     <DataTable
+                        className="rounded-2xl border border-white/10"
                         columns={[
                             {
                                 header: 'Member',
@@ -390,7 +422,7 @@ export default function Members() {
                                 header: 'Status',
                                 accessor: (member) => (
                                     <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(member.status)}`}>
-                                        {member.status}
+                                        {getStatusLabel(member.status)}
                                     </span>
                                 )
                             },
@@ -430,21 +462,29 @@ export default function Members() {
                     />
                 ) : (
                     // GRID VIEW
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fade-in">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 animate-fade-in">
                         {filteredMembers.map(member => (
                             <div
                                 key={member.id}
                                 onClick={() => navigate(`/members/${member.id}`)}
-                                className="bg-surface rounded-3xl border border-white/5 p-6 shadow-sm hover:shadow-xl hover:border-primary/30 transition-all cursor-pointer group flex flex-col gap-4"
+                                className="rounded-xl border border-white/10 bg-surface p-4 transition-all cursor-pointer group flex flex-col gap-3 hover:border-primary/30 hover:bg-surfaceHighlight/40"
                             >
                                 <div className="flex justify-between items-start">
-                                    {member.imageUrl ? (
-                                        <img src={member.imageUrl} className="w-12 h-12 rounded-2xl object-cover border border-primary/20" alt="" />
-                                    ) : (
-                                        <div className="w-12 h-12 bg-gradient-to-br from-primary/20 to-primary/5 text-primary rounded-2xl flex items-center justify-center font-bold text-lg border border-primary/20 shadow-inner">
-                                            {member.firstName[0]}{member.lastName[0]}
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        {member.imageUrl ? (
+                                            <img src={member.imageUrl} className="w-11 h-11 rounded-lg object-cover border border-primary/20" alt="" />
+                                        ) : (
+                                            <div className="w-11 h-11 bg-gradient-to-br from-primary/20 to-primary/5 text-primary rounded-lg flex items-center justify-center font-bold text-base border border-primary/20 shadow-inner">
+                                                {member.firstName[0]}{member.lastName[0]}
+                                            </div>
+                                        )}
+                                        <div className="min-w-0">
+                                            <h3 className="text-base font-bold text-white group-hover:text-primary transition-colors truncate">
+                                                {member.firstName} {member.lastName}
+                                            </h3>
+                                            <p className="text-xs text-text-muted truncate">{member.email}</p>
                                         </div>
-                                    )}
+                                    </div>
                                     <div className="flex items-center gap-2">
                                         <button
                                             type="button"
@@ -465,21 +505,18 @@ export default function Members() {
                                         >
                                             <span className="material-icons-round text-[16px]">delete</span>
                                         </button>
-                                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium border ${getStatusColor(member.status)}`}>
-                                            {member.status}
+                                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-medium border ${getStatusColor(member.status)}`}>
+                                            {getStatusLabel(member.status)}
                                         </span>
                                     </div>
                                 </div>
 
-                                <div>
-                                    <h3 className="text-lg font-bold text-white group-hover:text-primary transition-colors truncate">
-                                        {member.firstName} {member.lastName}
-                                    </h3>
-                                    <p className="text-sm text-text-muted truncate">{member.email}</p>
-                                    <p className="text-xs text-text-secondary mt-1">{member.phone}</p>
+                                <div className="flex items-center justify-between text-sm">
+                                    <p className="text-text-muted">Phone</p>
+                                    <p className="text-white font-medium">{member.phone || 'N/A'}</p>
                                 </div>
 
-                                <div className="mt-auto pt-4 border-t border-white/5 grid grid-cols-2 gap-2 text-sm">
+                                <div className="mt-auto pt-3 border-t border-white/5 grid grid-cols-2 gap-3 text-sm">
                                     <div>
                                         <p className="text-text-muted text-xs">Plan</p>
                                         <p className="text-white font-medium truncate">{getMemberPlan(member)?.name || "None"}</p>

@@ -175,7 +175,7 @@ const getClassParticipants = async (req, res) => {
 };
 
 const createClass = async (req, res) => {
-    const { name, trainerId, time, duration, startTime, endTime, capacity, basePay } = req.body;
+    const { name, trainerId, time, duration, startTime, endTime, capacity, basePay, imageUrl } = req.body;
     const resolvedTrainerId = req.user.role === 'TRAINER' ? Number(req.user.trainerId) : Number(trainerId);
     if (!resolvedTrainerId) return res.status(400).json({ error: 'Trainer is required' });
 
@@ -196,7 +196,8 @@ const createClass = async (req, res) => {
                 time: schedule.time,
                 duration: Number(schedule.duration),
                 capacity: Number(capacity),
-                basePay: basePay !== undefined && basePay !== '' ? Number(basePay) : 0
+                basePay: basePay !== undefined && basePay !== '' ? Number(basePay) : 0,
+                imageUrl: imageUrl !== undefined && String(imageUrl).trim() !== '' ? String(imageUrl).trim() : null
             }
         });
         res.json(gymClass);
@@ -207,7 +208,7 @@ const createClass = async (req, res) => {
 
 const updateClass = async (req, res) => {
     const classId = Number(req.params.id);
-    const { name, trainerId, time, duration, startTime, endTime, capacity, basePay } = req.body;
+    const { name, trainerId, time, duration, startTime, endTime, capacity, basePay, imageUrl } = req.body;
     try {
         const existing = await prisma.class.findUnique({ where: { id: classId } });
         if (!existing) {
@@ -250,6 +251,9 @@ const updateClass = async (req, res) => {
         const resolvedTrainerId = req.user.role === 'TRAINER'
             ? Number(req.user.trainerId)
             : (trainerId !== undefined && trainerId !== '' ? Number(trainerId) : undefined);
+        const normalizedImageUrl = imageUrl !== undefined
+            ? (String(imageUrl).trim() ? String(imageUrl).trim() : null)
+            : undefined;
 
         const gymClass = await prisma.class.update({
             where: { id: classId },
@@ -261,7 +265,8 @@ const updateClass = async (req, res) => {
                 ...schedulePatch,
                 capacity: capacity !== undefined && capacity !== '' ? Number(capacity) : undefined,
                 trainerId: resolvedTrainerId,
-                basePay: basePay !== undefined && basePay !== '' ? Number(basePay) : undefined
+                basePay: basePay !== undefined && basePay !== '' ? Number(basePay) : undefined,
+                ...(imageUrl !== undefined ? { imageUrl: normalizedImageUrl } : {})
             }
         });
         res.json(gymClass);
@@ -282,6 +287,7 @@ const deleteClass = async (req, res) => {
 
         await prisma.$transaction(async (tx) => {
             await tx.booking.deleteMany({ where: { classId } });
+            await tx.classHistory.deleteMany({ where: { classId } });
             await tx.class.delete({ where: { id: classId } });
         });
         res.json({ success: true });
