@@ -115,7 +115,7 @@ const getAllTrainers = async (req, res) => {
         }
         res.json(hydrated);
     } catch (e) {
-        res.status(500).json({ error: "Failed to fetch trainers" });
+        res.status(500).json({ error: "Failed to fetch trainers", detail: e?.message });
     }
 };
 
