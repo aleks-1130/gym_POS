@@ -1,77 +1,201 @@
 const prisma = require('../../config/prisma');
+const {
+    normalizeScheduleType,
+    parseTimeToMinutes,
+    minutesTo12Hour,
+    parseOneTimeDate,
+    resolveClassSessionStart,
+    resolveCompletionWindow,
+    getDayBounds
+} = require('./classScheduleUtils');
+
+const ACTIVE_BOOKING_STATUSES = ['CONFIRMED', 'ATTENDED'];
+
+const resolveScheduleFromPayload = ({ time, duration, startTime, endTime }) => {
+    const startTimeProvided = startTime !== undefined && startTime !== null && String(startTime).trim() !== '';
+    const endTimeProvided = endTime !== undefined && endTime !== null && String(endTime).trim() !== '';
+
+    if (startTimeProvided || endTimeProvided) {
+        if (!startTimeProvided || !endTimeProvided) {
+            return { error: 'Both start time and end time are required.' };
+        }
+
+        const startMinutes = parseTimeToMinutes(startTime);
+        const endMinutes = parseTimeToMinutes(endTime);
+        if (startMinutes === null || endMinutes === null) {
+            return { error: 'Invalid start/end time format.' };
+        }
+        if (endMinutes <= startMinutes) {
+            return { error: 'End time must be later than start time.' };
+        }
+
+        return {
+            time: minutesTo12Hour(startMinutes),
+            duration: endMinutes - startMinutes
+        };
+    }
+
+    const parsedStart = parseTimeToMinutes(time);
+    const parsedDuration = Number(duration);
+    if (parsedStart === null) return { error: 'Invalid class start time.' };
+    if (!Number.isFinite(parsedDuration) || parsedDuration <= 0) return { error: 'Invalid class duration.' };
+
+    return {
+        time: minutesTo12Hour(parsedStart),
+        duration: parsedDuration
+    };
+};
+
+const resolveClassMetaFromPayload = ({ payload, existing }) => {
+    const scheduleType = normalizeScheduleType(payload?.scheduleType ?? existing?.scheduleType);
+    const dayOfWeekInput = payload?.dayOfWeek !== undefined ? payload.dayOfWeek : existing?.dayOfWeek;
+
+    if (scheduleType === 'ONE_TIME') {
+        const oneTimeDateRaw = payload?.oneTimeDate !== undefined ? payload.oneTimeDate : existing?.oneTimeDate;
+        const parsedOneTimeDate = parseOneTimeDate(oneTimeDateRaw);
+        if (!parsedOneTimeDate) {
+            return { error: 'One-time class date is required.' };
+        }
+
+        return {
+            scheduleType,
+            oneTimeDate: parsedOneTimeDate,
+            dayOfWeek: new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(parsedOneTimeDate)
+        };
+    }
+
+    if (!String(dayOfWeekInput || '').trim()) {
+        return { error: 'Class day is required for recurring classes.' };
+    }
+
+    return {
+        scheduleType,
+        oneTimeDate: null,
+        dayOfWeek: String(dayOfWeekInput).trim()
+    };
+};
 
 const getAllClasses = async (req, res) => {
     const where = req.user.role === 'TRAINER' ? { trainerId: Number(req.user.trainerId) } : {};
+    const now = new Date();
+
     try {
         const classes = await prisma.class.findMany({
             where,
-            include: {
-                trainer: true,
-                bookings: {
-                    include: { member: true }
-                }
-            },
+            include: { trainer: true },
             orderBy: { dayOfWeek: 'asc' }
         });
 
-        // Check today's completion status for each class
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-        const todayEnd = new Date();
-        todayEnd.setHours(23, 59, 59, 999);
-
-        const todayCompletions = await prisma.classHistory.findMany({
-            where: {
-                date: { gte: todayStart, lte: todayEnd }
-            },
-            select: { classId: true, attendeeCount: true, commissionAmount: true }
-        });
+        const todayBounds = getDayBounds(now);
+        const todayCompletions = todayBounds
+            ? await prisma.classHistory.findMany({
+                where: {
+                    date: { gte: todayBounds.start, lt: todayBounds.end }
+                },
+                select: { classId: true, attendeeCount: true, commissionAmount: true }
+            })
+            : [];
 
         const completionMap = {};
-        todayCompletions.forEach(c => { completionMap[c.classId] = c; });
+        todayCompletions.forEach((entry) => {
+            completionMap[entry.classId] = entry;
+        });
 
-        const enriched = classes.map(cls => ({
-            ...cls,
-            completedToday: !!completionMap[cls.id],
-            todayCompletion: completionMap[cls.id] || null
+        const enriched = await Promise.all(classes.map(async (cls) => {
+            const sessionDate = resolveClassSessionStart(cls, {
+                now,
+                preferToday: req.user.role === 'TRAINER',
+                includePastOneTime: req.user.role !== 'MEMBER'
+            });
+
+            const sessionBookings = sessionDate
+                ? await prisma.booking.findMany({
+                    where: {
+                        classId: cls.id,
+                        sessionDate: sessionDate
+                    },
+                    include: { member: true },
+                    orderBy: { createdAt: 'desc' }
+                })
+                : [];
+
+            const enrolled = sessionBookings.filter((booking) => ACTIVE_BOOKING_STATUSES.includes(String(booking.status || '').toUpperCase())).length;
+
+            return {
+                ...cls,
+                sessionDate,
+                enrolled,
+                bookings: sessionBookings,
+                completedToday: !!completionMap[cls.id],
+                todayCompletion: completionMap[cls.id] || null
+            };
         }));
 
         res.json(enriched);
     } catch (e) {
-        res.status(500).json({ error: "Failed to fetch classes" });
+        res.status(500).json({ error: 'Failed to fetch classes', detail: e?.message });
     }
 };
 
 const getClassParticipants = async (req, res) => {
     try {
-        if (req.user.role === 'TRAINER') {
-            const cls = await prisma.class.findUnique({ where: { id: Number(req.params.id) } });
-            if (!cls || cls.trainerId !== Number(req.user.trainerId)) {
-                return res.status(403).json({ error: "Access denied" });
-            }
+        const classId = Number(req.params.id);
+        const cls = await prisma.class.findUnique({ where: { id: classId } });
+        if (!cls) return res.status(404).json({ error: 'Class not found' });
+
+        if (req.user.role === 'TRAINER' && cls.trainerId !== Number(req.user.trainerId)) {
+            return res.status(403).json({ error: 'Access denied' });
         }
+
+        const requestedSessionDate = req.query?.sessionDate;
+        const resolvedSessionDate = resolveClassSessionStart(cls, {
+            now: new Date(),
+            requestedSessionDate,
+            preferToday: req.user.role === 'TRAINER',
+            includePastOneTime: true
+        });
+
+        if (!resolvedSessionDate) {
+            return res.json([]);
+        }
+
         const participants = await prisma.booking.findMany({
-            where: { classId: Number(req.params.id) },
+            where: {
+                classId,
+                sessionDate: resolvedSessionDate
+            },
             include: { member: true },
             orderBy: { createdAt: 'desc' }
         });
+
         res.json(participants);
     } catch (e) {
-        res.status(500).json({ error: "Failed to fetch participants" });
+        res.status(500).json({ error: 'Failed to fetch participants', detail: e?.message });
     }
 };
 
 const createClass = async (req, res) => {
-    const { name, trainerId, dayOfWeek, time, duration, capacity, basePay } = req.body;
+    const { name, trainerId, time, duration, startTime, endTime, capacity, basePay } = req.body;
     const resolvedTrainerId = req.user.role === 'TRAINER' ? Number(req.user.trainerId) : Number(trainerId);
-    if (!resolvedTrainerId) return res.status(400).json({ error: "Trainer is required" });
+    if (!resolvedTrainerId) return res.status(400).json({ error: 'Trainer is required' });
+
     try {
+        const scheduleMeta = resolveClassMetaFromPayload({ payload: req.body });
+        if (scheduleMeta.error) return res.status(400).json({ error: scheduleMeta.error });
+
+        const schedule = resolveScheduleFromPayload({ time, duration, startTime, endTime });
+        if (schedule.error) return res.status(400).json({ error: schedule.error });
+
         const gymClass = await prisma.class.create({
             data: {
-                name, dayOfWeek, time,
-                duration: Number(duration),
-                capacity: Number(capacity),
+                name,
                 trainerId: resolvedTrainerId,
+                scheduleType: scheduleMeta.scheduleType,
+                oneTimeDate: scheduleMeta.oneTimeDate,
+                dayOfWeek: scheduleMeta.dayOfWeek,
+                time: schedule.time,
+                duration: Number(schedule.duration),
+                capacity: Number(capacity),
                 basePay: basePay !== undefined && basePay !== '' ? Number(basePay) : 0
             }
         });
@@ -83,14 +207,46 @@ const createClass = async (req, res) => {
 
 const updateClass = async (req, res) => {
     const classId = Number(req.params.id);
-    const { name, trainerId, dayOfWeek, time, duration, capacity, basePay } = req.body;
+    const { name, trainerId, time, duration, startTime, endTime, capacity, basePay } = req.body;
     try {
-        if (req.user.role === 'TRAINER') {
-            const existing = await prisma.class.findUnique({ where: { id: classId } });
-            if (!existing || existing.trainerId !== Number(req.user.trainerId)) {
-                return res.status(403).json({ error: "Access denied" });
-            }
+        const existing = await prisma.class.findUnique({ where: { id: classId } });
+        if (!existing) {
+            return res.status(404).json({ error: 'Class not found' });
         }
+
+        if (req.user.role === 'TRAINER' && existing.trainerId !== Number(req.user.trainerId)) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        const scheduleMeta = resolveClassMetaFromPayload({ payload: req.body, existing });
+        if (scheduleMeta.error) return res.status(400).json({ error: scheduleMeta.error });
+
+        const scheduleFieldsProvided = (
+            time !== undefined ||
+            duration !== undefined ||
+            startTime !== undefined ||
+            endTime !== undefined
+        );
+
+        let schedulePatch = {};
+        if (scheduleFieldsProvided) {
+            const fallbackTime = time !== undefined && time !== '' ? time : existing.time;
+            const fallbackDuration = duration !== undefined && duration !== '' ? duration : existing.duration;
+            const normalizedSchedule = resolveScheduleFromPayload({
+                time: fallbackTime,
+                duration: fallbackDuration,
+                startTime,
+                endTime
+            });
+            if (normalizedSchedule.error) {
+                return res.status(400).json({ error: normalizedSchedule.error });
+            }
+            schedulePatch = {
+                time: normalizedSchedule.time,
+                duration: Number(normalizedSchedule.duration)
+            };
+        }
+
         const resolvedTrainerId = req.user.role === 'TRAINER'
             ? Number(req.user.trainerId)
             : (trainerId !== undefined && trainerId !== '' ? Number(trainerId) : undefined);
@@ -99,9 +255,10 @@ const updateClass = async (req, res) => {
             where: { id: classId },
             data: {
                 name,
-                dayOfWeek,
-                time,
-                duration: duration !== undefined && duration !== '' ? Number(duration) : undefined,
+                scheduleType: scheduleMeta.scheduleType,
+                oneTimeDate: scheduleMeta.oneTimeDate,
+                dayOfWeek: scheduleMeta.dayOfWeek,
+                ...schedulePatch,
                 capacity: capacity !== undefined && capacity !== '' ? Number(capacity) : undefined,
                 trainerId: resolvedTrainerId,
                 basePay: basePay !== undefined && basePay !== '' ? Number(basePay) : undefined
@@ -109,7 +266,7 @@ const updateClass = async (req, res) => {
         });
         res.json(gymClass);
     } catch (e) {
-        res.status(500).json({ error: "Failed to update class", detail: e?.message });
+        res.status(500).json({ error: 'Failed to update class', detail: e?.message });
     }
 };
 
@@ -119,39 +276,40 @@ const deleteClass = async (req, res) => {
         if (req.user.role === 'TRAINER') {
             const existing = await prisma.class.findUnique({ where: { id: classId } });
             if (!existing || existing.trainerId !== Number(req.user.trainerId)) {
-                return res.status(403).json({ error: "Access denied" });
+                return res.status(403).json({ error: 'Access denied' });
             }
         }
+
         await prisma.$transaction(async (tx) => {
             await tx.booking.deleteMany({ where: { classId } });
             await tx.class.delete({ where: { id: classId } });
         });
         res.json({ success: true });
     } catch (e) {
-        res.status(500).json({ error: "Failed to delete class", detail: e?.message });
+        res.status(500).json({ error: 'Failed to delete class', detail: e?.message });
     }
 };
 
 const updateAttendeeStatus = async (req, res) => {
     try {
         const trainerId = req.user.trainerId;
-        if (!trainerId) return res.status(400).json({ error: "Trainer account is not linked" });
+        if (!trainerId) return res.status(400).json({ error: 'Trainer account is not linked' });
         const classId = Number(req.params.classId);
         const bookingId = Number(req.params.bookingId);
         const { status } = req.body;
         const allowed = ['CONFIRMED', 'ATTENDED', 'CANCELLED'];
         if (!allowed.includes(String(status).toUpperCase())) {
-            return res.status(400).json({ error: "Invalid status" });
+            return res.status(400).json({ error: 'Invalid status' });
         }
 
         const cls = await prisma.class.findUnique({ where: { id: classId } });
         if (!cls || cls.trainerId !== Number(trainerId)) {
-            return res.status(403).json({ error: "Access denied" });
+            return res.status(403).json({ error: 'Access denied' });
         }
 
         const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
         if (!booking || booking.classId !== classId) {
-            return res.status(404).json({ error: "Booking not found" });
+            return res.status(404).json({ error: 'Booking not found' });
         }
 
         const updated = await prisma.booking.update({
@@ -160,12 +318,13 @@ const updateAttendeeStatus = async (req, res) => {
         });
         res.json(updated);
     } catch (e) {
-        res.status(500).json({ error: "Failed to update attendee status", detail: e?.message });
+        res.status(500).json({ error: 'Failed to update attendee status', detail: e?.message });
     }
 };
 
 const completeClass = async (req, res) => {
     const classId = Number(req.params.id);
+    const requestedSessionDate = req.body?.sessionDate;
 
     try {
         const cls = await prisma.class.findUnique({
@@ -173,61 +332,68 @@ const completeClass = async (req, res) => {
             include: { trainer: true }
         });
 
-        if (!cls) return res.status(404).json({ error: "Class not found" });
+        if (!cls) return res.status(404).json({ error: 'Class not found' });
 
-        // Use the logged-in trainer's ID if they are a trainer, otherwise use the class's assigned trainer
         const trainerId = req.user.trainerId ? Number(req.user.trainerId) : cls.trainerId;
-        if (!trainerId) return res.status(400).json({ error: "No trainer assigned to this class" });
+        if (!trainerId) return res.status(400).json({ error: 'No trainer assigned to this class' });
+        if (req.user.role === 'TRAINER' && Number(cls.trainerId) !== Number(req.user.trainerId)) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
 
-        // Prevent duplicate completion on the same day
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-        const todayEnd = new Date();
-        todayEnd.setHours(23, 59, 59, 999);
+        const sessionDate = resolveClassSessionStart(cls, {
+            now: new Date(),
+            requestedSessionDate,
+            preferToday: true,
+            includePastOneTime: true
+        });
+        if (!sessionDate) {
+            return res.status(400).json({ error: 'No valid class session found to complete.' });
+        }
+
+        const completionWindow = resolveCompletionWindow(cls, sessionDate, new Date());
+        if (!completionWindow.allowed) {
+            return res.status(400).json({ error: completionWindow.error });
+        }
+
+        const sessionBounds = getDayBounds(sessionDate);
+        if (!sessionBounds) {
+            return res.status(400).json({ error: 'Invalid session date' });
+        }
 
         const existingCompletion = await prisma.classHistory.findFirst({
             where: {
                 classId,
-                date: { gte: todayStart, lte: todayEnd }
+                date: { gte: sessionBounds.start, lt: sessionBounds.end }
             }
         });
 
         if (existingCompletion) {
-            return res.status(400).json({ error: "This class has already been completed for today" });
+            return res.status(400).json({ error: 'This class has already been completed for this session date' });
         }
 
-        // 1. Calculate Attendance from Active Bookings
-        // In a real scenario, we might want a separate "Attendance" input, but for MVP, verify active bookings.
         const attendees = await prisma.booking.count({
             where: {
-                classId: classId,
-                status: { in: ['CONFIRMED', 'ATTENDED'] } // Count confirmed or attended
+                classId,
+                sessionDate,
+                status: { in: ACTIVE_BOOKING_STATUSES }
             }
         });
 
-        // 2. Use the class's own basePay as the commission amount
-        const commissionAmount = cls.basePay ?? 0;
-
-        // 3. Create History Record
         const history = await prisma.classHistory.create({
             data: {
                 classId,
                 trainerId: Number(trainerId),
-                date: new Date(),
+                date: sessionDate,
                 attendeeCount: attendees,
-                commissionAmount: commissionAmount,
+                commissionAmount: cls.basePay ?? 0,
                 commissionPaid: false
             }
         });
 
-        // 4. Optionally mark bookings as "ATTENDED"?
-        // await prisma.booking.updateMany({ ... });
-
-        res.json(history);
-
+        res.json({ ...history, sessionDate });
     } catch (e) {
-        console.error("Complete Class Error:", e);
-        res.status(500).json({ error: "Failed to complete class" });
+        console.error('Complete Class Error:', e);
+        res.status(500).json({ error: 'Failed to complete class' });
     }
 };
 

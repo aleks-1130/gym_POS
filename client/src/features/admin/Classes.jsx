@@ -7,6 +7,74 @@ import { ROLES } from '../../constants/roles';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
+const parseTimeToMinutes = (timeValue) => {
+    const raw = String(timeValue || '').trim().toUpperCase();
+    if (!raw) return null;
+
+    const hhmm24 = raw.match(/^([01]?\d|2[0-3]):([0-5]\d)$/);
+    if (hhmm24) return (Number(hhmm24[1]) * 60) + Number(hhmm24[2]);
+
+    const hhmm12 = raw.match(/^(0?\d|1[0-2]):([0-5]\d)\s*(AM|PM)$/);
+    if (!hhmm12) return null;
+
+    let hours = Number(hhmm12[1]) % 12;
+    const minutes = Number(hhmm12[2]);
+    if (hhmm12[3] === 'PM') hours += 12;
+    return (hours * 60) + minutes;
+};
+
+const minutesTo24Hour = (minutes) => {
+    const normalized = ((Number(minutes) % 1440) + 1440) % 1440;
+    const hour = Math.floor(normalized / 60);
+    const minute = normalized % 60;
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+};
+
+const minutesTo12Hour = (minutes) => {
+    const normalized = ((Number(minutes) % 1440) + 1440) % 1440;
+    const hour24 = Math.floor(normalized / 60);
+    const minute = normalized % 60;
+    const suffix = hour24 >= 12 ? 'PM' : 'AM';
+    const hour12 = ((hour24 + 11) % 12) + 1;
+    return `${hour12}:${String(minute).padStart(2, '0')} ${suffix}`;
+};
+
+const getClassTimeRange = (time, duration) => {
+    const startMinutes = parseTimeToMinutes(time);
+    const durationMinutes = Number(duration);
+    if (startMinutes === null || !Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+        return {
+            label: String(time || 'TBA'),
+            start: String(time || 'TBA'),
+            end: '',
+            durationLabel: durationMinutes > 0 ? `${durationMinutes} min` : 'N/A'
+        };
+    }
+
+    const endMinutes = startMinutes + durationMinutes;
+    return {
+        label: `${minutesTo12Hour(startMinutes)} - ${minutesTo12Hour(endMinutes)}`,
+        start: minutesTo12Hour(startMinutes),
+        end: minutesTo12Hour(endMinutes),
+        durationLabel: `${durationMinutes} min`
+    };
+};
+
+const toDateInputValue = (value) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
+
+const formatDateLabel = (value) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Invalid date';
+    return new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'short', day: 'numeric' }).format(date);
+};
+
 export default function Classes() {
     const { alert: showAlert, confirm: showConfirm } = useConfirm();
     const { user } = useAuth();
@@ -25,9 +93,11 @@ export default function Classes() {
     const [formData, setFormData] = useState({
         name: '',
         trainerId: '',
+        scheduleType: 'RECURRING',
         dayOfWeek: activeDay,
-        time: '',
-        duration: '',
+        oneTimeDate: '',
+        startTime: '',
+        endTime: '',
         capacity: '',
         basePay: ''
     });
@@ -45,7 +115,7 @@ export default function Classes() {
             const res = await axios.get('/api/classes');
             setClasses(res.data);
             setLoading(false);
-        } catch (error) {
+        } catch {
             console.error("Failed to fetch classes");
             setLoading(false);
         }
@@ -55,18 +125,20 @@ export default function Classes() {
         try {
             const res = await axios.get('/api/trainers');
             setTrainers(res.data);
-        } catch (error) {
+        } catch {
             console.error("Failed to fetch trainers");
         }
     };
 
-    const fetchParticipants = async (classId) => {
+    const fetchParticipants = async (classId, sessionDate) => {
         setParticipantsLoading(true);
         try {
-            const res = await axios.get(`/api/classes/${classId}/participants`);
+            const res = await axios.get(`/api/classes/${classId}/participants`, {
+                params: sessionDate ? { sessionDate } : undefined
+            });
             setParticipants(res.data);
             setParticipantsLoading(false);
-        } catch (error) {
+        } catch {
             console.error("Failed to fetch participants");
             setParticipantsLoading(false);
         }
@@ -74,7 +146,7 @@ export default function Classes() {
 
     const handleViewParticipants = (cls) => {
         setSelectedClass(cls);
-        fetchParticipants(cls.id);
+        fetchParticipants(cls.id, cls.sessionDate);
     };
 
     const openCreateForm = () => {
@@ -83,9 +155,11 @@ export default function Classes() {
         setFormData({
             name: '',
             trainerId: trainers[0]?.id || '',
+            scheduleType: 'RECURRING',
             dayOfWeek: activeDay,
-            time: '',
-            duration: '',
+            oneTimeDate: '',
+            startTime: '',
+            endTime: '',
             capacity: '',
             basePay: ''
         });
@@ -94,12 +168,18 @@ export default function Classes() {
 
     const openEditForm = (cls) => {
         setFormMode('edit');
+        const startMinutes = parseTimeToMinutes(cls.time || '');
+        const durationMinutes = Number(cls.duration || 0);
+        const endMinutes = startMinutes !== null && durationMinutes > 0 ? startMinutes + durationMinutes : null;
+
         setFormData({
             name: cls.name || '',
             trainerId: cls.trainerId || cls.trainer?.id || '',
+            scheduleType: cls.scheduleType || 'RECURRING',
             dayOfWeek: cls.dayOfWeek || activeDay,
-            time: cls.time || '',
-            duration: cls.duration ?? '',
+            oneTimeDate: cls.oneTimeDate ? toDateInputValue(cls.oneTimeDate) : '',
+            startTime: startMinutes !== null ? minutesTo24Hour(startMinutes) : '',
+            endTime: endMinutes !== null ? minutesTo24Hour(endMinutes) : '',
             capacity: cls.capacity ?? '',
             basePay: cls.basePay ?? ''
         });
@@ -115,12 +195,47 @@ export default function Classes() {
         e.preventDefault();
         if (!formData.name.trim()) { await showAlert({ title: 'Validation', message: 'Class name is required.', type: 'warning' }); return; }
         if (!formData.trainerId) { await showAlert({ title: 'Validation', message: 'Trainer is required.', type: 'warning' }); return; }
+        if (formData.scheduleType === 'RECURRING' && !formData.dayOfWeek) {
+            await showAlert({ title: 'Validation', message: 'Day is required for recurring classes.', type: 'warning' });
+            return;
+        }
+        if (formData.scheduleType === 'ONE_TIME' && !formData.oneTimeDate) {
+            await showAlert({ title: 'Validation', message: 'Class date is required for one-time classes.', type: 'warning' });
+            return;
+        }
+        if (!formData.startTime || !formData.endTime) { await showAlert({ title: 'Validation', message: 'Start time and end time are required.', type: 'warning' }); return; }
+
+        const startMinutes = parseTimeToMinutes(formData.startTime);
+        const endMinutes = parseTimeToMinutes(formData.endTime);
+        if (startMinutes === null || endMinutes === null) {
+            await showAlert({ title: 'Validation', message: 'Invalid start or end time.', type: 'warning' });
+            return;
+        }
+        if (endMinutes <= startMinutes) {
+            await showAlert({ title: 'Validation', message: 'End time must be later than start time.', type: 'warning' });
+            return;
+        }
+
+        const payload = {
+            name: formData.name,
+            trainerId: formData.trainerId,
+            scheduleType: formData.scheduleType,
+            dayOfWeek: formData.dayOfWeek,
+            oneTimeDate: formData.scheduleType === 'ONE_TIME' ? formData.oneTimeDate : null,
+            startTime: formData.startTime,
+            endTime: formData.endTime,
+            time: minutesTo12Hour(startMinutes),
+            duration: endMinutes - startMinutes,
+            capacity: formData.capacity,
+            basePay: formData.basePay
+        };
+
         setSaving(true);
         try {
             if (formMode === 'create') {
-                await axios.post('/api/classes', formData);
+                await axios.post('/api/classes', payload);
             } else if (editingClass) {
-                await axios.put(`/api/classes/${editingClass.id}`, formData);
+                await axios.put(`/api/classes/${editingClass.id}`, payload);
             }
             setShowForm(false);
             setEditingClass(null);
@@ -158,7 +273,9 @@ export default function Classes() {
         if (!confirmed) return;
         try {
             const token = localStorage.getItem('token');
-            const res = await axios.post(`/api/classes/${cls.id}/complete`, {}, {
+            const res = await axios.post(`/api/classes/${cls.id}/complete`, {
+                sessionDate: cls.sessionDate || undefined
+            }, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             showAlert({ title: "Class Completed!", message: `Class completed! ${res.data.attendeeCount} attendees.`, type: "success" });
@@ -227,7 +344,10 @@ export default function Classes() {
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                 {filteredClasses.length > 0 ? (
                     filteredClasses.map(cls => {
-                        const isFull = cls.bookings?.length >= cls.capacity;
+                        const currentEnrolled = Number(cls.enrolled || 0);
+                        const isFull = currentEnrolled >= cls.capacity;
+                        const schedule = getClassTimeRange(cls.time, cls.duration);
+                        const scheduleType = String(cls.scheduleType || 'RECURRING').toUpperCase();
                         return (
                             <div key={cls.id} className="bg-surface rounded-2xl border border-white/5 p-5 relative overflow-hidden transition-all hover:shadow-lg hover:border-white/10">
                                 <div className="absolute top-0 right-0 w-28 h-28 bg-primary/5 rounded-full -mr-16 -mt-16 blur-3xl"></div>
@@ -257,7 +377,7 @@ export default function Classes() {
                                     <span className="text-xs font-semibold text-text-muted">Duration</span>
                                     <div className="flex items-center gap-2 text-text-secondary text-xs">
                                         <Clock size={14} className="text-primary" />
-                                        {cls.duration} min
+                                        {schedule.durationLabel}
                                     </div>
                                 </div>
 
@@ -267,6 +387,15 @@ export default function Classes() {
                                 <p className="text-text-muted text-sm mb-5">
                                     Led by <span className="text-white font-bold">{cls.trainer?.name}</span>
                                 </p>
+
+                                <div className="mb-4 flex items-center gap-2 text-xs">
+                                    <span className="material-icons-round text-primary text-[15px]">repeat</span>
+                                    {scheduleType === 'ONE_TIME' ? (
+                                        <span className="text-text-muted">One-time class on <span className="text-white font-semibold">{formatDateLabel(cls.oneTimeDate || cls.sessionDate)}</span></span>
+                                    ) : (
+                                        <span className="text-text-muted">Recurring every <span className="text-white font-semibold">{cls.dayOfWeek}</span></span>
+                                    )}
+                                </div>
 
                                 {cls.basePay > 0 && (
                                     <div className="mb-4 flex items-center gap-2 text-xs">
@@ -281,8 +410,8 @@ export default function Classes() {
                                         <Calendar className="text-primary" size={18} />
                                     </div>
                                     <div>
-                                        <p className="text-xs text-text-muted mb-1">Start Time</p>
-                                        <p className="text-white font-semibold">{cls.time}</p>
+                                        <p className="text-xs text-text-muted mb-1">Class Time</p>
+                                        <p className="text-white font-semibold">{schedule.label}</p>
                                     </div>
                                 </div>
 
@@ -290,13 +419,13 @@ export default function Classes() {
                                     <div className="flex justify-between items-center text-xs text-text-muted">
                                         <span>Capacity</span>
                                         <span className={isFull ? 'text-red-400' : 'text-primary'}>
-                                            {cls.bookings?.length || 0} / {cls.capacity}
+                                            {currentEnrolled} / {cls.capacity}
                                         </span>
                                     </div>
                                     <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden border border-white/5">
                                         <div
                                             className={`h-full rounded-full ${isFull ? 'bg-red-500' : 'bg-primary'}`}
-                                            style={{ width: `${Math.min(100, ((cls.bookings?.length || 0) / cls.capacity) * 100)}%` }}
+                                            style={{ width: `${Math.min(100, (currentEnrolled / cls.capacity) * 100)}%` }}
                                         ></div>
                                     </div>
                                 </div>
@@ -350,7 +479,9 @@ export default function Classes() {
                                     </div>
                                     <div>
                                         <h3 className="text-lg font-semibold text-white leading-none">{selectedClass.name}</h3>
-                                        <p className="text-text-muted text-sm mt-1">Participants ? {activeDay}</p>
+                                        <p className="text-text-muted text-sm mt-1">
+                                            Participants - {selectedClass.sessionDate ? formatDateLabel(selectedClass.sessionDate) : activeDay}
+                                        </p>
                                     </div>
                                 </div>
                                 <button
@@ -484,35 +615,59 @@ export default function Classes() {
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Day</label>
+                                        <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Schedule Type</label>
                                         <select
-                                            value={formData.dayOfWeek}
-                                            onChange={(e) => handleFormChange('dayOfWeek', e.target.value)}
+                                            value={formData.scheduleType}
+                                            onChange={(e) => handleFormChange('scheduleType', e.target.value)}
                                             className="mt-2 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
                                         >
-                                            {DAYS.map((day) => (
-                                                <option key={day} value={day} className="text-black">
-                                                    {day}
-                                                </option>
-                                            ))}
+                                            <option value="RECURRING" className="text-black">Recurring</option>
+                                            <option value="ONE_TIME" className="text-black">One-time</option>
                                         </select>
+                                    </div>
+                                    <div>
+                                        {formData.scheduleType === 'ONE_TIME' ? (
+                                            <>
+                                                <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Class Date</label>
+                                                <input
+                                                    type="date"
+                                                    value={formData.oneTimeDate}
+                                                    onChange={(e) => handleFormChange('oneTimeDate', e.target.value)}
+                                                    className="mt-2 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
+                                                />
+                                            </>
+                                        ) : (
+                                            <>
+                                                <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Day</label>
+                                                <select
+                                                    value={formData.dayOfWeek}
+                                                    onChange={(e) => handleFormChange('dayOfWeek', e.target.value)}
+                                                    className="mt-2 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
+                                                >
+                                                    {DAYS.map((day) => (
+                                                        <option key={day} value={day} className="text-black">
+                                                            {day}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </>
+                                        )}
                                     </div>
                                     <div>
                                         <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Start Time</label>
                                         <input
-                                            value={formData.time}
-                                            onChange={(e) => handleFormChange('time', e.target.value)}
+                                            type="time"
+                                            value={formData.startTime}
+                                            onChange={(e) => handleFormChange('startTime', e.target.value)}
                                             className="mt-2 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
-                                            placeholder="10:00 AM"
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Duration (min)</label>
+                                        <label className="text-xs text-text-muted uppercase tracking-widest font-bold">End Time</label>
                                         <input
-                                            type="number"
-                                            min="0"
-                                            value={formData.duration}
-                                            onChange={(e) => handleFormChange('duration', e.target.value)}
+                                            type="time"
+                                            value={formData.endTime}
+                                            onChange={(e) => handleFormChange('endTime', e.target.value)}
                                             className="mt-2 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
                                         />
                                     </div>
@@ -527,7 +682,7 @@ export default function Classes() {
                                         />
                                     </div>
                                     <div className="md:col-span-2">
-                                        <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Trainer Base Pay per Completion (₱)</label>
+                                        <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Trainer Base Pay per Completion (?)</label>
                                         <p className="text-text-muted text-xs mt-1 mb-2">When this class is completed, this amount is added to the trainer's unpaid commission.</p>
                                         <input
                                             type="number"
@@ -571,5 +726,6 @@ export default function Classes() {
         </div>
     );
 }
+
 
 
