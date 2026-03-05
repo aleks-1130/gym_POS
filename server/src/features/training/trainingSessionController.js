@@ -112,7 +112,7 @@ const getAllSessions = async (req, res) => {
         res.json(sessions);
     } catch (e) {
         console.error("Fetch Sessions Error:", e);
-        res.status(500).json({ error: "Failed to fetch sessions" });
+        res.status(500).json({ error: "Failed to fetch sessions", detail: e?.message });
     }
 };
 
