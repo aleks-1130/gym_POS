@@ -40,6 +40,7 @@ const parseDate = (value) => {
 const readJsonIfExists = async (filePath) => {
     try {
         const raw = await fs.readFile(filePath, 'utf8');
+        if (!raw || !raw.trim()) return null;
         return JSON.parse(raw);
     } catch (error) {
         if (error.code === 'ENOENT') {
