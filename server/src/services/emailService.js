@@ -23,7 +23,10 @@ const sendActivationEmail = async (email, name, token, planName, expiryDate, pho
         role, // 'MEMBER' or 'TRAINER'
         activationLink,
         planName,
-        expiryDate
+        expiryDate,
+        phone,
+        birthDate,
+        gender
     };
 
     await sendEmailWebhook(process.env.N8N_ACTIVATION_WEBHOOK_URL, payload);
