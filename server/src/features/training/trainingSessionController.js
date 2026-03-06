@@ -267,12 +267,17 @@ const completeSession = async (req, res) => {
                         }
                     });
 
-                    // 2. Decrement Stock if Product ID exists
                     if (shouldDecrementStock && resolvedProductId) {
-                        await tx.product.update({
-                            where: { id: Number(resolvedProductId) },
+                        const decremented = await tx.product.updateMany({
+                            where: {
+                                id: Number(resolvedProductId),
+                                stock: { gte: requestedQty }
+                            },
                             data: { stock: { decrement: requestedQty } }
                         });
+                        if (decremented.count === 0) {
+                            throw new Error(`Insufficient stock for ${resolvedName || 'product'}`);
+                        }
                     }
 
                     // 3. Create Expense Record

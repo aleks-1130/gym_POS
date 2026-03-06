@@ -1093,15 +1093,34 @@ const completePayment = async (req, res) => {
         const changeDue = Number(cashTendered) - payment.amount;
         if (changeDue < 0) return res.status(400).json({ error: "Insufficient cash tendered" });
 
-        const updated = await prisma.payment.update({
-            where: { id: Number(id) },
-            data: {
-                status: 'COMPLETED',
-                cashTendered: Number(cashTendered),
-                changeDue,
-                cashierId: req.user.id
-            },
-            include: { member: true, items: true, cashier: true }
+        const updated = await prisma.$transaction(async (tx) => {
+            // 1. Deduct stock for each product in the payment
+            for (const item of payment.items) {
+                if (item.productId && item.type === 'PRODUCT') {
+                    const decremented = await tx.product.updateMany({
+                        where: {
+                            id: item.productId,
+                            stock: { gte: item.quantity }
+                        },
+                        data: { stock: { decrement: item.quantity } }
+                    });
+                    if (decremented.count === 0) {
+                        throw new Error(`Insufficient stock for ${item.name || 'product'}`);
+                    }
+                }
+            }
+
+            // 2. Mark payment as COMPLETED
+            return tx.payment.update({
+                where: { id: Number(id) },
+                data: {
+                    status: 'COMPLETED',
+                    cashTendered: Number(cashTendered),
+                    changeDue,
+                    cashierId: req.user.id
+                },
+                include: { member: true, items: true, cashier: true }
+            });
         });
 
         res.json(updated);
