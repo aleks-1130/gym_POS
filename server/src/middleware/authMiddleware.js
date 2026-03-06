@@ -155,7 +155,29 @@ const authorize = (roles = []) => {
     };
 };
 
+// Backward-compatible guard for trainer self-service routes.
+// Some legacy trainer-linked accounts may carry STAFF/ADMIN role while still mapped to a trainerId.
+const authorizeTrainerLinkedAccount = (req, res, next) => {
+    if (!req.user) return res.sendStatus(401);
+
+    const role = String(req.user.role || '').toUpperCase();
+    const trainerId = Number(req.user.trainerId);
+    const isTrainerLinked = Number.isInteger(trainerId) && trainerId > 0;
+    const allowedRoles = new Set(['TRAINER', 'STAFF', 'ADMIN', 'OWNER']);
+
+    if (!isTrainerLinked) {
+        return res.status(403).json({ error: "Trainer account is not linked" });
+    }
+
+    if (!allowedRoles.has(role)) {
+        return res.status(403).json({ error: "Access denied" });
+    }
+
+    return next();
+};
+
 module.exports = {
     authenticateToken,
-    authorize
+    authorize,
+    authorizeTrainerLinkedAccount
 };

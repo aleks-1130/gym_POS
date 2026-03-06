@@ -65,6 +65,27 @@ const getStatusClass = (status) => {
     return 'border-red-500/30 bg-red-500/10 text-red-300';
 };
 
+const getProfileRequestStatusClass = (status) => {
+    const normalized = String(status || '').toUpperCase();
+    if (normalized === 'PENDING_ADMIN' || normalized === 'PENDING_OWNER') return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+    if (normalized === 'APPLIED') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+    return 'border-red-500/30 bg-red-500/10 text-red-300';
+};
+
+const formatProfileRequestStatus = (status) => {
+    const normalized = String(status || '').toUpperCase();
+    if (normalized === 'PENDING_ADMIN' || normalized === 'PENDING_OWNER') return 'Pending Admin Review';
+    if (normalized === 'APPLIED') return 'Applied';
+    if (normalized === 'REJECTED') return 'Rejected';
+    return normalized || 'Unknown';
+};
+
+const formatProfileFieldValue = (value) => {
+    if (value === null || value === undefined || value === '') return '—';
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
+};
+
 export default function Trainers() {
     const { user } = useAuth();
     const isAdmin = user?.role === ROLES.ADMIN;
@@ -76,7 +97,7 @@ export default function Trainers() {
     const [viewMode, setViewMode] = useState(null); // 'profile' or 'sessions'
     const [showForm, setShowForm] = useState(false);
     const [formMode, setFormMode] = useState('create'); // create | edit
-    const [activeTab, setActiveTab] = useState('TRAINERS'); // TRAINERS or RESCHEDULE
+    const [activeTab, setActiveTab] = useState('TRAINERS'); // TRAINERS | RESCHEDULE | PROFILE_UPDATES
     const [resolveModalSession, setResolveModalSession] = useState(null);
     const [resolveForm, setResolveForm] = useState({ action: 'MOVE', date: '', time: '', note: '' });
     const [showLoginModal, setShowLoginModal] = useState(false);
@@ -102,6 +123,7 @@ export default function Trainers() {
         availabilityIntervalMinutes: 30,
         bio: '',
         imageUrl: '',
+        cardImageUrl: '',
         commissionRate: '',
         baseSalary: '',
         createLogin: false,
@@ -127,6 +149,15 @@ export default function Trainers() {
             return res.data || [];
         },
         enabled: isAdmin // fetch always so we can show the badge
+    });
+
+    const { data: profileChangeRequests = [], isLoading: profileRequestsLoading } = useQuery({
+        queryKey: ['trainer-profile-change-requests'],
+        queryFn: async () => {
+            const res = await axios.get('/api/trainers/change-requests');
+            return res.data || [];
+        },
+        enabled: isAdmin
     });
 
     const { data: sessions = [], isLoading: sessionsLoading } = useQuery({
@@ -206,6 +237,20 @@ export default function Trainers() {
         }
     });
 
+    const adminReviewProfileRequestMutation = useMutation({
+        mutationFn: async ({ id, action }) => {
+            return axios.post(`/api/trainers/change-requests/${id}/admin-review`, { action });
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries(['trainer-profile-change-requests']);
+            queryClient.invalidateQueries(['trainers']);
+            showAlert({ title: 'Updated', message: 'Admin decision saved.', type: 'success' });
+        },
+        onError: (error) => {
+            showAlert({ title: 'Action Failed', message: error?.response?.data?.error || 'Failed to review request.', type: 'danger' });
+        }
+    });
+
     // -- Derived Data --
     const totalTrainers = trainers.length;
     const avgRating = totalTrainers
@@ -253,6 +298,10 @@ export default function Trainers() {
         const uniqueDays = new Set(modalAvailabilityRows.map((row) => Number(row.day)));
         return [0, 1, 2, 3, 4, 5, 6].every((day) => uniqueDays.has(day));
     }, [modalAvailabilityRows]);
+    const profileRequestBadgeCount = useMemo(
+        () => profileChangeRequests.filter((request) => ['PENDING_ADMIN', 'PENDING_OWNER'].includes(String(request?.status || '').toUpperCase())).length,
+        [profileChangeRequests]
+    );
     const saving = createTrainerMutation.isPending || updateTrainerMutation.isPending;
     const loginSaving = createLoginMutation.isPending;
 
@@ -286,6 +335,7 @@ export default function Trainers() {
             availabilityIntervalMinutes: 30,
             bio: '',
             imageUrl: '',
+            cardImageUrl: '',
             commissionRate: '',
             baseSalary: '',
             createLogin: false,
@@ -328,6 +378,7 @@ export default function Trainers() {
             availabilityIntervalMinutes: trainer.availabilityIntervalMinutes || 30,
             bio: trainer.bio || '',
             imageUrl: trainer.imageUrl || '',
+            cardImageUrl: trainer.cardImageUrl || '',
             commissionRate: trainer.commissionRate != null ? (trainer.commissionRate * 100).toFixed(0) : '',
             baseSalary: trainer.baseSalary ?? '',
             createLogin: false,
@@ -408,6 +459,19 @@ export default function Trainers() {
         resolveRequestMutation.mutate(payload);
     };
 
+    const handleAdminReviewProfileRequest = async (request, action) => {
+        const approved = await showConfirm({
+            title: action === 'APPROVE' ? 'Approve & Apply Request?' : 'Reject Request?',
+            message: action === 'APPROVE'
+                ? 'This will apply requested changes to trainer profile/status now.'
+                : 'This will reject the trainer update request.',
+            confirmLabel: action === 'APPROVE' ? 'Approve & Apply' : 'Reject',
+            type: action === 'APPROVE' ? 'info' : 'danger'
+        });
+        if (!approved) return;
+        adminReviewProfileRequestMutation.mutate({ id: request.id, action });
+    };
+
     if (trainersLoading) {
         return (
             <div className="flex items-center justify-center min-h-[50vh]">
@@ -425,7 +489,16 @@ export default function Trainers() {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                     <button
-                        onClick={() => setActiveTab(activeTab === 'RESCHEDULE' ? 'TRAINERS' : 'RESCHEDULE')}
+                        onClick={() => setActiveTab('TRAINERS')}
+                        className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${activeTab === 'TRAINERS'
+                            ? 'border-primary/40 bg-primary/10 text-primary'
+                            : 'border-white/10 bg-surfaceHighlight text-white hover:border-white/20'
+                            }`}
+                    >
+                        Trainers
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('RESCHEDULE')}
                         className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${activeTab === 'RESCHEDULE'
                             ? 'border-primary/40 bg-primary/10 text-primary'
                             : 'border-white/10 bg-surfaceHighlight text-white hover:border-white/20'
@@ -433,6 +506,17 @@ export default function Trainers() {
                     >
                         Reschedules {trainerChangeRequests.length > 0 && <span className="ml-1 text-xs font-black text-red-400">({trainerChangeRequests.length})</span>}
                     </button>
+                    {isAdmin && (
+                        <button
+                            onClick={() => setActiveTab('PROFILE_UPDATES')}
+                            className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${activeTab === 'PROFILE_UPDATES'
+                                ? 'border-primary/40 bg-primary/10 text-primary'
+                                : 'border-white/10 bg-surfaceHighlight text-white hover:border-white/20'
+                                }`}
+                        >
+                            Profile Updates {profileRequestBadgeCount > 0 && <span className="ml-1 text-xs font-black text-red-400">({profileRequestBadgeCount})</span>}
+                        </button>
+                    )}
                     {isAdmin && (
                         <button
                             onClick={openCreateForm}
@@ -502,7 +586,97 @@ export default function Trainers() {
                 </section>
             )}
 
-            {activeTab === 'RESCHEDULE' ? (
+            {activeTab === 'PROFILE_UPDATES' ? (
+                <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
+                    <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between gap-3">
+                        <h3 className="text-white font-bold">Trainer Profile/Status Update Requests</h3>
+                        <span className="text-xs text-text-muted">{profileChangeRequests.length} request(s)</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full min-w-[1080px] table-fixed text-left text-sm text-text-secondary">
+                            <thead className="bg-white/5 text-text-muted uppercase text-xs font-bold tracking-wider">
+                                <tr>
+                                    <th className="px-6 py-4 w-[170px]">Requested</th>
+                                    <th className="px-6 py-4 w-[190px]">Trainer</th>
+                                    <th className="px-6 py-4">Changes</th>
+                                    <th className="px-6 py-4 w-[130px]">Status</th>
+                                    <th className="px-6 py-4 w-[160px]">Reviewed By</th>
+                                    <th className="px-6 py-4 w-[210px]">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                                {profileRequestsLoading && (
+                                    <tr><td colSpan="6" className="p-6 text-center text-text-muted">Loading requests...</td></tr>
+                                )}
+                                {!profileRequestsLoading && profileChangeRequests.length === 0 && (
+                                    <tr><td colSpan="6" className="p-6 text-center text-text-muted">No trainer profile update requests yet.</td></tr>
+                                )}
+                                {profileChangeRequests.map((request) => {
+                                    const requestStatus = String(request?.status || '').toUpperCase();
+                                    const canAdminReview = isAdmin && ['PENDING_ADMIN', 'PENDING_OWNER'].includes(requestStatus);
+
+                                    return (
+                                        <tr key={request.id} className="hover:bg-white/5 transition-colors align-top">
+                                            <td className="px-6 py-4 text-white whitespace-nowrap">
+                                                {new Date(request.createdAt).toLocaleString()}
+                                            </td>
+                                            <td className="px-6 py-4 text-white">
+                                                <p className="font-semibold">{request.trainer?.name || 'Unknown Trainer'}</p>
+                                                <p className="text-xs text-text-muted break-all">{request.trainer?.email || 'No email'}</p>
+                                            </td>
+                                            <td className="px-6 py-4 text-white">
+                                                <div className="space-y-1 max-w-[420px]">
+                                                    {Object.entries(request.payload || {}).map(([key, value]) => (
+                                                        <p key={`${request.id}-${key}`} className="text-xs whitespace-normal break-words [overflow-wrap:anywhere] leading-5">
+                                                            <span className="text-text-muted">{key}:</span>{' '}
+                                                            <span className="text-red-300 break-all">{formatProfileFieldValue(request.currentData?.[key])}</span>
+                                                            {' -> '}
+                                                            <span className="text-emerald-300 break-all">{formatProfileFieldValue(value)}</span>
+                                                        </p>
+                                                    ))}
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <span className={`inline-flex px-2 py-1 rounded-lg border text-[10px] font-bold uppercase tracking-widest ${getProfileRequestStatusClass(request.status)}`}>
+                                                    {formatProfileRequestStatus(request.status)}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 text-xs text-text-muted break-words [overflow-wrap:anywhere]">
+                                                {request.adminReviewer?.name ? `${request.adminReviewer.name}` : 'Pending'}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex flex-wrap gap-2">
+                                                    {canAdminReview && (
+                                                        <>
+                                                            <button
+                                                                onClick={() => handleAdminReviewProfileRequest(request, 'APPROVE')}
+                                                                className="text-xs font-bold px-3 py-1 rounded-lg border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
+                                                                disabled={adminReviewProfileRequestMutation.isPending}
+                                                            >
+                                                                Approve & Apply
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleAdminReviewProfileRequest(request, 'REJECT')}
+                                                                className="text-xs font-bold px-3 py-1 rounded-lg border border-red-500/30 text-red-300 hover:bg-red-500/10"
+                                                                disabled={adminReviewProfileRequestMutation.isPending}
+                                                            >
+                                                                Reject
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                    {!canAdminReview && (
+                                                        <span className="text-xs text-text-muted">No action required</span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            ) : activeTab === 'RESCHEDULE' ? (
                 <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
                     <div className="px-6 py-4 border-b border-white/10">
                         <h3 className="text-white font-bold">Trainer Change Requests</h3>
@@ -1237,10 +1411,19 @@ export default function Trainers() {
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Image URL</label>
+                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Profile Image URL</label>
                                         <input
                                             value={formData.imageUrl}
                                             onChange={(e) => handleFormChange('imageUrl', e.target.value)}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
+                                            placeholder="https://..."
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Member Card Image URL</label>
+                                        <input
+                                            value={formData.cardImageUrl}
+                                            onChange={(e) => handleFormChange('cardImageUrl', e.target.value)}
                                             className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
                                             placeholder="https://..."
                                         />

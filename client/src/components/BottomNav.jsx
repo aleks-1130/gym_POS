@@ -23,14 +23,12 @@ export default function BottomNav() {
     ];
     const trainerPrimaryNav = [
         { to: "/dashboard", icon: Home, label: "Home" },
-        { to: "/trainer/sessions", icon: Dumbbell, label: "Sessions" },
-        { to: "/trainer/classes", icon: Calendar, label: "Classes" },
+        { to: "/trainer/classes-sessions", icon: Calendar, label: "Class&Session" },
+        { to: "/trainer/gym-traffic", icon: Activity, label: "Traffic" },
         { to: "/trainer/shop", icon: ShoppingBag, label: "Shop" },
         { to: "/trainer/profile", icon: User, label: "Profile" },
     ];
     const trainerSecondaryNav = [
-        { to: "/trainer/availability", icon: Calendar, label: "Availability" },
-        { to: "/trainer/gym-traffic", icon: Activity, label: "Traffic" },
         { to: "/trainer/loyalty", icon: Gift, label: "Rewards" },
         { to: "/trainer/commission-history", icon: Gift, label: "Commissions" },
         { to: "/trainer/payment-methods", icon: CreditCard, label: "Payment Methods" },
@@ -40,7 +38,6 @@ export default function BottomNav() {
     // Secondary navigation items (hamburger menu)
     const memberSecondaryNav = [
         { to: "/announcements", icon: Megaphone, label: "Announcements" },
-        { to: "/gym-traffic", icon: Activity, label: "Traffic" },
         { to: "/payment-methods", icon: CreditCard, label: "Payment Methods" },
         { to: "/loyalty", icon: Gift, label: "Rewards & Loyalty" },
         { to: "/purchase-history", icon: History, label: "Purchase History" },

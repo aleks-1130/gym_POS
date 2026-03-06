@@ -391,6 +391,7 @@ const createTrainer = async (req, res) => {
             phone,
             bio,
             imageUrl,
+            cardImageUrl,
             experience,
             rating,
             sessionPrice,
@@ -439,6 +440,9 @@ const createTrainer = async (req, res) => {
                 phone: phone ? String(phone).trim() : null,
                 bio: bio ? String(bio).trim() : null,
                 imageUrl: imageUrl ? String(imageUrl).trim() : null,
+                cardImageUrl: cardImageUrl
+                    ? String(cardImageUrl).trim()
+                    : (imageUrl ? String(imageUrl).trim() : null),
                 experience: experience !== '' && experience !== undefined ? Number(experience) : null,
                 rating: rating !== '' && rating !== undefined ? Number(rating) : undefined,
                 sessionPrice: sessionPrice !== '' && sessionPrice !== undefined ? Number(sessionPrice) : undefined,
@@ -509,6 +513,7 @@ const updateTrainer = async (req, res) => {
             phone,
             bio,
             imageUrl,
+            cardImageUrl,
             experience,
             rating,
             sessionPrice,
@@ -546,6 +551,7 @@ const updateTrainer = async (req, res) => {
                 ...(phone !== undefined ? { phone: phone ? String(phone).trim() : null } : {}),
                 ...(bio !== undefined ? { bio: bio ? String(bio).trim() : null } : {}),
                 ...(imageUrl !== undefined ? { imageUrl: imageUrl ? String(imageUrl).trim() : null } : {}),
+                ...(cardImageUrl !== undefined ? { cardImageUrl: cardImageUrl ? String(cardImageUrl).trim() : null } : {}),
                 ...(experience !== undefined ? { experience: experience === '' ? null : Number(experience) } : {}),
                 ...(rating !== undefined ? { rating: rating === '' ? null : Number(rating) } : {}),
                 ...(sessionPrice !== undefined && sessionPrice !== '' ? { sessionPrice: Number(sessionPrice) } : {}),

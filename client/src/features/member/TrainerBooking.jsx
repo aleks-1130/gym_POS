@@ -113,7 +113,7 @@ export default function TrainerBooking() {
                     || Boolean(trainer?.temporarilyOpenToday)
             );
             setTrainers(visible);
-        } catch (error) {
+        } catch {
             console.error("Failed to fetch trainers");
         } finally {
             setLoading(false);
@@ -338,16 +338,6 @@ export default function TrainerBooking() {
             .map((item) => Number(item.trim()))
             .filter((value) => Number.isFinite(value) && value > 0);
     };
-    const getEndTime = (start, duration) => {
-        if (!start || !duration) return '';
-        const [hours, minutes] = start.split(':').map(Number);
-        if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return '';
-        const totalMinutes = hours * 60 + minutes + duration;
-        const endHours = Math.floor(totalMinutes / 60) % 24;
-        const endMinutes = totalMinutes % 60;
-        return `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
-    };
-
     const toIsoDate = (date) => {
         const y = date.getFullYear();
         const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -825,9 +815,9 @@ export default function TrainerBooking() {
                             <div key={trainer.id} className="bg-surface rounded-2xl border border-white/5 overflow-hidden hover:border-primary/30 transition-all group flex flex-col">
                                 {/* Trainer Image */}
                                 <div className="aspect-[4/3] sm:aspect-square bg-white/5 overflow-hidden relative">
-                                    {trainer.imageUrl ? (
+                                    {trainer.cardImageUrl ? (
                                         <img
-                                            src={trainer.imageUrl}
+                                            src={trainer.cardImageUrl}
                                             alt={trainer.name}
                                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                                             loading="lazy"
@@ -859,6 +849,9 @@ export default function TrainerBooking() {
                                     <div className="mb-3">
                                         <h3 className="font-bold text-white text-lg sm:text-xl">{trainer.name}</h3>
                                         <p className="text-text-muted text-sm mt-0.5">{trainer.specialization || 'Personal Trainer'}</p>
+                                        {trainer.statusDescription && (
+                                            <p className="text-xs text-white/70 mt-2 line-clamp-2">{trainer.statusDescription}</p>
+                                        )}
                                     </div>
 
                                     {/* Bio */}
@@ -971,8 +964,8 @@ export default function TrainerBooking() {
                                     {/* Trainer Info Card */}
                                     <div className="bg-white/5 rounded-xl p-4 border border-white/5 flex gap-4">
                                         <div className="w-16 h-16 sm:w-14 sm:h-14 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                                            {selectedTrainer.imageUrl ? (
-                                                <img src={selectedTrainer.imageUrl} alt={selectedTrainer.name} className="w-full h-full object-cover" />
+                                            {selectedTrainer.cardImageUrl ? (
+                                                <img src={selectedTrainer.cardImageUrl} alt={selectedTrainer.name} className="w-full h-full object-cover" />
                                             ) : (
                                                 <span className="material-icons-round text-text-muted text-2xl">person</span>
                                             )}
@@ -981,6 +974,9 @@ export default function TrainerBooking() {
                                             <p className="font-bold text-white text-base truncate">{selectedTrainer.name}</p>
                                             <p className="text-text-muted text-sm truncate">{selectedTrainer.specialization}</p>
                                             <p className="text-primary font-bold text-lg mt-1">{formatPrice(selectedTrainer.sessionPrice ?? 300)}/session</p>
+                                            {selectedTrainer.statusDescription && (
+                                                <p className="text-xs text-white/70 mt-1 line-clamp-2">{selectedTrainer.statusDescription}</p>
+                                            )}
                                         </div>
                                     </div>
 

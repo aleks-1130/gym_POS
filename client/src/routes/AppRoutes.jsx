@@ -54,8 +54,7 @@ import StaffTrainers from '../features/staff/Trainers';
 import StaffClasses from '../features/staff/Classes';
 
 // Trainer Pages
-import TrainerSessions from '../features/trainer/TrainerSessions';
-import TrainerClasses from '../features/trainer/TrainerClasses';
+import TrainerClassesSessions from '../features/trainer/TrainerClassesSessions';
 import TrainerProfile from '../features/trainer/TrainerProfile';
 import TrainerShop from '../features/trainer/TrainerShop';
 import TrainerPaymentMethods from '../features/trainer/TrainerPaymentMethods';
@@ -63,7 +62,6 @@ import TrainerPurchaseHistory from '../features/trainer/TrainerPurchaseHistory';
 import TrainerGymTraffic from '../features/trainer/TrainerGymTraffic';
 import TrainerCommissionHistory from '../features/trainer/TrainerCommissionHistory';
 import TrainerLoyalty from '../features/trainer/TrainerLoyalty';
-import TrainerAvailability from '../features/trainer/TrainerAvailability';
 
 // Member Pages
 import Schedule from '../features/member/Schedule';
@@ -315,10 +313,18 @@ export default function AppRoutes() {
 
                 {/* Trainer Routes */}
                 <Route
+                    path="/trainer/classes-sessions"
+                    element={
+                        <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+                            <TrainerClassesSessions />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
                     path="/trainer/sessions"
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
-                            <TrainerSessions />
+                            <Navigate to="/trainer/classes-sessions" replace />
                         </ProtectedRoute>
                     }
                 />
@@ -326,7 +332,7 @@ export default function AppRoutes() {
                     path="/trainer/classes"
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
-                            <TrainerClasses />
+                            <Navigate to="/trainer/classes-sessions" replace />
                         </ProtectedRoute>
                     }
                 />
@@ -390,7 +396,7 @@ export default function AppRoutes() {
                     path="/trainer/availability"
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
-                            <TrainerAvailability />
+                            <Navigate to="/trainer/profile" replace />
                         </ProtectedRoute>
                     }
                 />
