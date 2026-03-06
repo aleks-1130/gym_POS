@@ -366,6 +366,7 @@ model SessionMaterial {
 model Class {
   id        Int       @id @default(autoincrement())
   name      String
+  imageUrl  String?
   trainerId Int
   scheduleType String @default("RECURRING")
   oneTimeDate DateTime?

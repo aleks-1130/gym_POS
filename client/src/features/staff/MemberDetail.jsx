@@ -5,10 +5,6 @@ import { useCurrency } from '../../context/CurrencyContext';
 import { withApiBase } from '../../config/api';
 import { useConfirm } from '../../context/ConfirmContext';
 
-// Reusable Components
-import StatCard from '../../components/common/StatCard';
-import InfoCard from '../../components/common/InfoCard';
-import ActivityLogItem from '../../components/common/ActivityLogItem';
 import TabNavigation from '../../components/common/TabNavigation';
 
 // Custom Hooks
@@ -19,14 +15,13 @@ import { memberService } from '../../services/memberService';
 import { planService } from '../../services/planService';
 
 // Utils
-import { getFilteredLogs, getGroupedLogs, calculateDaysRemaining } from '../../utils/memberUtils';
-import { formatDate } from '../../utils/dateUtils';
+import { getFilteredLogs } from '../../utils/memberUtils';
 
 // Constants
-import { TABS, PAYMENT_METHODS, ACTIVITY_FILTERS } from '../../constants/memberConstants';
+import { TABS, ACTIVITY_FILTERS } from '../../constants/memberConstants';
 
 export default function MemberDetail() {
-    const { alert: showAlert, confirm: showConfirm } = useConfirm();
+    const { alert: showAlert } = useConfirm();
     const { id } = useParams();
     const navigate = useNavigate();
     const { formatPrice } = useCurrency();
@@ -103,7 +98,7 @@ export default function MemberDetail() {
                     duration: data.plan.duration
                 }));
             }
-        } catch (e) {
+        } catch {
             showAlert({ title: "Member Not Found", message: "Member not found", type: "danger" });
             navigate('/members');
         } finally {
@@ -203,7 +198,7 @@ export default function MemberDetail() {
                 stopCamera();
                 setShowPhotoModal(false);
                 fetchMember();
-            } catch (_) {
+            } catch {
                 showAlert({ title: "Photo Error", message: "Failed to update photo", type: "danger" });
             } finally {
                 setSubmittingPhoto(false);
@@ -219,7 +214,7 @@ export default function MemberDetail() {
             });
             setShowFreezeModal(false);
             fetchMember();
-        } catch (e) {
+        } catch {
             showAlert({ title: "Status Error", message: "Failed to update status", type: "danger" });
         }
     };
@@ -230,7 +225,7 @@ export default function MemberDetail() {
             setShowRenewModal(false);
             showAlert({ title: "Renewed!", message: "Membership renewed successfully!", type: "success" });
             fetchMember();
-        } catch (e) {
+        } catch {
             showAlert({ title: "Renewal Failed", message: "Renewal failed. Please try again.", type: "danger" });
         }
     }, [id, renewData, fetchMember]);
@@ -312,7 +307,7 @@ export default function MemberDetail() {
             setShowPasswordModal(false);
             setPasswordData('');
             showAlert({ title: "Password Set", message: "Password set successfully!", type: "success" });
-        } catch (e) {
+        } catch {
             showAlert({ title: "Password Error", message: "Failed to set password", type: "danger" });
         }
     }, [member, passwordData]);
@@ -336,7 +331,7 @@ export default function MemberDetail() {
             setShowEditModal(false);
             fetchMember();
             showAlert({ title: "Updated!", message: "Member details updated!", type: "success" });
-        } catch (e) {
+        } catch {
             showAlert({ title: "Update Failed", message: "Failed to update member", type: "danger" });
         }
     }, [id, editFormData, fetchMember]);
@@ -347,10 +342,6 @@ export default function MemberDetail() {
         [member?.accessLogs, activityFilter]
     );
 
-    const groupedLogs = useMemo(() =>
-        getGroupedLogs(filteredLogs),
-        [filteredLogs]
-    );
     const currentPlan = useMemo(
         () => member?.plan || plans.find((p) => p.id === Number(member?.planId)) || null,
         [member, plans]
@@ -383,12 +374,25 @@ export default function MemberDetail() {
     );
     if (!member) return null;
 
-    const initials = `${member.firstName[0]}${member.lastName[0]}`;
+    const initials = `${member.firstName?.[0] || ''}${member.lastName?.[0] || ''}`;
+    const totalSpent = payments.reduce((sum, pay) => sum + Number(pay.amount || 0), 0);
+    const statusTone = member.status === 'ACTIVE'
+        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+        : member.status === 'FREEZED'
+            ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+            : 'bg-red-500/10 text-red-400 border-red-500/20';
+    const attendanceTone = stats.attendanceScore.color === 'emerald'
+        ? 'text-emerald-400'
+        : stats.attendanceScore.color === 'amber'
+            ? 'text-amber-400'
+            : 'text-red-400';
+    const riskLevel = stats.isExpired ? 'High' : stats.isExpiringSoon ? 'Medium' : 'Low';
+    const paymentRows = payments.length ? payments : (member.payments || []);
+    const progressPct = Math.min(100, Math.max(0, Number(stats.progress || 0)));
 
 
     return (
-        <div className="space-y-6 animate-fade-in pb-12">
-            {/* Breadcrumb Navigation */}
+        <div className="space-y-4 animate-fade-in pb-10">
             <div className="flex items-center gap-2 text-sm">
                 <button onClick={() => navigate('/dashboard')} className="text-text-muted hover:text-primary transition-colors">Dashboard</button>
                 <span className="text-text-muted">/</span>
@@ -397,328 +401,269 @@ export default function MemberDetail() {
                 <span className="text-white font-medium">{member.firstName} {member.lastName}</span>
             </div>
 
-            {/* Hero Header */}
-            <div className="bg-gradient-to-br from-primary/20 via-orange-500/10 to-transparent rounded-3xl border border-white/5 overflow-hidden shadow-lg">
-                <div className="p-8">
-                    <div className="flex flex-col lg:flex-row gap-8 items-start">
-                        <div className="flex items-center gap-6">
-                            <div className="relative group">
-                                <div className="w-32 h-32 bg-gradient-to-br from-primary to-orange-600 rounded-3xl flex items-center justify-center text-4xl font-bold text-white shadow-2xl shadow-primary/20 overflow-hidden border-4 border-white/10">
+            <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
+                <div className="px-5 py-4 sm:px-6 border-b border-white/10">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex items-center gap-4 min-w-0">
+                            <div className="relative shrink-0">
+                                <div className="h-16 w-16 rounded-xl overflow-hidden border border-white/10 bg-gradient-to-br from-primary to-orange-600 flex items-center justify-center text-white text-xl font-bold">
                                     {member.imageUrl ? <img src={member.imageUrl} className="w-full h-full object-cover" alt="" /> : initials}
                                 </div>
-                                <button onClick={() => setShowPhotoModal(true)} className="absolute -bottom-2 -right-2 bg-primary hover:bg-orange-600 text-white p-3 rounded-2xl shadow-lg transition-all active:scale-95">
-                                    <span className="material-icons-round text-sm">photo_camera</span>
+                                <button onClick={() => setShowPhotoModal(true)} className="absolute -bottom-2 -right-2 h-7 w-7 rounded-md bg-primary text-white hover:bg-orange-600 transition-colors">
+                                    <span className="material-icons-round text-xs">photo_camera</span>
                                 </button>
                             </div>
-                            <div>
-                                <div className="flex items-center gap-3">
-                                    <h1 className="text-4xl font-extrabold text-white tracking-tight mb-1">{member.firstName} {member.lastName}</h1>
-                                    <button onClick={handleEditClick} className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-full transition-colors"><span className="material-icons-round text-sm">edit</span></button>
+
+                            <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <h1 className="text-xl sm:text-2xl font-bold text-white truncate">{member.firstName} {member.lastName}</h1>
+                                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${statusTone}`}>{member.status}</span>
                                 </div>
-                                <div className="flex items-center gap-3 flex-wrap mb-3">
-                                    <span className={`px-4 py-1.5 rounded-full text-xs font-bold border ${member.status === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : member.status === 'FREEZED' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
-                                        {member.status}
-                                    </span>
-                                    <span className="px-4 py-1.5 rounded-full text-xs font-bold bg-white/10 text-text-secondary border border-white/10">ID: {member.id}</span>
-                                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/5">
-                                        <span className="material-icons-round text-xs text-text-muted">schedule</span>
-                                        <span className="text-xs font-medium text-text-muted">Last active: {stats.lastActive}</span>
-                                    </div>
-                                </div>
-                                <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-${stats.attendanceScore.color}-500/10 border border-${stats.attendanceScore.color}-500/20 w-fit`}>
-                                    <span className={`material-icons-round text-sm text-${stats.attendanceScore.color}-400`}>{stats.attendanceScore.icon}</span>
-                                    <span className={`text-xs font-bold text-${stats.attendanceScore.color}-400`}>{stats.attendanceScore.label} Engagement</span>
-                                </div>
+                                <p className="text-xs text-text-muted mt-1">Member ID #{member.id} • Last active {stats.lastActive}</p>
                             </div>
                         </div>
-                        <div className="flex flex-wrap gap-4 lg:ml-auto">
-                            {/* Stat Cards */}
-                            <div className="bg-white/5 border border-white/10 rounded-2xl p-4 min-w-[160px]">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <span className="material-icons-round text-primary text-lg">stars</span>
-                                    <p className="text-text-muted text-xs uppercase font-bold">Points</p>
-                                </div>
-                                <p className="text-3xl font-bold text-white">{member.points || 207}</p>
-                            </div>
-                            <div className="bg-white/5 border border-white/10 rounded-2xl p-4 min-w-[160px]">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <span className="material-icons-round text-emerald-400 text-lg">check_circle</span>
-                                    <p className="text-text-muted text-xs uppercase font-bold">Visits</p>
-                                </div>
-                                <p className="text-3xl font-bold text-white">{member.accessLogs?.length || 2}</p>
-                            </div>
-                            <div className="bg-white/5 border border-white/10 rounded-2xl p-4 min-w-[160px]">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <span className="material-icons-round text-blue-400 text-lg">payments</span>
-                                    <p className="text-text-muted text-xs uppercase font-bold">Spent</p>
-                                </div>
-                                <p className="text-3xl font-bold text-white">{formatPrice(member.payments?.reduce((sum, p) => sum + p.amount, 0) ?? 0)}</p>
-                            </div>
-                            <div className="bg-white/5 border border-white/10 rounded-2xl p-4 min-w-[160px]">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <span className="material-icons-round text-amber-400 text-lg">event_available</span>
-                                    <p className="text-text-muted text-xs uppercase font-bold">Class Sessions</p>
-                                </div>
-                                <p className={`text-3xl font-bold ${(member.classSessionsRemaining || 0) > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                    {member.classSessionsRemaining || 0}
-                                </p>
+
+                        <div className="flex flex-wrap gap-2">
+                            <button onClick={() => setShowRenewModal(true)} className="px-3.5 py-2 rounded-lg bg-primary hover:bg-orange-600 text-white text-sm font-semibold transition-colors">Renew</button>
+                            <button onClick={() => setShowClassSessionModal(true)} className="px-3.5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold transition-colors">Add Sessions</button>
+                            <div className="relative">
+                                <button
+                                    onClick={() => setShowMoreActions((prev) => !prev)}
+                                    className="px-3.5 py-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-white text-sm font-semibold transition-colors"
+                                >
+                                    More
+                                </button>
+                                {showMoreActions && (
+                                    <div className="absolute right-0 mt-2 w-44 rounded-lg border border-white/10 bg-surface shadow-2xl z-20">
+                                        <button onClick={() => { setShowFreezeModal(true); setShowMoreActions(false); }} className="w-full text-left px-3 py-2.5 text-sm text-text-secondary hover:bg-white/5">Freeze Member</button>
+                                        <button onClick={() => { setShowPasswordModal(true); setShowMoreActions(false); }} className="w-full text-left px-3 py-2.5 text-sm text-text-secondary hover:bg-white/5">Reset Password</button>
+                                        <button onClick={() => { handleEditClick(); setShowMoreActions(false); }} className="w-full text-left px-3 py-2.5 text-sm text-text-secondary hover:bg-white/5">Edit Profile</button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            {/* Action Buttons */}
-            <div className="flex flex-wrap gap-3">
-                <button
-                    onClick={() => setShowRenewModal(true)}
-                    className="bg-primary hover:bg-orange-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg shadow-primary/20"
-                >
-                    <span className="material-icons-round text-[18px]">autorenew</span> Renew Plan
-                </button>
-                <button
-                    onClick={() => setShowFreezeModal(true)}
-                    className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all"
-                >
-                    <span className="material-icons-round text-[18px]">ac_unit</span> Freeze
-                </button>
-                <button
-                    onClick={() => setShowPasswordModal(true)}
-                    className="bg-surfaceHighlight hover:bg-white/10 text-white px-6 py-3 rounded-xl font-medium flex items-center gap-2 border border-white/5 transition-all"
-                >
-                    <span className="material-icons-round text-[18px]">lock_reset</span> Reset Password
-                </button>
-                <button
-                    onClick={() => setShowNotesModal(true)}
-                    className="bg-surfaceHighlight hover:bg-white/10 text-white px-6 py-3 rounded-xl font-medium flex items-center gap-2 border border-white/5 transition-all"
-                >
-                    <span className="material-icons-round text-[18px]">note_add</span> Add Note
-                </button>
-                <button
-                    onClick={() => setShowClassSessionModal(true)}
-                    className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all"
-                >
-                    <span className="material-icons-round text-[18px]">add_circle</span> Add Class Sessions
-                </button>
-            </div>
+                <div className="px-5 py-3 sm:px-6 bg-background/20">
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
+                            <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Plan</p>
+                            <p className="text-sm font-semibold text-white mt-1 truncate">{stats.combinedPlanLabel}</p>
+                            <p className="text-xs text-text-muted">{formatPrice(currentPlan?.price || 0)} / {currentPlan?.duration || 0} days</p>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
+                            <div className="flex items-center justify-between">
+                                <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Progress</p>
+                                <p className="text-xs font-semibold text-white">{Math.round(progressPct)}%</p>
+                            </div>
+                            <div className="h-1.5 rounded-full bg-white/10 overflow-hidden mt-2">
+                                <div className={`h-full ${progressPct > 90 ? 'bg-red-500' : 'bg-primary'}`} style={{ width: `${progressPct}%` }} />
+                            </div>
+                            <p className="text-xs text-text-muted mt-1">{Math.max(0, stats.daysRemaining)} days left</p>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
+                            <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Expiry</p>
+                            <p className="text-sm font-semibold text-white mt-1">{member.expiryDate ? new Date(member.expiryDate).toLocaleDateString() : 'Not set'}</p>
+                            <p className={`text-xs mt-1 ${riskLevel === 'High' ? 'text-red-400' : riskLevel === 'Medium' ? 'text-amber-400' : 'text-emerald-400'}`}>Risk: {riskLevel}</p>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
+                            <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Ledger Snapshot</p>
+                            <p className="text-xs text-text-muted mt-1">Spent: <span className="text-white font-semibold">{formatPrice(totalSpent)}</span></p>
+                            <p className="text-xs text-text-muted">Visits: <span className="text-white font-semibold">{member.accessLogs?.length || 0}</span></p>
+                            <p className="text-xs text-text-muted">Sessions: <span className={`${(member.classSessionsRemaining || 0) > 0 ? 'text-emerald-400' : 'text-red-400'} font-semibold`}>{member.classSessionsRemaining || 0}</span></p>
+                        </div>
+                    </div>
+                </div>
+            </section>
 
-            {/* Tab Navigation */}
             <TabNavigation tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
 
-
             {/* Tab Content */}
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px] items-start">
+                <div className="space-y-4">
             {activeTab === 'overview' && (
-                <div className="grid lg:grid-cols-2 gap-6">
-                    <div className="space-y-6">
-                        <div className="bg-gradient-to-br from-primary/10 to-orange-500/10 border border-primary/20 rounded-3xl p-6 space-y-4">
-                            <div className="flex items-start justify-between">
-                                <div className="flex-1">
-                                    <p className="text-text-muted text-xs uppercase font-bold tracking-wider mb-2">Current Membership</p>
-                                    <p className="text-3xl font-bold text-white mb-2">{stats.combinedPlanLabel}</p>
-                                    <p className="text-primary font-semibold text-lg">{formatPrice(currentPlan?.price || 0)} / {currentPlan?.duration || 0} Days</p>
-                                </div>
-                                <div className="relative w-28 h-28">
-                                    <svg className="transform -rotate-90 w-28 h-28">
-                                        <circle cx="56" cy="56" r="48" stroke="currentColor" strokeWidth="8" fill="none" className="text-white/10" />
-                                        <circle cx="56" cy="56" r="48" stroke="currentColor" strokeWidth="8" fill="none" strokeDasharray={`${2 * Math.PI * 48}`} strokeDashoffset={`${2 * Math.PI * 48 * (1 - stats.progress / 100)}`} className={`transition-all duration-1000 ${stats.progress > 90 ? 'text-red-500' : 'text-primary'}`} strokeLinecap="round" />
-                                    </svg>
-                                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                        <span className="text-3xl font-bold text-white">{Math.max(0, stats.daysRemaining)}</span>
-                                        <span className="text-[10px] text-text-muted font-semibold">days left</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="space-y-2">
-                                <div className="flex justify-between text-xs">
-                                    <span className="text-text-muted font-semibold">Membership Progress</span>
-                                    <span className="text-white font-bold">{Math.round(stats.progress)}%</span>
-                                </div>
-                                <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                                    <div className={`h-full rounded-full transition-all duration-1000 ${stats.progress > 90 ? 'bg-red-500' : 'bg-primary'}`} style={{ width: `${stats.progress}%` }}></div>
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/10">
-                                <div className="bg-white/5 rounded-xl p-3">
-                                    <p className="text-text-muted font-semibold text-xs mb-1">Start Date</p>
-                                    <p className="text-white font-bold">{member.startDate ? new Date(member.startDate).toLocaleDateString() : 'N/A'}</p>
-                                </div>
-                                <div className="bg-white/5 rounded-xl p-3">
-                                    <p className="text-text-muted font-semibold text-xs mb-1">Expiry Date</p>
-                                    <p className={`font-bold ${stats.isExpired ? 'text-red-400' : 'text-emerald-400'}`}>{member.expiryDate ? new Date(member.expiryDate).toLocaleDateString() : 'N/A'}</p>
-                                </div>
-                            </div>
+                <>
+                    <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
+                        <div className="px-5 py-3 border-b border-white/10">
+                            <h3 className="text-white font-semibold">Member Profile</h3>
                         </div>
-
-                        <div className="bg-surface rounded-3xl border border-white/5 p-6">
-                            <h3 className="font-bold text-white flex items-center gap-2 mb-4">
-                                <span className="material-icons-round text-amber-400">event_note</span>
-                                Class Session Tracking
-                            </h3>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-white/5 rounded-xl p-4 border border-white/5">
-                                    <p className="text-text-muted text-xs uppercase font-bold tracking-wider mb-2">Remaining</p>
-                                    <p className={`text-2xl font-bold ${(member.classSessionsRemaining || 0) > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                        {member.classSessionsRemaining || 0}
-                                    </p>
+                        <div className="px-5 py-1">
+                            {[
+                                { label: 'Email', value: member.email || 'Not provided' },
+                                { label: 'Phone', value: member.phone || 'Not provided' },
+                                { label: 'Birth Date', value: member.birthDate ? new Date(member.birthDate).toLocaleDateString() : 'Not provided' },
+                                { label: 'Gender', value: member.sex || 'Not specified' },
+                                { label: 'Member Since', value: member.startDate ? new Date(member.startDate).toLocaleDateString() : 'Not provided' },
+                                { label: 'Expiry Date', value: member.expiryDate ? new Date(member.expiryDate).toLocaleDateString() : 'Not provided' }
+                            ].map((row) => (
+                                <div key={row.label} className="grid grid-cols-[150px_minmax(0,1fr)] gap-3 py-3 border-b border-white/5 last:border-b-0">
+                                    <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">{row.label}</p>
+                                    <p className="text-sm text-white break-words">{row.value}</p>
                                 </div>
-                                <div className="bg-white/5 rounded-xl p-4 border border-white/5">
-                                    <p className="text-text-muted text-xs uppercase font-bold tracking-wider mb-2">Used</p>
-                                    <p className="text-2xl font-bold text-white">{member.classSessionsUsed || 0}</p>
-                                </div>
-                                <div className="bg-white/5 rounded-xl p-4 border border-white/5">
-                                    <p className="text-text-muted text-xs uppercase font-bold tracking-wider mb-2">Purchased Sessions</p>
-                                    <p className="text-2xl font-bold text-white">{member.classSessionsPurchased || 0}</p>
-                                </div>
-                                <div className="bg-white/5 rounded-xl p-4 border border-white/5">
-                                    <p className="text-text-muted text-xs uppercase font-bold tracking-wider mb-2">Plan Included</p>
-                                    <p className="text-2xl font-bold text-white">
-                                        {currentPlan?.includesClasses ? (currentPlan?.includedClassSessions || 0) : 0}
-                                    </p>
-                                </div>
-                            </div>
+                            ))}
                         </div>
+                    </section>
 
-                        <div className="bg-surface rounded-3xl border border-white/5 overflow-hidden shadow-sm">
-                            <div className="p-6 border-b border-white/5 bg-white/5"><h3 className="font-bold text-white flex items-center gap-2"><span className="material-icons-round text-primary">person</span> Personal Information</h3></div>
-                            <div className="p-6">
-                                <div className="grid md:grid-cols-2 gap-4">
-                                    {[
-                                        { label: 'Email Address', value: member.email },
-                                        { label: 'Phone Number', value: member.phone || 'Not provided' },
-                                        { label: 'Date of Birth', value: member.birthDate ? new Date(member.birthDate).toLocaleDateString() : 'Not provided' },
-                                        { label: 'Gender', value: member.sex || 'Not specified' }
-                                    ].map(info => (
-                                        <div key={info.label} className="bg-white/5 rounded-2xl p-4 border border-white/5">
-                                            <p className="text-text-muted text-xs uppercase font-bold tracking-widest mb-2">{info.label}</p>
-                                            <p className="text-white font-bold text-sm truncate">{info.value}</p>
-                                        </div>
+                    <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
+                        <div className="px-5 py-3 border-b border-white/10 flex items-center justify-between">
+                            <h3 className="text-white font-semibold">Recent Access Logs</h3>
+                            <button onClick={() => setActiveTab('activity')} className="text-primary text-xs font-semibold hover:underline">View All</button>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full min-w-[620px]">
+                                <thead className="bg-white/5">
+                                    <tr className="text-left">
+                                        <th className="px-5 py-2.5 text-[11px] uppercase tracking-wide text-text-muted">Date</th>
+                                        <th className="px-5 py-2.5 text-[11px] uppercase tracking-wide text-text-muted">Time</th>
+                                        <th className="px-5 py-2.5 text-[11px] uppercase tracking-wide text-text-muted">Event</th>
+                                        <th className="px-5 py-2.5 text-[11px] uppercase tracking-wide text-text-muted text-right">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filteredLogs.slice(0, 8).map((log) => (
+                                        <tr key={log.id} className="border-t border-white/5">
+                                            <td className="px-5 py-3 text-sm text-white">{new Date(log.checkIn).toLocaleDateString()}</td>
+                                            <td className="px-5 py-3 text-sm text-text-secondary">{new Date(log.checkIn).toLocaleTimeString()}</td>
+                                            <td className="px-5 py-3 text-sm text-text-secondary">{log.status === 'ALLOWED' ? 'Successful Check-in' : 'Access Denied'}</td>
+                                            <td className="px-5 py-3 text-right">
+                                                <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold border ${log.status === 'ALLOWED' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>{log.status}</span>
+                                            </td>
+                                        </tr>
                                     ))}
-                                </div>
-                            </div>
+                                    {filteredLogs.length === 0 && <tr><td colSpan="4" className="px-5 py-7 text-sm text-text-muted text-center">No recent logs.</td></tr>}
+                                </tbody>
+                            </table>
                         </div>
-                    </div>
-
-                    <div className="space-y-6">
-                        <div className="bg-surface rounded-3xl border border-white/5 overflow-hidden shadow-sm">
-                            <div className="p-6 border-b border-white/5 bg-white/5"><h3 className="font-bold text-white flex items-center gap-2"><span className="material-icons-round text-primary">insights</span> Member Insights</h3></div>
-                            <div className="p-5 space-y-4">
-                                <div className={`bg-gradient-to-br from-${stats.attendanceScore.color}-500/10 to-${stats.attendanceScore.color}-600/5 rounded-2xl p-4 border border-${stats.attendanceScore.color}-500/20`}>
-                                    <p className="text-text-muted text-xs uppercase font-semibold tracking-wider mb-2">Engagement</p>
-                                    <p className={`text-2xl font-bold text-${stats.attendanceScore.color}-400 mb-1`}>{stats.attendanceScore.label}</p>
-                                    <p className="text-text-muted text-[10px]">Based on 30-day activity</p>
-                                </div>
-                                <div className="bg-gradient-to-br from-purple-500/10 to-purple-600/5 rounded-2xl p-4 border border-purple-500/20">
-                                    <p className="text-text-muted text-xs uppercase font-semibold tracking-wider mb-2">Retention Risk</p>
-                                    <p className="text-2xl font-bold text-purple-400 mb-1">{stats.isExpired ? 'High' : stats.isExpiringSoon ? 'Medium' : 'Low'}</p>
-                                    <p className="text-text-muted text-[10px]">{stats.isExpired ? 'Membership expired' : stats.isExpiringSoon ? 'Expiring soon' : 'Active membership'}</p>
-                                </div>
-                                <div className="bg-gradient-to-br from-cyan-500/10 to-cyan-600/5 rounded-2xl p-4 border border-cyan-500/20">
-                                    <p className="text-text-muted text-xs uppercase font-semibold tracking-wider mb-2">Avg Visit Time</p>
-                                    <p className="text-2xl font-bold text-cyan-400 mb-1">45 min</p>
-                                    <p className="text-text-muted text-[10px]">Average session duration</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="bg-surface rounded-3xl border border-white/5 overflow-hidden shadow-sm">
-                            <div className="p-6 border-b border-white/5 flex justify-between items-center">
-                                <h3 className="font-bold text-white flex items-center gap-2"><span className="material-icons-round text-primary">history</span> Recent Activity</h3>
-                                <button onClick={() => setActiveTab('activity')} className="text-primary text-sm font-bold hover:underline">View All</button>
-                            </div>
-                            <div className="p-6 space-y-3">
-                                {filteredLogs.slice(0, 5).map(log => (
-                                    <div key={log.id} className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl border border-white/5 hover:border-primary/20 transition-all">
-                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${log.status === 'ALLOWED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
-                                            <span className="material-icons-round text-lg">{log.status === 'ALLOWED' ? 'check_circle' : 'cancel'}</span>
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-white font-bold text-sm truncate">{log.status === 'ALLOWED' ? 'Successful Check-in' : 'Access Denied'}</p>
-                                            <p className="text-text-muted text-[10px]">{new Date(log.checkIn).toLocaleString()}</p>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                    </section>
+                </>
             )}
 
             {activeTab === 'activity' && (
-                <div className="bg-surface rounded-3xl border border-white/5 overflow-hidden shadow-sm">
-                    <div className="p-6 border-b border-white/5 flex justify-between items-center">
-                        <h3 className="font-bold text-white flex items-center gap-2"><span className="material-icons-round text-primary">history</span> Activity Timeline</h3>
+                <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
+                    <div className="px-5 py-3 border-b border-white/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                        <h3 className="text-white font-semibold">Activity Ledger</h3>
                         <div className="flex gap-2">
                             {['7days', '30days', 'all'].map(period => (
-                                <button key={period} onClick={() => setActivityFilter(period)} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${activityFilter === period ? 'bg-primary text-white' : 'bg-white/5 text-text-muted hover:text-white'}`}>
+                                <button key={period} onClick={() => setActivityFilter(period)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${activityFilter === period ? 'bg-primary text-white' : 'bg-white/5 text-text-muted hover:text-white'}`}>
                                     {period === 'all' ? 'All Time' : period === '30days' ? '30 Days' : '7 Days'}
                                 </button>
                             ))}
                         </div>
                     </div>
-                    <div className="p-6 max-h-[700px] overflow-y-auto space-y-6">
-                        {Object.entries(groupedLogs).map(([date, logs]) => (
-                            <div key={date} className="space-y-4">
-                                <div className="flex items-center gap-3"><div className="bg-primary/10 px-3 py-1.5 rounded-lg border border-primary/20"><p className="text-primary font-bold text-sm">{date}</p></div><div className="h-px flex-1 bg-white/5"></div></div>
-                                <div className="space-y-3">
-                                    {logs.map(log => (
-                                        <div key={log.id} className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl border border-white/5 hover:border-primary/20 transition-all">
-                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${log.status === 'ALLOWED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
-                                                <span className="material-icons-round text-lg">{log.status === 'ALLOWED' ? 'check_circle' : 'cancel'}</span>
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-white font-bold text-sm truncate">{log.status === 'ALLOWED' ? 'Successful Check-in' : 'Access Denied'}</p>
-                                                <p className="text-text-muted text-xs">{new Date(log.checkIn).toLocaleTimeString()}</p>
-                                            </div>
-                                            <span className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${log.status === 'ALLOWED' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>{log.status}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
+                    <div className="overflow-x-auto max-h-[680px]">
+                        <table className="w-full min-w-[720px]">
+                            <thead className="bg-white/5 sticky top-0">
+                                <tr className="text-left">
+                                    <th className="px-5 py-2.5 text-[11px] uppercase tracking-wide text-text-muted">Date</th>
+                                    <th className="px-5 py-2.5 text-[11px] uppercase tracking-wide text-text-muted">Time</th>
+                                    <th className="px-5 py-2.5 text-[11px] uppercase tracking-wide text-text-muted">Action</th>
+                                    <th className="px-5 py-2.5 text-[11px] uppercase tracking-wide text-text-muted text-right">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filteredLogs.map((log) => (
+                                    <tr key={log.id} className="border-t border-white/5">
+                                        <td className="px-5 py-3 text-sm text-white">{new Date(log.checkIn).toLocaleDateString()}</td>
+                                        <td className="px-5 py-3 text-sm text-text-secondary">{new Date(log.checkIn).toLocaleTimeString()}</td>
+                                        <td className="px-5 py-3 text-sm text-text-secondary">{log.status === 'ALLOWED' ? 'Successful Check-in' : 'Access Denied'}</td>
+                                        <td className="px-5 py-3 text-right">
+                                            <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold border ${log.status === 'ALLOWED' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>{log.status}</span>
+                                        </td>
+                                    </tr>
+                                ))}
+                                {filteredLogs.length === 0 && <tr><td colSpan="4" className="px-5 py-7 text-sm text-text-muted text-center">No activity found for this filter.</td></tr>}
+                            </tbody>
+                        </table>
                     </div>
-                </div>
+                </section>
             )}
 
             {activeTab === 'payments' && (
-                <div className="bg-surface rounded-3xl border border-white/5 overflow-hidden shadow-sm p-6">
-                    <h3 className="font-bold text-white flex items-center gap-2 mb-6"><span className="material-icons-round text-primary">receipt_long</span> Payment History</h3>
-                    <div className="space-y-4">
-                        {member.payments?.map(pay => (
-                            <div key={pay.id} className="p-5 bg-white/5 rounded-2xl border border-white/10 hover:border-primary/20 transition-all">
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <p className="text-2xl font-bold text-white mb-1">{formatPrice(pay.amount)}</p>
-                                        <p className="text-xs text-text-secondary uppercase tracking-wider">{pay.type.replace('_', ' ')}</p>
-                                    </div>
-                                    <div className="text-right">
-                                        <span className="inline-block text-[10px] font-bold bg-background/50 text-text-muted px-3 py-1.5 rounded-lg border border-white/5 mb-2">{pay.method}</span>
-                                        <p className="text-xs text-text-muted">{new Date(pay.date).toLocaleDateString()}</p>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
+                <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
+                    <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
+                        <h3 className="text-white font-bold flex items-center gap-2"><span className="material-icons-round text-primary text-base">receipt_long</span> Payment History</h3>
+                        <span className="text-xs text-text-muted">{loadingPayments ? 'Loading...' : `${paymentRows.length} records`}</span>
                     </div>
-                </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full min-w-[640px]">
+                            <thead className="bg-white/5">
+                                <tr className="text-left">
+                                    <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-text-muted">Date</th>
+                                    <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-text-muted">Type</th>
+                                    <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-text-muted">Method</th>
+                                    <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wide text-text-muted text-right">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {paymentRows.map((pay) => (
+                                    <tr key={pay.id} className="border-t border-white/5">
+                                        <td className="px-5 py-3 text-sm text-white">{new Date(pay.date).toLocaleDateString()}</td>
+                                        <td className="px-5 py-3 text-sm text-text-secondary">{String(pay.type || '').replace('_', ' ')}</td>
+                                        <td className="px-5 py-3 text-sm text-text-secondary">{pay.method || '-'}</td>
+                                        <td className="px-5 py-3 text-sm font-semibold text-white text-right">{formatPrice(pay.amount || 0)}</td>
+                                    </tr>
+                                ))}
+                                {paymentRows.length === 0 && (
+                                    <tr>
+                                        <td colSpan="4" className="px-5 py-8 text-sm text-text-muted text-center">No payment history yet.</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
             )}
 
             {activeTab === 'notes' && (
-                <div className="bg-surface rounded-3xl border border-white/5 overflow-hidden shadow-sm p-6">
-                    <div className="flex justify-between items-center mb-6">
-                        <h3 className="font-bold text-white flex items-center gap-2"><span className="material-icons-round text-primary">description</span> Staff Notes</h3>
-                        <button onClick={() => setShowNotesModal(true)} className="bg-primary hover:bg-orange-600 text-white px-4 py-2 rounded-xl text-sm font-bold transition-all flex items-center gap-2">
+                <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
+                    <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
+                        <h3 className="text-white font-bold flex items-center gap-2"><span className="material-icons-round text-primary text-base">description</span> Staff Notes</h3>
+                        <button onClick={() => setShowNotesModal(true)} className="bg-primary hover:bg-orange-600 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors flex items-center gap-1.5">
                             <span className="material-icons-round text-sm">add</span> Add Note
                         </button>
                     </div>
-                    <div className="space-y-3">
+                    <div className="p-5 space-y-3 max-h-[620px] overflow-y-auto">
                         {notes.map(note => (
-                            <div key={note.id} className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                                <div className="text-[10px] text-text-muted mb-2 uppercase font-bold tracking-widest">{note.author?.name || 'Staff'} • {new Date(note.createdAt).toLocaleString()}</div>
-                                <p className="text-sm text-white whitespace-pre-wrap">{note.content}</p>
-                            </div>
+                            <article key={note.id} className="rounded-xl border border-white/10 bg-black/20 p-4">
+                                <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">{note.author?.name || 'Staff'} • {new Date(note.createdAt).toLocaleString()}</p>
+                                <p className="mt-2 text-sm text-white whitespace-pre-wrap">{note.content}</p>
+                            </article>
                         ))}
+                        {notes.length === 0 && <p className="text-sm text-text-muted">No staff notes available.</p>}
                     </div>
-                </div>
+                </section>
             )}
+
+                </div>
+
+                <aside className="space-y-4 xl:sticky xl:top-4">
+                    <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
+                        <div className="px-4 py-3 border-b border-white/10">
+                            <h3 className="text-white text-sm font-semibold">Quick Metrics</h3>
+                        </div>
+                        <div className="p-4 space-y-3 text-sm">
+                            <div className="flex items-center justify-between"><span className="text-text-muted">Attendance</span><span className={`font-semibold ${attendanceTone}`}>{stats.attendanceScore.label}</span></div>
+                            <div className="flex items-center justify-between"><span className="text-text-muted">Visits</span><span className="font-semibold text-white">{member.accessLogs?.length || 0}</span></div>
+                            <div className="flex items-center justify-between"><span className="text-text-muted">Points</span><span className="font-semibold text-white">{member.points || 0}</span></div>
+                            <div className="flex items-center justify-between"><span className="text-text-muted">Total Spent</span><span className="font-semibold text-white">{formatPrice(totalSpent)}</span></div>
+                        </div>
+                    </section>
+
+                    <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
+                        <div className="px-4 py-3 border-b border-white/10">
+                            <h3 className="text-white text-sm font-semibold">Class Sessions</h3>
+                        </div>
+                        <div className="p-4 space-y-3 text-sm">
+                            <div className="flex items-center justify-between"><span className="text-text-muted">Remaining</span><span className={`${(member.classSessionsRemaining || 0) > 0 ? 'text-emerald-400' : 'text-red-400'} font-semibold`}>{member.classSessionsRemaining || 0}</span></div>
+                            <div className="flex items-center justify-between"><span className="text-text-muted">Used</span><span className="text-white font-semibold">{member.classSessionsUsed || 0}</span></div>
+                            <div className="flex items-center justify-between"><span className="text-text-muted">Purchased</span><span className="text-white font-semibold">{member.classSessionsPurchased || 0}</span></div>
+                            <div className="flex items-center justify-between"><span className="text-text-muted">Plan Included</span><span className="text-white font-semibold">{currentPlan?.includesClasses ? (currentPlan?.includedClassSessions || 0) : 0}</span></div>
+                        </div>
+                    </section>
+
+                </aside>
+            </div>
 
             {/* Modals */}
             {showClassSessionModal && (
@@ -825,6 +770,33 @@ export default function MemberDetail() {
                                 <option value="CASH">Cash</option><option value="GCASH">GCash</option>
                             </select>
                             {renewData.method === 'CASH' && <input required type="number" className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white" placeholder="Amount Tendered" value={renewAmountTendered} onChange={e => setRenewAmountTendered(e.target.value)} />}
+                            {renewData.method === 'GCASH' && (
+                                <div className="space-y-3">
+                                    <input
+                                        required
+                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white"
+                                        placeholder="GCash Reference"
+                                        value={renewGcashReference}
+                                        onChange={e => setRenewGcashReference(e.target.value)}
+                                    />
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <input
+                                            required
+                                            type="date"
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white"
+                                            value={renewGcashDate}
+                                            onChange={e => setRenewGcashDate(e.target.value)}
+                                        />
+                                        <input
+                                            required
+                                            type="time"
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white"
+                                            value={renewGcashTime}
+                                            onChange={e => setRenewGcashTime(e.target.value)}
+                                        />
+                                    </div>
+                                </div>
+                            )}
                             <div className="flex justify-end gap-3"><button type="button" onClick={() => setShowRenewModal(false)} className="text-text-muted">Cancel</button><button type="submit" className="bg-primary text-white font-bold px-8 py-2.5 rounded-2xl">Renew</button></div>
                         </form>
                     </div>
@@ -851,7 +823,7 @@ export default function MemberDetail() {
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                     <div className="bg-surface p-8 rounded-[32px] w-full max-w-md border border-white/10 shadow-2xl">
                         <h3 className="text-xl font-bold text-white mb-6">Add Staff Note</h3>
-                        <form onSubmit={async e => { e.preventDefault(); if (!noteData.trim()) return; try { await axios.post(`/api/members/${id}/notes`, { content: noteData.trim() }); setNoteData(''); setShowNotesModal(false); fetchNotes(); } catch (e) { showAlert({ title: "Save Failed", message: "Failed to save note", type: "danger" }); } }} className="space-y-4">
+                        <form onSubmit={async e => { e.preventDefault(); if (!noteData.trim()) return; try { await axios.post(`/api/members/${id}/notes`, { content: noteData.trim() }); setNoteData(''); setShowNotesModal(false); fetchNotes(); } catch { showAlert({ title: "Save Failed", message: "Failed to save note", type: "danger" }); } }} className="space-y-4">
                             <textarea required rows="5" className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white outline-none resize-none" placeholder="Enter note..." value={noteData} onChange={e => setNoteData(e.target.value)} />
                             <div className="flex justify-end gap-3"><button type="button" onClick={() => setShowNotesModal(false)} className="text-text-muted">Cancel</button><button type="submit" className="bg-primary text-white font-bold px-8 py-2.5 rounded-2xl">Save</button></div>
                         </form>
@@ -871,25 +843,6 @@ export default function MemberDetail() {
                             <input type="email" required className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white outline-none" placeholder="Email" value={editFormData.email || ''} onChange={e => setEditFormData({ ...editFormData, email: e.target.value })} />
                             <input type="tel" className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white outline-none" placeholder="Phone" value={editFormData.phone || ''} onChange={e => setEditFormData({ ...editFormData, phone: e.target.value })} />
                             <div className="flex gap-3 mt-6"><button type="button" onClick={() => setShowEditModal(false)} className="flex-1 py-3 text-white bg-white/10 rounded-xl">Cancel</button><button type="submit" className="flex-1 py-3 bg-primary text-white font-bold rounded-xl">Save</button></div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {showRenewModal && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                    <div className="bg-surface p-8 rounded-[32px] w-full max-w-sm border border-white/10 shadow-2xl">
-                        <h3 className="text-xl font-bold text-white mb-6">Renew Membership</h3>
-                        <form onSubmit={handleRenew} className="space-y-4">
-                            <select required className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white outline-none" value={renewData.planId} onChange={e => handlePlanChange(e.target.value)}>
-                                <option value="">-- Choose a Plan --</option>
-                                {plans.map(p => <option key={p.id} value={p.id}>{p.name} - {formatPrice(p.price)}</option>)}
-                            </select>
-                            <select className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white outline-none" value={renewData.method} onChange={e => setRenewData({ ...renewData, method: e.target.value })}>
-                                <option value="CASH">Cash</option><option value="GCASH">GCash</option>
-                            </select>
-                            {renewData.method === 'CASH' && <input required type="number" className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white" placeholder="Amount Tendered" value={renewAmountTendered} onChange={e => setRenewAmountTendered(e.target.value)} />}
-                            <div className="flex justify-end gap-3"><button type="button" onClick={() => setShowRenewModal(false)} className="text-text-muted">Cancel</button><button type="submit" className="bg-primary text-white font-bold px-8 py-2.5 rounded-2xl">Renew</button></div>
                         </form>
                     </div>
                 </div>

@@ -49,6 +49,9 @@ import Members from '../features/staff/Members';
 import MemberDetail from '../features/staff/MemberDetail';
 import TransactionDetail from '../features/staff/TransactionDetail';
 import DoorScanner from '../features/staff/DoorScanner';
+import StaffSettings from '../features/staff/StaffSettings';
+import StaffTrainers from '../features/staff/Trainers';
+import StaffClasses from '../features/staff/Classes';
 
 // Trainer Pages
 import TrainerSessions from '../features/trainer/TrainerSessions';
@@ -289,7 +292,7 @@ export default function AppRoutes() {
                     path="/trainers"
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-                            <Trainers />
+                            {user?.role === ROLES.STAFF ? <StaffTrainers /> : <Trainers />}
                         </ProtectedRoute>
                     }
                 />
@@ -297,7 +300,7 @@ export default function AppRoutes() {
                     path="/classes"
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-                            <Classes />
+                            {user?.role === ROLES.STAFF ? <StaffClasses /> : <Classes />}
                         </ProtectedRoute>
                     }
                 />
@@ -527,7 +530,15 @@ export default function AppRoutes() {
                     path="/profile"
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.MEMBER, ROLES.ADMIN, ROLES.STAFF]}>
-                            <Profile />
+                            {user?.role === ROLES.STAFF ? <Navigate to="/staff/settings" replace /> : <Profile />}
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/staff/settings"
+                    element={
+                        <ProtectedRoute allowedRoles={[ROLES.STAFF]}>
+                            <StaffSettings />
                         </ProtectedRoute>
                     }
                 />

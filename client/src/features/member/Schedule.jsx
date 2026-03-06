@@ -52,6 +52,13 @@ const formatDateLabel = (value) => {
     return new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'short', day: 'numeric' }).format(date);
 };
 
+const fallbackClassImage = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='480' viewBox='0 0 480 480'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop stop-color='%230f172a'/%3E%3Cstop offset='1' stop-color='%231e293b'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='480' height='480' fill='url(%23g)'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%2394a3b8' font-family='Arial' font-size='22'%3EClass Image Unavailable%3C/text%3E%3C/svg%3E";
+
+const handleClassImageError = (event) => {
+    event.currentTarget.onerror = null;
+    event.currentTarget.src = fallbackClassImage;
+};
+
 export default function Schedule() {
     const { alert: showAlert, confirm: showConfirm } = useConfirm();
     const sessionPolicyNote = 'Joining a class consumes 1 session. If you leave later, that session is still consumed and not refunded.';
@@ -287,81 +294,86 @@ export default function Schedule() {
                                         : 'border-white/5 hover:border-white/10'
                                     }`}
                             >
-                                <div className="flex gap-4">
-                                    <div className="flex-shrink-0 w-16 text-center">
-                                        <div className="bg-white/5 rounded-lg p-2 border border-white/5">
-                                            <div className="text-primary font-bold text-[11px] leading-tight mb-1">
-                                                {classTime.start}
-                                            </div>
-                                            <div className="text-text-muted text-[10px] font-medium">
-                                                {classTime.end ? `to ${classTime.end}` : `${cls.duration} min`}
-                                            </div>
+                                <div className="space-y-3">
+                                    <div className="flex gap-3">
+                                        <div className="relative h-24 w-24 flex-shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/5">
+                                            {cls.imageUrl ? (
+                                                <img src={cls.imageUrl} alt={cls.name} onError={handleClassImageError} className="h-full w-full object-cover" />
+                                            ) : (
+                                                <div className="flex h-full w-full items-center justify-center text-text-muted">
+                                                    <span className="material-icons-round text-2xl">fitness_center</span>
+                                                </div>
+                                            )}
+                                            {cls.isBooked && (
+                                                <span className="absolute bottom-1 left-1 rounded bg-primary/90 px-1.5 py-0.5 text-[10px] font-bold text-background">
+                                                    BOOKED
+                                                </span>
+                                            )}
                                         </div>
-                                        {cls.isBooked && (
-                                            <div className="mt-2 bg-primary/20 text-primary px-1.5 py-0.5 text-[10px] font-bold rounded">
-                                                BOOKED
-                                            </div>
-                                        )}
-                                    </div>
 
-                                    <div className="flex-1 min-w-0">
-                                        <div className="mb-3">
-                                            <h3 className="text-base font-bold text-white mb-1 line-clamp-1">{cls.name}</h3>
-                                            <div className="flex items-center gap-3 text-xs text-text-muted flex-wrap">
-                                                <span className="flex items-center gap-1"><span className="material-icons-round text-sm">person</span>{cls.trainer?.name || 'TBA'}</span>
-                                                <span className="flex items-center gap-1"><span className="material-icons-round text-sm">calendar_today</span>{cls.dayOfWeek}</span>
-                                                <span className="flex items-center gap-1"><span className="material-icons-round text-sm">schedule</span>{classTime.label}</span>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="mb-2 flex items-start justify-between gap-2">
+                                                <h3 className="line-clamp-1 text-base font-bold text-white">{cls.name}</h3>
+                                                <div className="shrink-0 text-right">
+                                                    <p className="text-xs font-bold text-primary">{classTime.start}</p>
+                                                    <p className="text-[10px] text-text-muted">{classTime.end ? classTime.end : `${cls.duration} min`}</p>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
+                                                <span className="inline-flex items-center gap-1"><span className="material-icons-round text-sm">person</span>{cls.trainer?.name || 'TBA'}</span>
+                                                <span className="inline-flex items-center gap-1"><span className="material-icons-round text-sm">calendar_today</span>{cls.dayOfWeek}</span>
                                                 {scheduleType === 'ONE_TIME' && (
-                                                    <span className="flex items-center gap-1"><span className="material-icons-round text-sm">event</span>{formatDateLabel(cls.oneTimeDate || cls.sessionDate)}</span>
+                                                    <span className="inline-flex items-center gap-1"><span className="material-icons-round text-sm">event</span>{formatDateLabel(cls.oneTimeDate || cls.sessionDate)}</span>
                                                 )}
                                             </div>
                                         </div>
-
-                                        <div className="mb-3">
-                                            <div className="flex items-center justify-between mb-1.5">
-                                                <span className="text-xs text-text-muted">{cls.enrolled} / {cls.capacity} spots filled</span>
-                                                <span className={`text-xs font-bold ${isFull ? 'text-red-400' :
-                                                        capacityPercent > 75 ? 'text-yellow-400' :
-                                                            'text-emerald-400'
-                                                    }`}>
-                                                    {isFull ? 'Full' : `${cls.capacity - cls.enrolled} left`}
-                                                </span>
-                                            </div>
-                                            <div className="w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
-                                                <div
-                                                    className={`h-full transition-all ${isFull ? 'bg-red-500' :
-                                                            capacityPercent > 75 ? 'bg-yellow-500' :
-                                                                'bg-emerald-500'
-                                                        }`}
-                                                    style={{ width: `${Math.min(capacityPercent, 100)}%` }}
-                                                ></div>
-                                            </div>
-                                        </div>
-
-                                        {cls.isBooked ? (
-                                            <button
-                                                onClick={() => handleCancel(cls.id, cls.sessionDate)}
-                                                className="w-full py-2.5 rounded-lg bg-red-500/10 text-red-400 font-bold hover:bg-red-500/20 active:scale-95 transition-all text-sm border border-red-500/20 flex items-center justify-center gap-1"
-                                            >
-                                                <span className="material-icons-round text-base">cancel</span>
-                                                Leave Class (Session Stays Used)
-                                            </button>
-                                        ) : (
-                                            <button
-                                                onClick={() => handleBook(cls.id, cls.sessionDate)}
-                                                disabled={cannotJoin}
-                                                className={`w-full py-2.5 rounded-lg font-bold transition-all text-sm flex items-center justify-center gap-1 ${cannotJoin
-                                                        ? 'bg-white/5 text-text-muted cursor-not-allowed border border-white/5'
-                                                        : 'bg-primary text-background hover:brightness-110 active:scale-95 shadow-lg'
-                                                    }`}
-                                            >
-                                                <span className="material-icons-round text-base">
-                                                    {isFull ? 'block' : noSessionsLeft ? 'lock' : 'add_circle'}
-                                                </span>
-                                                {isFull ? 'Class Full' : noSessionsLeft ? 'No Sessions Left' : 'Join Class'}
-                                            </button>
-                                        )}
                                     </div>
+
+                                    <div>
+                                        <div className="mb-1.5 flex items-center justify-between">
+                                            <span className="text-xs text-text-muted">{cls.enrolled} / {cls.capacity} spots filled</span>
+                                            <span className={`text-xs font-bold ${isFull ? 'text-red-400' :
+                                                    capacityPercent > 75 ? 'text-yellow-400' :
+                                                        'text-emerald-400'
+                                                }`}>
+                                                {isFull ? 'Full' : `${cls.capacity - cls.enrolled} left`}
+                                            </span>
+                                        </div>
+                                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/5">
+                                            <div
+                                                className={`h-full transition-all ${isFull ? 'bg-red-500' :
+                                                        capacityPercent > 75 ? 'bg-yellow-500' :
+                                                            'bg-emerald-500'
+                                                    }`}
+                                                style={{ width: `${Math.min(capacityPercent, 100)}%` }}
+                                            ></div>
+                                        </div>
+                                    </div>
+
+                                    {cls.isBooked ? (
+                                        <button
+                                            onClick={() => handleCancel(cls.id, cls.sessionDate)}
+                                            className="w-full py-2.5 rounded-lg bg-red-500/10 text-red-400 font-bold hover:bg-red-500/20 active:scale-95 transition-all text-sm border border-red-500/20 flex items-center justify-center gap-1"
+                                        >
+                                            <span className="material-icons-round text-base">cancel</span>
+                                            Leave Class (Session Stays Used)
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={() => handleBook(cls.id, cls.sessionDate)}
+                                            disabled={cannotJoin}
+                                            className={`w-full py-2.5 rounded-lg font-bold transition-all text-sm flex items-center justify-center gap-1 ${cannotJoin
+                                                    ? 'bg-white/5 text-text-muted cursor-not-allowed border border-white/5'
+                                                    : 'bg-primary text-background hover:brightness-110 active:scale-95 shadow-lg'
+                                                }`}
+                                        >
+                                            <span className="material-icons-round text-base">
+                                                {isFull ? 'block' : noSessionsLeft ? 'lock' : 'add_circle'}
+                                            </span>
+                                            {isFull ? 'Class Full' : noSessionsLeft ? 'No Sessions Left' : 'Join Class'}
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         );

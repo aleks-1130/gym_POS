@@ -503,7 +503,10 @@ const cancelBooking = async (req, res) => {
                         memberId,
                         classId: parsedClassId,
                         status: { in: ACTIVE_CLASS_BOOKING_STATUSES },
-                        sessionDate: resolvedSessionDate
+                        OR: [
+                            { sessionDate: resolvedSessionDate },
+                            { sessionDate: null }
+                        ]
                     }
                     : {
                         memberId,

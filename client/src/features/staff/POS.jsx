@@ -41,13 +41,11 @@ export default function POS() {
     const [viewMode, setViewMode] = useState('POS');
     const [catalogView, setCatalogView] = useState('GRID');
     const [productSearch, setProductSearch] = useState('');
+    const [barcodeQuantityModal, setBarcodeQuantityModal] = useState({ open: false, item: null, quantity: '1' });
     const [historySearch, setHistorySearch] = useState('');
     const [historyStatusFilter, setHistoryStatusFilter] = useState('ALL');
     const [historyMethodFilter, setHistoryMethodFilter] = useState('ALL');
     const [collectSearch, setCollectSearch] = useState('');
-    const [collectStatusFilter, setCollectStatusFilter] = useState('ALL');
-
-    const [collectCashTab, setCollectCashTab] = useState('BOOKINGS');
     const [history, setHistory] = useState([]);
     const [trainingBookings, setTrainingBookings] = useState([]);
     const [pendingInAppPurchases, setPendingInAppPurchases] = useState([]);
@@ -55,6 +53,7 @@ export default function POS() {
     const [collectLoading, setCollectLoading] = useState(false);
     const [openCalendarLineId, setOpenCalendarLineId] = useState(null);
     const [calendarMonthByLine, setCalendarMonthByLine] = useState({});
+    const lastAutoBarcodeMatchRef = useRef('');
 
     const hasTraining = cart.some(item => item.type === 'TRAINING');
     const hasClassPackages = cart.some(item => item.type === 'CLASS_PACKAGE');
@@ -141,8 +140,6 @@ export default function POS() {
     }, []);
 
     useEffect(() => {
-        if (viewMode !== 'TRAINING_BOOKINGS') return;
-
         const fetchCollectCashData = async () => {
             await Promise.all([
                 fetchTrainingBookings(),
@@ -151,7 +148,8 @@ export default function POS() {
         };
 
         fetchCollectCashData();
-        const intervalId = setInterval(fetchCollectCashData, 10000);
+        const intervalMs = viewMode === 'TRAINING_BOOKINGS' ? 10000 : 30000;
+        const intervalId = setInterval(fetchCollectCashData, intervalMs);
         return () => clearInterval(intervalId);
     }, [viewMode]);
 
@@ -735,8 +733,6 @@ export default function POS() {
 
     const collectQuery = String(collectSearch || '').trim().toLowerCase();
     const filteredBookingGroups = groupedTrainingBookings.filter((bookingGroup) => {
-        const statusMatches = collectStatusFilter === 'ALL' || collectStatusFilter === 'UNPAID';
-        if (!statusMatches) return false;
         if (!collectQuery) return true;
         const buyer = bookingGroup.member ? `${bookingGroup.member.firstName} ${bookingGroup.member.lastName}` : '';
         const trainer = bookingGroup.trainer?.name || '';
@@ -744,24 +740,19 @@ export default function POS() {
             .some((field) => String(field || '').toLowerCase().includes(collectQuery));
     });
     const filteredPendingPurchases = pendingInAppPurchases.filter((payment) => {
-        const normalizedStatus = String(payment?.status || 'PENDING').toUpperCase();
-        if (collectStatusFilter !== 'ALL' && normalizedStatus !== collectStatusFilter) return false;
         if (!collectQuery) return true;
         const buyer = getBuyerLabel(payment);
         return [buyer, payment?.type, payment?.status, payment?.amount, payment?.method]
             .some((field) => String(field || '').toLowerCase().includes(collectQuery));
     });
-    const pendingPurchaseStatusOptions = ['ALL', ...Array.from(new Set(
-        pendingInAppPurchases.map((payment) => String(payment?.status || 'PENDING').toUpperCase())
-    ))];
-    const collectStatusOptions = collectCashTab === 'BOOKINGS'
-        ? ['ALL', 'UNPAID']
-        : pendingPurchaseStatusOptions;
 
     const categoryTabs = ['All', ...Object.values(POS_VIEWS)];
     const selectedDiscountPreset = discountOptions.find((preset) => preset.id === selectedDiscountPresetId) || null;
+    const collectNotificationCount = groupedTrainingBookings.length + pendingInAppPurchases.length;
+    const collectNotificationLabel = collectNotificationCount > 99 ? '99+' : String(collectNotificationCount);
     const commonInputClass = "w-full rounded-xl border border-white/10 bg-surface px-10 py-2.5 text-sm text-white outline-none transition-colors focus:border-primary";
     const commonSelectClass = "w-full rounded-xl border border-white/10 bg-surface px-3 py-2.5 text-sm text-white outline-none transition-colors focus:border-primary";
+    const getItemImageSrc = (item) => item?.imageUrl || item?.image || item?.photoUrl || item?.avatarUrl || '';
 
     const applyDiscountPreset = (presetId) => {
         if (!presetId) {
@@ -804,19 +795,104 @@ export default function POS() {
         }
     };
 
+    const closeBarcodeQuantityModal = () => {
+        lastAutoBarcodeMatchRef.current = '';
+        setProductSearch('');
+        setBarcodeQuantityModal({ open: false, item: null, quantity: '1' });
+    };
+
+    const findProductByBarcodeOrSku = (rawQuery) => {
+        const normalized = String(rawQuery || '').trim().toLowerCase();
+        if (!normalized) return null;
+        return products.find((product) => {
+            const barcode = String(product?.barcode || '').trim().toLowerCase();
+            const sku = String(product?.sku || '').trim().toLowerCase();
+            const code = String(product?.code || '').trim().toLowerCase();
+            return barcode === normalized || sku === normalized || code === normalized;
+        }) || null;
+    };
+
+    const openBarcodeQuantityModalForProduct = async (matchedProduct) => {
+        if (!matchedProduct || barcodeQuantityModal.open) return;
+        const stockValue = Number(matchedProduct?.stock);
+        if (Number.isFinite(stockValue) && stockValue <= 0) {
+            await showAlert({ title: 'Sold Out', message: `${matchedProduct.name} has no stock left.`, type: 'warning' });
+            return;
+        }
+
+        setBarcodeQuantityModal({
+            open: true,
+            item: matchedProduct,
+            quantity: '1'
+        });
+    };
+
+    const handleCatalogSearchKeyDown = async (event) => {
+        if (event.key !== 'Enter') return;
+        const matchedProduct = findProductByBarcodeOrSku(productSearch);
+        if (!matchedProduct) return;
+        event.preventDefault();
+        await openBarcodeQuantityModalForProduct(matchedProduct);
+    };
+
+    const confirmBarcodeQuantityAdd = async () => {
+        const targetItem = barcodeQuantityModal.item;
+        const requestedQty = Math.max(1, Number.parseInt(barcodeQuantityModal.quantity, 10) || 1);
+        if (!targetItem) return;
+
+        const existingLine = cart.find((entry) => entry.id === targetItem.id && entry.type === 'PRODUCT');
+        const existingQty = Number(existingLine?.quantity || 0);
+        const stockLimit = Number(targetItem?.stock || 0);
+        if (Number.isFinite(stockLimit) && stockLimit > 0 && existingQty + requestedQty > stockLimit) {
+            await showAlert({
+                title: 'Stock Limit',
+                message: `Only ${stockLimit} stocks are available for ${targetItem.name}.`,
+                type: 'warning'
+            });
+            return;
+        }
+
+        for (let index = 0; index < requestedQty; index += 1) {
+            const result = addToCart(targetItem, 'PRODUCT');
+            if (result && !result.success && result.error) {
+                await showAlert({ title: 'Cannot Add Item', message: result.error, type: 'warning' });
+                break;
+            }
+        }
+
+        setProductSearch('');
+        closeBarcodeQuantityModal();
+    };
+
+    useEffect(() => {
+        if (viewMode !== 'POS') return;
+        const normalizedQuery = String(productSearch || '').trim().toLowerCase();
+        if (!normalizedQuery) {
+            lastAutoBarcodeMatchRef.current = '';
+            return;
+        }
+        if (barcodeQuantityModal.open) return;
+
+        const matchedProduct = findProductByBarcodeOrSku(normalizedQuery);
+        if (!matchedProduct) return;
+
+        const autoMatchToken = `${matchedProduct.id}:${normalizedQuery}`;
+        if (lastAutoBarcodeMatchRef.current === autoMatchToken) return;
+        lastAutoBarcodeMatchRef.current = autoMatchToken;
+        void openBarcodeQuantityModalForProduct(matchedProduct);
+    }, [productSearch, products, barcodeQuantityModal.open, viewMode]);
+
     const openHistoryView = () => {
         fetchHistory();
         setViewMode('HISTORY');
     };
 
     const openCollectCashView = () => {
-        setCollectCashTab('BOOKINGS');
-        setCollectStatusFilter('ALL');
         setViewMode('TRAINING_BOOKINGS');
     };
 
     const renderModeTabs = () => (
-        <div className="inline-flex rounded-2xl border border-white/10 bg-surface p-1 shadow-sm">
+        <div className="ml-auto inline-flex rounded-2xl border border-white/10 bg-surface p-1 shadow-sm">
             <button
                 type="button"
                 onClick={() => setViewMode('POS')}
@@ -836,10 +912,15 @@ export default function POS() {
             <button
                 type="button"
                 onClick={openCollectCashView}
-                className={`inline-flex items-center gap-1 rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${viewMode === 'TRAINING_BOOKINGS' ? 'bg-primary text-background' : 'text-text-secondary hover:text-white'}`}
+                className={`relative inline-flex items-center gap-1 rounded-xl px-3 py-2 text-xs font-semibold transition-colors ${viewMode === 'TRAINING_BOOKINGS' ? 'bg-primary text-background' : 'text-text-secondary hover:text-white'}`}
             >
                 <span className="material-icons-round text-sm">payments</span>
                 Collect Cash
+                {collectNotificationCount > 0 && (
+                    <span className="absolute -right-1.5 -top-1.5 min-w-[18px] rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white shadow-lg">
+                        {collectNotificationLabel}
+                    </span>
+                )}
             </button>
         </div>
     );
@@ -948,98 +1029,141 @@ export default function POS() {
                     {renderModeTabs()}
                 </div>
 
-                <div className="rounded-2xl border border-white/10 bg-surface p-4 space-y-3">
-                    <div className="inline-flex gap-2 rounded-xl border border-white/10 bg-surfaceHighlight p-1">
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setCollectCashTab('BOOKINGS');
-                                setCollectStatusFilter('ALL');
-                            }}
-                            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${collectCashTab === 'BOOKINGS'
-                                ? 'bg-primary text-background'
-                                : 'text-text-secondary hover:text-white'
-                                }`}
-                        >
-                            Trainer Bookings
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setCollectCashTab('IN_APP_PURCHASES');
-                                setCollectStatusFilter('ALL');
-                            }}
-                            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${collectCashTab === 'IN_APP_PURCHASES'
-                                ? 'bg-primary text-background'
-                                : 'text-text-secondary hover:text-white'
-                                }`}
-                        >
-                            In-App Purchases
-                        </button>
-                    </div>
-
-                    <div className="grid gap-3 lg:grid-cols-[1fr,220px]">
-                        <label className="relative block">
-                            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 material-icons-round text-base text-text-muted">search</span>
-                            <input
-                                type="text"
-                                value={collectSearch}
-                                onChange={(event) => setCollectSearch(event.target.value)}
-                                placeholder={collectCashTab === 'BOOKINGS' ? 'Search buyer, trainer, duration, or amount' : 'Search member, type, status, or amount'}
-                                className={commonInputClass}
-                            />
-                        </label>
-                        <select
-                            value={collectStatusFilter}
-                            onChange={(event) => setCollectStatusFilter(event.target.value)}
-                            className={commonSelectClass}
-                        >
-                            {collectStatusOptions.map((status) => (
-                                <option key={status} value={status}>{status === 'ALL' ? 'All Statuses' : status}</option>
-                            ))}
-                        </select>
-                    </div>
+                <div className="rounded-2xl border border-white/10 bg-surface p-4">
+                    <label className="relative block">
+                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 material-icons-round text-base text-text-muted">search</span>
+                        <input
+                            type="text"
+                            value={collectSearch}
+                            onChange={(event) => setCollectSearch(event.target.value)}
+                            placeholder="Search buyer, member, trainer, type, status, or amount"
+                            className={commonInputClass}
+                        />
+                    </label>
                 </div>
 
-                {collectCashTab === 'BOOKINGS' && (
+                <div className="grid gap-4 xl:grid-cols-2">
                     <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
-                        <table className="w-full text-left text-sm text-text-secondary">
-                            <thead className="bg-white/5 text-text-muted uppercase text-xs font-bold tracking-wider">
+                        <div className="flex items-center justify-between border-b border-white/10 px-5 py-3 bg-white/5">
+                            <div>
+                                <h2 className="text-sm font-bold text-white uppercase tracking-wide">In-App Purchases</h2>
+                                <p className="text-[11px] text-text-muted">Pending in-app cash settlements</p>
+                            </div>
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-bold text-amber-300">
+                                <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />
+                                PENDING
+                                <span className="rounded-full bg-amber-500/20 px-1.5 py-[1px] text-[10px]">{filteredPendingPurchases.length}</span>
+                            </span>
+                        </div>
+                        <table className="w-full table-fixed text-left text-xs text-text-secondary">
+                            <thead className="bg-white/5 text-text-muted uppercase text-[10px] font-bold tracking-wider">
                                 <tr>
-                                    <th className="px-6 py-4">Date</th>
-                                    <th className="px-6 py-4">Buyer</th>
-                                    <th className="px-6 py-4">Trainer</th>
-                                    <th className="px-6 py-4">Duration</th>
-                                    <th className="px-6 py-4">Amount</th>
-                                    <th className="px-6 py-4">Status</th>
-                                    <th className="px-6 py-4">Actions</th>
+                                    <th className="px-3 py-2.5">Date</th>
+                                    <th className="px-3 py-2.5">Member</th>
+                                    <th className="px-3 py-2.5">Amount</th>
+                                    <th className="px-3 py-2.5">Status</th>
+                                    <th className="w-[132px] px-3 py-2.5">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                                {filteredPendingPurchases.length === 0 && (
+                                    <tr><td colSpan="5" className="p-4 text-center text-text-muted">No pending in-app cash purchases found.</td></tr>
+                                )}
+                                {filteredPendingPurchases.map((payment) => (
+                                    <tr key={payment.id} className="hover:bg-white/5 transition-colors">
+                                        <td className="px-3 py-2.5 text-white font-medium align-top">
+                                            {new Date(payment.date).toLocaleDateString()} <span className="block text-text-muted font-normal text-[10px]">{new Date(payment.date).toLocaleTimeString()}</span>
+                                        </td>
+                                        <td className="px-3 py-2.5 text-white truncate align-top">{getBuyerLabel(payment)}</td>
+                                        <td className="px-3 py-2.5 text-white font-bold align-top">{formatPrice(payment.amount)}</td>
+                                        <td className="px-3 py-2.5 align-top">{renderStatusBadge(payment.status)}</td>
+                                        <td className="px-3 py-2.5 align-top">
+                                            <div className="flex items-center gap-1 whitespace-nowrap">
+                                                <button
+                                                    onClick={() => {
+                                                        openModal('collectPurchase', payment);
+                                                    }}
+                                                    className="text-[10px] font-bold px-2 py-1 rounded-md border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
+                                                >
+                                                    Accept
+                                                </button>
+                                                <button
+                                                    onClick={async () => {
+                                                        const confirmed = await showConfirm({
+                                                            title: 'Decline Purchase?',
+                                                            message: 'Decline this pending cash purchase?',
+                                                            confirmLabel: 'Decline',
+                                                            type: 'danger'
+                                                        });
+                                                        if (!confirmed) return;
+                                                        try {
+                                                            await axios.post(withApiBase(`/api/payments/${payment.id}/decline-cash`), {}, { headers: authHeaders() });
+                                                            await Promise.all([fetchPendingInAppPurchases(), fetchHistory()]);
+                                                        } catch (e) {
+                                                            await showAlert({ title: 'Decline Failed', message: e.response?.data?.error || 'Failed to decline payment', type: 'danger' });
+                                                        }
+                                                    }}
+                                                    className="text-[10px] font-bold px-2 py-1 rounded-md border border-red-500/30 text-red-300 hover:bg-red-500/10"
+                                                >
+                                                    Decline
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
+                        <div className="flex items-center justify-between border-b border-white/10 px-5 py-3 bg-white/5">
+                            <div>
+                                <h2 className="text-sm font-bold text-white uppercase tracking-wide">Trainer Bookings</h2>
+                                <p className="text-[11px] text-text-muted">Unpaid trainer sessions ready for collection</p>
+                            </div>
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-400/30 bg-blue-500/10 px-2.5 py-1 text-[11px] font-bold text-blue-200">
+                                <span className="h-1.5 w-1.5 rounded-full bg-blue-200" />
+                                UNPAID
+                                <span className="rounded-full bg-blue-500/20 px-1.5 py-[1px] text-[10px]">{filteredBookingGroups.length}</span>
+                            </span>
+                        </div>
+                        <table className="w-full table-fixed text-left text-xs text-text-secondary">
+                            <thead className="bg-white/5 text-text-muted uppercase text-[10px] font-bold tracking-wider">
+                                <tr>
+                                    <th className="px-3 py-2.5">Date</th>
+                                    <th className="px-3 py-2.5">Buyer</th>
+                                    <th className="px-3 py-2.5">Trainer</th>
+                                    <th className="px-3 py-2.5">Duration</th>
+                                    <th className="px-3 py-2.5">Amount</th>
+                                    <th className="px-3 py-2.5">Status</th>
+                                    <th className="w-[132px] px-3 py-2.5">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-white/5">
                                 {filteredBookingGroups.length === 0 && (
-                                    <tr><td colSpan="7" className="p-6 text-center text-text-muted">No unpaid bookings found.</td></tr>
+                                    <tr><td colSpan="7" className="p-4 text-center text-text-muted">No unpaid bookings found.</td></tr>
                                 )}
                                 {filteredBookingGroups.map((bookingGroup) => (
                                     <tr key={bookingGroup.key} className="hover:bg-white/5 transition-colors">
-                                        <td className="px-6 py-4 text-white font-medium">
-                                            {bookingGroup.firstDate.toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{bookingGroup.firstDate.toLocaleTimeString()}</span>
+                                        <td className="px-3 py-2.5 text-white font-medium align-top">
+                                            {bookingGroup.firstDate.toLocaleDateString()} <span className="block text-text-muted font-normal text-[10px]">{bookingGroup.firstDate.toLocaleTimeString()}</span>
                                         </td>
-                                        <td className="px-6 py-4 text-white">
+                                        <td className="px-3 py-2.5 text-white truncate align-top">
                                             {bookingGroup.member ? `${bookingGroup.member.firstName} ${bookingGroup.member.lastName}` : 'N/A'}
                                         </td>
-                                        <td className="px-6 py-4 text-white">{bookingGroup.trainer?.name || 'N/A'}</td>
-                                        <td className="px-6 py-4 text-white">{bookingGroup.count} session(s) - {bookingGroup.totalDuration} min</td>
-                                        <td className="px-6 py-4 text-white font-bold">{formatPrice(bookingGroup.totalAmount)}</td>
-                                        <td className="px-6 py-4">
-                                            <span className="px-2 py-1 rounded text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">UNPAID</span>
+                                        <td className="px-3 py-2.5 text-white truncate align-top">{bookingGroup.trainer?.name || 'N/A'}</td>
+                                        <td className="px-3 py-2.5 text-white align-top">{bookingGroup.count} session(s) - {bookingGroup.totalDuration} min</td>
+                                        <td className="px-3 py-2.5 text-white font-bold align-top">{formatPrice(bookingGroup.totalAmount)}</td>
+                                        <td className="px-3 py-2.5 align-top">
+                                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">UNPAID</span>
                                         </td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-2">
+                                        <td className="px-3 py-2.5 align-top">
+                                            <div className="flex items-center gap-1 whitespace-nowrap">
                                                 <button
                                                     onClick={() => {
                                                         openModal('collectCash', bookingGroup);
                                                     }}
-                                                    className="text-xs font-bold px-3 py-1 rounded-lg border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
+                                                    className="text-[10px] font-bold px-2 py-1 rounded-md border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
                                                 >
                                                     Accept
                                                 </button>
@@ -1065,7 +1189,7 @@ export default function POS() {
                                                             await showAlert({ title: 'Decline Failed', message: detail ? `${message}\n\nDetails: ${detail}` : message, type: 'danger' });
                                                         }
                                                     }}
-                                                    className="text-xs font-bold px-3 py-1 rounded-lg border border-red-500/30 text-red-300 hover:bg-red-500/10"
+                                                    className="text-[10px] font-bold px-2 py-1 rounded-md border border-red-500/30 text-red-300 hover:bg-red-500/10"
                                                 >
                                                     Decline
                                                 </button>
@@ -1076,75 +1200,7 @@ export default function POS() {
                             </tbody>
                         </table>
                     </div>
-                )
-                }
-
-                {
-                    collectCashTab === 'IN_APP_PURCHASES' && (
-                        <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
-                            <table className="w-full text-left text-sm text-text-secondary">
-                                <thead className="bg-white/5 text-text-muted uppercase text-xs font-bold tracking-wider">
-                                    <tr>
-                                        <th className="px-6 py-4">Date</th>
-                                        <th className="px-6 py-4">Member</th>
-                                        <th className="px-6 py-4">Type</th>
-                                        <th className="px-6 py-4">Amount</th>
-                                        <th className="px-6 py-4">Status</th>
-                                        <th className="px-6 py-4">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-white/5">
-                                    {filteredPendingPurchases.length === 0 && (
-                                        <tr><td colSpan="6" className="p-6 text-center text-text-muted">No pending in-app cash purchases found.</td></tr>
-                                    )}
-                                    {filteredPendingPurchases.map((payment) => (
-                                        <tr key={payment.id} className="hover:bg-white/5 transition-colors">
-                                            <td className="px-6 py-4 text-white font-medium">
-                                                {new Date(payment.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(payment.date).toLocaleTimeString()}</span>
-                                            </td>
-                                            <td className="px-6 py-4 text-white">{getBuyerLabel(payment)}</td>
-                                            <td className="px-6 py-4 text-white">{payment.type}</td>
-                                            <td className="px-6 py-4 text-white font-bold">{formatPrice(payment.amount)}</td>
-                                            <td className="px-6 py-4">{renderStatusBadge(payment.status)}</td>
-                                            <td className="px-6 py-4">
-                                                <div className="flex items-center gap-2">
-                                                    <button
-                                                        onClick={() => {
-                                                            openModal('collectPurchase', payment);
-                                                        }}
-                                                        className="text-xs font-bold px-3 py-1 rounded-lg border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
-                                                    >
-                                                        Accept
-                                                    </button>
-                                                    <button
-                                                        onClick={async () => {
-                                                            const confirmed = await showConfirm({
-                                                                title: 'Decline Purchase?',
-                                                                message: 'Decline this pending cash purchase?',
-                                                                confirmLabel: 'Decline',
-                                                                type: 'danger'
-                                                            });
-                                                            if (!confirmed) return;
-                                                            try {
-                                                                await axios.post(withApiBase(`/api/payments/${payment.id}/decline-cash`), {}, { headers: authHeaders() });
-                                                                await Promise.all([fetchPendingInAppPurchases(), fetchHistory()]);
-                                                            } catch (e) {
-                                                                await showAlert({ title: 'Decline Failed', message: e.response?.data?.error || 'Failed to decline payment', type: 'danger' });
-                                                            }
-                                                        }}
-                                                        className="text-xs font-bold px-3 py-1 rounded-lg border border-red-500/30 text-red-300 hover:bg-red-500/10"
-                                                    >
-                                                        Decline
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )
-                }
+                </div>
 
                 {
                     modals.collectCash && collectData.session && (
@@ -1285,7 +1341,7 @@ export default function POS() {
     }
 
     return (
-        <div className="flex h-[calc(100vh-4rem)] gap-6 overflow-hidden relative">
+        <div className="flex h-[calc(100vh-4rem)] flex-col gap-4 overflow-hidden relative">
 
             {/* Receipt Preview Modal */}
             {modals.receiptPreview && lastTransaction && (
@@ -1471,69 +1527,132 @@ export default function POS() {
                 </div>
             )}
 
-
-            {/* Left: Product Grid */}
-            <div className="flex-1 flex flex-col min-w-0">
-                <header className="mb-5 space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                            <h1 className="text-2xl font-bold text-white">Point of Sale</h1>
-                            <p className="text-sm text-text-muted">Fast checkout with barcode and SKU search.</p>
+            {barcodeQuantityModal.open && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+                    <div className="w-full max-w-md rounded-2xl border border-white/10 bg-gradient-to-b from-surface to-surfaceHighlight p-5 shadow-2xl">
+                        <div className="mb-4 flex items-start gap-4">
+                            <div className="h-24 w-24 shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+                                {getItemImageSrc(barcodeQuantityModal.item) ? (
+                                    <img src={getItemImageSrc(barcodeQuantityModal.item)} alt={barcodeQuantityModal.item?.name || 'Product'} className="h-full w-full object-cover" />
+                                ) : (
+                                    <div className="flex h-full w-full items-center justify-center text-text-muted">
+                                        <span className="material-icons-round text-2xl">inventory_2</span>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <p className="text-[11px] uppercase tracking-widest text-text-muted font-semibold">Barcode Matched</p>
+                                <h3 className="mt-1 text-lg font-bold text-white leading-tight">{barcodeQuantityModal.item?.name || 'Product'}</h3>
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                    <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[11px] text-text-secondary">
+                                        {barcodeQuantityModal.item?.barcode || barcodeQuantityModal.item?.sku || 'No Barcode'}
+                                    </span>
+                                    {Number.isFinite(Number(barcodeQuantityModal.item?.stock)) && (
+                                        <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-300">
+                                            {Number(barcodeQuantityModal.item?.stock)} in stock
+                                        </span>
+                                    )}
+                                </div>
+                                <p className="text-base text-primary font-bold mt-2">{formatPrice(barcodeQuantityModal.item?.price || 0)}</p>
+                            </div>
                         </div>
-                        {renderModeTabs()}
-                    </div>
 
-                    <div className="grid gap-3 lg:grid-cols-[1fr,auto]">
-                        <label className="relative block">
-                            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 material-icons-round text-base text-text-muted">search</span>
+                        <label className="block">
+                            <span className="text-xs text-text-muted font-semibold uppercase tracking-wide">Quantity</span>
                             <input
-                                type="text"
-                                value={productSearch}
-                                onChange={(event) => setProductSearch(event.target.value)}
-                                placeholder="Search products by name, category, barcode, or SKU"
-                                className="w-full rounded-xl border border-white/10 bg-surface px-10 py-3 text-sm text-white outline-none transition-colors focus:border-primary"
+                                autoFocus
+                                type="number"
+                                min="1"
+                                value={barcodeQuantityModal.quantity}
+                                onChange={(event) => setBarcodeQuantityModal((prev) => ({ ...prev, quantity: event.target.value }))}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                        event.preventDefault();
+                                        confirmBarcodeQuantityAdd();
+                                    }
+                                }}
+                                className="mt-2 w-full rounded-xl border border-white/10 bg-surfaceHighlight px-3 py-2.5 text-white outline-none focus:border-primary"
                             />
                         </label>
-                        <div className="inline-flex items-center rounded-xl border border-white/10 bg-surface p-1">
+                        <p className="mt-2 text-xs text-text-muted">Enter quantity then press Enter or click Add to Cart.</p>
+
+                        <div className="mt-5 flex gap-2">
                             <button
                                 type="button"
-                                onClick={() => setCatalogView('GRID')}
-                                className={`inline-flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${catalogView === 'GRID' ? 'bg-primary text-background' : 'text-text-secondary hover:text-white'}`}
+                                onClick={closeBarcodeQuantityModal}
+                                className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm font-semibold text-text-secondary hover:text-white transition-colors"
                             >
-                                <span className="material-icons-round text-sm">grid_view</span>
-                                Grid
+                                Cancel
                             </button>
                             <button
                                 type="button"
-                                onClick={() => setCatalogView('LIST')}
-                                className={`inline-flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${catalogView === 'LIST' ? 'bg-primary text-background' : 'text-text-secondary hover:text-white'}`}
+                                onClick={confirmBarcodeQuantityAdd}
+                                className="flex-1 rounded-xl bg-primary px-3 py-2.5 text-sm font-semibold text-background hover:bg-orange-500 transition-colors"
                             >
-                                <span className="material-icons-round text-sm">view_list</span>
-                                List
+                                Add to Cart
                             </button>
                         </div>
                     </div>
+                </div>
+            )}
 
-                    <div className="flex flex-wrap gap-2 rounded-xl border border-white/10 bg-surface p-2">
-                        {categoryTabs.map((cat) => (
-                            <button
-                                key={cat}
-                                type="button"
-                                onClick={() => setCategory(cat)}
-                                className={`rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wide transition-all ${selectedCategory === cat
-                                    ? 'bg-primary text-background'
-                                    : 'bg-white/5 text-text-secondary hover:text-white'
-                                    }`}
-                            >
-                                {cat}
-                            </button>
-                        ))}
+
+            <header className="flex-none">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h1 className="text-2xl font-bold text-white">Point of Sale</h1>
+                        <p className="text-sm text-text-muted">Fast checkout with barcode and SKU search.</p>
                     </div>
-                </header>
+                    {renderModeTabs()}
+                </div>
+            </header>
 
+            <div className="flex flex-1 gap-6 overflow-hidden min-h-0">
+                <div className="flex-1 min-w-0 overflow-hidden flex flex-col">
+                <div className="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr),220px,auto]">
+                    <label className="relative block">
+                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 material-icons-round text-base text-text-muted">search</span>
+                        <input
+                            type="text"
+                            value={productSearch}
+                            onChange={(event) => setProductSearch(event.target.value)}
+                            onKeyDown={handleCatalogSearchKeyDown}
+                            placeholder="Search products by name, category, barcode, or SKU"
+                            className="w-full rounded-xl border border-white/10 bg-surface px-10 py-3 text-sm text-white outline-none transition-colors focus:border-primary"
+                        />
+                    </label>
+                    <select
+                        value={selectedCategory}
+                        onChange={(event) => setCategory(event.target.value)}
+                        className="w-full rounded-xl border border-white/10 bg-surface px-3 py-3 text-sm text-white outline-none transition-colors focus:border-primary"
+                    >
+                        {categoryTabs.map((cat) => (
+                            <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                    </select>
+                    <div className="inline-flex items-center rounded-xl border border-white/10 bg-surface p-1">
+                        <button
+                            type="button"
+                            onClick={() => setCatalogView('GRID')}
+                            className={`inline-flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${catalogView === 'GRID' ? 'bg-primary text-background' : 'text-text-secondary hover:text-white'}`}
+                        >
+                            <span className="material-icons-round text-sm">grid_view</span>
+                            Grid
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setCatalogView('LIST')}
+                            className={`inline-flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${catalogView === 'LIST' ? 'bg-primary text-background' : 'text-text-secondary hover:text-white'}`}
+                        >
+                            <span className="material-icons-round text-sm">view_list</span>
+                            List
+                        </button>
+                    </div>
+                </div>
+                {/* Left: Product Grid */}
                 <div className={catalogView === 'GRID'
-                    ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 overflow-y-auto pb-20 pr-2 scrollbar-hide'
-                    : 'space-y-3 overflow-y-auto pb-20 pr-2 scrollbar-hide'}
+                    ? 'flex-1 min-h-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 auto-rows-max items-start content-start gap-4 overflow-y-auto overflow-x-hidden pb-20 pr-2 scrollbar-hide'
+                    : 'flex-1 min-h-0 space-y-3 overflow-y-auto overflow-x-hidden pb-20 pr-2 scrollbar-hide'}
                 >
                     {searchedDisplayItems.length === 0 && (
                         <div className="col-span-full text-center text-text-muted py-10">No items match your category and search filters.</div>
@@ -1552,8 +1671,8 @@ export default function POS() {
                                 >
                                     <div className="flex min-w-0 flex-1 items-center gap-3">
                                         <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-xl bg-white/5">
-                                            {item.imageUrl ? (
-                                                <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover" />
+                                            {getItemImageSrc(item) ? (
+                                                <img src={getItemImageSrc(item)} alt={item.name} className="h-full w-full object-cover" />
                                             ) : (
                                                 <div className="flex h-full w-full items-center justify-center text-text-muted">
                                                     <span className="material-icons-round text-lg">{selectedCategory === POS_VIEWS.MEMBERSHIP ? 'card_membership' : isTrainer ? 'person' : isPackage ? 'redeem' : 'inventory_2'}</span>
@@ -1585,11 +1704,11 @@ export default function POS() {
                             <div
                                 key={item.id}
                                 onClick={() => handleAddCatalogItem(item)}
-                                className={`group bg-surface hover:bg-primary/5 rounded-3xl p-3 cursor-pointer transition-all duration-300 border border-white/5 hover:border-primary/20 shadow-sm hover:shadow-primary/10 active:scale-95 ${selectedCategory === POS_VIEWS.MEMBERSHIP ? 'ring-1 ring-yellow-500/30' : ''} ${isSoldOut ? 'opacity-70 grayscale-[0.5] cursor-not-allowed' : ''}`}
+                                className={`group self-start flex flex-col rounded-3xl border border-white/5 bg-surface p-3 transition-all duration-300 hover:border-primary/20 hover:bg-primary/5 hover:shadow-primary/10 active:scale-95 ${selectedCategory === POS_VIEWS.MEMBERSHIP ? 'ring-1 ring-yellow-500/30' : ''} ${isSoldOut ? 'cursor-not-allowed opacity-70 grayscale-[0.5]' : 'cursor-pointer'}`}
                             >
-                                <div className="aspect-[4/3] rounded-2xl overflow-hidden mb-3 relative bg-white/5">
-                                    {item.imageUrl ? (
-                                        <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                                <div className="relative mb-3 aspect-square shrink-0 overflow-hidden rounded-2xl bg-white/5">
+                                    {getItemImageSrc(item) ? (
+                                        <img src={getItemImageSrc(item)} alt={item.name} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
                                     ) : (
                                         <div className="w-full h-full flex items-center justify-center text-text-muted group-hover:text-primary/50 transition-colors">
                                             <span className="material-icons-round text-4xl">{selectedCategory === POS_VIEWS.MEMBERSHIP ? 'card_membership' : isTrainer ? 'person' : isPackage ? 'redeem' : 'inventory_2'}</span>
@@ -1627,10 +1746,11 @@ export default function POS() {
                                         </div>
                                     )}
                                 </div>
-                                <div className="px-1 mt-2">
-                                    <h3 className="text-white font-bold truncate text-sm">{item.name}</h3>
-                                    <p className="mt-0.5 truncate text-[11px] font-mono text-text-secondary">Barcode/SKU: {item.barcode || item.sku || 'N/A'}</p>
-                                    <div className="flex justify-between items-center mt-1">
+                                <div className="px-1 pt-1 flex-1">
+                                    <h3 className="text-sm font-bold leading-tight text-white min-h-[2.25rem]">{item.name}</h3>
+                                    <p className="mt-1 text-[11px] text-text-muted">{item.category || (isTrainer ? 'Trainer Service' : isPackage ? 'Class Package' : 'Product')}</p>
+                                    <p className="mt-1 text-[11px] font-mono text-text-secondary">Barcode/SKU: {item.barcode || item.sku || 'N/A'}</p>
+                                    <div className="mt-2 flex items-center justify-between">
                                         <p className="text-primary font-bold">
                                             {isTrainer ? formatPrice(item.sessionPrice ?? 0, true) : formatPrice(item.price)}
                                         </p>
@@ -1658,18 +1778,18 @@ export default function POS() {
             </div>
 
             {/* Right: Cart Panel */}
-            <div className={`${isSidebarCollapsed ? 'w-96' : 'w-[320px]'} transition-all duration-300 flex flex-col bg-surface rounded-3xl border border-white/10 shadow-xl shadow-black/50 overflow-hidden`}>
+            <div className={`${isSidebarCollapsed ? 'w-[340px]' : 'w-[300px]'} h-full flex-shrink-0 transition-all duration-300 flex flex-col bg-surface rounded-3xl border border-white/10 shadow-xl shadow-black/50 overflow-hidden`}>
                 {/* Cart Header */}
-                <div className="p-6 border-b border-white/5 bg-white/5">
+                <div className="p-4 border-b border-white/5 bg-white/5">
                     <div className="flex justify-between items-center mb-1">
-                        <h2 className="text-white font-bold text-lg">Current Cart</h2>
+                        <h2 className="text-white font-bold text-base">Current Cart</h2>
                         <span className="material-icons-round text-text-muted">shopping_bag</span>
                     </div>
 
                     {/* Member Selector */}
                     <div className="mt-4">
                         <select
-                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all cursor-pointer"
+                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all cursor-pointer"
                             value={selectedMemberId}
                             onChange={(e) => setSelectedMemberId(e.target.value)}
                         >
@@ -1692,7 +1812,7 @@ export default function POS() {
                         )}
                     </div>
 
-                    <div className="mt-4 pt-4 border-t border-white/5">
+                    <div className="mt-3 pt-3 border-t border-white/5">
                         <div className="flex items-center justify-between mb-2">
                             <p className="text-xs font-bold uppercase tracking-widest text-text-muted">Discounts</p>
                             <span className="text-[11px] text-text-muted">{discount > 0 ? `${discount}% Applied` : 'No Discount'}</span>
@@ -1741,63 +1861,83 @@ export default function POS() {
                 </div>
 
                 {/* Cart Items */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5">
                     {cart.length === 0 ? (
                         <div className="h-full flex flex-col items-center justify-center text-text-muted">
                             <span className="material-icons-round text-6xl mb-4 bg-white/5 p-4 rounded-full">shopping_cart_checkout</span>
                             <p className="font-medium text-text-muted">Cart is empty</p>
                         </div>
                     ) : (
-                        cart.map((item, idx) => (
-                            <div key={item.cartLineId || `${item.id}-${idx}`} className="p-3 hover:bg-white/5 rounded-2xl group transition-colors border border-transparent hover:border-white/5">
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <p className="text-white font-bold text-sm">
-                                            {item.name}
-                                            {item.type === 'PLAN' && <span className="ml-2 text-[10px] bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded border border-yellow-500/30">PLAN</span>}
-                                            {item.type === 'TRAINING' && <span className="ml-2 text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/30">TRAINER</span>}
-                                            {item.type === 'CLASS_PACKAGE' && <span className="ml-2 text-[10px] bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded border border-blue-500/30">PACKAGE</span>}
-                                        </p>
-                                        {item.type !== 'TRAINING' && (
-                                            <div className="flex items-center gap-2 mt-1.5">
-                                                <button
-                                                    onClick={async (e) => { e.stopPropagation(); const r = updateQuantity(item.cartLineId, item.quantity - 1, item.stock); if (r && !r.success && r.error) await showAlert({ title: 'Stock Limit', message: r.error, type: 'warning' }); }}
-                                                    className="w-6 h-6 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded text-white transition-colors"
-                                                >
-                                                    <span className="material-icons-round text-xs">remove</span>
-                                                </button>
-                                                <input
-                                                    type="number"
-                                                    className="w-10 bg-transparent text-center text-text-muted text-sm font-medium focus:text-white outline-none border-b border-transparent focus:border-white/30 transition-colors"
-                                                    value={item.quantity}
-                                                    onClick={(e) => e.stopPropagation()}
-                                                    onChange={async (e) => { const r = updateQuantity(item.cartLineId, Math.max(1, parseInt(e.target.value) || 1), item.stock); if (r && !r.success && r.error) await showAlert({ title: 'Stock Limit', message: r.error, type: 'warning' }); }}
-                                                />
-                                                <button
-                                                    onClick={async (e) => { e.stopPropagation(); const r = updateQuantity(item.cartLineId, item.quantity + 1, item.stock); if (r && !r.success && r.error) await showAlert({ title: 'Stock Limit', message: r.error, type: 'warning' }); }}
-                                                    className="w-6 h-6 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded text-white transition-colors"
-                                                >
-                                                    <span className="material-icons-round text-xs">add</span>
-                                                </button>
+                        cart.map((item, idx) => {
+                            const cartImage = item.imageUrl || item.photoUrl || item.avatarUrl || '';
+                            const fallbackIcon = item.type === 'PLAN'
+                                ? 'card_membership'
+                                : item.type === 'TRAINING'
+                                    ? 'person'
+                                    : item.type === 'CLASS_PACKAGE'
+                                        ? 'redeem'
+                                        : 'inventory_2';
+                            return (
+                                <div key={item.cartLineId || `${item.id}-${idx}`} className="p-2 hover:bg-white/5 rounded-xl group transition-colors border border-transparent hover:border-white/5">
+                                    <div className="flex justify-between items-start gap-2">
+                                        <div className="flex min-w-0 flex-1 items-start gap-2.5">
+                                            <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-lg bg-white/5 border border-white/10">
+                                                {cartImage ? (
+                                                    <img src={cartImage} alt={item.name} className="h-full w-full object-cover" />
+                                                ) : (
+                                                    <div className="flex h-full w-full items-center justify-center text-text-muted">
+                                                        <span className="material-icons-round text-base">{fallbackIcon}</span>
+                                                    </div>
+                                                )}
                                             </div>
-                                        )}
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        <div className="text-right">
-                                            <p className="text-white font-bold text-sm">{formatCartPrice(item.price * item.quantity)}</p>
-                                            <p className="text-text-muted text-[10px]">{formatCartPrice(item.price)} each</p>
+                                            <div className="min-w-0 flex-1">
+                                                <p className="truncate text-white font-bold text-[13px] leading-tight">{item.name}</p>
+                                                <div className="mt-1 flex flex-wrap items-center gap-1">
+                                                    {item.type === 'PLAN' && <span className="text-[10px] bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded border border-yellow-500/30">PLAN</span>}
+                                                    {item.type === 'TRAINING' && <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/30">TRAINER</span>}
+                                                    {item.type === 'CLASS_PACKAGE' && <span className="text-[10px] bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded border border-blue-500/30">PACKAGE</span>}
+                                                </div>
+                                                {item.type !== 'TRAINING' && (
+                                                    <div className="flex items-center gap-1.5 mt-1.5">
+                                                        <button
+                                                            onClick={async (e) => { e.stopPropagation(); const r = updateQuantity(item.cartLineId, item.quantity - 1, item.stock); if (r && !r.success && r.error) await showAlert({ title: 'Stock Limit', message: r.error, type: 'warning' }); }}
+                                                            className="w-5 h-5 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded text-white transition-colors"
+                                                        >
+                                                            <span className="material-icons-round text-[11px]">remove</span>
+                                                        </button>
+                                                        <input
+                                                            type="number"
+                                                            className="w-8 bg-transparent text-center text-text-muted text-xs font-semibold focus:text-white outline-none border-b border-transparent focus:border-white/30 transition-colors"
+                                                            value={item.quantity}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            onChange={async (e) => { const r = updateQuantity(item.cartLineId, Math.max(1, parseInt(e.target.value) || 1), item.stock); if (r && !r.success && r.error) await showAlert({ title: 'Stock Limit', message: r.error, type: 'warning' }); }}
+                                                        />
+                                                        <button
+                                                            onClick={async (e) => { e.stopPropagation(); const r = updateQuantity(item.cartLineId, item.quantity + 1, item.stock); if (r && !r.success && r.error) await showAlert({ title: 'Stock Limit', message: r.error, type: 'warning' }); }}
+                                                            className="w-5 h-5 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded text-white transition-colors"
+                                                        >
+                                                            <span className="material-icons-round text-[11px]">add</span>
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); removeFromCart(item.cartLineId); }}
-                                            className="w-6 h-6 flex items-center justify-center bg-white/10 text-text-muted hover:bg-red-500/20 hover:text-red-500 rounded-full transition-colors opacity-0 group-hover:opacity-100"
-                                        >
-                                            <span className="material-icons-round text-[14px]">close</span>
-                                        </button>
+                                        <div className="flex items-start gap-2">
+                                            <div className="text-right">
+                                                <p className="text-white font-bold text-xs">{formatCartPrice(item.price * item.quantity)}</p>
+                                                <p className="text-text-muted text-[10px]">{formatCartPrice(item.price)} each</p>
+                                            </div>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); removeFromCart(item.cartLineId); }}
+                                                className="w-5 h-5 flex items-center justify-center bg-white/10 text-text-muted hover:bg-red-500/20 hover:text-red-500 rounded-full transition-colors opacity-0 group-hover:opacity-100"
+                                            >
+                                                <span className="material-icons-round text-[12px]">close</span>
+                                            </button>
+                                        </div>
                                     </div>
-                                </div>
 
                                 {item.type === 'TRAINING' && (
-                                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                                    <div className="mt-2.5 grid grid-cols-2 gap-2 text-xs">
                                         <div className="col-span-2">
                                             <button
                                                 type="button"
@@ -1919,32 +2059,33 @@ export default function POS() {
 
                                 )}
                             </div>
-                        ))
+                            );
+                        })
                     )}
                 </div>
 
                 {/* Checkout Footer */}
-                <div className="p-6 border-t border-white/5 bg-surfaceHighlight/50 backdrop-blur-sm">
-                    <div className="flex justify-between items-end mb-2 text-text-secondary text-sm font-medium">
+                <div className="p-4 border-t border-white/5 bg-surfaceHighlight/50 backdrop-blur-sm">
+                    <div className="flex justify-between items-end mb-1.5 text-text-secondary text-sm font-medium">
                         <span>Subtotal</span>
                         <span>{formatCartPrice(subtotal)}</span>
                     </div>
 
                     {discount > 0 && (
-                        <div className="mb-6 flex justify-between items-center text-xs text-green-400">
+                        <div className="mb-4 flex justify-between items-center text-xs text-green-400">
                             <span>Less {selectedDiscountPreset ? `${selectedDiscountPreset.name}` : 'Discount'}</span>
                             <span>-{formatPrice(discountAmount)}</span>
                         </div>
                     )}
 
-                    <div className="flex justify-between items-end mb-6">
+                    <div className="flex justify-between items-end mb-4">
                         <span className="text-white font-bold text-lg">Total</span>
-                        <span className="text-3xl font-bold text-white">{formatCartPrice(cartTotal)}</span>
+                        <span className="text-2xl font-bold text-white">{formatCartPrice(cartTotal)}</span>
                     </div>
 
                     <button
                         onClick={openReceiptTemplatePreview}
-                        className="w-full mb-3 bg-white/10 hover:bg-white/20 text-white font-bold py-2.5 rounded-xl transition-colors"
+                        className="w-full mb-2 bg-white/10 hover:bg-white/20 text-white font-bold py-2 rounded-xl transition-colors text-sm"
                     >
                         Preview Receipt Layout
                     </button>
@@ -1952,12 +2093,13 @@ export default function POS() {
                     <button
                         onClick={initiateCheckout}
                         disabled={cart.length === 0 || loading}
-                        className="w-full bg-primary hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-2xl shadow-xl shadow-primary/20 active:scale-95 transition-all flex flex-col items-center justify-center"
+                        className="w-full bg-primary hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-2.5 rounded-2xl shadow-xl shadow-primary/20 active:scale-95 transition-all flex flex-col items-center justify-center"
                     >
                         <span className="text-[10px] uppercase tracking-wider opacity-90 font-bold mb-0.5">Charge {selectedMemberId ? 'Member' : 'Guest'}</span>
-                        <span className="text-lg">{formatCartPrice(cartTotal)}</span>
+                        <span className="text-base">{formatCartPrice(cartTotal)}</span>
                     </button>
                 </div>
+            </div>
             </div>
 
         </div>
