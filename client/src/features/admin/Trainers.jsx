@@ -1,11 +1,11 @@
 ﻿import { useConfirm } from '../../context/ConfirmContext';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { User, Star, History, X, Info, Pencil, Trash2, Plus, QrCode, Mail } from 'lucide-react';
+import { User, Star, X, Pencil, Trash2, Plus, QrCode, Mail } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { ROLES } from '../../constants/roles';
-import DataTable from '../../components/common/DataTable';
 import QRCode from 'react-qr-code';
 
 const WEEKDAY_OPTIONS = [
@@ -17,6 +17,53 @@ const WEEKDAY_OPTIONS = [
     { label: 'Fri', value: 5 },
     { label: 'Sat', value: 6 }
 ];
+
+const getAvailabilityRows = (trainer) => {
+    const byDay = trainer?.availabilityByDay;
+    if (!byDay || typeof byDay !== 'object') return [];
+
+    const dayMap = new Map();
+    Object.entries(byDay).forEach(([rawDay, rawConfig]) => {
+        let normalizedDay = Number(rawDay);
+        if (normalizedDay === 7) normalizedDay = 0;
+        if (!Number.isInteger(normalizedDay) || normalizedDay < 0 || normalizedDay > 6) return;
+        if (!dayMap.has(normalizedDay)) {
+            dayMap.set(normalizedDay, {
+                day: normalizedDay,
+                label: WEEKDAY_OPTIONS.find((item) => item.value === normalizedDay)?.label || String(normalizedDay),
+                start: rawConfig?.start || '--:--',
+                end: rawConfig?.end || '--:--'
+            });
+        }
+    });
+    return Array.from(dayMap.values()).sort((a, b) => a.day - b.day);
+};
+
+const getDurations = (trainer) => {
+    const raw = trainer?.sessionDurations;
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw.map((value) => String(value).trim()).filter(Boolean);
+    return String(raw).split(',').map((value) => value.trim()).filter(Boolean);
+};
+
+const formatMoney = (value) => {
+    const amount = Number(value || 0);
+    return `P${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
+const formatDateTime = (value) => {
+    if (!value) return 'N/A';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'N/A';
+    return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+};
+
+const getStatusClass = (status) => {
+    const normalized = String(status || '').toUpperCase();
+    if (normalized === 'COMPLETED') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+    if (normalized === 'SCHEDULED') return 'border-primary/30 bg-primary/10 text-primary';
+    return 'border-red-500/30 bg-red-500/10 text-red-300';
+};
 
 export default function Trainers() {
     const { user } = useAuth();
@@ -34,9 +81,11 @@ export default function Trainers() {
     const [resolveForm, setResolveForm] = useState({ action: 'MOVE', date: '', time: '', note: '' });
     const [showLoginModal, setShowLoginModal] = useState(false);
     const [loginTrainer, setLoginTrainer] = useState(null);
-    const [loginEmail, setLoginEmail] = useState('');
-    const [loginPassword, setLoginPassword] = useState('');
     const [qrTrainer, setQrTrainer] = useState(null);
+    const [search, setSearch] = useState('');
+    const [typeFilter, setTypeFilter] = useState('ALL');
+    const [sortBy, setSortBy] = useState('NAME_ASC');
+    const [selectedTrainerId, setSelectedTrainerId] = useState(null);
 
     const [formData, setFormData] = useState({
         name: '',
@@ -162,17 +211,60 @@ export default function Trainers() {
     const avgRating = totalTrainers
         ? (trainers.reduce((sum, t) => sum + (Number(t.rating) || 0), 0) / totalTrainers).toFixed(1)
         : '0.0';
-    const totalClasses = trainers.reduce((sum, t) => sum + (t.classes?.length || 0), 0);
+    const avgSessionPrice = totalTrainers
+        ? trainers.reduce((sum, t) => sum + Number(t.sessionPrice || 0), 0) / totalTrainers
+        : 0;
+    const filteredTrainers = useMemo(() => {
+        const query = String(search || '').trim().toLowerCase();
+        let list = trainers.filter((trainer) => {
+            const type = String(trainer?.type || '').toUpperCase();
+            if (typeFilter === 'FULLTIME' && type !== 'FULLTIME') return false;
+            if (typeFilter === 'FREELANCER' && type !== 'FREELANCER') return false;
+            if (!query) return true;
+
+            const fields = [trainer?.name, trainer?.specialty, trainer?.specialties, trainer?.email, trainer?.phone];
+            return fields.some((field) => String(field || '').toLowerCase().includes(query));
+        });
+
+        list = [...list].sort((a, b) => {
+            if (sortBy === 'RATING_DESC') return Number(b?.rating || 0) - Number(a?.rating || 0);
+            if (sortBy === 'PRICE_ASC') return Number(a?.sessionPrice || 0) - Number(b?.sessionPrice || 0);
+            if (sortBy === 'PRICE_DESC') return Number(b?.sessionPrice || 0) - Number(a?.sessionPrice || 0);
+            return String(a?.name || '').localeCompare(String(b?.name || ''));
+        });
+
+        return list;
+    }, [trainers, search, typeFilter, sortBy]);
+    const resolvedSelectedTrainerId = useMemo(() => {
+        if (!filteredTrainers.length) return null;
+        const stillExists = filteredTrainers.some((trainer) => Number(trainer.id) === Number(selectedTrainerId));
+        return stillExists ? selectedTrainerId : filteredTrainers[0].id;
+    }, [filteredTrainers, selectedTrainerId]);
+    const modalAvailabilityRows = useMemo(
+        () => (selectedTrainer ? getAvailabilityRows(selectedTrainer) : []),
+        [selectedTrainer]
+    );
+    const modalDurations = useMemo(
+        () => (selectedTrainer ? getDurations(selectedTrainer) : []),
+        [selectedTrainer]
+    );
+    const showAvailabilitySingleRow = useMemo(() => {
+        if (modalAvailabilityRows.length !== 7) return false;
+        const uniqueDays = new Set(modalAvailabilityRows.map((row) => Number(row.day)));
+        return [0, 1, 2, 3, 4, 5, 6].every((day) => uniqueDays.has(day));
+    }, [modalAvailabilityRows]);
     const saving = createTrainerMutation.isPending || updateTrainerMutation.isPending;
     const loginSaving = createLoginMutation.isPending;
 
     // -- Handlers --
     const handleViewProfile = (trainer) => {
+        setSelectedTrainerId(trainer.id);
         setSelectedTrainer(trainer);
         setViewMode('profile');
     };
 
     const handleViewSessions = (trainer) => {
+        setSelectedTrainerId(trainer.id);
         setSelectedTrainer(trainer);
         setViewMode('sessions');
     };
@@ -326,32 +418,25 @@ export default function Trainers() {
 
     return (
         <div className="space-y-8 animate-fade-in relative pb-10">
-            <header className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+            <header className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
                 <div>
-                    <h1 className="text-3xl font-bold text-white">Trainer Management</h1>
-                    <p className="text-text-muted mt-1">Create, update, and manage trainer profiles and sessions</p>
+                    <h1 className="text-3xl font-bold text-white">Trainer Directory</h1>
+                    <p className="mt-1 text-sm text-text-muted">Admin view aligned with staff layout and management actions.</p>
                 </div>
-                <div className="flex flex-wrap gap-3">
+                <div className="flex flex-wrap items-center gap-2">
                     <button
                         onClick={() => setActiveTab(activeTab === 'RESCHEDULE' ? 'TRAINERS' : 'RESCHEDULE')}
-                        className={`px-4 py-2 rounded-xl border transition-all text-sm font-semibold flex items-center gap-2 ${activeTab === 'RESCHEDULE' ? 'bg-primary text-background border-primary' : 'bg-surfaceHighlight text-white border-white/10 hover:border-white/20'}`}
+                        className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${activeTab === 'RESCHEDULE'
+                            ? 'border-primary/40 bg-primary/10 text-primary'
+                            : 'border-white/10 bg-surfaceHighlight text-white hover:border-white/20'
+                            }`}
                     >
-                        Reschedules {trainerChangeRequests.length > 0 && <span className={`text-[10px] px-2 py-0.5 rounded-full ${activeTab === 'RESCHEDULE' ? 'bg-background/20 font-black' : 'bg-red-500 text-white font-black'}`}>{trainerChangeRequests.length}</span>}
+                        Reschedules {trainerChangeRequests.length > 0 && <span className="ml-1 text-xs font-black text-red-400">({trainerChangeRequests.length})</span>}
                     </button>
-                    <div className="px-4 py-2 rounded-xl bg-surfaceHighlight border border-white/10 text-sm text-text-secondary">
-                        <span className="text-white font-semibold">{totalTrainers}</span> Trainers
-                    </div>
-                    <div className="px-4 py-2 rounded-xl bg-surfaceHighlight border border-white/10 text-sm text-text-secondary">
-                        <span className="text-white font-semibold">{totalClasses}</span> Classes
-                    </div>
-                    <div className="px-4 py-2 rounded-xl bg-surfaceHighlight border border-white/10 text-sm text-text-secondary flex items-center gap-2">
-                        <Star size={14} className="text-amber-400" />
-                        <span className="text-white font-semibold">{avgRating}</span>
-                    </div>
                     {isAdmin && (
                         <button
                             onClick={openCreateForm}
-                            className="px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium hover:bg-orange-600 transition-colors shadow-lg shadow-primary/20 flex items-center gap-2"
+                            className="rounded-xl bg-primary px-4 py-2 text-sm font-bold text-background transition-colors hover:bg-orange-600 flex items-center gap-2"
                         >
                             <Plus size={16} />
                             Add Trainer
@@ -359,6 +444,63 @@ export default function Trainers() {
                     )}
                 </div>
             </header>
+
+            <section>
+                <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                    <article className="rounded-xl border border-white/10 bg-surface p-3">
+                        <p className="text-[10px] uppercase tracking-widest text-text-muted">Total Trainers</p>
+                        <p className="mt-1.5 text-xl font-bold text-white">{totalTrainers}</p>
+                    </article>
+                    <article className="rounded-xl border border-white/10 bg-surface p-3">
+                        <p className="text-[10px] uppercase tracking-widest text-text-muted">Average Rating</p>
+                        <p className="mt-1.5 text-xl font-bold text-white">{avgRating}</p>
+                    </article>
+                    <article className="rounded-xl border border-white/10 bg-surface p-3">
+                        <p className="text-[10px] uppercase tracking-widest text-text-muted">Average Session Price</p>
+                        <p className="mt-1.5 text-xl font-bold text-white">{formatMoney(avgSessionPrice)}</p>
+                    </article>
+                    <article className="rounded-xl border border-white/10 bg-surface p-3">
+                        <p className="text-[10px] uppercase tracking-widest text-text-muted">Results</p>
+                        <p className="mt-1.5 text-xl font-bold text-white">{filteredTrainers.length}</p>
+                    </article>
+                </div>
+            </section>
+
+            {activeTab === 'TRAINERS' && (
+                <section className="pb-1">
+                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr),180px,200px]">
+                        <label className="relative">
+                            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 material-icons-round text-base text-text-muted">search</span>
+                            <input
+                                type="text"
+                                value={search}
+                                onChange={(event) => setSearch(event.target.value)}
+                                placeholder="Search trainer, specialty, email, phone"
+                                className="w-full rounded-xl border border-white/10 bg-surfaceHighlight py-2.5 pl-10 pr-3 text-sm text-white outline-none transition-colors focus:border-primary"
+                            />
+                        </label>
+                        <select
+                            value={typeFilter}
+                            onChange={(event) => setTypeFilter(event.target.value)}
+                            className="w-full rounded-xl border border-white/10 bg-surfaceHighlight px-3 py-2.5 text-sm text-white outline-none transition-colors focus:border-primary"
+                        >
+                            <option value="ALL">All Types</option>
+                            <option value="FULLTIME">Full-time</option>
+                            <option value="FREELANCER">Freelancer</option>
+                        </select>
+                        <select
+                            value={sortBy}
+                            onChange={(event) => setSortBy(event.target.value)}
+                            className="w-full rounded-xl border border-white/10 bg-surfaceHighlight px-3 py-2.5 text-sm text-white outline-none transition-colors focus:border-primary"
+                        >
+                            <option value="NAME_ASC">Sort: Name</option>
+                            <option value="RATING_DESC">Sort: Rating</option>
+                            <option value="PRICE_ASC">Sort: Price (Low to High)</option>
+                            <option value="PRICE_DESC">Sort: Price (High to Low)</option>
+                        </select>
+                    </div>
+                </section>
+            )}
 
             {activeTab === 'RESCHEDULE' ? (
                 <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
@@ -379,7 +521,10 @@ export default function Trainers() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-white/5">
-                                {trainerChangeRequests.length === 0 && (
+                                {requestsLoading && (
+                                    <tr><td colSpan="7" className="p-6 text-center text-text-muted">Loading requests...</td></tr>
+                                )}
+                                {!requestsLoading && trainerChangeRequests.length === 0 && (
                                     <tr><td colSpan="7" className="p-6 text-center text-text-muted">No pending trainer change requests.</td></tr>
                                 )}
                                 {trainerChangeRequests.map((session) => (
@@ -424,293 +569,262 @@ export default function Trainers() {
                     </div>
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                    {trainers.map(trainer => (
-                        <div key={trainer.id} className="bg-surface p-5 rounded-2xl border border-white/5 shadow-sm hover:shadow-lg transition-all relative overflow-hidden">
-                            <div className="absolute top-0 right-0 w-28 h-28 bg-primary/5 rounded-full -mr-16 -mt-16 blur-3xl pointer-events-none"></div>
+                <section>
+                    {filteredTrainers.length === 0 ? (
+                        <div className="p-8 text-center text-sm text-text-muted">No trainers match your filters.</div>
+                    ) : (
+                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                            {filteredTrainers.map((trainer) => {
+                                const isSelected = Number(trainer.id) === Number(resolvedSelectedTrainerId);
+                                const availabilityRows = getAvailabilityRows(trainer);
+                                const availabilitySummary = availabilityRows.length
+                                    ? availabilityRows.map((row) => row.label).join(', ')
+                                    : 'No schedule';
+                                const type = String(trainer.type || 'FULLTIME').toUpperCase();
 
-                            <div className="absolute top-4 right-4 flex gap-2 z-20 pointer-events-auto">
-                                {isAdmin && (
-                                    <>
-                                        <button
-                                            onClick={() => setQrTrainer(trainer)}
-                                            className="w-9 h-9 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-blue-300 transition-all"
-                                            title="View trainer QR"
-                                        >
-                                            <QrCode size={16} />
-                                        </button>
-                                        <button
-                                            onClick={() => openEditForm(trainer)}
-                                            className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-text-muted hover:text-white transition-all"
-                                            title="Edit trainer"
-                                        >
-                                            <Pencil size={16} />
-                                        </button>
-                                        <button
-                                            onClick={() => openLoginModal(trainer)}
-                                            className="w-9 h-9 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 transition-all"
-                                            title="Create trainer login"
-                                        >
-                                            <User size={16} />
-                                        </button>
-                                        <button
-                                            onClick={() => handleDeleteTrainer(trainer)}
-                                            className="w-9 h-9 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400 transition-all"
-                                            title="Delete trainer"
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
-                                    </>
-                                )}
-                            </div>
-
-                            <div className="flex items-center gap-4 mb-5 relative z-10">
-                                <div className="w-16 h-16 rounded-2xl overflow-hidden border border-white/10">
-                                    {trainer.imageUrl ? (
-                                        <img src={trainer.imageUrl} alt={trainer.name} className="w-full h-full object-cover" />
-                                    ) : (
-                                        <div className="w-full h-full bg-surfaceHighlight flex items-center justify-center">
-                                            <User className="text-text-muted" size={26} />
+                                return (
+                                    <article
+                                        key={trainer.id}
+                                        onClick={() => setSelectedTrainerId(trainer.id)}
+                                        className={`group relative flex min-h-[325px] flex-col rounded-3xl border p-3 transition-all duration-300 ${isSelected ? 'border-primary/40 bg-primary/5 shadow-primary/10' : 'border-white/5 bg-surface hover:border-primary/20 hover:bg-primary/5 hover:shadow-primary/10'} shadow-sm`}
+                                    >
+                                        <div className="absolute right-2 top-2 z-20 flex gap-1.5">
+                                            {isAdmin && (
+                                                <>
+                                                    <button
+                                                        onClick={(event) => { event.stopPropagation(); setQrTrainer(trainer); }}
+                                                        className="h-8 w-8 rounded-lg border border-blue-500/30 bg-blue-500/10 flex items-center justify-center text-blue-300 transition-colors hover:bg-blue-500/20"
+                                                        title="View trainer QR"
+                                                    >
+                                                        <QrCode size={14} />
+                                                    </button>
+                                                    <button
+                                                        onClick={(event) => { event.stopPropagation(); openEditForm(trainer); }}
+                                                        className="h-8 w-8 rounded-lg border border-white/10 bg-white/5 flex items-center justify-center text-text-muted transition-colors hover:bg-white/10 hover:text-white"
+                                                        title="Edit trainer"
+                                                    >
+                                                        <Pencil size={14} />
+                                                    </button>
+                                                    <button
+                                                        onClick={(event) => { event.stopPropagation(); openLoginModal(trainer); }}
+                                                        className="h-8 w-8 rounded-lg border border-emerald-500/30 bg-emerald-500/10 flex items-center justify-center text-emerald-400 transition-colors hover:bg-emerald-500/20"
+                                                        title="Create trainer login"
+                                                    >
+                                                        <User size={14} />
+                                                    </button>
+                                                    <button
+                                                        onClick={(event) => { event.stopPropagation(); handleDeleteTrainer(trainer); }}
+                                                        className="h-8 w-8 rounded-lg border border-red-500/30 bg-red-500/10 flex items-center justify-center text-red-400 transition-colors hover:bg-red-500/20"
+                                                        title="Delete trainer"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </>
+                                            )}
                                         </div>
-                                    )}
-                                </div>
-                                <div>
-                                    <div className="flex items-center gap-2">
-                                        <h3 className="text-xl font-bold text-white">{trainer.name}</h3>
-                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${trainer.type === 'FREELANCER'
-                                            ? 'bg-orange-500/15 text-orange-400 border border-orange-500/30'
-                                            : 'bg-blue-500/15 text-blue-400 border border-blue-500/30'
-                                            }`}>
-                                            {trainer.type === 'FREELANCER' ? 'Freelance' : 'Full-time'}
-                                        </span>
-                                    </div>
-                                    <p className="text-text-secondary text-sm">{trainer.specialty || 'Elite Coach'}</p>
-                                </div>
-                            </div>
 
-                            <div className="grid grid-cols-2 gap-3 mb-6 relative z-10">
-                                <div className="bg-white/[0.03] rounded-xl p-3 border border-white/5">
-                                    <p className="text-xs text-text-muted mb-1">Classes</p>
-                                    <p className="text-lg font-semibold text-white">{trainer.classes?.length || 0}</p>
-                                </div>
-                                <div className="bg-white/[0.03] rounded-xl p-3 border border-white/5">
-                                    <p className="text-xs text-text-muted mb-1">Rating</p>
-                                    <div className="flex items-center gap-2">
-                                        <p className="text-lg font-semibold text-white">{trainer.rating || '5.0'}</p>
-                                        <Star className="text-amber-400 fill-amber-400" size={14} />
+                                        <div className="relative mb-3 aspect-[5/4] overflow-hidden rounded-2xl bg-white/5">
+                                            {trainer.imageUrl ? (
+                                                <img src={trainer.imageUrl} alt={trainer.name} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                                            ) : (
+                                                <div className="flex h-full w-full items-center justify-center text-text-muted group-hover:text-primary/50 transition-colors">
+                                                    <User size={32} />
+                                                </div>
+                                            )}
+                                            <span className={`absolute right-2 top-2 rounded-lg px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${type === 'FREELANCER' ? 'border border-orange-500/40 bg-orange-500/20 text-orange-200' : 'border border-blue-500/40 bg-blue-500/20 text-blue-200'}`}>
+                                                {type === 'FREELANCER' ? 'Freelance' : 'Full-time'}
+                                            </span>
+                                            <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-lg border border-white/10 bg-surface/80 px-2 py-1 text-[10px] font-semibold text-white backdrop-blur">
+                                                <Star size={10} className="text-amber-400 fill-amber-400" />
+                                                {Number(trainer.rating || 0).toFixed(1)}
+                                            </span>
+                                        </div>
+
+                                        <div className="flex min-h-0 flex-1 flex-col px-1">
+                                            <p className="truncate text-base font-bold text-white">{trainer.name}</p>
+                                            <p className="truncate text-xs text-text-secondary">{trainer.specialty || 'Trainer'}</p>
+                                            <p className="mt-1 truncate text-xs text-text-muted">{availabilitySummary}</p>
+                                            <div className="mt-2 flex items-center justify-between">
+                                                <span className="font-bold text-primary">{formatMoney(trainer.sessionPrice || 0)}</span>
+                                                <span className="text-[10px] text-text-muted uppercase tracking-wide">{availabilityRows.length ? `${availabilityRows.length} day(s)` : 'No schedule'}</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-3 flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    handleViewProfile(trainer);
+                                                }}
+                                                className="flex-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-white/10"
+                                            >
+                                                Profile
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    handleViewSessions(trainer);
+                                                }}
+                                                className="flex-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-primary/20"
+                                            >
+                                                Sessions
+                                            </button>
+                                        </div>
+                                    </article>
+                                );
+                            })}
+                        </div>
+                    )}
+                </section>
+            )}
+
+            {/* Modal for Profile / Sessions */}
+            {viewMode && selectedTrainer && typeof document !== 'undefined' && createPortal(
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+                    <button
+                        type="button"
+                        aria-label="Close modal"
+                        onClick={() => setViewMode(null)}
+                        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+                    />
+
+                    <div className="relative z-10 w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-2xl border border-white/10 bg-surface shadow-2xl">
+                        <div className="border-b border-white/10 bg-gradient-to-r from-surface to-surfaceHighlight px-5 py-4">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="flex min-w-0 items-center gap-3">
+                                    <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/5">
+                                        {selectedTrainer.imageUrl ? (
+                                            <img src={selectedTrainer.imageUrl} alt={selectedTrainer.name} className="h-full w-full object-cover" />
+                                        ) : (
+                                            <div className="flex h-full w-full items-center justify-center text-text-muted">
+                                                <User size={18} />
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="min-w-0">
+                                        <h2 className="truncate text-lg font-bold text-white">{selectedTrainer.name}</h2>
+                                        <p className="truncate text-sm text-text-secondary">{selectedTrainer.specialty || 'Trainer'}</p>
+                                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                                            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-text-secondary">
+                                                {String(selectedTrainer.type || 'FULLTIME').toUpperCase() === 'FREELANCER' ? 'Freelance' : 'Full-time'}
+                                            </span>
+                                            <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-text-secondary">
+                                                <Star size={10} className="text-amber-400 fill-amber-400" />
+                                                {Number(selectedTrainer.rating || 0).toFixed(1)}
+                                            </span>
+                                            <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-text-secondary">
+                                                {formatMoney(selectedTrainer.sessionPrice || 0)}
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-
-                            {(trainer.availabilityByDay && Object.keys(trainer.availabilityByDay).length > 0) && (
-                                <div className="mb-5 bg-white/[0.03] rounded-xl p-3 border border-white/5">
-                                    <p className="text-[11px] text-text-muted uppercase tracking-wide mb-1">Availability</p>
-                                    <div className="space-y-1">
-                                        {Object.keys(trainer.availabilityByDay)
-                                            .map(Number)
-                                            .sort((a, b) => a - b)
-                                            .map((day) => {
-                                                const config = trainer.availabilityByDay[String(day)];
-                                                const label = WEEKDAY_OPTIONS.find((w) => w.value === day)?.label || day;
-                                                return (
-                                                    <p key={day} className="text-xs text-white">
-                                                        <span className="font-semibold">{label}</span>: {config?.start || '--:--'} - {config?.end || '--:--'}
-                                                    </p>
-                                                );
-                                            })}
-                                    </div>
-                                    <p className="text-xs text-text-muted mt-2">
-                                        Interval: {trainer.availabilityIntervalMinutes || 30} min
-                                    </p>
-                                </div>
-                            )}
-
-                            <div className="flex gap-3 relative z-10">
                                 <button
-                                    onClick={() => handleViewProfile(trainer)}
-                                    className="flex-1 py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-xl border border-white/5 transition-all flex items-center justify-center gap-2 text-sm"
+                                    type="button"
+                                    onClick={() => setViewMode(null)}
+                                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-text-secondary transition-colors hover:text-white"
                                 >
-                                    <Info size={16} className="text-primary" />
+                                    <span className="material-icons-round text-base">close</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="border-b border-white/10 px-5 py-3">
+                            <div className="inline-flex rounded-lg border border-white/10 bg-white/5 p-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setViewMode('profile')}
+                                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${viewMode === 'profile' ? 'bg-primary text-background' : 'text-text-secondary hover:text-white'}`}
+                                >
                                     Profile
                                 </button>
                                 <button
-                                    onClick={() => handleViewSessions(trainer)}
-                                    className="flex-1 py-2.5 bg-primary/10 hover:bg-primary/20 text-primary rounded-xl border border-primary/20 transition-all flex items-center justify-center gap-2 text-sm"
+                                    type="button"
+                                    onClick={() => setViewMode('sessions')}
+                                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${viewMode === 'sessions' ? 'bg-primary text-background' : 'text-text-secondary hover:text-white'}`}
                                 >
-                                    <History size={16} />
                                     Sessions
                                 </button>
                             </div>
                         </div>
-                    ))}
-                </div>
-            )}
 
-            {/* Modal for Profile / Sessions */}
-            {viewMode && selectedTrainer && (
-                <div className="fixed inset-0 z-[100] overflow-y-auto">
-                    <div className="absolute inset-0 bg-background/80 backdrop-blur-md" onClick={() => setViewMode(null)}></div>
-                    <div className="relative min-h-full w-full flex items-center justify-center p-4 sm:p-6">
-                        <div className="bg-surface w-full max-w-4xl max-h-[92vh] rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col">
-                            {/* Modal Header */}
-                            <div className="sticky top-0 z-10 p-6 border-b border-white/10 bg-surface/95 backdrop-blur flex items-center justify-between">
-                                <div className="flex items-center gap-4">
-                                    <div className="w-14 h-14 rounded-xl overflow-hidden border border-white/10">
-                                        {selectedTrainer.imageUrl ? (
-                                            <img src={selectedTrainer.imageUrl} alt="" className="w-full h-full object-cover" />
-                                        ) : (
-                                            <div className="w-full h-full bg-surfaceHighlight flex items-center justify-center text-lg font-bold text-primary">
-                                                {selectedTrainer.name[0]}
-                                            </div>
-                                        )}
+                        <div className="max-h-[70vh] overflow-y-auto p-5">
+                            {viewMode === 'profile' ? (
+                                <div className="space-y-5 text-sm">
+                                    <div className="grid gap-4 lg:grid-cols-2">
+                                        <div className="space-y-1.5">
+                                            <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Contact</p>
+                                            <p className="text-text-secondary">Phone: {selectedTrainer.phone || 'N/A'}</p>
+                                            <p className="text-text-secondary">Email: {selectedTrainer.email || 'N/A'}</p>
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Session Details</p>
+                                            <p className="text-text-secondary">Price: <span className="font-semibold text-white">{formatMoney(selectedTrainer.sessionPrice || 0)}</span></p>
+                                            <p className="text-text-secondary">Rating: <span className="font-semibold text-white">{Number(selectedTrainer.rating || 0).toFixed(1)}</span></p>
+                                            <p className="text-text-secondary">Interval: <span className="font-semibold text-white">{Number(selectedTrainer.availabilityIntervalMinutes || 30)} minutes</span></p>
+                                            <p className="text-text-secondary">Durations: <span className="font-semibold text-white">{modalDurations.join(', ') || 'N/A'}</span></p>
+                                        </div>
                                     </div>
+
                                     <div>
-                                        <h2 className="text-xl font-semibold text-white leading-none">{selectedTrainer.name}</h2>
-                                        <p className="text-text-muted text-sm mt-1">{selectedTrainer.specialty || 'Elite Coach'}</p>
+                                        <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Bio</p>
+                                        <p className="mt-2 leading-relaxed text-text-secondary">
+                                            {selectedTrainer.bio || 'No biography provided.'}
+                                        </p>
+                                    </div>
+
+                                    <div>
+                                        <p className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Weekly Availability</p>
+                                        <div className={`mt-2 ${showAvailabilitySingleRow ? 'flex flex-nowrap gap-1.5 overflow-x-auto pb-1' : 'grid gap-2 sm:grid-cols-2 lg:grid-cols-3'}`}>
+                                            {modalAvailabilityRows.length === 0 && (
+                                                <p className="text-sm text-text-muted">No availability configured.</p>
+                                            )}
+                                            {modalAvailabilityRows.map((row) => (
+                                                <div key={row.day} className={`rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-xs ${showAvailabilitySingleRow ? 'min-w-[96px] shrink-0' : ''}`}>
+                                                    <p className="font-semibold text-white">{row.label}</p>
+                                                    <p className="mt-0.5 text-text-secondary">{row.start} - {row.end}</p>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={() => setViewMode('profile')}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${viewMode === 'profile'
-                                            ? 'bg-primary/15 text-primary border-primary/40'
-                                            : 'bg-white/5 text-text-secondary border-white/10 hover:text-white'
-                                            }`}
-                                    >
-                                        Profile
-                                    </button>
-                                    <button
-                                        onClick={() => setViewMode('sessions')}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${viewMode === 'sessions'
-                                            ? 'bg-primary/15 text-primary border-primary/40'
-                                            : 'bg-white/5 text-text-secondary border-white/10 hover:text-white'
-                                            }`}
-                                    >
-                                        Sessions
-                                    </button>
-                                    <button
-                                        onClick={() => setViewMode(null)}
-                                        className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center text-white transition-all"
-                                    >
-                                        <X size={18} />
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Modal Content */}
-                            <div className="flex-1 overflow-y-auto no-scrollbar p-6">
-                                {viewMode === 'profile' ? (
-                                    <div className="space-y-8">
-                                        <div className="bg-white/[0.02] rounded-2xl p-6 border border-white/5">
-                                            <h3 className="text-lg font-bold text-white mb-4">Biography</h3>
-                                            <p className="text-text-secondary leading-relaxed text-lg">
-                                                {selectedTrainer.bio || "No biography available for this trainer yet. More details coming soon."}
-                                            </p>
+                            ) : (
+                                <section>
+                                    {sessionsLoading ? (
+                                        <div className="flex items-center justify-center py-12">
+                                            <div className="h-7 w-7 rounded-full border-4 border-primary border-t-transparent animate-spin" />
                                         </div>
-
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                            <div className="bg-white/[0.02] rounded-2xl p-6 border border-white/5">
-                                                <h3 className="text-lg font-bold text-white mb-4">Specs & Skills</h3>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {(selectedTrainer.specialty || 'Fitness,Coaching,Nutrition').split(',').map((skill, i) => (
-                                                        <span key={i} className="px-4 py-2 bg-primary/10 text-primary border border-primary/20 rounded-xl text-xs font-black uppercase tracking-widest">
-                                                            {skill.trim()}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                            <div className="bg-white/[0.02] rounded-2xl p-6 border border-white/5">
-                                                <h3 className="text-lg font-bold text-white mb-4">Performance</h3>
-                                                <div className="space-y-4">
-                                                    <div className="flex justify-between items-center">
-                                                        <span className="text-text-muted text-sm font-bold uppercase tracking-widest">Global Rating</span>
-                                                        <div className="flex items-center gap-1.5 text-amber-500 font-black">
-                                                            <span>{selectedTrainer.rating || '5.0'}</span>
-                                                            <Star size={16} fill="currentColor" />
+                                    ) : sessions.length === 0 ? (
+                                        <div className="p-4 text-sm text-text-muted">No session history for this trainer.</div>
+                                    ) : (
+                                        <div className="grid gap-2">
+                                            {sessions.map((session) => (
+                                                <div key={session.id} className="rounded-lg border border-white/10 bg-white/5 px-3 py-3">
+                                                    <div className="flex items-start justify-between gap-2">
+                                                        <div className="min-w-0">
+                                                            <p className="truncate text-sm font-semibold text-white">{session.member ? `${session.member.firstName || ''} ${session.member.lastName || ''}`.trim() : 'N/A'}</p>
+                                                            <p className="text-xs text-text-secondary">{formatDateTime(session.date)}</p>
+                                                            <p className="mt-1 text-xs text-text-muted">Duration: {Number(session.duration || 0)} min</p>
                                                         </div>
-                                                    </div>
-                                                    <div className="flex justify-between items-center">
-                                                        <span className="text-text-muted text-sm font-bold uppercase tracking-widest">Classes Hosted</span>
-                                                        <span className="text-white font-black">{selectedTrainer.classes?.length || 0}</span>
+                                                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${getStatusClass(session.status)}`}>
+                                                            {session.status || 'N/A'}
+                                                        </span>
                                                     </div>
                                                 </div>
-                                            </div>
+                                            ))}
                                         </div>
-                                    </div>
-                                ) : (
-                                    <div className="space-y-6">
-                                        {sessionsLoading ? (
-                                            <div className="flex flex-col items-center justify-center py-20">
-                                                <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
-                                                <p className="text-text-muted font-bold uppercase tracking-widest text-xs">Fetching sessions...</p>
-                                            </div>
-                                        ) : sessions.length > 0 ? (
-                                            <DataTable
-                                                columns={[
-                                                    {
-                                                        header: 'Member',
-                                                        accessor: (session) => (
-                                                            <div className="flex items-center gap-4">
-                                                                <div className="w-10 h-10 rounded-full bg-surfaceHighlight flex items-center justify-center font-black text-xs text-text-muted">
-                                                                    {session.member?.firstName?.[0]}
-                                                                </div>
-                                                                <div>
-                                                                    <p className="text-white font-black text-sm">{session.member?.firstName} {session.member?.lastName}</p>
-                                                                    <p className="text-[10px] text-text-muted font-bold tracking-widest uppercase italic">Member #{session.memberId}</p>
-                                                                </div>
-                                                            </div>
-                                                        )
-                                                    },
-                                                    {
-                                                        header: 'Date & Time',
-                                                        accessor: (session) => (
-                                                            <div className="flex flex-col">
-                                                                <span className="text-white font-bold text-sm">
-                                                                    {new Date(session.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                                                                </span>
-                                                                <span className="text-text-muted text-[10px] font-black uppercase">
-                                                                    {new Date(session.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                                </span>
-                                                            </div>
-                                                        )
-                                                    },
-                                                    {
-                                                        header: 'Duration',
-                                                        accessor: (session) => <span className="font-bold text-white text-sm">{session.duration} min</span>
-                                                    },
-                                                    {
-                                                        header: 'Status',
-                                                        accessor: (session) => (
-                                                            <span className={`px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${session.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                                                                session.status === 'SCHEDULED' ? 'bg-primary/10 text-primary border-primary/20' :
-                                                                    'bg-red-500/10 text-red-500 border-red-500/20'
-                                                                }`}>
-                                                                {session.status}
-                                                            </span>
-                                                        )
-                                                    }
-                                                ]}
-                                                data={sessions}
-                                                isLoading={sessionsLoading}
-                                                emptyMessage="No Session History"
-                                            />
-                                        ) : (
-                                            <div className="text-center py-20 bg-white/[0.01] rounded-[2rem] border border-white/5 border-dashed">
-                                                <History size={48} className="text-text-muted/20 mx-auto mb-4" />
-                                                <h4 className="text-lg font-bold text-white/30">No Session History</h4>
-                                                <p className="text-text-muted/20 text-xs font-bold uppercase tracking-widest mt-2">Past training sessions will appear here</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
+                                    )}
+                                </section>
+                            )}
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
             {/* Trainer Change Resolution Modal */}
-            {resolveModalSession && (
+            {resolveModalSession && typeof document !== 'undefined' && createPortal(
                 <div className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
                     <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4">
                         <div>
@@ -791,11 +905,12 @@ export default function Trainers() {
                             </button>
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
             {/* Form Modal */}
-            {showForm && (
+            {showForm && typeof document !== 'undefined' && createPortal(
                 <div className="fixed inset-0 z-[110] overflow-y-auto">
                     <div className="absolute inset-0 bg-background/80 backdrop-blur-md" onClick={() => setShowForm(false)}></div>
                     <div className="relative min-h-full w-full flex items-center justify-center p-4 sm:p-6">
@@ -1162,10 +1277,11 @@ export default function Trainers() {
                             </div>
                         </form>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
-            {showLoginModal && loginTrainer && (
+            {showLoginModal && loginTrainer && typeof document !== 'undefined' && createPortal(
                 <div className="fixed inset-0 z-[120] overflow-y-auto">
                     <div className="absolute inset-0 bg-background/80 backdrop-blur-md" onClick={() => setShowLoginModal(false)}></div>
                     <div className="relative min-h-full w-full flex items-center justify-center p-4 sm:p-6">
@@ -1221,10 +1337,11 @@ export default function Trainers() {
                             </div>
                         </form>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
-            {qrTrainer && (
+            {qrTrainer && typeof document !== 'undefined' && createPortal(
                 <div className="fixed inset-0 z-[120] overflow-y-auto">
                     <div className="absolute inset-0 bg-background/80 backdrop-blur-md" onClick={() => setQrTrainer(null)}></div>
                     <div className="relative min-h-full w-full flex items-center justify-center p-4 sm:p-6">
@@ -1251,7 +1368,8 @@ export default function Trainers() {
                             </div>
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
             <style>{`
