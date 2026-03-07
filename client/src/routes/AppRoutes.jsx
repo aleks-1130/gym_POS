@@ -127,13 +127,20 @@ const ProtectedRoute = ({ children, allowedRoles, fullScreen }) => {
 
 export default function AppRoutes() {
     const { user } = useAuth();
+    const isStandaloneApp = typeof window !== 'undefined'
+        && (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true);
+    const rootElement = user
+        ? <Navigate to="/dashboard" replace />
+        : isStandaloneApp
+            ? <Navigate to="/login" replace />
+            : <Landing />;
 
     return (
         <div className="flex-1 w-full bg-background overflow-auto relative">
             <PWAInstallPrompt user={user} />
             <Routes>
                 {/* --- PUBLIC ROUTES --- */}
-                <Route path="/" element={<Landing />} />
+                <Route path="/" element={rootElement} />
                 <Route path="/landing" element={<Landing />} />
                 <Route path="/signup" element={<Signup />} />
                 <Route path="/login" element={<Login />} />

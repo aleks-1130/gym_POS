@@ -137,6 +137,77 @@ const getAllClasses = async (req, res) => {
     }
 };
 
+const getMyClassHistory = async (req, res) => {
+    try {
+        const trainerId = Number(req.user?.trainerId);
+        if (!trainerId) return res.status(400).json({ error: 'Trainer account is not linked' });
+
+        const limitRaw = Number.parseInt(req.query?.limit, 10);
+        const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 500) : 200;
+
+        const history = await prisma.classHistory.findMany({
+            where: { trainerId },
+            include: {
+                class: {
+                    select: {
+                        id: true,
+                        name: true,
+                        capacity: true,
+                        time: true,
+                        duration: true
+                    }
+                }
+            },
+            orderBy: { date: 'desc' },
+            take: limit
+        });
+
+        const enriched = await Promise.all(history.map(async (entry) => {
+            const sessionDayStart = new Date(entry.date);
+            sessionDayStart.setHours(0, 0, 0, 0);
+            const sessionDayEnd = new Date(sessionDayStart);
+            sessionDayEnd.setDate(sessionDayEnd.getDate() + 1);
+
+            const participants = await prisma.booking.findMany({
+                where: {
+                    classId: entry.classId,
+                    sessionDate: {
+                        gte: sessionDayStart,
+                        lt: sessionDayEnd
+                    }
+                },
+                include: {
+                    member: {
+                        select: {
+                            id: true,
+                            firstName: true,
+                            lastName: true,
+                            email: true
+                        }
+                    }
+                },
+                orderBy: { createdAt: 'asc' }
+            });
+
+            return {
+                ...entry,
+                participants: participants.map((booking) => ({
+                    id: booking.id,
+                    memberId: booking.memberId,
+                    status: booking.status,
+                    sessionDate: booking.sessionDate,
+                    member: booking.member
+                })),
+                participantsCount: participants.length
+            };
+        }));
+
+        return res.json(enriched);
+    } catch (e) {
+        return res.status(500).json({ error: 'Failed to fetch class history', detail: e?.message });
+    }
+};
+
 const getClassParticipants = async (req, res) => {
     try {
         const classId = Number(req.params.id);
@@ -405,6 +476,7 @@ const completeClass = async (req, res) => {
 
 module.exports = {
     getAllClasses,
+    getMyClassHistory,
     getClassParticipants,
     createClass,
     updateClass,

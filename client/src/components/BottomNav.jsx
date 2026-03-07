@@ -17,7 +17,7 @@ export default function BottomNav() {
         { to: "/attendance", icon: CheckCircle, label: "Attendance" },
         { to: "/trainer-booking", icon: Dumbbell, label: "Trainers" },
         { to: "/gym-traffic", icon: Activity, label: "Traffic" },
-        { to: "/schedule", icon: Calendar, label: "Schedule" },
+        { to: "/schedule", icon: Calendar, label: "Classes" },
         { to: "/shop", icon: ShoppingBag, label: "Shop" },
         { to: "/profile", icon: User, label: "Profile" },
     ];

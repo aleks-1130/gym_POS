@@ -19,6 +19,7 @@ router.post('/me/sessions/:id/refund-exception', authenticateToken, authorizeTra
 router.post('/me/sessions/:id/unable-to-attend', authenticateToken, authorizeTrainerLinkedAccount, trainingSessionController.requestUnableToAttend);
 
 router.get('/me/classes', authenticateToken, authorizeTrainerLinkedAccount, classController.getAllClasses);
+router.get('/me/classes/history', authenticateToken, authorizeTrainerLinkedAccount, classController.getMyClassHistory);
 router.patch('/me/classes/:classId/attendees/:bookingId', authenticateToken, authorizeTrainerLinkedAccount, classController.updateAttendeeStatus);
 router.get('/me/profile-change-requests', authenticateToken, authorizeTrainerLinkedAccount, trainerChangeRequestController.getMyProfileChangeRequests);
 router.post('/me/profile-change-requests', authenticateToken, authorizeTrainerLinkedAccount, trainerChangeRequestController.createMyProfileChangeRequest);
