@@ -352,6 +352,38 @@ export default function AppRoutes() {
                     }
                 />
                 <Route
+                    path="/trainer/profile/edit"
+                    element={
+                        <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+                            <TrainerProfile />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/trainer/profile/availability"
+                    element={
+                        <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+                            <TrainerProfile />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/trainer/profile/member-card"
+                    element={
+                        <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+                            <TrainerProfile />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/trainer/profile/requests"
+                    element={
+                        <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+                            <TrainerProfile />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
                     path="/trainer/shop"
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
@@ -403,7 +435,7 @@ export default function AppRoutes() {
                     path="/trainer/availability"
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
-                            <Navigate to="/trainer/profile" replace />
+                            <Navigate to="/trainer/profile/availability" replace />
                         </ProtectedRoute>
                     }
                 />

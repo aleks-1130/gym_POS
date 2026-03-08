@@ -116,7 +116,6 @@ export default function Trainers() {
         email: '',
         phone: '',
         experience: '',
-        rating: '',
         sessionPrice: '',
         sessionDurations: ['60'],
         availabilityByDay: {},
@@ -328,7 +327,6 @@ export default function Trainers() {
             email: '',
             phone: '',
             experience: '',
-            rating: '',
             sessionPrice: '',
             sessionDurations: ['60'],
             availabilityByDay: {},
@@ -359,7 +357,6 @@ export default function Trainers() {
             email: trainer.email || '',
             phone: trainer.phone || '',
             experience: trainer.experience ?? '',
-            rating: trainer.rating ?? '',
             sessionPrice: trainer.sessionPrice ?? '',
             sessionDurations: trainer.sessionDurations
                 ? trainer.sessionDurations.split(',').map((value) => value.trim()).filter(Boolean)
@@ -762,41 +759,6 @@ export default function Trainers() {
                                         onClick={() => setSelectedTrainerId(trainer.id)}
                                         className={`group relative flex min-h-[325px] flex-col rounded-3xl border p-3 transition-all duration-300 ${isSelected ? 'border-primary/40 bg-primary/5 shadow-primary/10' : 'border-white/5 bg-surface hover:border-primary/20 hover:bg-primary/5 hover:shadow-primary/10'} shadow-sm`}
                                     >
-                                        <div className="absolute right-2 top-2 z-20 flex gap-1.5">
-                                            {isAdmin && (
-                                                <>
-                                                    <button
-                                                        onClick={(event) => { event.stopPropagation(); setQrTrainer(trainer); }}
-                                                        className="h-8 w-8 rounded-lg border border-blue-500/30 bg-blue-500/10 flex items-center justify-center text-blue-300 transition-colors hover:bg-blue-500/20"
-                                                        title="View trainer QR"
-                                                    >
-                                                        <QrCode size={14} />
-                                                    </button>
-                                                    <button
-                                                        onClick={(event) => { event.stopPropagation(); openEditForm(trainer); }}
-                                                        className="h-8 w-8 rounded-lg border border-white/10 bg-white/5 flex items-center justify-center text-text-muted transition-colors hover:bg-white/10 hover:text-white"
-                                                        title="Edit trainer"
-                                                    >
-                                                        <Pencil size={14} />
-                                                    </button>
-                                                    <button
-                                                        onClick={(event) => { event.stopPropagation(); openLoginModal(trainer); }}
-                                                        className="h-8 w-8 rounded-lg border border-emerald-500/30 bg-emerald-500/10 flex items-center justify-center text-emerald-400 transition-colors hover:bg-emerald-500/20"
-                                                        title="Create trainer login"
-                                                    >
-                                                        <User size={14} />
-                                                    </button>
-                                                    <button
-                                                        onClick={(event) => { event.stopPropagation(); handleDeleteTrainer(trainer); }}
-                                                        className="h-8 w-8 rounded-lg border border-red-500/30 bg-red-500/10 flex items-center justify-center text-red-400 transition-colors hover:bg-red-500/20"
-                                                        title="Delete trainer"
-                                                    >
-                                                        <Trash2 size={14} />
-                                                    </button>
-                                                </>
-                                            )}
-                                        </div>
-
                                         <div className="relative mb-3 aspect-[5/4] overflow-hidden rounded-2xl bg-white/5">
                                             {trainer.imageUrl ? (
                                                 <img src={trainer.imageUrl} alt={trainer.name} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
@@ -815,8 +777,44 @@ export default function Trainers() {
                                         </div>
 
                                         <div className="flex min-h-0 flex-1 flex-col px-1">
-                                            <p className="truncate text-base font-bold text-white">{trainer.name}</p>
-                                            <p className="truncate text-xs text-text-secondary">{trainer.specialty || 'Trainer'}</p>
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="min-w-0">
+                                                    <p className="truncate text-base font-bold text-white">{trainer.name}</p>
+                                                    <p className="truncate text-xs text-text-secondary">{trainer.specialty || 'Trainer'}</p>
+                                                </div>
+                                                {isAdmin && (
+                                                    <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                                                        <button
+                                                            onClick={(event) => { event.stopPropagation(); setQrTrainer(trainer); }}
+                                                            className="h-7 w-7 rounded-lg border border-blue-500/30 bg-blue-500/10 flex items-center justify-center text-blue-300 transition-colors hover:bg-blue-500/20"
+                                                            title="View trainer QR"
+                                                        >
+                                                            <QrCode size={13} />
+                                                        </button>
+                                                        <button
+                                                            onClick={(event) => { event.stopPropagation(); openEditForm(trainer); }}
+                                                            className="h-7 w-7 rounded-lg border border-white/10 bg-white/5 flex items-center justify-center text-text-muted transition-colors hover:bg-white/10 hover:text-white"
+                                                            title="Edit trainer"
+                                                        >
+                                                            <Pencil size={13} />
+                                                        </button>
+                                                        <button
+                                                            onClick={(event) => { event.stopPropagation(); openLoginModal(trainer); }}
+                                                            className="h-7 w-7 rounded-lg border border-emerald-500/30 bg-emerald-500/10 flex items-center justify-center text-emerald-400 transition-colors hover:bg-emerald-500/20"
+                                                            title="Create trainer login"
+                                                        >
+                                                            <User size={13} />
+                                                        </button>
+                                                        <button
+                                                            onClick={(event) => { event.stopPropagation(); handleDeleteTrainer(trainer); }}
+                                                            className="h-7 w-7 rounded-lg border border-red-500/30 bg-red-500/10 flex items-center justify-center text-red-400 transition-colors hover:bg-red-500/20"
+                                                            title="Delete trainer"
+                                                        >
+                                                            <Trash2 size={13} />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
                                             <p className="mt-1 truncate text-xs text-text-muted">{availabilitySummary}</p>
                                             <div className="mt-2 flex items-center justify-between">
                                                 <span className="font-bold text-primary">{formatMoney(trainer.sessionPrice || 0)}</span>
@@ -1398,18 +1396,6 @@ export default function Trainers() {
                                             )}
                                         </div>
                                     )}
-                                    <div>
-                                        <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Rating</label>
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            max="5"
-                                            step="0.1"
-                                            value={formData.rating}
-                                            onChange={(e) => handleFormChange('rating', e.target.value)}
-                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
-                                        />
-                                    </div>
                                     <div>
                                         <label className="block text-xs text-gray-400 uppercase tracking-widest font-bold mb-2">Profile Image URL</label>
                                         <input

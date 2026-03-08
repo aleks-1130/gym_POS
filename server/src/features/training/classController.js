@@ -5,11 +5,111 @@ const {
     minutesTo12Hour,
     parseOneTimeDate,
     resolveClassSessionStart,
-    resolveCompletionWindow,
     getDayBounds
 } = require('./classScheduleUtils');
 
-const ACTIVE_BOOKING_STATUSES = ['CONFIRMED', 'ATTENDED'];
+const ENROLLED_BOOKING_STATUSES = ['CONFIRMED', 'ATTENDED'];
+const COMPLETION_ATTENDEE_STATUSES = ['ATTENDED'];
+const CLASS_SESSION_STATUS = {
+    SCHEDULED: 'SCHEDULED',
+    IN_PROGRESS: 'IN_PROGRESS',
+    COMPLETED: 'COMPLETED'
+};
+const START_LEAD_MINUTES = 60;
+const AUTO_OPEN_GRACE_MINUTES = 180;
+
+const toSessionKey = (classId, sessionDate) => {
+    const date = new Date(sessionDate);
+    if (!classId || Number.isNaN(date.getTime())) return null;
+    return `${Number(classId)}::${date.toISOString()}`;
+};
+
+const isSameDay = (a, b) => {
+    const left = getDayBounds(a);
+    const right = getDayBounds(b);
+    return Boolean(left && right && left.start.getTime() === right.start.getTime());
+};
+
+const resolveSessionTimeline = (cls, sessionDate) => {
+    const start = new Date(sessionDate);
+    const durationMinutes = Number(cls?.duration || 0);
+    if (Number.isNaN(start.getTime()) || !Number.isFinite(durationMinutes) || durationMinutes <= 0) return null;
+
+    const end = new Date(start.getTime() + (durationMinutes * 60000));
+    const manualStartWindow = {
+        start: new Date(start.getTime() - (START_LEAD_MINUTES * 60000)),
+        end: new Date(end.getTime() + (AUTO_OPEN_GRACE_MINUTES * 60000))
+    };
+    const autoOpenWindow = {
+        start,
+        end: new Date(end.getTime() + (AUTO_OPEN_GRACE_MINUTES * 60000))
+    };
+
+    return { start, end, manualStartWindow, autoOpenWindow };
+};
+
+const canStartSessionNow = (cls, sessionDate, now = new Date()) => {
+    const timeline = resolveSessionTimeline(cls, sessionDate);
+    if (!timeline) return false;
+    return now >= timeline.manualStartWindow.start && now <= timeline.manualStartWindow.end;
+};
+
+const isWithinAutoOpenWindow = (cls, sessionDate, now = new Date()) => {
+    const timeline = resolveSessionTimeline(cls, sessionDate);
+    if (!timeline) return false;
+    return now >= timeline.autoOpenWindow.start && now <= timeline.autoOpenWindow.end;
+};
+
+const summarizeSessionState = ({ cls, sessionDate, sessionRuntime, completionRecord, now = new Date() }) => {
+    if (!sessionDate) {
+        return {
+            status: CLASS_SESSION_STATUS.SCHEDULED,
+            canStart: false,
+            canComplete: false,
+            reason: 'No valid session date available.',
+            startedAt: null,
+            completedAt: null
+        };
+    }
+
+    if (completionRecord || String(sessionRuntime?.status || '').toUpperCase() === CLASS_SESSION_STATUS.COMPLETED) {
+        return {
+            status: CLASS_SESSION_STATUS.COMPLETED,
+            canStart: false,
+            canComplete: false,
+            reason: 'This session is already completed.',
+            startedAt: sessionRuntime?.startedAt || null,
+            completedAt: completionRecord?.createdAt || sessionRuntime?.completedAt || null
+        };
+    }
+
+    if (String(sessionRuntime?.status || '').toUpperCase() === CLASS_SESSION_STATUS.IN_PROGRESS) {
+        const sameDay = isSameDay(now, sessionDate);
+        return {
+            status: CLASS_SESSION_STATUS.IN_PROGRESS,
+            canStart: false,
+            canComplete: sameDay,
+            reason: sameDay ? '' : 'Class can only be completed on the scheduled session day.',
+            startedAt: sessionRuntime?.startedAt || null,
+            completedAt: null
+        };
+    }
+
+    const autoOpen = isWithinAutoOpenWindow(cls, sessionDate, now);
+    const canStart = canStartSessionNow(cls, sessionDate, now);
+    return {
+        status: autoOpen ? CLASS_SESSION_STATUS.IN_PROGRESS : CLASS_SESSION_STATUS.SCHEDULED,
+        canStart,
+        canComplete: autoOpen,
+        reason: autoOpen
+            ? ''
+            : (canStart
+                ? 'Start class to begin attendance tracking.'
+                : 'Class start is available near the scheduled time window.'),
+        startedAt: null,
+        completedAt: null
+    };
+};
 
 const resolveScheduleFromPayload = ({ time, duration, startTime, endTime }) => {
     const startTimeProvided = startTime !== undefined && startTime !== null && String(startTime).trim() !== '';
@@ -86,6 +186,56 @@ const getAllClasses = async (req, res) => {
             orderBy: { dayOfWeek: 'asc' }
         });
 
+        const resolvedSessionByClassId = {};
+        classes.forEach((cls) => {
+            resolvedSessionByClassId[cls.id] = resolveClassSessionStart(cls, {
+                now,
+                preferToday: req.user.role !== 'MEMBER',
+                includePastOneTime: req.user.role !== 'MEMBER'
+            });
+        });
+
+        const sessionTargets = classes
+            .map((cls) => ({
+                classId: cls.id,
+                sessionDate: resolvedSessionByClassId[cls.id]
+            }))
+            .filter((entry) => entry.sessionDate);
+
+        const sessionCriteria = sessionTargets.map((entry) => ({
+            classId: Number(entry.classId),
+            sessionDate: entry.sessionDate
+        }));
+        const historyCriteria = sessionTargets.map((entry) => ({
+            classId: Number(entry.classId),
+            date: entry.sessionDate
+        }));
+
+        const [sessionRuntimeRows, sessionCompletions] = sessionCriteria.length > 0
+            ? await Promise.all([
+                prisma.classSession.findMany({
+                    where: { OR: sessionCriteria }
+                }),
+                prisma.classHistory.findMany({
+                    where: { OR: historyCriteria }
+                })
+            ])
+            : [[], []];
+
+        const sessionRuntimeMap = new Map();
+        sessionRuntimeRows.forEach((row) => {
+            const key = toSessionKey(row.classId, row.sessionDate);
+            if (!key) return;
+            sessionRuntimeMap.set(key, row);
+        });
+
+        const sessionCompletionMap = new Map();
+        sessionCompletions.forEach((row) => {
+            const key = toSessionKey(row.classId, row.date);
+            if (!key) return;
+            sessionCompletionMap.set(key, row);
+        });
+
         const todayBounds = getDayBounds(now);
         const todayCompletions = todayBounds
             ? await prisma.classHistory.findMany({
@@ -102,10 +252,16 @@ const getAllClasses = async (req, res) => {
         });
 
         const enriched = await Promise.all(classes.map(async (cls) => {
-            const sessionDate = resolveClassSessionStart(cls, {
-                now,
-                preferToday: req.user.role === 'TRAINER',
-                includePastOneTime: req.user.role !== 'MEMBER'
+            const sessionDate = resolvedSessionByClassId[cls.id];
+            const sessionKey = toSessionKey(cls.id, sessionDate);
+            const sessionRuntime = sessionKey ? sessionRuntimeMap.get(sessionKey) || null : null;
+            const sessionCompletion = sessionKey ? sessionCompletionMap.get(sessionKey) || null : null;
+            const sessionState = summarizeSessionState({
+                cls,
+                sessionDate,
+                sessionRuntime,
+                completionRecord: sessionCompletion,
+                now
             });
 
             const sessionBookings = sessionDate
@@ -119,7 +275,7 @@ const getAllClasses = async (req, res) => {
                 })
                 : [];
 
-            const enrolled = sessionBookings.filter((booking) => ACTIVE_BOOKING_STATUSES.includes(String(booking.status || '').toUpperCase())).length;
+            const enrolled = sessionBookings.filter((booking) => ENROLLED_BOOKING_STATUSES.includes(String(booking.status || '').toUpperCase())).length;
 
             return {
                 ...cls,
@@ -127,7 +283,14 @@ const getAllClasses = async (req, res) => {
                 enrolled,
                 bookings: sessionBookings,
                 completedToday: !!completionMap[cls.id],
-                todayCompletion: completionMap[cls.id] || null
+                todayCompletion: completionMap[cls.id] || null,
+                sessionStatus: sessionState.status,
+                sessionCanStart: sessionState.canStart,
+                sessionCanComplete: sessionState.canComplete,
+                sessionControlReason: sessionState.reason,
+                sessionStartedAt: sessionState.startedAt,
+                sessionCompletedAt: sessionState.completedAt,
+                currentSessionCompletion: sessionCompletion
             };
         }));
 
@@ -222,7 +385,7 @@ const getClassParticipants = async (req, res) => {
         const resolvedSessionDate = resolveClassSessionStart(cls, {
             now: new Date(),
             requestedSessionDate,
-            preferToday: req.user.role === 'TRAINER',
+            preferToday: req.user.role !== 'MEMBER',
             includePastOneTime: true
         });
 
@@ -359,6 +522,7 @@ const deleteClass = async (req, res) => {
         await prisma.$transaction(async (tx) => {
             await tx.booking.deleteMany({ where: { classId } });
             await tx.classHistory.deleteMany({ where: { classId } });
+            await tx.classSession.deleteMany({ where: { classId } });
             await tx.class.delete({ where: { id: classId } });
         });
         res.json({ success: true });
@@ -373,10 +537,10 @@ const updateAttendeeStatus = async (req, res) => {
         if (!trainerId) return res.status(400).json({ error: 'Trainer account is not linked' });
         const classId = Number(req.params.classId);
         const bookingId = Number(req.params.bookingId);
-        const { status } = req.body;
-        const allowed = ['CONFIRMED', 'ATTENDED', 'CANCELLED'];
-        if (!allowed.includes(String(status).toUpperCase())) {
-            return res.status(400).json({ error: 'Invalid status' });
+        const normalizedStatus = String(req.body?.status || '').toUpperCase();
+        const allowed = ['ATTENDED', 'NO_SHOW'];
+        if (!allowed.includes(normalizedStatus)) {
+            return res.status(400).json({ error: 'Invalid status. Allowed values: ATTENDED, NO_SHOW' });
         }
 
         const cls = await prisma.class.findUnique({ where: { id: classId } });
@@ -389,9 +553,48 @@ const updateAttendeeStatus = async (req, res) => {
             return res.status(404).json({ error: 'Booking not found' });
         }
 
+        const bookingSessionDate = booking.sessionDate
+            ? new Date(booking.sessionDate)
+            : resolveClassSessionStart(cls, {
+                now: new Date(),
+                preferToday: true,
+                includePastOneTime: true
+            });
+        if (!bookingSessionDate || Number.isNaN(bookingSessionDate.getTime())) {
+            return res.status(400).json({ error: 'Booking has no valid session date.' });
+        }
+
+        const now = new Date();
+        if (!isSameDay(now, bookingSessionDate)) {
+            return res.status(409).json({ error: 'Attendance can only be updated on the scheduled class day.' });
+        }
+
+        const sessionRuntime = await prisma.classSession.findUnique({
+            where: {
+                classId_sessionDate: {
+                    classId,
+                    sessionDate: bookingSessionDate
+                }
+            }
+        });
+
+        if (String(sessionRuntime?.status || '').toUpperCase() === CLASS_SESSION_STATUS.COMPLETED) {
+            return res.status(409).json({ error: 'Attendance is locked because this class session is completed.' });
+        }
+
+        const timeline = resolveSessionTimeline(cls, bookingSessionDate);
+        if (!timeline) {
+            return res.status(400).json({ error: 'Invalid class timeline.' });
+        }
+
+        const withinAttendanceWindow = now >= timeline.start && now <= timeline.autoOpenWindow.end;
+        if (!withinAttendanceWindow) {
+            return res.status(409).json({ error: 'Attendance can only be updated while class is in progress.' });
+        }
+
         const updated = await prisma.booking.update({
             where: { id: bookingId },
-            data: { status: String(status).toUpperCase() }
+            data: { status: normalizedStatus }
         });
         res.json(updated);
     } catch (e) {
@@ -399,9 +602,10 @@ const updateAttendeeStatus = async (req, res) => {
     }
 };
 
-const completeClass = async (req, res) => {
+const startClassSession = async (req, res) => {
     const classId = Number(req.params.id);
-    const requestedSessionDate = req.body?.sessionDate;
+    const requestedSessionDate = req.body?.sessionDate || req.query?.sessionDate;
+    const now = new Date();
 
     try {
         const cls = await prisma.class.findUnique({
@@ -410,26 +614,24 @@ const completeClass = async (req, res) => {
         });
 
         if (!cls) return res.status(404).json({ error: 'Class not found' });
-
-        const trainerId = req.user.trainerId ? Number(req.user.trainerId) : cls.trainerId;
-        if (!trainerId) return res.status(400).json({ error: 'No trainer assigned to this class' });
         if (req.user.role === 'TRAINER' && Number(cls.trainerId) !== Number(req.user.trainerId)) {
             return res.status(403).json({ error: 'Access denied' });
         }
 
         const sessionDate = resolveClassSessionStart(cls, {
-            now: new Date(),
+            now,
             requestedSessionDate,
             preferToday: true,
             includePastOneTime: true
         });
         if (!sessionDate) {
-            return res.status(400).json({ error: 'No valid class session found to complete.' });
+            return res.status(400).json({ error: 'No valid class session found to start.' });
         }
 
-        const completionWindow = resolveCompletionWindow(cls, sessionDate, new Date());
-        if (!completionWindow.allowed) {
-            return res.status(400).json({ error: completionWindow.error });
+        if (req.user.role === 'TRAINER' && !canStartSessionNow(cls, sessionDate, now)) {
+            return res.status(409).json({
+                error: 'Class can be started only near its scheduled time window.'
+            });
         }
 
         const sessionBounds = getDayBounds(sessionDate);
@@ -445,32 +647,296 @@ const completeClass = async (req, res) => {
         });
 
         if (existingCompletion) {
-            return res.status(400).json({ error: 'This class has already been completed for this session date' });
+            return res.status(409).json({ error: 'This class has already been completed for this session date' });
+        }
+
+        const existingSessionRuntime = await prisma.classSession.findUnique({
+            where: {
+                classId_sessionDate: {
+                    classId,
+                    sessionDate
+                }
+            }
+        });
+
+        if (String(existingSessionRuntime?.status || '').toUpperCase() === CLASS_SESSION_STATUS.COMPLETED) {
+            return res.status(409).json({ error: 'This class session is already completed.' });
+        }
+
+        const runtime = await prisma.classSession.upsert({
+            where: {
+                classId_sessionDate: {
+                    classId,
+                    sessionDate
+                }
+            },
+            update: {
+                status: CLASS_SESSION_STATUS.IN_PROGRESS,
+                startedAt: existingSessionRuntime?.startedAt || now,
+                isAutoStarted: false,
+                startedByRole: req.user.role
+            },
+            create: {
+                classId,
+                trainerId: Number(cls.trainerId),
+                sessionDate,
+                status: CLASS_SESSION_STATUS.IN_PROGRESS,
+                startedAt: now,
+                isAutoStarted: false,
+                startedByRole: req.user.role
+            }
+        });
+
+        res.json({ success: true, sessionDate, session: runtime });
+    } catch (e) {
+        console.error('Start Class Error:', e);
+        res.status(500).json({ error: 'Failed to start class session' });
+    }
+};
+
+const completeClass = async (req, res) => {
+    const classId = Number(req.params.id);
+    const requestedSessionDate = req.body?.sessionDate;
+    const now = new Date();
+
+    try {
+        const cls = await prisma.class.findUnique({
+            where: { id: classId },
+            include: { trainer: true }
+        });
+
+        if (!cls) return res.status(404).json({ error: 'Class not found' });
+        if (req.user.role === 'TRAINER' && Number(cls.trainerId) !== Number(req.user.trainerId)) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        const sessionDate = resolveClassSessionStart(cls, {
+            now,
+            requestedSessionDate,
+            preferToday: true,
+            includePastOneTime: true
+        });
+        if (!sessionDate) {
+            return res.status(400).json({ error: 'No valid class session found to complete.' });
+        }
+
+        if (!isSameDay(now, sessionDate)) {
+            return res.status(409).json({
+                error: 'Class can only be completed on its scheduled session day.'
+            });
+        }
+
+        const sessionBounds = getDayBounds(sessionDate);
+        if (!sessionBounds) {
+            return res.status(400).json({ error: 'Invalid session date' });
+        }
+
+        const existingCompletion = await prisma.classHistory.findFirst({
+            where: {
+                classId,
+                date: { gte: sessionBounds.start, lt: sessionBounds.end }
+            }
+        });
+
+        if (existingCompletion) {
+            return res.status(409).json({ error: 'This class has already been completed for this session date' });
+        }
+
+        let existingSessionRuntime = await prisma.classSession.findUnique({
+            where: {
+                classId_sessionDate: {
+                    classId,
+                    sessionDate
+                }
+            }
+        });
+
+        const normalizedRuntimeStatus = String(existingSessionRuntime?.status || '').toUpperCase();
+        if (normalizedRuntimeStatus === CLASS_SESSION_STATUS.COMPLETED) {
+            return res.status(409).json({ error: 'This class session is already completed.' });
+        }
+
+        if (normalizedRuntimeStatus === CLASS_SESSION_STATUS.SCHEDULED || !existingSessionRuntime) {
+            if (!isWithinAutoOpenWindow(cls, sessionDate, now)) {
+                return res.status(409).json({
+                    error: 'Class must be started first before completion.'
+                });
+            }
+
+            existingSessionRuntime = await prisma.classSession.upsert({
+                where: {
+                    classId_sessionDate: {
+                        classId,
+                        sessionDate
+                    }
+                },
+                update: {
+                    status: CLASS_SESSION_STATUS.IN_PROGRESS,
+                    startedAt: existingSessionRuntime?.startedAt || now,
+                    isAutoStarted: true,
+                    startedByRole: existingSessionRuntime?.startedByRole || 'SYSTEM'
+                },
+                create: {
+                    classId,
+                    trainerId: Number(cls.trainerId),
+                    sessionDate,
+                    status: CLASS_SESSION_STATUS.IN_PROGRESS,
+                    startedAt: now,
+                    isAutoStarted: true,
+                    startedByRole: 'SYSTEM'
+                }
+            });
         }
 
         const attendees = await prisma.booking.count({
             where: {
                 classId,
                 sessionDate,
-                status: { in: ACTIVE_BOOKING_STATUSES }
+                status: { in: COMPLETION_ATTENDEE_STATUSES }
             }
         });
 
-        const history = await prisma.classHistory.create({
-            data: {
-                classId,
-                trainerId: Number(trainerId),
-                date: sessionDate,
-                attendeeCount: attendees,
-                commissionAmount: cls.basePay ?? 0,
-                commissionPaid: false
-            }
-        });
+        const [history, runtime] = await prisma.$transaction([
+            prisma.classHistory.create({
+                data: {
+                    classId,
+                    trainerId: Number(cls.trainerId),
+                    date: sessionDate,
+                    attendeeCount: attendees,
+                    commissionAmount: cls.basePay ?? 0,
+                    commissionPaid: false
+                }
+            }),
+            prisma.classSession.upsert({
+                where: {
+                    classId_sessionDate: {
+                        classId,
+                        sessionDate
+                    }
+                },
+                update: {
+                    status: CLASS_SESSION_STATUS.COMPLETED,
+                    completedAt: now,
+                    completedByRole: req.user.role
+                },
+                create: {
+                    classId,
+                    trainerId: Number(cls.trainerId),
+                    sessionDate,
+                    status: CLASS_SESSION_STATUS.COMPLETED,
+                    startedAt: now,
+                    completedAt: now,
+                    isAutoStarted: true,
+                    startedByRole: 'SYSTEM',
+                    completedByRole: req.user.role
+                }
+            })
+        ]);
 
-        res.json({ ...history, sessionDate });
+        res.json({ ...history, sessionDate, session: runtime });
     } catch (e) {
         console.error('Complete Class Error:', e);
         res.status(500).json({ error: 'Failed to complete class' });
+    }
+};
+
+const overrideCompleteClass = async (req, res) => {
+    const classId = Number(req.params.id);
+    const requestedSessionDate = req.body?.sessionDate;
+    const overrideReason = String(req.body?.reason || '').trim();
+    const now = new Date();
+
+    try {
+        const cls = await prisma.class.findUnique({
+            where: { id: classId },
+            include: { trainer: true }
+        });
+
+        if (!cls) return res.status(404).json({ error: 'Class not found' });
+
+        const sessionDate = resolveClassSessionStart(cls, {
+            now,
+            requestedSessionDate,
+            preferToday: false,
+            includePastOneTime: true
+        });
+        if (!sessionDate) {
+            return res.status(400).json({ error: 'No valid class session found to override complete.' });
+        }
+        if (sessionDate > now) {
+            return res.status(400).json({ error: 'Cannot override-complete a future class session.' });
+        }
+
+        const sessionBounds = getDayBounds(sessionDate);
+        if (!sessionBounds) {
+            return res.status(400).json({ error: 'Invalid session date' });
+        }
+
+        const existingCompletion = await prisma.classHistory.findFirst({
+            where: {
+                classId,
+                date: { gte: sessionBounds.start, lt: sessionBounds.end }
+            }
+        });
+
+        if (existingCompletion) {
+            return res.status(409).json({ error: 'This class has already been completed for this session date' });
+        }
+
+        const attendees = await prisma.booking.count({
+            where: {
+                classId,
+                sessionDate,
+                status: { in: COMPLETION_ATTENDEE_STATUSES }
+            }
+        });
+
+        const [history, runtime] = await prisma.$transaction([
+            prisma.classHistory.create({
+                data: {
+                    classId,
+                    trainerId: Number(cls.trainerId),
+                    date: sessionDate,
+                    attendeeCount: attendees,
+                    commissionAmount: cls.basePay ?? 0,
+                    commissionPaid: false
+                }
+            }),
+            prisma.classSession.upsert({
+                where: {
+                    classId_sessionDate: {
+                        classId,
+                        sessionDate
+                    }
+                },
+                update: {
+                    status: CLASS_SESSION_STATUS.COMPLETED,
+                    startedAt: now,
+                    completedAt: now,
+                    isAutoStarted: true,
+                    startedByRole: 'SYSTEM',
+                    completedByRole: req.user.role,
+                    completionNote: overrideReason || 'Admin override completion'
+                },
+                create: {
+                    classId,
+                    trainerId: Number(cls.trainerId),
+                    sessionDate,
+                    status: CLASS_SESSION_STATUS.COMPLETED,
+                    startedAt: now,
+                    completedAt: now,
+                    isAutoStarted: true,
+                    startedByRole: 'SYSTEM',
+                    completedByRole: req.user.role,
+                    completionNote: overrideReason || 'Admin override completion'
+                }
+            })
+        ]);
+
+        res.json({ ...history, sessionDate, session: runtime, override: true });
+    } catch (e) {
+        console.error('Override Complete Class Error:', e);
+        res.status(500).json({ error: 'Failed to override-complete class' });
     }
 };
 
@@ -482,5 +948,7 @@ module.exports = {
     updateClass,
     deleteClass,
     updateAttendeeStatus,
-    completeClass
+    startClassSession,
+    completeClass,
+    overrideCompleteClass
 };

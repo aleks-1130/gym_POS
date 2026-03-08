@@ -9,6 +9,7 @@ const { authenticateToken, authorize, authorizeTrainerLinkedAccount } = require(
 // Trainer Self-Service
 router.get('/me', authenticateToken, authorizeTrainerLinkedAccount, trainerController.getMe);
 router.get('/me/commissions', authenticateToken, authorizeTrainerLinkedAccount, trainerController.getMyCommissions);
+router.patch('/me/profile', authenticateToken, authorizeTrainerLinkedAccount, trainerController.updateMyProfileCredentials);
 router.patch('/me/availability', authenticateToken, authorizeTrainerLinkedAccount, trainerController.updateMyAvailability);
 router.get('/me/sessions', authenticateToken, authorizeTrainerLinkedAccount, trainingSessionController.getMySessions);
 router.post('/me/sessions/:id/complete', authenticateToken, authorizeTrainerLinkedAccount, trainingSessionController.completeSession);
@@ -20,6 +21,8 @@ router.post('/me/sessions/:id/unable-to-attend', authenticateToken, authorizeTra
 
 router.get('/me/classes', authenticateToken, authorizeTrainerLinkedAccount, classController.getAllClasses);
 router.get('/me/classes/history', authenticateToken, authorizeTrainerLinkedAccount, classController.getMyClassHistory);
+router.post('/me/classes/:id/start', authenticateToken, authorizeTrainerLinkedAccount, classController.startClassSession);
+router.post('/me/classes/:id/complete', authenticateToken, authorizeTrainerLinkedAccount, classController.completeClass);
 router.patch('/me/classes/:classId/attendees/:bookingId', authenticateToken, authorizeTrainerLinkedAccount, classController.updateAttendeeStatus);
 router.get('/me/profile-change-requests', authenticateToken, authorizeTrainerLinkedAccount, trainerChangeRequestController.getMyProfileChangeRequests);
 router.post('/me/profile-change-requests', authenticateToken, authorizeTrainerLinkedAccount, trainerChangeRequestController.createMyProfileChangeRequest);

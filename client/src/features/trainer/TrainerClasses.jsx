@@ -229,18 +229,11 @@ export default function TrainerClasses() {
                                                             Attended
                                                         </button>
                                                         <button
-                                                            onClick={() => updateAttendance(cls.id, booking.id, 'CONFIRMED')}
+                                                            onClick={() => updateAttendance(cls.id, booking.id, 'NO_SHOW')}
                                                             disabled={updatingId === booking.id}
-                                                            className="px-2 py-1 text-[10px] font-bold uppercase tracking-widest rounded-lg border border-primary/30 text-primary bg-primary/10 hover:bg-primary/20 disabled:opacity-50"
+                                                            className="px-2 py-1 text-[10px] font-bold uppercase tracking-widest rounded-lg border border-amber-500/30 text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 disabled:opacity-50"
                                                         >
-                                                            Confirmed
-                                                        </button>
-                                                        <button
-                                                            onClick={() => updateAttendance(cls.id, booking.id, 'CANCELLED')}
-                                                            disabled={updatingId === booking.id}
-                                                            className="px-2 py-1 text-[10px] font-bold uppercase tracking-widest rounded-lg border border-red-500/30 text-red-300 bg-red-500/10 hover:bg-red-500/20 disabled:opacity-50"
-                                                        >
-                                                            Cancelled
+                                                            No Show
                                                         </button>
                                                     </div>
                                                 </div>
@@ -266,7 +259,7 @@ export default function TrainerClasses() {
 
         const confirmed = await showConfirm({
             title: 'Complete Class?',
-            message: "This will record attendance for payroll based on current 'Attended' or 'Confirmed' bookings.",
+            message: "This will record attendance for payroll based on current 'Attended' bookings.",
             confirmLabel: 'Complete & Pay',
             type: 'info'
         });
