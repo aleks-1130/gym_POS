@@ -32,6 +32,9 @@ model User {
   trainer     Trainer?     @relation("TrainerUser", fields: [trainerId], references: [id])
   expenses    Expense[]    @relation("StaffExpense")
   stockOrdersCreated StockOrder[] @relation("StockOrderCreator")
+  trainerChangeRequestsSubmitted    TrainerChangeRequest[] @relation("TrainerChangeRequestedBy")
+  trainerChangeRequestsAdminReviewed TrainerChangeRequest[] @relation("TrainerChangeAdminDecisionBy")
+  trainerChangeRequestsOwnerReviewed TrainerChangeRequest[] @relation("TrainerChangeOwnerDecisionBy")
 }
 
 model AuditLog {
@@ -319,6 +322,7 @@ model Trainer {
   phone            String?
   bio              String?
   imageUrl         String?
+  cardImageUrl     String?
   experience       Int?
   rating           Float?            @default(5.0)
   sessionPrice     Float             @default(50.0)
@@ -327,6 +331,7 @@ model Trainer {
   sessionDurations String            @default("60")
   availableSlots   Int?              @default(5)
   specialties      String?
+  statusDescription String?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   classes          Class[]
@@ -334,8 +339,36 @@ model Trainer {
   trainingSessions TrainingSession[]
   user             User?                @relation("TrainerUser")
   availability     TrainerAvailability?
+  changeRequests   TrainerChangeRequest[]
   expenses         Expense[]
   accessLogs       AccessLog[]
+}
+
+model TrainerChangeRequest {
+  id               Int       @id @default(autoincrement())
+  trainerId        Int
+  requestedById    Int?
+  requestType      String    @default("PROFILE_UPDATE")
+  payload          Json
+  currentData      Json
+  status           String    @default("PENDING_ADMIN")
+  adminDecisionBy  Int?
+  adminDecisionAt  DateTime?
+  adminNote        String?
+  ownerDecisionBy  Int?
+  ownerDecisionAt  DateTime?
+  ownerNote        String?
+  appliedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  trainer          Trainer   @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+  requestedBy      User?     @relation("TrainerChangeRequestedBy", fields: [requestedById], references: [id])
+  adminReviewer    User?     @relation("TrainerChangeAdminDecisionBy", fields: [adminDecisionBy], references: [id])
+  ownerReviewer    User?     @relation("TrainerChangeOwnerDecisionBy", fields: [ownerDecisionBy], references: [id])
+
+  @@index([trainerId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model TrainerAvailability {

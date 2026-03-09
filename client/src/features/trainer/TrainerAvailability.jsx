@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 
 const WEEKDAY_OPTIONS = [
@@ -111,7 +111,12 @@ const cloneSpecificDateAvailability = (source = {}) => {
     }, {});
 };
 
-export default function TrainerAvailability() {
+const getAuthHeaders = () => {
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    return token ? { Authorization: `Bearer ${token}` } : undefined;
+};
+
+export default function TrainerAvailability({ embedded = false, allowBookingStatusChange = true }) {
     const [loading, setLoading] = useState(true);
     const [savingBookingStatus, setSavingBookingStatus] = useState(false);
     const [savingWeeklySchedule, setSavingWeeklySchedule] = useState(false);
@@ -123,6 +128,8 @@ export default function TrainerAvailability() {
     const [dateError, setDateError] = useState('');
     const [dateSuccess, setDateSuccess] = useState('');
     const [conflicts, setConflicts] = useState([]);
+    const [sessions, setSessions] = useState([]);
+    const [sessionsLoading, setSessionsLoading] = useState(false);
 
     const [availabilityByDay, setAvailabilityByDay] = useState({});
     const [availabilityIntervalMinutes, setAvailabilityIntervalMinutes] = useState(30);
@@ -142,10 +149,42 @@ export default function TrainerAvailability() {
     const [selectedDate, setSelectedDate] = useState(() => toIsoDate(new Date()));
     const [weeklyActiveDay, setWeeklyActiveDay] = useState(1);
 
+    const fetchMySessions = useCallback(async () => {
+        setSessionsLoading(true);
+        try {
+            let res = null;
+            try {
+                res = await axios.get('/api/trainer/me/sessions', { headers: getAuthHeaders() });
+            } catch (primaryError) {
+                const status = Number(primaryError?.response?.status || 0);
+                if (status === 404 || status === 405) {
+                    res = await axios.get('/api/trainers/me/sessions', { headers: getAuthHeaders() });
+                } else {
+                    throw primaryError;
+                }
+            }
+            setSessions(Array.isArray(res?.data) ? res.data : []);
+        } catch {
+            setSessions([]);
+        } finally {
+            setSessionsLoading(false);
+        }
+    }, []);
+
     useEffect(() => {
         const fetchMe = async () => {
             try {
-                const res = await axios.get('/api/trainer/me');
+                let res = null;
+                try {
+                    res = await axios.get('/api/trainer/me', { headers: getAuthHeaders() });
+                } catch (primaryError) {
+                    const status = Number(primaryError?.response?.status || 0);
+                    if (status === 404 || status === 405) {
+                        res = await axios.get('/api/trainers/me', { headers: getAuthHeaders() });
+                    } else {
+                        throw primaryError;
+                    }
+                }
                 const hydrated = hydrateFromTrainer(res.data || {});
                 setAvailabilityByDay(hydrated.availabilityByDay);
                 setAvailabilityIntervalMinutes(hydrated.availabilityIntervalMinutes);
@@ -157,6 +196,7 @@ export default function TrainerAvailability() {
                 setWeeklySnapshot(null);
                 setIsDateEditing(false);
                 setDateSnapshot(null);
+                await fetchMySessions();
             } catch (e) {
                 setWeeklyError(e.response?.data?.error || 'Failed to load trainer availability.');
             } finally {
@@ -164,7 +204,7 @@ export default function TrainerAvailability() {
             }
         };
         fetchMe();
-    }, []);
+    }, [fetchMySessions]);
 
     const selectedDayKeys = useMemo(() => {
         return Object.keys(availabilityByDay)
@@ -184,6 +224,36 @@ export default function TrainerAvailability() {
             : 'CUSTOM';
 
     const overrideCount = Object.keys(specificDateAvailability).length;
+    const bookingsByDate = useMemo(() => {
+        const grouped = {};
+        (Array.isArray(sessions) ? sessions : []).forEach((session) => {
+            const status = String(session?.status || '').toUpperCase();
+            if (['CANCELLED', 'DECLINED', 'COMPLETED', 'NO_SHOW'].includes(status)) return;
+            const dateObj = new Date(session?.date);
+            if (Number.isNaN(dateObj.getTime())) return;
+            const isoDate = toIsoDate(dateObj);
+            if (!grouped[isoDate]) grouped[isoDate] = [];
+            grouped[isoDate].push({
+                id: session.id,
+                date: session.date,
+                status,
+                duration: Number(session?.duration) || 0,
+                memberName: session?.member
+                    ? `${session.member.firstName || ''} ${session.member.lastName || ''}`.trim()
+                    : 'Member'
+            });
+        });
+
+        Object.values(grouped).forEach((items) => {
+            items.sort((a, b) => new Date(a.date) - new Date(b.date));
+        });
+        return grouped;
+    }, [sessions]);
+    const bookedDayCount = Object.keys(bookingsByDate).length;
+    const upcomingBookingCount = useMemo(() => {
+        return Object.values(bookingsByDate).reduce((sum, items) => sum + items.length, 0);
+    }, [bookingsByDate]);
+    const selectedDateBookings = bookingsByDate[selectedDate] || [];
 
     const toggleDay = (day) => {
         const key = String(day);
@@ -308,11 +378,11 @@ export default function TrainerAvailability() {
     const patchAvailability = async (payload) => {
         let res = null;
         try {
-            res = await axios.patch('/api/trainer/me/availability', payload);
+            res = await axios.patch('/api/trainer/me/availability', payload, { headers: getAuthHeaders() });
         } catch (primaryError) {
             const status = Number(primaryError?.response?.status || 0);
             if (status === 404 || status === 405) {
-                res = await axios.patch('/api/trainers/me/availability', payload);
+                res = await axios.patch('/api/trainers/me/availability', payload, { headers: getAuthHeaders() });
             } else {
                 throw primaryError;
             }
@@ -420,16 +490,27 @@ export default function TrainerAvailability() {
 
     const todayIso = toIsoDate(new Date());
     const nextBookingStatus = bookingStatus === 'OPEN' ? 'CLOSED' : 'OPEN';
+    const selectedDateDisplay = new Date(`${selectedDate}T00:00:00`);
+    const selectedDateLabel = Number.isNaN(selectedDateDisplay.getTime())
+        ? selectedDate
+        : selectedDateDisplay.toLocaleDateString(undefined, {
+            weekday: 'long',
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+        });
 
     return (
         <div className="space-y-4 sm:space-y-5">
-            <header>
-                <h1 className="text-2xl sm:text-3xl font-bold text-white">My Availability</h1>
-                <p className="text-text-muted mt-1 text-sm sm:text-base">Set your normal schedule first, then adjust specific dates only when needed.</p>
-            </header>
+            {!embedded && (
+                <header>
+                    <h1 className="text-2xl sm:text-3xl font-bold text-white">My Availability</h1>
+                    <p className="text-text-muted mt-1 text-sm sm:text-base">Set your normal schedule first, then adjust specific dates only when needed.</p>
+                </header>
+            )}
 
             <section className="bg-surface rounded-2xl border border-white/5 p-3 sm:p-5 space-y-4 sm:space-y-5">
-                <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
                     <div className="rounded-lg sm:rounded-xl p-2.5 sm:p-3 bg-black/10">
                         <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-text-muted">Available Days</p>
                         <p className="text-white text-base sm:text-xl font-bold mt-1">{selectedDayKeys.length}</p>
@@ -442,14 +523,20 @@ export default function TrainerAvailability() {
                         <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-text-muted">Interval</p>
                         <p className="text-white text-base sm:text-xl font-bold mt-1">{availabilityIntervalMinutes}m</p>
                     </div>
+                    <div className="rounded-lg sm:rounded-xl p-2.5 sm:p-3 bg-black/10">
+                        <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-text-muted">Bookings</p>
+                        <p className="text-white text-base sm:text-xl font-bold mt-1">{upcomingBookingCount}</p>
+                        <p className="text-[10px] text-text-muted mt-0.5">{bookedDayCount} day(s)</p>
+                    </div>
                 </div>
 
             </section>
 
-            <section className={`rounded-2xl border p-3 sm:p-5 transition-colors ${bookingStatus === 'OPEN'
-                ? 'bg-emerald-500/15 border-emerald-500/35'
-                : 'bg-rose-500/15 border-rose-500/35'
-                }`}>
+            {allowBookingStatusChange && (
+                <section className={`rounded-2xl border p-3 sm:p-5 transition-colors ${bookingStatus === 'OPEN'
+                    ? 'bg-emerald-500/15 border-emerald-500/35'
+                    : 'bg-rose-500/15 border-rose-500/35'
+                    }`}>
                 <div className="space-y-3">
                     <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
@@ -502,7 +589,8 @@ export default function TrainerAvailability() {
                         </div>
                     )}
                 </div>
-            </section>
+                </section>
+            )}
 
             <section className="bg-surface rounded-2xl border border-white/5 p-3 sm:p-5">
                 <div className="space-y-4">
@@ -716,13 +804,17 @@ export default function TrainerAvailability() {
                                     const override = specificDateAvailability[iso];
                                     const isClosed = override?.available === false;
                                     const isCustom = Boolean(override) && override?.available !== false;
+                                    const bookingCount = (bookingsByDate[iso] || []).length;
+                                    const hasBookings = bookingCount > 0;
                                     const className = selected
                                         ? 'bg-primary text-background ring-1 ring-primary/60'
                                         : isClosed
                                             ? 'bg-rose-500/20 text-rose-200 border border-rose-500/30'
                                             : isCustom
                                                 ? 'bg-cyan-500/20 text-cyan-100 border border-cyan-500/30'
-                                                : 'bg-white/5 text-white border border-white/5 hover:bg-white/10';
+                                                : hasBookings
+                                                    ? 'bg-amber-500/15 text-amber-100 border border-amber-500/30 hover:bg-amber-500/20'
+                                                    : 'bg-white/5 text-white border border-white/5 hover:bg-white/10';
                                     return (
                                         <button
                                             key={iso}
@@ -741,6 +833,11 @@ export default function TrainerAvailability() {
                                             {!selected && !isPast && isCustom && (
                                                 <span className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-cyan-200"></span>
                                             )}
+                                            {!isPast && hasBookings && (
+                                                <span className={`absolute top-1 right-1 min-w-[14px] h-3.5 px-1 rounded text-[9px] leading-[14px] font-bold ${selected ? 'bg-background/70 text-primary' : 'bg-amber-400 text-black'}`}>
+                                                    {bookingCount}
+                                                </span>
+                                            )}
                                         </button>
                                     );
                                 })}
@@ -748,20 +845,46 @@ export default function TrainerAvailability() {
                             <div className="flex flex-wrap gap-3 mt-3 text-[11px] text-text-muted">
                                 <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-300"></span>Day off</span>
                                 <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cyan-200"></span>Custom hours</span>
+                                <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-300"></span>Has bookings</span>
                             </div>
                         </div>
 
                         <div className="rounded-xl p-3 sm:p-4 space-y-4 bg-black/10">
                             <div>
                                 <p className="text-xs text-text-muted uppercase tracking-wider">Selected Date</p>
-                                <p className="text-white font-semibold mt-1">
-                                    {new Date(`${selectedDate}T00:00:00`).toLocaleDateString(undefined, {
-                                        weekday: 'long',
-                                        month: 'short',
-                                        day: 'numeric',
-                                        year: 'numeric'
-                                    })}
-                                </p>
+                                <p className="text-white font-semibold mt-1">{selectedDateLabel}</p>
+                            </div>
+
+                            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
+                                <p className="text-[11px] uppercase tracking-wider text-amber-200 font-semibold">Bookings on this date</p>
+                                {sessionsLoading && (
+                                    <p className="text-xs text-amber-100/80">Loading bookings...</p>
+                                )}
+                                {!sessionsLoading && selectedDateBookings.length === 0 && (
+                                    <p className="text-xs text-amber-100/80">No active bookings for this date.</p>
+                                )}
+                                {!sessionsLoading && selectedDateBookings.length > 0 && (
+                                    <div className="space-y-2">
+                                        {selectedDateBookings.map((session) => {
+                                            const sessionDate = new Date(session.date);
+                                            const sessionTimeLabel = Number.isNaN(sessionDate.getTime())
+                                                ? '--'
+                                                : sessionDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                                            const statusClass = session.status === 'RESCHEDULED'
+                                                ? 'border-blue-500/30 text-blue-200'
+                                                : 'border-emerald-500/30 text-emerald-200';
+                                            return (
+                                                <div key={session.id} className={`rounded-lg border px-2.5 py-2 text-xs bg-black/20 ${statusClass}`}>
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <span className="font-semibold">{sessionTimeLabel}</span>
+                                                        <span className="text-[10px] uppercase tracking-wider">{session.status}</span>
+                                                    </div>
+                                                    <p className="mt-1 text-white/90">{session.memberName || 'Member'} {session.duration ? `- ${session.duration}m` : ''}</p>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
 
                             {!isDateEditing && (
@@ -911,7 +1034,7 @@ export default function TrainerAvailability() {
                 </section>
             )}
 
-            {isBookingStatusModalOpen && pendingBookingStatus && (
+            {allowBookingStatusChange && isBookingStatusModalOpen && pendingBookingStatus && (
                 <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-3 sm:p-4">
                     <button
                         type="button"

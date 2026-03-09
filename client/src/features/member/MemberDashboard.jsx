@@ -2,17 +2,69 @@ import React, { useEffect, useState } from 'react';
 import QRCode from 'react-qr-code';
 import axios from 'axios';
 
+const formatPlanDate = (value) => {
+    if (!value) return 'N/A';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return 'N/A';
+    return parsed.toLocaleDateString();
+};
+
+const calculatePlanProgress = (startDate, endDate, now = new Date()) => {
+    if (!startDate || !endDate) return 0;
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
+    const total = end - start;
+    if (total <= 0) return 100;
+    const elapsed = now - start;
+    return Math.min(100, Math.max(0, (elapsed / total) * 100));
+};
+
+const calculateDaysRemaining = (endDate, now = new Date()) => {
+    if (!endDate) return null;
+    const end = new Date(endDate);
+    if (Number.isNaN(end.getTime())) return null;
+    return Math.ceil((end - now) / (1000 * 60 * 60 * 24));
+};
+
 const MemberDashboard = ({ stats, user }) => {
     const member = stats?.memberData || {};
     const now = new Date();
-    const activePeriod = (member.membershipPeriods || []).find((period) => new Date(period.endDate) >= now);
+    const activePeriod = (member.membershipPeriods || [])
+        .filter((period) => new Date(period.endDate) >= now)
+        .sort((a, b) => new Date(a.endDate) - new Date(b.endDate))[0];
     const planName =
         stats?.currentPlanName ||
         activePeriod?.plan?.name ||
         member.plan?.name ||
         "No Active Plan";
-    const expiryDate = member.expiryDate ? new Date(member.expiryDate).toLocaleDateString() : "N/A";
-    const isExpired = member.expiryDate && new Date(member.expiryDate) < new Date();
+    const planStartDate = activePeriod?.startDate || member.startDate || null;
+    const planEndDate = activePeriod?.endDate || member.expiryDate || null;
+    const isExpired = planEndDate ? new Date(planEndDate) < now : false;
+    const progressPercent = Math.round(calculatePlanProgress(planStartDate, planEndDate, now));
+    const daysRemaining = calculateDaysRemaining(planEndDate, now);
+    const planStartLabel = formatPlanDate(planStartDate);
+    const planEndLabel = formatPlanDate(planEndDate);
+    const remainingLabel = daysRemaining === null
+        ? 'No end date'
+        : daysRemaining < 0
+            ? `${Math.abs(daysRemaining)} days overdue`
+            : `${daysRemaining} days remaining`;
+    const hasPlanDates = Boolean(planStartDate && planEndDate);
+    const progressBarTone = isExpired
+        ? 'bg-gradient-to-r from-red-500 to-red-400'
+        : 'bg-gradient-to-r from-primary via-orange-400 to-emerald-400';
+    const progressTextTone = isExpired ? 'text-red-400' : 'text-primary';
+    const membershipCardTone = isExpired
+        ? 'border-red-500/30 bg-gradient-to-br from-red-500/10 via-surface to-surface'
+        : 'border-white/5 bg-surface';
+    const membershipGlowTone = isExpired ? 'bg-red-500/20' : 'bg-primary/10';
+    const iconTone = isExpired
+        ? 'bg-gradient-to-br from-red-500/30 to-red-500/5 border-red-500/30'
+        : 'bg-gradient-to-br from-primary/25 to-primary/5 border-primary/20';
+    const progressPanelTone = isExpired
+        ? 'border-red-500/25 bg-gradient-to-br from-red-500/15 via-red-500/5 to-transparent'
+        : 'border-primary/15 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent';
     const memberId = member.id || user?.id;
     const [dynamicQr, setDynamicQr] = useState({ qrValue: '', expiresAt: null, loading: false });
     const loyaltyPoints = stats?.loyaltyPoints ?? member.points ?? 0;
@@ -78,30 +130,67 @@ const MemberDashboard = ({ stats, user }) => {
             </div>
 
             {/* Membership Status - Prominent Card */}
-            <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                        <p className="text-text-muted text-xs font-medium mb-1">Current Plan</p>
-                        <h3 className="text-lg font-bold text-white mb-2 truncate">{planName}</h3>
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${isExpired ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${isExpired ? 'bg-red-400' : 'bg-emerald-400'}`}></span>
-                                {isExpired ? 'Expired' : 'Active'}
-                            </span>
-                            <span className="text-xs text-text-muted">
-                                Expires: <span className="text-white font-medium">{expiryDate}</span>
-                            </span>
+            <div className={`relative overflow-hidden p-4 rounded-xl border shadow-sm ${membershipCardTone}`}>
+                <div className={`absolute -top-10 -right-10 w-32 h-32 rounded-full blur-2xl pointer-events-none ${membershipGlowTone}`} />
+                <div className="relative">
+                    {isExpired && (
+                        <div className="mb-3 p-2.5 rounded-lg border border-red-500/30 bg-red-500/10">
+                            <div className="flex items-center gap-2">
+                                <span className="material-icons-round text-red-400 text-base">warning_amber</span>
+                                <p className="text-xs font-semibold text-red-300">Membership expired. Renew to restore active access.</p>
+                            </div>
+                        </div>
+                    )}
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                            <p className="text-text-muted text-xs font-medium mb-1">Current Plan</p>
+                            <h3 className="text-lg font-bold text-white mb-2 truncate">{planName}</h3>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${isExpired ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                                    <span className={`w-1.5 h-1.5 rounded-full ${isExpired ? 'bg-red-400' : 'bg-emerald-400'}`}></span>
+                                    {isExpired ? 'Expired' : 'Active'}
+                                </span>
+                                <span className="text-xs text-text-muted font-medium">{remainingLabel}</span>
+                            </div>
+                        </div>
+                        <div className="flex-shrink-0">
+                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center border ${iconTone}`}>
+                                <span className={`material-icons-round text-xl ${isExpired ? 'text-red-400' : 'text-primary'}`}>workspace_premium</span>
+                            </div>
                         </div>
                     </div>
-                    <div className="flex-shrink-0">
-                        <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
-                            <span className="material-icons-round text-primary text-xl">card_membership</span>
+
+                    <div className={`mt-3 p-3 rounded-xl border ${progressPanelTone}`}>
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[11px] font-medium text-text-muted uppercase tracking-wide">Plan Progress</span>
+                            <span className={`text-xs font-bold ${progressTextTone}`}>{progressPercent}%</span>
+                        </div>
+                        <div className="h-2.5 bg-white/10 rounded-full overflow-hidden">
+                            <div
+                                className={`h-full rounded-full transition-all duration-500 ${progressBarTone}`}
+                                style={{ width: `${progressPercent}%` }}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between mt-2 text-[11px]">
+                            <span className="text-text-muted">Started {planStartLabel}</span>
+                            <span className="text-white/80 font-medium">Ends {planEndLabel}</span>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 mt-3">
+                        <div className="bg-white/5 rounded-lg px-2.5 py-2 border border-white/5">
+                            <p className="text-[10px] text-text-muted uppercase tracking-wide mb-1">Timeline</p>
+                            <p className="text-xs font-semibold text-white">{hasPlanDates ? `${planStartLabel} - ${planEndLabel}` : 'Dates unavailable'}</p>
+                        </div>
+                        <div className="bg-white/5 rounded-lg px-2.5 py-2 border border-white/5">
+                            <p className="text-[10px] text-text-muted uppercase tracking-wide mb-1">{daysRemaining !== null && daysRemaining < 0 ? 'Overdue' : 'Time Left'}</p>
+                            <p className={`text-xs font-semibold ${isExpired ? 'text-red-400' : 'text-emerald-400'}`}>{remainingLabel}</p>
                         </div>
                     </div>
                 </div>
                 {isExpired && (
-                    <button className="mt-3 w-full py-2.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg text-sm font-bold hover:bg-red-500/20 transition-colors">
-                        Renew Membership
+                    <button className="mt-3 w-full py-2.5 bg-gradient-to-r from-red-500/20 to-red-500/10 text-red-300 border border-red-500/30 rounded-lg text-sm font-bold hover:from-red-500/30 hover:to-red-500/20 transition-colors">
+                        Renew Membership Now
                     </button>
                 )}
             </div>
