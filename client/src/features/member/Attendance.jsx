@@ -89,6 +89,28 @@ export default function Attendance() {
         return cells;
     }, [monthCursor]);
 
+    const missedChecksThisMonth = useMemo(() => {
+        const today = new Date();
+        const endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        let missedCount = 0;
+        for (const cellDate of calendarDays) {
+            if (!cellDate || cellDate > endDate) continue;
+            const key = `${cellDate.getFullYear()}-${String(cellDate.getMonth() + 1).padStart(2, '0')}-${String(cellDate.getDate()).padStart(2, '0')}`;
+            if (!attendedByDate.has(key)) missedCount += 1;
+        }
+        return missedCount;
+    }, [calendarDays, attendedByDate]);
+
+    const bookingReminders = useMemo(() => {
+        const now = new Date();
+        return trainingSessions
+            .filter((session) => String(session?.status || '').toUpperCase() !== 'CANCELLED')
+            .map((session) => ({ session, date: new Date(session?.date) }))
+            .filter(({ date }) => !Number.isNaN(date.getTime()) && date >= now)
+            .sort((a, b) => a.date - b.date)
+            .slice(0, 5);
+    }, [trainingSessions]);
+
     if (loading) return <div className="text-white p-6 text-center">Loading attendance...</div>;
 
     return (
@@ -96,7 +118,7 @@ export default function Attendance() {
             <div className="flex items-center justify-between gap-3">
                 <div>
                     <h1 className="text-2xl sm:text-3xl font-bold text-white">Attendance Calendar</h1>
-                    <p className="text-text-muted text-xs sm:text-sm mt-1">Check mark = timed in, cross = missed day, bell = booked training</p>
+                    <p className="text-text-muted text-xs sm:text-sm mt-1">Track check-ins, missed days, and upcoming training reminders</p>
                 </div>
                 <div className="flex items-center gap-2">
                     <button
@@ -116,14 +138,24 @@ export default function Attendance() {
                 </div>
             </div>
 
-            <div className="bg-surface rounded-2xl border border-white/5 p-4 sm:p-5">
-                <div className="grid grid-cols-1 gap-3 mb-4">
-                    <div className="rounded-xl border border-primary/20 bg-primary/10 p-4">
-                        <p className="text-xs uppercase tracking-wide text-text-muted font-semibold">Total Check-ins</p>
-                        <p className="text-2xl font-bold text-primary mt-1">{totalCheckIns}</p>
+            <div className="bg-surface rounded-2xl border border-white/5 p-3">
+                <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-xl border border-primary/20 bg-primary/10 p-3">
+                        <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Total Check-ins</p>
+                        <p className="text-xl sm:text-2xl font-bold text-primary mt-1">{totalCheckIns}</p>
+                    </div>
+                    <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3">
+                        <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Missed Checks</p>
+                        <p className="text-xl sm:text-2xl font-bold text-red-300 mt-1">{missedChecksThisMonth}</p>
+                    </div>
+                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3">
+                        <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Upcoming Bookings</p>
+                        <p className="text-xl sm:text-2xl font-bold text-amber-300 mt-1">{bookingReminders.length}</p>
                     </div>
                 </div>
+            </div>
 
+            <div className="bg-surface rounded-2xl border border-white/5 p-4 sm:p-5">
                 <div className="flex items-center justify-between mb-4">
                     <p className="text-white font-semibold">{monthLabel}</p>
                 </div>
@@ -175,15 +207,55 @@ export default function Attendance() {
                                         </div>
                                     )}
                                 </div>
-                                {hasBooking && (
-                                    <p className="text-[10px] sm:text-[11px] text-amber-300 font-semibold leading-tight text-center">
-                                        {bookingCount} booking{bookingCount > 1 ? 's' : ''}
-                                    </p>
-                                )}
+                                {hasBooking && <span className="w-1.5 h-1.5 rounded-full bg-amber-300 mx-auto mb-0.5" />}
                             </div>
                         );
                     })}
                 </div>
+
+                <div className="mt-4 flex flex-wrap items-center gap-3 text-[11px] text-text-muted">
+                    <div className="inline-flex items-center gap-1.5">
+                        <span className="material-icons-round text-emerald-400 text-base">check</span>
+                        <span>Checked In</span>
+                    </div>
+                    <div className="inline-flex items-center gap-1.5">
+                        <span className="material-icons-round text-red-400 text-base">close</span>
+                        <span>Missed Check</span>
+                    </div>
+                    <div className="inline-flex items-center gap-1.5">
+                        <span className="material-icons-round text-amber-300 text-base">notifications_active</span>
+                        <span>Booked Training</span>
+                    </div>
+                </div>
+            </div>
+
+            <div className="bg-surface rounded-2xl border border-white/5 p-4 sm:p-5">
+                <div className="flex items-center justify-between mb-3">
+                    <h2 className="text-white font-semibold">Booking Reminders</h2>
+                    <span className="text-xs text-text-muted">{bookingReminders.length} upcoming</span>
+                </div>
+                {bookingReminders.length === 0 ? (
+                    <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-center text-sm text-text-muted">
+                        No upcoming training bookings.
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        {bookingReminders.map(({ session, date }) => (
+                            <div key={session.id || `${session.trainerId}-${date.toISOString()}`} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                    <p className="text-sm text-white font-semibold truncate">{session?.trainer?.name || 'Trainer Session'}</p>
+                                    <p className="text-xs text-text-muted truncate">
+                                        {date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} at{' '}
+                                        {date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                                    </p>
+                                </div>
+                                <span className="text-[11px] px-2 py-1 rounded-lg border border-amber-500/20 bg-amber-500/10 text-amber-300 font-semibold uppercase">
+                                    {session?.status || 'Scheduled'}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     );

@@ -371,6 +371,35 @@ export default function MemberShop() {
                 )}
             </div>
 
+            {cart.length > 0 && (
+                <div className="fixed left-4 right-4 bottom-[5.25rem] sm:left-auto sm:right-6 sm:bottom-6 sm:w-[360px] z-40">
+                    <div className="bg-surface/95 backdrop-blur border border-primary/30 rounded-2xl p-3 shadow-2xl shadow-black/40">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                            <div className="min-w-0">
+                                <p className="text-white text-sm font-semibold truncate">
+                                    {getTotalItems()} item{getTotalItems() > 1 ? 's' : ''} in cart
+                                </p>
+                                <p className="text-primary text-sm font-bold">{formatPrice(getCartTotal())}</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowCartModal(true)}
+                                className="px-3 py-2 rounded-lg border border-white/10 text-text-secondary hover:text-white hover:bg-white/10 text-xs font-semibold"
+                            >
+                                View Cart
+                            </button>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handleCheckoutInit}
+                            className="w-full bg-primary hover:bg-primary-hover active:scale-95 text-white rounded-xl py-3 text-sm font-bold transition-all"
+                        >
+                            Proceed to Checkout
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Cart Modal */}
             {showCartModal && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">

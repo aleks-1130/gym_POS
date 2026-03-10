@@ -106,19 +106,36 @@ export default function Rewards() {
             </div>
 
             {/* Category Filter */}
-            <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap">
-                {categories.map(cat => (
-                    <button
-                        key={cat}
-                        onClick={() => setFilter(cat)}
-                        className={`px-4 py-2.5 rounded-full font-medium text-xs sm:text-sm whitespace-nowrap transition-all ${filter === cat
-                            ? 'bg-primary text-background'
-                            : 'bg-surface text-text-secondary border border-white/10 hover:border-primary/30'
-                            }`}
+            <div className="space-y-2">
+                <div className="sm:hidden">
+                    <label className="block text-[11px] text-text-muted font-semibold mb-1">Category</label>
+                    <select
+                        value={filter}
+                        onChange={(event) => setFilter(event.target.value)}
+                        className="w-full bg-surface border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-primary"
                     >
-                        {cat === 'all' ? 'All Rewards' : cat}
-                    </button>
-                ))}
+                        {categories.map((cat) => (
+                            <option key={cat} value={cat} style={{ color: '#111', backgroundColor: '#fff' }}>
+                                {cat === 'all' ? 'All Rewards' : cat}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                <div className="hidden sm:grid grid-cols-5 gap-2">
+                    {categories.map(cat => (
+                        <button
+                            key={cat}
+                            onClick={() => setFilter(cat)}
+                            className={`px-2 py-2 rounded-xl font-medium text-xs transition-all leading-tight ${filter === cat
+                                ? 'bg-primary text-background'
+                                : 'bg-surface text-text-secondary border border-white/10 hover:border-primary/30'
+                                }`}
+                        >
+                            {cat === 'all' ? 'All Rewards' : cat}
+                        </button>
+                    ))}
+                </div>
             </div>
 
             {/* Rewards Grid */}
@@ -220,49 +237,6 @@ export default function Rewards() {
                     })}
                 </div>
             )}
-
-            {/* How to Earn Section */}
-            <div className="bg-surface rounded-2xl p-4 sm:p-5 border border-white/5 mt-6">
-                <h3 className="text-base sm:text-lg font-bold text-white mb-4">🎯 How to Earn Points</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                    <div className="flex gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
-                            <span className="material-icons-round text-primary text-lg">shopping_bag</span>
-                        </div>
-                        <div>
-                            <p className="text-white text-xs sm:text-sm font-bold">Shop Purchases</p>
-                            <p className="text-text-muted text-xs">1 point per $1 spent</p>
-                        </div>
-                    </div>
-                    <div className="flex gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
-                            <span className="material-icons-round text-primary text-lg">fitness_center</span>
-                        </div>
-                        <div>
-                            <p className="text-white text-xs sm:text-sm font-bold">Class Attendance</p>
-                            <p className="text-text-muted text-xs">Bonus points per class</p>
-                        </div>
-                    </div>
-                    <div className="flex gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
-                            <span className="material-icons-round text-primary text-lg">star</span>
-                        </div>
-                        <div>
-                            <p className="text-white text-xs sm:text-sm font-bold">Special Promotions</p>
-                            <p className="text-text-muted text-xs">Seasonal bonus opportunities</p>
-                        </div>
-                    </div>
-                    <div className="flex gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
-                            <span className="material-icons-round text-primary text-lg">person</span>
-                        </div>
-                        <div>
-                            <p className="text-white text-xs sm:text-sm font-bold">Referrals</p>
-                            <p className="text-text-muted text-xs">Bonus for referrals</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
 
             {/* Redeem Confirmation Modal */}
             {showRedeemModal && selectedReward && (

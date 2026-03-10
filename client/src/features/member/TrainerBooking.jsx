@@ -25,6 +25,7 @@ export default function TrainerBooking() {
     const [sessionsError, setSessionsError] = useState('');
     const [activeTab, setActiveTab] = useState('trainers'); // trainers, bookings
     const [filterView, setFilterView] = useState('all'); // all, available, top-rated
+    const [bookingsView, setBookingsView] = useState('all'); // all, pending, upcoming, past
     const [paymentMethods, setPaymentMethods] = useState([]);
     const [selectedMethodId, setSelectedMethodId] = useState('');
     const [paymentSelection, setPaymentSelection] = useState('CASH'); // CASH | E_WALLET | CARD
@@ -343,6 +344,16 @@ export default function TrainerBooking() {
         String(session?.status || '').toUpperCase() === 'COMPLETED'
         && (session?.memberRating === null || session?.memberRating === undefined)
     );
+    const nextUpcomingSession = upcomingSessions.length > 0
+        ? [...upcomingSessions].sort((a, b) => new Date(a.date) - new Date(b.date))[0]
+        : null;
+    const showPendingSection = bookingsView === 'all' || bookingsView === 'pending';
+    const showUpcomingSection = bookingsView === 'all' || bookingsView === 'upcoming';
+    const showPastSection = bookingsView === 'all' || bookingsView === 'past';
+    const visibleBookingsCount =
+        (showPendingSection ? pendingRatingSessions.length : 0)
+        + (showUpcomingSection ? upcomingSessions.length : 0)
+        + (showPastSection ? pastSessions.length : 0);
     const canBookNewSession = pendingRatingSessions.length === 0;
 
     const handleSubmitSessionRating = async (session) => {
@@ -654,21 +665,6 @@ export default function TrainerBooking() {
                     </div>
                 </div>
 
-                {/* Quick Stats */}
-                <div className="grid grid-cols-2 gap-3 sm:gap-4 mt-4">
-                    <div className="bg-surface rounded-xl sm:rounded-2xl p-4 sm:p-5 border border-white/5">
-                        <p className="text-text-muted text-xs sm:text-sm mb-1">Available Trainers</p>
-                        <p className="text-2xl sm:text-3xl font-bold text-primary">{trainers.length}</p>
-                    </div>
-                    <div className="bg-surface rounded-xl sm:rounded-2xl p-4 sm:p-5 border border-white/5">
-                        <p className="text-text-muted text-xs sm:text-sm mb-1">Avg. Rate</p>
-                        {trainers.length > 0
-                            ? formatPrice(trainers.reduce((sum, t) => sum + (t.sessionPrice ?? 300), 0) / trainers.length)
-                            : formatPrice(0)
-                        }
-                    </div>
-                </div>
-
                 {/* Primary Tabs */}
                 <div className="grid grid-cols-2 gap-2 mt-4 p-1 rounded-xl bg-surface border border-white/10">
                     <button
@@ -696,6 +692,21 @@ export default function TrainerBooking() {
                 {/* Trainer Filters */}
                 {activeTab === 'trainers' && (
                     <div className="space-y-2 mt-3">
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="bg-surface rounded-xl p-3 border border-white/5">
+                                <p className="text-text-muted text-xs mb-1">Available Trainers</p>
+                                <p className="text-xl sm:text-2xl font-bold text-primary">{trainers.length}</p>
+                            </div>
+                            <div className="bg-surface rounded-xl p-3 border border-white/5">
+                                <p className="text-text-muted text-xs mb-1">Avg. Rate</p>
+                                <p className="text-xl sm:text-2xl font-bold text-white">
+                                    {trainers.length > 0
+                                        ? formatPrice(trainers.reduce((sum, t) => sum + (t.sessionPrice ?? 300), 0) / trainers.length)
+                                        : formatPrice(0)
+                                    }
+                                </p>
+                            </div>
+                        </div>
                         <div className="flex gap-2">
                             {[
                                 { value: 'all', label: 'All' },
@@ -740,20 +751,56 @@ export default function TrainerBooking() {
                         </button>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                        <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+                    <div className="grid grid-cols-3 gap-2">
+                        <div className="bg-white/5 border border-white/10 rounded-xl p-2.5">
                             <p className="text-[11px] uppercase tracking-wide text-text-muted">Upcoming</p>
-                            <p className="text-xl font-bold text-white mt-1">{upcomingSessions.length}</p>
+                            <p className="text-lg font-bold text-white mt-1">{upcomingSessions.length}</p>
                         </div>
-                        <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+                        <div className="bg-white/5 border border-white/10 rounded-xl p-2.5">
                             <p className="text-[11px] uppercase tracking-wide text-text-muted">Pending Ratings</p>
-                            <p className="text-xl font-bold text-white mt-1">{pendingRatingSessions.length}</p>
+                            <p className="text-lg font-bold text-white mt-1">{pendingRatingSessions.length}</p>
+                        </div>
+                        <div className="bg-white/5 border border-white/10 rounded-xl p-2.5">
+                            <p className="text-[11px] uppercase tracking-wide text-text-muted">Past Sessions</p>
+                            <p className="text-lg font-bold text-white mt-1">{pastSessions.length}</p>
                         </div>
                     </div>
 
-                    <div className="bg-primary/10 border border-primary/30 rounded-xl p-3 text-xs text-text-muted">
-                        Policy: No refund by default for missed sessions. One member reschedule is allowed with at least 24-hour notice.
-                        Refunds are exceptions for trainer/gym/system issues and require approval.
+                    {nextUpcomingSession && (
+                        <div className="bg-primary/10 border border-primary/30 rounded-xl p-3">
+                            <p className="text-[11px] uppercase tracking-wide text-primary font-semibold">Next Session Reminder</p>
+                            <p className="text-sm text-white font-semibold mt-1">{nextUpcomingSession?.trainer?.name || 'Trainer Session'}</p>
+                            <p className="text-xs text-text-muted mt-0.5">
+                                {new Date(nextUpcomingSession.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                                {' at '}
+                                {new Date(nextUpcomingSession.date).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                            </p>
+                        </div>
+                    )}
+
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                        {[
+                            { value: 'all', label: 'All' },
+                            { value: 'pending', label: 'Need Rating' },
+                            { value: 'upcoming', label: 'Upcoming' },
+                            { value: 'past', label: 'Past' }
+                        ].map((view) => (
+                            <button
+                                key={view.value}
+                                type="button"
+                                onClick={() => setBookingsView(view.value)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap border transition-all ${bookingsView === view.value
+                                    ? 'bg-primary/15 border-primary/30 text-primary'
+                                    : 'bg-white/5 border-white/10 text-text-muted hover:text-white hover:bg-white/10'
+                                    }`}
+                            >
+                                {view.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-text-muted">
+                        No refund by default for missed sessions. One reschedule is allowed with at least 24-hour notice.
                     </div>
 
                     {sessionsLoading ? (
@@ -770,7 +817,12 @@ export default function TrainerBooking() {
                         </div>
                     ) : (
                         <div className="space-y-6">
-                            {pendingRatingSessions.length > 0 && (
+                            {visibleBookingsCount === 0 && (
+                                <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-text-muted text-center">
+                                    No sessions found for the selected filter.
+                                </div>
+                            )}
+                            {showPendingSection && pendingRatingSessions.length > 0 && (
                                 <div className="space-y-3">
                                     <h3 className="text-sm font-bold text-amber-300 flex items-center gap-2">
                                         <span className="w-1.5 h-1.5 rounded-full bg-amber-300 animate-pulse" />
@@ -806,7 +858,7 @@ export default function TrainerBooking() {
                                                                 }`}
                                                             aria-label={`Rate ${score} stars`}
                                                         >
-                                                            ★
+                                                            <span className="material-icons-round text-base">star</span>
                                                         </button>
                                                     ))}
                                                     <span className="ml-2 text-xs text-amber-100/70">{selectedRating > 0 ? `${selectedRating}/5` : 'Select rating'}</span>
@@ -829,7 +881,7 @@ export default function TrainerBooking() {
                             )}
 
                             {/* Upcoming Sessions */}
-                            {upcomingSessions.length > 0 && (
+                            {showUpcomingSection && upcomingSessions.length > 0 && (
                                 <div className="space-y-3">
                                     <h3 className="text-sm font-bold text-primary flex items-center gap-2">
                                         <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
@@ -894,14 +946,14 @@ export default function TrainerBooking() {
                             )}
 
                             {/* Past Sessions */}
-                            {pastSessions.length > 0 && (
+                            {showPastSection && pastSessions.length > 0 && (
                                 <div className="space-y-3">
                                     <h3 className="text-sm font-bold text-text-muted">Past Sessions</h3>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div className="space-y-2">
                                         {pastSessions.slice(0, 6).map((session) => {
                                             const sessionDate = new Date(session.date);
                                             return (
-                                                <div key={session.id} className="bg-white/5 border border-white/5 rounded-xl p-3 opacity-60">
+                                                <div key={session.id} className="bg-white/5 border border-white/5 rounded-xl p-2.5 opacity-70">
                                                     <p className="text-white font-medium text-xs sm:text-sm">{session.trainer?.name || 'Trainer'}</p>
                                                     <p className="text-[10px] text-text-muted mt-0.5">
                                                         {sessionDate.toLocaleDateString()} at {sessionDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
@@ -1499,7 +1551,7 @@ export default function TrainerBooking() {
                                 <div className="flex justify-between gap-3">
                                     <span className="text-text-muted">Payment</span>
                                     <span className="text-white font-semibold">
-                                        {formatPrice(rescheduleSession.price)} • {rescheduleSession.paymentStatus || 'UNPAID'} • {rescheduleSession.paymentMethod || 'N/A'}
+                                                            <span className="material-icons-round text-base">star</span>
                                     </span>
                                 </div>
                             </div>

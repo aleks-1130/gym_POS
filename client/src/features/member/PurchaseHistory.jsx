@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useCurrency } from '../../context/CurrencyContext';
@@ -12,6 +12,7 @@ export default function PurchaseHistory() {
     const [trainingSessions, setTrainingSessions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('all'); // all, membership, training
+    const [selectedDate, setSelectedDate] = useState('');
     const [selectedReceipt, setSelectedReceipt] = useState(null);
 
     useEffect(() => {
@@ -58,11 +59,23 @@ export default function PurchaseHistory() {
     // Merge payment transactions + cancelled training bookings for member visibility.
     const allTransactions = [...payments, ...cancelledBookings].sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    const filteredTransactions = activeTab === 'all'
-        ? allTransactions.filter(p => !['VOIDED', 'RETURNED', 'CANCELLED'].includes(p.status))
-        : activeTab === 'membership'
-            ? allTransactions.filter((p) => p.type === 'MEMBERSHIP' && !['VOIDED', 'RETURNED', 'CANCELLED'].includes(p.status))
-            : allTransactions.filter((p) => (p.type === 'TRAINING' || p.type === 'TRAINING_BOOKING') && !['VOIDED', 'RETURNED', 'CANCELLED'].includes(p.status));
+    const toDateInputValue = (value) => {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '';
+        const localDate = new Date(date.getTime() - (date.getTimezoneOffset() * 60000));
+        return localDate.toISOString().slice(0, 10);
+    };
+
+    const filteredTransactions = allTransactions.filter((transaction) => {
+        const isRemovedStatus = ['VOIDED', 'RETURNED', 'CANCELLED'].includes(transaction.status);
+        if (isRemovedStatus) return false;
+
+        if (activeTab === 'membership' && transaction.type !== 'MEMBERSHIP') return false;
+        if (activeTab === 'training' && !['TRAINING', 'TRAINING_BOOKING'].includes(transaction.type)) return false;
+        const transactionDate = toDateInputValue(transaction.date);
+        if (selectedDate && transactionDate !== selectedDate) return false;
+        return true;
+    });
 
     const totalSpent = payments.reduce((sum, item) => sum + (item.amount || 0), 0);
 
@@ -86,7 +99,12 @@ export default function PurchaseHistory() {
         return 'payment';
     };
 
-    const getTypeLabel = (item) => (item.type === 'TRAINING_BOOKING' ? 'TRAINING (CANCELLED)' : item.type);
+    const prettifyLabel = (value) => String(value || '')
+        .replace(/_/g, ' ')
+        .toLowerCase()
+        .replace(/\b\w/g, (char) => char.toUpperCase());
+
+    const getTypeLabel = (item) => prettifyLabel(item.type);
 
     const getStatusBadge = (item) => {
         if (item.status === 'PENDING') return 'bg-yellow-500/20 text-yellow-300';
@@ -114,19 +132,43 @@ export default function PurchaseHistory() {
                 </div>
             </div>
 
-            <div className="flex gap-2 overflow-x-auto pb-1">
-                {['all', 'membership', 'training'].map((tab) => (
-                    <button
-                        key={tab}
-                        onClick={() => setActiveTab(tab)}
-                        className={`px-4 py-2 rounded-lg font-medium text-xs sm:text-sm whitespace-nowrap transition-all ${activeTab === tab
-                            ? 'bg-primary text-background'
-                            : 'bg-surface text-text-muted hover:text-white border border-white/5'
-                            }`}
-                    >
-                        {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                    </button>
-                ))}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div className="flex gap-2 overflow-x-auto pb-1 items-center">
+                    {['all', 'membership', 'training'].map((tab) => (
+                        <button
+                            key={tab}
+                            onClick={() => setActiveTab(tab)}
+                            className={`px-4 py-2 rounded-lg font-medium text-xs sm:text-sm whitespace-nowrap transition-all ${activeTab === tab
+                                ? 'bg-primary text-background'
+                                : 'bg-surface text-text-muted hover:text-white border border-white/5'
+                                }`}
+                        >
+                            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                        </button>
+                    ))}
+                </div>
+                <div className="flex items-center gap-2 sm:justify-end">
+                    <span className="material-icons-round text-text-muted text-base">event</span>
+                    <input
+                        type="date"
+                        value={selectedDate}
+                        onChange={(event) => setSelectedDate(event.target.value)}
+                        className="bg-surface border border-white/10 rounded-lg px-2.5 py-2 text-xs text-white outline-none focus:border-primary"
+                        title="Filter date"
+                    />
+                    {selectedDate && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setSelectedDate('');
+                            }}
+                            className="h-8 w-8 rounded-lg border border-white/10 bg-surface text-text-secondary hover:text-white hover:bg-white/5 flex items-center justify-center"
+                            title="Clear date filter"
+                        >
+                            <span className="material-icons-round text-sm">close</span>
+                        </button>
+                    )}
+                </div>
             </div>
 
             {filteredTransactions.length === 0 ? (
@@ -171,7 +213,7 @@ export default function PurchaseHistory() {
                                                 <div className="text-white text-sm">
                                                     {item.items.slice(0, 2).map((i, idx) => (
                                                         <div key={idx} className="text-xs">
-                                                            {i.quantity}x {i.name}
+                                                            {i.quantity}x {prettifyLabel(i.name)}
                                                         </div>
                                                     ))}
                                                     {item.items.length > 2 && (
@@ -186,11 +228,11 @@ export default function PurchaseHistory() {
                                             )}
                                         </td>
                                         <td className="px-4 sm:px-6 py-4">
-                                            <span className="text-white text-sm">{item.method}</span>
+                                            <span className="text-white text-sm">{prettifyLabel(item.method)}</span>
                                         </td>
                                         <td className="px-4 sm:px-6 py-4">
                                             <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-bold ${getStatusBadge(item)}`}>
-                                                {item.status || 'COMPLETED'}
+                                                {prettifyLabel(item.status || 'COMPLETED')}
                                             </span>
                                         </td>
                                         <td className="px-4 sm:px-6 py-4 text-right">
@@ -229,13 +271,13 @@ export default function PurchaseHistory() {
                                     </div>
                                     <div className="text-right">
                                         <div className="text-primary font-bold text-lg">{formatPrice(item.amount)}</div>
-                                        <div className="text-text-muted text-xs">{item.method}</div>
+                                        <div className="text-text-muted text-xs">{prettifyLabel(item.method)}</div>
                                     </div>
                                 </div>
 
                                 <div>
                                     <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold ${getStatusBadge(item)}`}>
-                                        {item.status || 'COMPLETED'}
+                                        {prettifyLabel(item.status || 'COMPLETED')}
                                     </span>
                                 </div>
 
@@ -244,7 +286,7 @@ export default function PurchaseHistory() {
                                         <p className="text-text-muted text-xs mb-1">Items:</p>
                                         {item.items.slice(0, 2).map((i, idx) => (
                                             <div key={idx} className="text-white text-xs">
-                                                {i.quantity}x {i.name}
+                                                {i.quantity}x {prettifyLabel(i.name)}
                                             </div>
                                         ))}
                                         {item.items.length > 2 && (

@@ -187,6 +187,14 @@ export default function Schedule() {
         { value: 'SUN', label: 'SUN' }
     ];
 
+    const showSessionPolicy = async () => {
+        await showAlert({
+            title: 'Class Session Policy',
+            message: sessionPolicyNote,
+            type: 'info'
+        });
+    };
+
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-[50vh]">
@@ -200,15 +208,20 @@ export default function Schedule() {
 
     return (
         <div className="pb-20 px-4 max-w-5xl mx-auto">
-            <div className="pt-4 pb-3">
-                <h1 className="text-xl font-bold text-white">Gym Class Schedule</h1>
-                <p className="text-text-muted text-xs mt-0.5">Join class sessions (session consumed on join, no refund on leave)</p>
-            </div>
-
-            <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
-                <p className="text-[11px] sm:text-xs text-amber-200 leading-relaxed">
-                    <span className="font-bold">Important:</span> {sessionPolicyNote}
-                </p>
+            <div className="pt-4 pb-3 flex items-start justify-between gap-3">
+                <div>
+                    <h1 className="text-xl font-bold text-white">Gym Class Schedule</h1>
+                    <p className="text-text-muted text-xs mt-0.5">Join class sessions and manage your bookings in one place</p>
+                </div>
+                <button
+                    type="button"
+                    onClick={showSessionPolicy}
+                    className="shrink-0 h-9 w-9 rounded-lg border border-white/10 bg-surface text-text-secondary hover:text-white hover:bg-white/5"
+                    aria-label="View class session policy"
+                    title="Session policy"
+                >
+                    <span className="material-icons-round text-base">info</span>
+                </button>
             </div>
 
             <div className="mb-4 bg-surface border border-white/10 rounded-xl p-4">
@@ -357,7 +370,7 @@ export default function Schedule() {
                                             className="w-full py-2.5 rounded-lg bg-red-500/10 text-red-400 font-bold hover:bg-red-500/20 active:scale-95 transition-all text-sm border border-red-500/20 flex items-center justify-center gap-1"
                                         >
                                             <span className="material-icons-round text-base">cancel</span>
-                                            Leave Class (Session Stays Used)
+                                            Leave Class
                                         </button>
                                     ) : (
                                         <button
@@ -380,25 +393,6 @@ export default function Schedule() {
                     })
                 )}
             </div>
-
-            {filteredClasses.length > 0 && (
-                <div className="mt-6 grid grid-cols-3 gap-3">
-                    <div className="bg-surface rounded-lg p-3 border border-white/5 text-center">
-                        <div className="text-xl font-bold text-white">{classes.length}</div>
-                        <div className="text-xs text-text-muted mt-0.5">Total Classes</div>
-                    </div>
-                    <div className="bg-surface rounded-lg p-3 border border-white/5 text-center">
-                        <div className="text-xl font-bold text-primary">{classes.filter(c => c.isBooked).length}</div>
-                        <div className="text-xs text-text-muted mt-0.5">My Bookings</div>
-                    </div>
-                    <div className="bg-surface rounded-lg p-3 border border-white/5 text-center">
-                        <div className={`text-xl font-bold ${sessionInfo.classSessionsRemaining > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {sessionInfo.classSessionsRemaining}
-                        </div>
-                        <div className="text-xs text-text-muted mt-0.5">Sessions Left</div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }

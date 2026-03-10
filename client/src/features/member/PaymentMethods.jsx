@@ -41,7 +41,6 @@ export default function PaymentMethods() {
         () => methods.filter((m) => !['GCASH', 'MAYA'].includes(String(m.type || '').toUpperCase())),
         [methods]
     );
-
     useEffect(() => {
         const fetchMethods = async () => {
             if (!user?.id) return;
