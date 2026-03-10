@@ -42,6 +42,8 @@ export default function TrainerBooking() {
     });
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [bookingResult, setBookingResult] = useState(null);
+    const [ratingSelections, setRatingSelections] = useState({});
+    const [ratingSubmittingId, setRatingSubmittingId] = useState(null);
 
     useEffect(() => {
         fetchTrainers();
@@ -107,13 +109,8 @@ export default function TrainerBooking() {
             const res = await axios.get('/api/trainers', {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined
             });
-            const visible = (res.data || []).filter(
-                (trainer) =>
-                    String(trainer?.bookingStatus || 'OPEN').toUpperCase() === 'OPEN'
-                    || Boolean(trainer?.temporarilyOpenToday)
-            );
-            setTrainers(visible);
-        } catch (error) {
+            setTrainers(Array.isArray(res.data) ? res.data : []);
+        } catch {
             console.error("Failed to fetch trainers");
         } finally {
             setLoading(false);
@@ -225,6 +222,15 @@ export default function TrainerBooking() {
 
     const handleBookSession = async (e) => {
         e.preventDefault();
+        if (pendingRatingSessions.length > 0) {
+            await showAlert({
+                title: 'Rating Required',
+                message: 'Please rate your completed session(s) before booking another trainer.',
+                type: 'warning'
+            });
+            setActiveTab('bookings');
+            return;
+        }
         if (!selectedTrainer || selectedDates.length === 0) {
             await showAlert({ title: 'Missing Info', message: 'Please fill in all required fields', type: 'warning' });
             return;
@@ -259,21 +265,22 @@ export default function TrainerBooking() {
             const endpoint = '/api/members/book-training';
             const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
             const bookingBatchId = `MBR-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-
-            for (const date of selectedDates) {
-                const payload = {
-                    trainerId: selectedTrainer.id,
+            const payload = {
+                trainerId: selectedTrainer.id,
+                duration: bookingData.duration,
+                notes: bookingData.notes,
+                method: bookingData.paymentMethod,
+                bookingBatchId,
+                slots: selectedDates.map((date) => ({
                     date,
-                    time: selectedTimesByDate[date],
-                    duration: bookingData.duration,
-                    notes: bookingData.notes,
-                    method: bookingData.paymentMethod,
-                    bookingBatchId
-                };
-                await axios.post(endpoint, payload, { headers });
-            }
+                    time: selectedTimesByDate[date]
+                })),
+                ...(bookingData.paymentMethod !== 'CASH' ? { paymentMethodId: Number(selectedMethodId) } : {})
+            };
+            const response = await axios.post(endpoint, payload, { headers });
+            const bookedCount = Number(response?.data?.bookedCount || selectedDates.length);
             setBookingResult({
-                count: selectedDates.length,
+                count: bookedCount,
                 trainerName: selectedTrainer.name,
                 dates: selectedDates,
                 paymentMethod: bookingData.paymentMethod
@@ -291,6 +298,10 @@ export default function TrainerBooking() {
         } catch (error) {
             const errorMessage = error.response?.data?.error || error.response?.data?.message || "Failed to book training session";
             const errorDetail = error.response?.data?.detail;
+            if (error?.response?.status === 409) {
+                setActiveTab('bookings');
+                closeModal();
+            }
             await showAlert({ title: 'Booking Failed', message: errorDetail ? `${errorMessage}\n\nDetails: ${errorDetail}` : errorMessage, type: 'danger' });
         } finally {
             setBookingLoading(false);
@@ -313,6 +324,12 @@ export default function TrainerBooking() {
         if (filterView === 'top-rated') return trainer.rating >= 4.5;
         return true;
     });
+
+    useEffect(() => {
+        if (filterView === 'top-rated' && trainers.length > 0 && filteredTrainers.length === 0) {
+            setFilterView('all');
+        }
+    }, [filterView, trainers.length, filteredTrainers.length]);
     const walletPaymentMethods = paymentMethods.filter((method) =>
         ['GCASH', 'MAYA'].includes(String(method.type || '').toUpperCase())
     );
@@ -321,6 +338,46 @@ export default function TrainerBooking() {
     );
     const now = new Date();
     const upcomingSessions = memberSessions.filter((session) => new Date(session.date) >= now);
+    const pastSessions = memberSessions.filter((session) => new Date(session.date) < now);
+    const pendingRatingSessions = memberSessions.filter((session) =>
+        String(session?.status || '').toUpperCase() === 'COMPLETED'
+        && (session?.memberRating === null || session?.memberRating === undefined)
+    );
+    const canBookNewSession = pendingRatingSessions.length === 0;
+
+    const handleSubmitSessionRating = async (session) => {
+        const rating = Number(ratingSelections[session.id] || 0);
+        if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+            await showAlert({ title: 'Rating Required', message: 'Please select a star rating (1 to 5).', type: 'warning' });
+            return;
+        }
+
+        setRatingSubmittingId(session.id);
+        try {
+            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+            await axios.post(`/api/members/me/training-sessions/${session.id}/rate`, { rating }, {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined
+            });
+            setRatingSelections((prev) => {
+                const next = { ...prev };
+                delete next[session.id];
+                return next;
+            });
+            await Promise.all([fetchMemberSessions(), fetchTrainers()]);
+            await showAlert({ title: 'Thanks for the rating', message: 'Your trainer rating has been recorded.', type: 'success' });
+        } catch (error) {
+            const message = error?.response?.data?.error || 'Failed to submit trainer rating.';
+            await showAlert({ title: 'Rating Failed', message, type: 'danger' });
+        } finally {
+            setRatingSubmittingId(null);
+        }
+    };
+
+    useEffect(() => {
+        if (showBookingModal && !canBookNewSession) {
+            closeModal();
+        }
+    }, [showBookingModal, canBookNewSession, closeModal]);
 
 
     const getTrainerSpecialties = (trainer) => {
@@ -338,16 +395,6 @@ export default function TrainerBooking() {
             .map((item) => Number(item.trim()))
             .filter((value) => Number.isFinite(value) && value > 0);
     };
-    const getEndTime = (start, duration) => {
-        if (!start || !duration) return '';
-        const [hours, minutes] = start.split(':').map(Number);
-        if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return '';
-        const totalMinutes = hours * 60 + minutes + duration;
-        const endHours = Math.floor(totalMinutes / 60) % 24;
-        const endMinutes = totalMinutes % 60;
-        return `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
-    };
-
     const toIsoDate = (date) => {
         const y = date.getFullYear();
         const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -648,23 +695,30 @@ export default function TrainerBooking() {
 
                 {/* Trainer Filters */}
                 {activeTab === 'trainers' && (
-                    <div className="flex gap-2 mt-3">
-                        {[
-                            { value: 'all', label: 'All' },
-                            { value: 'available', label: 'Available' },
-                            { value: 'top-rated', label: 'Top Rated' }
-                        ].map((tab) => (
-                            <button
-                                key={tab.value}
-                                onClick={() => setFilterView(tab.value)}
-                                className={`px-3 py-2 rounded-lg font-medium text-xs sm:text-sm transition-all ${filterView === tab.value
-                                    ? 'bg-primary/15 text-primary border border-primary/30'
-                                    : 'bg-surface text-text-muted hover:text-white border border-white/5'
-                                    }`}
-                            >
-                                {tab.label}
-                            </button>
-                        ))}
+                    <div className="space-y-2 mt-3">
+                        <div className="flex gap-2">
+                            {[
+                                { value: 'all', label: 'All' },
+                                { value: 'available', label: 'Available' },
+                                { value: 'top-rated', label: 'Top Rated' }
+                            ].map((tab) => (
+                                <button
+                                    key={tab.value}
+                                    onClick={() => setFilterView(tab.value)}
+                                    className={`px-3 py-2 rounded-lg font-medium text-xs sm:text-sm transition-all ${filterView === tab.value
+                                        ? 'bg-primary/15 text-primary border border-primary/30'
+                                        : 'bg-surface text-text-muted hover:text-white border border-white/5'
+                                        }`}
+                                >
+                                    {tab.label}
+                                </button>
+                            ))}
+                        </div>
+                        {!canBookNewSession && (
+                            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                                Booking is temporarily locked. Complete the required trainer ratings in <strong>My Bookings</strong>.
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
@@ -692,8 +746,8 @@ export default function TrainerBooking() {
                             <p className="text-xl font-bold text-white mt-1">{upcomingSessions.length}</p>
                         </div>
                         <div className="bg-white/5 border border-white/10 rounded-xl p-3">
-                            <p className="text-[11px] uppercase tracking-wide text-text-muted">Total Booked</p>
-                            <p className="text-xl font-bold text-white mt-1">{memberSessions.length}</p>
+                            <p className="text-[11px] uppercase tracking-wide text-text-muted">Pending Ratings</p>
+                            <p className="text-xl font-bold text-white mt-1">{pendingRatingSessions.length}</p>
                         </div>
                     </div>
 
@@ -716,6 +770,64 @@ export default function TrainerBooking() {
                         </div>
                     ) : (
                         <div className="space-y-6">
+                            {pendingRatingSessions.length > 0 && (
+                                <div className="space-y-3">
+                                    <h3 className="text-sm font-bold text-amber-300 flex items-center gap-2">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-300 animate-pulse" />
+                                        Required Ratings (Booking Locked)
+                                    </h3>
+                                    {pendingRatingSessions.map((session) => {
+                                        const sessionDate = new Date(session.date);
+                                        const selectedRating = Number(ratingSelections[session.id] || 0);
+                                        return (
+                                            <div key={`pending-rating-${session.id}`} className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 sm:p-4">
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div>
+                                                        <p className="text-white font-semibold text-sm sm:text-base">{session.trainer?.name || 'Trainer'}</p>
+                                                        <p className="text-amber-100/70 text-xs sm:text-sm mt-0.5">
+                                                            {sessionDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                                                            {' at '}
+                                                            {sessionDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                                                        </p>
+                                                    </div>
+                                                    <span className="text-[10px] uppercase tracking-wide font-bold px-2 py-1 rounded-md border bg-white/10 text-amber-200 border-amber-300/30">
+                                                        {session.duration} min
+                                                    </span>
+                                                </div>
+                                                <div className="mt-3 flex items-center gap-1.5">
+                                                    {[1, 2, 3, 4, 5].map((score) => (
+                                                        <button
+                                                            key={`${session.id}-rating-${score}`}
+                                                            type="button"
+                                                            onClick={() => setRatingSelections((prev) => ({ ...prev, [session.id]: score }))}
+                                                            className={`w-9 h-9 rounded-lg border text-lg font-bold transition-all ${selectedRating >= score
+                                                                ? 'bg-yellow-500/20 border-yellow-400/50 text-yellow-300'
+                                                                : 'bg-white/5 border-white/15 text-white/40 hover:text-yellow-300 hover:border-yellow-300/40'
+                                                                }`}
+                                                            aria-label={`Rate ${score} stars`}
+                                                        >
+                                                            ★
+                                                        </button>
+                                                    ))}
+                                                    <span className="ml-2 text-xs text-amber-100/70">{selectedRating > 0 ? `${selectedRating}/5` : 'Select rating'}</span>
+                                                </div>
+                                                <div className="mt-3 flex items-center justify-between gap-3">
+                                                    <span className="text-[11px] text-amber-100/70">Please rate to unlock new bookings.</span>
+                                                    <button
+                                                        type="button"
+                                                        disabled={ratingSubmittingId === session.id || selectedRating < 1}
+                                                        onClick={() => handleSubmitSessionRating(session)}
+                                                        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        {ratingSubmittingId === session.id ? 'Saving...' : 'Submit Rating'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
                             {/* Upcoming Sessions */}
                             {upcomingSessions.length > 0 && (
                                 <div className="space-y-3">
@@ -782,11 +894,11 @@ export default function TrainerBooking() {
                             )}
 
                             {/* Past Sessions */}
-                            {memberSessions.filter(s => new Date(s.date) < now).length > 0 && (
+                            {pastSessions.length > 0 && (
                                 <div className="space-y-3">
                                     <h3 className="text-sm font-bold text-text-muted">Past Sessions</h3>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        {memberSessions.filter(s => new Date(s.date) < now).slice(0, 6).map((session) => {
+                                        {pastSessions.slice(0, 6).map((session) => {
                                             const sessionDate = new Date(session.date);
                                             return (
                                                 <div key={session.id} className="bg-white/5 border border-white/5 rounded-xl p-3 opacity-60">
@@ -797,6 +909,11 @@ export default function TrainerBooking() {
                                                     <div className="mt-2 flex items-center gap-2">
                                                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-text-muted">{session.status}</span>
                                                         <span className={`text-[10px] px-1.5 py-0.5 rounded border ${session.paymentStatus === 'PAID' ? 'border-emerald-500/20 text-emerald-400' : 'border-amber-500/20 text-amber-400'}`}>{session.paymentStatus}</span>
+                                                        {String(session.status || '').toUpperCase() === 'COMPLETED' && (
+                                                            <span className="text-[10px] px-1.5 py-0.5 rounded border border-yellow-500/20 text-yellow-300">
+                                                                {session.memberRating ? `Rated ${session.memberRating}/5` : 'Not Rated'}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 </div>
                                             );
@@ -825,9 +942,9 @@ export default function TrainerBooking() {
                             <div key={trainer.id} className="bg-surface rounded-2xl border border-white/5 overflow-hidden hover:border-primary/30 transition-all group flex flex-col">
                                 {/* Trainer Image */}
                                 <div className="aspect-[4/3] sm:aspect-square bg-white/5 overflow-hidden relative">
-                                    {trainer.imageUrl ? (
+                                    {trainer.cardImageUrl ? (
                                         <img
-                                            src={trainer.imageUrl}
+                                            src={trainer.cardImageUrl}
                                             alt={trainer.name}
                                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                                             loading="lazy"
@@ -839,12 +956,10 @@ export default function TrainerBooking() {
                                     )}
 
                                     {/* Rating Badge */}
-                                    {trainer.rating && (
-                                        <div className="absolute top-3 right-3 bg-black/70 backdrop-blur-md rounded-full px-3 py-1.5 flex items-center gap-1">
-                                            <span className="material-icons-round text-base text-yellow-400">star</span>
-                                            <span className="text-white font-bold text-sm">{trainer.rating}</span>
-                                        </div>
-                                    )}
+                                    <div className="absolute top-3 right-3 bg-black/70 backdrop-blur-md rounded-full px-3 py-1.5 flex items-center gap-1">
+                                        <span className="material-icons-round text-base text-yellow-400">star</span>
+                                        <span className="text-white font-bold text-sm">{Number(trainer.rating || 0).toFixed(1)}</span>
+                                    </div>
 
                                     {/* Experience Tag */}
                                     {trainer.experience && (
@@ -859,6 +974,9 @@ export default function TrainerBooking() {
                                     <div className="mb-3">
                                         <h3 className="font-bold text-white text-lg sm:text-xl">{trainer.name}</h3>
                                         <p className="text-text-muted text-sm mt-0.5">{trainer.specialization || 'Personal Trainer'}</p>
+                                        {trainer.statusDescription && (
+                                            <p className="text-xs text-white/70 mt-2 line-clamp-2">{trainer.statusDescription}</p>
+                                        )}
                                     </div>
 
                                     {/* Bio */}
@@ -903,6 +1021,15 @@ export default function TrainerBooking() {
                                         {/* Book Button - Touch Optimized */}
                                         <button
                                             onClick={() => {
+                                                if (!canBookNewSession) {
+                                                    showAlert({
+                                                        title: 'Rating Required',
+                                                        message: 'Please rate your completed session(s) first.',
+                                                        type: 'warning'
+                                                    });
+                                                    setActiveTab('bookings');
+                                                    return;
+                                                }
                                                 const defaultMethod = paymentMethods.find((m) => m.isDefault) || paymentMethods[0] || null;
                                                 if (defaultMethod) {
                                                     const methodType = String(defaultMethod.type || '').toUpperCase();
@@ -922,10 +1049,14 @@ export default function TrainerBooking() {
                                                 setCalendarMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
                                                 setShowBookingModal(true);
                                             }}
-                                            className="w-full py-3.5 sm:py-3 rounded-xl font-bold text-sm sm:text-base transition-all active:scale-95 flex items-center justify-center gap-2 touch-manipulation bg-primary text-background hover:brightness-110 shadow-lg shadow-primary/25"
+                                            disabled={!canBookNewSession}
+                                            className={`w-full py-3.5 sm:py-3 rounded-xl font-bold text-sm sm:text-base transition-all active:scale-95 flex items-center justify-center gap-2 touch-manipulation ${canBookNewSession
+                                                ? 'bg-primary text-background hover:brightness-110 shadow-lg shadow-primary/25'
+                                                : 'bg-white/10 text-text-muted border border-white/10 cursor-not-allowed'
+                                                }`}
                                         >
                                             <span className="material-icons-round text-lg">event</span>
-                                            Book Session
+                                            {canBookNewSession ? 'Book Session' : 'Rate Session First'}
                                         </button>
                                     </div>
                                 </div>
@@ -971,8 +1102,8 @@ export default function TrainerBooking() {
                                     {/* Trainer Info Card */}
                                     <div className="bg-white/5 rounded-xl p-4 border border-white/5 flex gap-4">
                                         <div className="w-16 h-16 sm:w-14 sm:h-14 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                                            {selectedTrainer.imageUrl ? (
-                                                <img src={selectedTrainer.imageUrl} alt={selectedTrainer.name} className="w-full h-full object-cover" />
+                                            {selectedTrainer.cardImageUrl ? (
+                                                <img src={selectedTrainer.cardImageUrl} alt={selectedTrainer.name} className="w-full h-full object-cover" />
                                             ) : (
                                                 <span className="material-icons-round text-text-muted text-2xl">person</span>
                                             )}
@@ -981,6 +1112,9 @@ export default function TrainerBooking() {
                                             <p className="font-bold text-white text-base truncate">{selectedTrainer.name}</p>
                                             <p className="text-text-muted text-sm truncate">{selectedTrainer.specialization}</p>
                                             <p className="text-primary font-bold text-lg mt-1">{formatPrice(selectedTrainer.sessionPrice ?? 300)}/session</p>
+                                            {selectedTrainer.statusDescription && (
+                                                <p className="text-xs text-white/70 mt-1 line-clamp-2">{selectedTrainer.statusDescription}</p>
+                                            )}
                                         </div>
                                     </div>
 
@@ -1309,7 +1443,7 @@ export default function TrainerBooking() {
                             <div className="border-t border-white/10 p-5 sm:p-6 bg-surface sticky bottom-0 space-y-3">
                                 <button
                                     onClick={handleBookSession}
-                                    disabled={bookingLoading || selectedDates.length === 0 || Object.keys(selectedTimesByDate).length !== selectedDates.length || (!selectedMethodId && bookingData.paymentMethod !== 'CASH')}
+                                    disabled={!canBookNewSession || bookingLoading || selectedDates.length === 0 || Object.keys(selectedTimesByDate).length !== selectedDates.length || (!selectedMethodId && bookingData.paymentMethod !== 'CASH')}
                                     className="w-full py-4 bg-primary text-background rounded-xl font-bold text-base hover:brightness-110 active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
                                 >
                                     <span className="material-icons-round text-xl">check_circle</span>

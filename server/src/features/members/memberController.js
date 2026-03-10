@@ -10,6 +10,9 @@ const {
 
 const FINALIZED_SESSION_STATUSES = ['CANCELLED', 'COMPLETED', 'NO_SHOW', 'DECLINED'];
 const ACTIVE_CLASS_BOOKING_STATUSES = ['CONFIRMED', 'ATTENDED'];
+const RATING_MIN = 1;
+const RATING_MAX = 5;
+const PENDING_RATING_MESSAGE = 'Please rate your completed training session(s) before booking another trainer session.';
 
 const toLocalIsoDate = (value) => {
     const d = new Date(value);
@@ -503,7 +506,10 @@ const cancelBooking = async (req, res) => {
                         memberId,
                         classId: parsedClassId,
                         status: { in: ACTIVE_CLASS_BOOKING_STATUSES },
-                        sessionDate: resolvedSessionDate
+                        OR: [
+                            { sessionDate: resolvedSessionDate },
+                            { sessionDate: null }
+                        ]
                     }
                     : {
                         memberId,
@@ -517,7 +523,10 @@ const cancelBooking = async (req, res) => {
                 return { error: "Booking not found", status: 404 };
             }
 
-            await tx.booking.delete({ where: { id: booking.id } });
+            await tx.booking.update({
+                where: { id: booking.id },
+                data: { status: 'CANCELLED' }
+            });
 
             return { success: true };
         });
@@ -532,24 +541,22 @@ const cancelBooking = async (req, res) => {
     }
 };
 
-// Helper to check for booking conflicts
-const checkBookingConflict = async (trainerId, startDateTime, durationMinutes) => {
+const checkBookingConflictWithClient = async (dbClient, trainerId, startDateTime, durationMinutes) => {
     const endDateTime = new Date(startDateTime.getTime() + durationMinutes * 60000);
 
-    // Define the range for the entire day to fetch relevant sessions
     const startOfDay = new Date(startDateTime);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(startOfDay);
     endOfDay.setDate(endOfDay.getDate() + 1);
 
-    const conflictingSessions = await prisma.trainingSession.findMany({
+    const conflictingSessions = await dbClient.trainingSession.findMany({
         where: {
             trainerId: Number(trainerId),
             date: {
                 gte: startOfDay,
                 lt: endOfDay
             },
-            status: { not: 'CANCELLED' }
+            status: { notIn: FINALIZED_SESSION_STATUSES }
         }
     });
 
@@ -590,9 +597,192 @@ const appendBookingBatchNote = (notes, bookingBatchId) => {
     return [String(notes || '').trim(), line].filter(Boolean).join('\n');
 };
 
+const parseTrainingBookingSlots = ({ date, time, slots }) => {
+    const rawSlots = Array.isArray(slots) && slots.length > 0
+        ? slots
+        : [{ date, time }];
+
+    if (!rawSlots.length) {
+        return { error: 'At least one schedule slot is required.' };
+    }
+
+    const seen = new Set();
+    const now = new Date();
+    const normalized = [];
+
+    for (const slot of rawSlots) {
+        const slotDate = String(slot?.date || '').trim();
+        const slotTime = String(slot?.time || '').trim();
+        if (!slotDate || !slotTime) {
+            return { error: 'Each slot must include date and time.' };
+        }
+
+        const slotKey = `${slotDate}T${slotTime}`;
+        if (seen.has(slotKey)) {
+            return { error: 'Duplicate schedule slots are not allowed.' };
+        }
+        seen.add(slotKey);
+
+        const startDateTime = new Date(slotKey);
+        if (Number.isNaN(startDateTime.getTime())) {
+            return { error: `Invalid slot datetime: ${slotKey}` };
+        }
+        if (startDateTime <= now) {
+            return { error: `Slot must be in the future: ${slotKey}` };
+        }
+
+        normalized.push({
+            date: slotDate,
+            time: slotTime,
+            startDateTime
+        });
+    }
+
+    normalized.sort((left, right) => left.startDateTime.getTime() - right.startDateTime.getTime());
+    return { slots: normalized };
+};
+
+const mapSavedPaymentMethodToSessionMethod = (value) => {
+    const normalized = String(value || '').trim().toUpperCase();
+    if (['GCASH', 'MAYA', 'PAYMAYA'].includes(normalized)) {
+        return normalized === 'PAYMAYA' ? 'MAYA' : normalized;
+    }
+    if (normalized === 'BANK_TRANSFER') return 'BANK_TRANSFER';
+    return 'CARD';
+};
+
+const createHttpError = (status, message, detail = null) => {
+    const error = new Error(message);
+    error.status = status;
+    if (detail) error.detail = detail;
+    return error;
+};
+
+const bookTrainingSlots = async ({
+    memberId,
+    trainer,
+    duration,
+    notes,
+    bookingBatchId,
+    slots,
+    paymentMethod,
+    createPaymentRecord
+}) => {
+    const numericMemberId = Number(memberId);
+    const numericTrainerId = Number(trainer.id);
+    const numericDuration = Number(duration);
+    const sessionRate = Number(trainer.sessionPrice ?? 300);
+    const totalPerSession = (numericDuration / 60) * sessionRate;
+    const isCash = String(paymentMethod).toUpperCase() === 'CASH';
+
+    const createdSessions = [];
+
+    await prisma.$transaction(async (tx) => {
+        for (const slot of slots) {
+            if (await checkBookingConflictWithClient(tx, numericTrainerId, slot.startDateTime, numericDuration)) {
+                throw createHttpError(409, 'This time slot is already booked by another member', slot.startDateTime.toISOString());
+            }
+
+            const createdSession = await tx.trainingSession.create({
+                data: {
+                    memberId: numericMemberId,
+                    trainerId: numericTrainerId,
+                    date: slot.startDateTime,
+                    duration: numericDuration,
+                    price: totalPerSession,
+                    status: 'SCHEDULED',
+                    paymentStatus: isCash ? 'UNPAID' : 'PAID',
+                    paymentMethod,
+                    paidAt: isCash ? null : new Date(),
+                    notes: appendBookingBatchNote(notes, bookingBatchId)
+                }
+            });
+
+            if (!isCash && createPaymentRecord) {
+                await createPaymentCompat(tx, {
+                    amount: totalPerSession,
+                    type: 'TRAINING',
+                    method: paymentMethod,
+                    status: 'COMPLETED',
+                    memberId: numericMemberId
+                });
+            }
+
+            createdSessions.push(createdSession);
+        }
+    });
+
+    return {
+        createdSessions,
+        totalAmount: totalPerSession * slots.length
+    };
+};
+
+const getPendingTrainerRatings = async (memberId) => {
+    return prisma.trainingSession.findMany({
+        where: {
+            memberId: Number(memberId),
+            status: 'COMPLETED',
+            memberRating: null
+        },
+        select: {
+            id: true,
+            date: true,
+            trainerId: true,
+            trainer: {
+                select: {
+                    id: true,
+                    name: true
+                }
+            }
+        },
+        orderBy: { date: 'asc' }
+    });
+};
+
+const summarizePendingRatings = (sessions = []) => {
+    return sessions.map((session) => ({
+        sessionId: session.id,
+        date: session.date,
+        trainerId: session.trainerId,
+        trainerName: session.trainer?.name || `Trainer #${session.trainerId}`
+    }));
+};
+
+const recomputeTrainerRating = async (tx, trainerId) => {
+    const aggregate = await tx.trainingSession.aggregate({
+        where: {
+            trainerId: Number(trainerId),
+            memberRating: { not: null }
+        },
+        _avg: { memberRating: true },
+        _count: { memberRating: true }
+    });
+
+    const average = Number(aggregate?._avg?.memberRating || 0);
+    const rating = Number.isFinite(average) ? Number(average.toFixed(2)) : 0;
+    const ratingCount = Number(aggregate?._count?.memberRating || 0);
+
+    await tx.trainer.update({
+        where: { id: Number(trainerId) },
+        data: { rating }
+    });
+
+    return { rating, ratingCount };
+};
+
+const normalizeTrainerRating = (trainer) => {
+    if (!trainer) return trainer;
+    const numeric = Number(trainer.rating);
+    return {
+        ...trainer,
+        rating: Number.isFinite(numeric) ? Number(numeric.toFixed(2)) : 0
+    };
+};
+
 // Book a Trainer Session (Member)
 const bookTraining = async (req, res) => {
-    const { trainerId, date, time, duration, notes, method, bookingBatchId } = req.body;
+    const { trainerId, date, time, duration, notes, method, bookingBatchId, slots, paymentMethodId } = req.body;
     const memberId = req.user.id;
 
     if (req.user.role !== 'MEMBER') {
@@ -600,168 +790,204 @@ const bookTraining = async (req, res) => {
     }
 
     const normalizedMethod = String(method || 'CASH').trim().toUpperCase();
-    const validBaseMethods = (PAYMENT_METHODS || []).map(m => String(m.value).toUpperCase());
-    const allowedMethods = [...new Set([...validBaseMethods, 'CARD', 'CASH', 'GCASH', 'PAYMAYA', 'BANK_TRANSFER'])];
-
-    if (!allowedMethods.includes(normalizedMethod)) {
-        return res.status(400).json({ error: "Invalid payment method" });
-    }
 
     try {
+        const parsedSlots = parseTrainingBookingSlots({ date, time, slots });
+        if (parsedSlots.error) {
+            return res.status(400).json({ error: parsedSlots.error });
+        }
+
         const member = await prisma.member.findUnique({ where: { id: Number(memberId) } });
         if (!member) {
             return res.status(404).json({ error: "Member profile not found. Please log in again as a member." });
         }
 
+        const pendingRatings = await getPendingTrainerRatings(memberId);
+        if (pendingRatings.length > 0) {
+            return res.status(409).json({
+                error: PENDING_RATING_MESSAGE,
+                pendingRatings: summarizePendingRatings(pendingRatings)
+            });
+        }
+
         const trainer = await prisma.trainer.findUnique({ where: { id: Number(trainerId) } });
         if (!trainer) return res.status(404).json({ error: "Trainer not found" });
-
-        const startDateTime = new Date(`${date}T${time}`);
-        if (isNaN(startDateTime.getTime())) {
-            return res.status(400).json({ error: "Invalid date or time" });
-        }
-        const allowClosedBookingToday = await shouldTemporarilyOpenTrainerForDate({ trainerId: Number(trainerId), date });
-        if (!(await isTimeAllowedForTrainer({
-            trainerId: Number(trainerId),
-            date,
-            time,
-            duration: Number(duration),
-            enforceBookingStatus: !allowClosedBookingToday
-        }))) {
-            return res.status(400).json({ error: "Selected schedule is outside trainer availability" });
-        }
-
-        // Check for conflicts
-        if (await checkBookingConflict(Number(trainerId), startDateTime, Number(duration))) {
-            return res.status(409).json({ error: "This time slot is already booked by another member" });
-        }
 
         const allowedDurations = (trainer.sessionDurations || '60')
             .split(',')
             .map((value) => Number(value.trim()))
             .filter((value) => Number.isFinite(value) && value > 0);
-        if (!allowedDurations.includes(Number(duration))) {
+        const numericDuration = Number(duration);
+        if (!allowedDurations.includes(numericDuration)) {
             return res.status(400).json({ error: "Selected duration not available" });
         }
 
-        const sessionRate = trainer.sessionPrice ?? 300;
-        const totalAmount = (Number(duration) / 60) * Number(sessionRate);
-
-        await prisma.$transaction(async (tx) => {
-            await tx.trainingSession.create({
-                data: {
-                    memberId: Number(memberId),
-                    trainerId: Number(trainerId),
-                    date: startDateTime,
-                    duration: Number(duration),
-                    price: totalAmount,
-                    status: 'SCHEDULED',
-                    paymentStatus: normalizedMethod === 'CASH' ? 'UNPAID' : 'PAID',
-                    paymentMethod: normalizedMethod,
-                    paidAt: normalizedMethod === 'CASH' ? null : new Date(),
-                    notes: appendBookingBatchNote(notes, bookingBatchId)
-                }
+        for (const slot of parsedSlots.slots) {
+            const allowClosedBookingToday = await shouldTemporarilyOpenTrainerForDate({
+                trainerId: Number(trainerId),
+                date: slot.date
             });
-
-            if (method !== 'CASH') {
-                await createPaymentCompat(tx, {
-                    amount: totalAmount,
-                    type: 'TRAINING',
-                    method,
-                    status: 'COMPLETED',
-                    memberId
+            if (!(await isTimeAllowedForTrainer({
+                trainerId: Number(trainerId),
+                date: slot.date,
+                time: slot.time,
+                duration: numericDuration,
+                enforceBookingStatus: !allowClosedBookingToday
+            }))) {
+                return res.status(400).json({
+                    error: `Selected schedule is outside trainer availability (${slot.date} ${slot.time})`
                 });
             }
+        }
 
+        const validBaseMethods = (PAYMENT_METHODS || []).map(m => String(m.value).toUpperCase());
+        const allowedMethods = [...new Set([...validBaseMethods, 'CARD', 'CASH', 'GCASH', 'MAYA', 'PAYMAYA', 'BANK_TRANSFER'])];
+        if (!allowedMethods.includes(normalizedMethod)) {
+            return res.status(400).json({ error: "Invalid payment method" });
+        }
+
+        let resolvedPaymentMethod = normalizedMethod;
+        if (normalizedMethod !== 'CASH') {
+            const parsedPaymentMethodId = Number(paymentMethodId);
+            if (!Number.isInteger(parsedPaymentMethodId)) {
+                return res.status(400).json({ error: "Please select a saved payment method." });
+            }
+
+            const savedMethod = await prisma.paymentMethod.findFirst({
+                where: {
+                    id: parsedPaymentMethodId,
+                    memberId: Number(memberId)
+                },
+                select: { id: true, type: true }
+            });
+            if (!savedMethod) {
+                return res.status(400).json({ error: "Selected payment method is invalid." });
+            }
+
+            resolvedPaymentMethod = mapSavedPaymentMethodToSessionMethod(savedMethod.type);
+        }
+
+        const { createdSessions, totalAmount } = await bookTrainingSlots({
+            memberId,
+            trainer,
+            duration: numericDuration,
+            notes,
+            bookingBatchId,
+            slots: parsedSlots.slots,
+            paymentMethod: resolvedPaymentMethod,
+            createPaymentRecord: true
         });
 
         res.json({
-            message: normalizedMethod === 'CASH' ? "Training session booked. Pay at the front desk." : "Training session booked and paid",
+            message: resolvedPaymentMethod === 'CASH'
+                ? "Training session booked. Pay at the front desk."
+                : "Training session booked and paid",
+            bookedCount: createdSessions.length,
+            totalAmount,
+            sessionDates: createdSessions.map((session) => session.date),
             session: {
                 trainerName: trainer.name,
-                date: startDateTime,
+                date: createdSessions[0]?.date || null,
                 totalAmount,
-                paymentMethod: normalizedMethod
+                paymentMethod: resolvedPaymentMethod
             }
         });
     } catch (e) {
+        if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) {
+            return res.status(e.status).json({
+                error: e.message || 'Booking failed',
+                ...(e.detail ? { detail: e.detail } : {})
+            });
+        }
         res.status(500).json({ error: "Failed to book training session", detail: e?.message });
     }
 };
 
 // Book a Trainer Session (Cash, Unpaid) - Authenticated members only
 const bookTrainingCash = async (req, res) => {
-    const { trainerId, date, time, duration, notes, bookingBatchId } = req.body;
+    const { trainerId, date, time, duration, notes, bookingBatchId, slots } = req.body;
     const resolvedMemberId = req.user.id;
 
     if (req.user.role !== 'MEMBER') {
         return res.status(403).json({ error: "Only member accounts can book trainer sessions from this endpoint" });
     }
 
-    if (!trainerId || !date || !time || !duration) {
+    if (!trainerId || !duration) {
         return res.status(400).json({ error: "Missing required booking details" });
     }
 
     try {
+        const parsedSlots = parseTrainingBookingSlots({ date, time, slots });
+        if (parsedSlots.error) {
+            return res.status(400).json({ error: parsedSlots.error });
+        }
+
         const member = await prisma.member.findUnique({ where: { id: Number(resolvedMemberId) } });
         if (!member) {
             return res.status(404).json({ error: "Member profile not found. Please log in again as a member." });
         }
 
+        const pendingRatings = await getPendingTrainerRatings(resolvedMemberId);
+        if (pendingRatings.length > 0) {
+            return res.status(409).json({
+                error: PENDING_RATING_MESSAGE,
+                pendingRatings: summarizePendingRatings(pendingRatings)
+            });
+        }
+
         const trainer = await prisma.trainer.findUnique({ where: { id: Number(trainerId) } });
         if (!trainer) return res.status(404).json({ error: "Trainer not found" });
-
-        const startDateTime = new Date(`${date}T${time}`);
-        if (isNaN(startDateTime.getTime())) {
-            return res.status(400).json({ error: "Invalid date or time" });
-        }
-        const allowClosedBookingToday = await shouldTemporarilyOpenTrainerForDate({ trainerId: Number(trainerId), date });
-        if (!(await isTimeAllowedForTrainer({
-            trainerId: Number(trainerId),
-            date,
-            time,
-            duration: Number(duration),
-            enforceBookingStatus: !allowClosedBookingToday
-        }))) {
-            return res.status(400).json({ error: "Selected schedule is outside trainer availability" });
-        }
-
-        // Check for conflicts
-        if (await checkBookingConflict(Number(trainerId), startDateTime, Number(duration))) {
-            return res.status(409).json({ error: "This time slot is already booked by another member" });
-        }
 
         const allowedDurations = (trainer.sessionDurations || '60')
             .split(',')
             .map((value) => Number(value.trim()))
             .filter((value) => Number.isFinite(value) && value > 0);
-        if (!allowedDurations.includes(Number(duration))) {
+        const numericDuration = Number(duration);
+        if (!allowedDurations.includes(numericDuration)) {
             return res.status(400).json({ error: "Selected duration not available" });
         }
 
-        const sessionRate = trainer.sessionPrice ?? 300;
-        const totalAmount = (Number(duration) / 60) * Number(sessionRate);
-
-        await prisma.$transaction(async (tx) => {
-            await tx.trainingSession.create({
-                data: {
-                    memberId: Number(resolvedMemberId), // Fix: ensure memberId is a Number
-                    trainerId: Number(trainerId),
-                    date: startDateTime,
-                    duration: Number(duration),
-                    price: totalAmount,
-                    status: 'SCHEDULED',
-                    paymentStatus: 'UNPAID',
-                    paymentMethod: 'CASH',
-                    paidAt: null,
-                    notes: appendBookingBatchNote(notes, bookingBatchId)
-                }
+        for (const slot of parsedSlots.slots) {
+            const allowClosedBookingToday = await shouldTemporarilyOpenTrainerForDate({
+                trainerId: Number(trainerId),
+                date: slot.date
             });
+            if (!(await isTimeAllowedForTrainer({
+                trainerId: Number(trainerId),
+                date: slot.date,
+                time: slot.time,
+                duration: numericDuration,
+                enforceBookingStatus: !allowClosedBookingToday
+            }))) {
+                return res.status(400).json({
+                    error: `Selected schedule is outside trainer availability (${slot.date} ${slot.time})`
+                });
+            }
+        }
 
+        const { createdSessions } = await bookTrainingSlots({
+            memberId: resolvedMemberId,
+            trainer,
+            duration: numericDuration,
+            notes,
+            bookingBatchId,
+            slots: parsedSlots.slots,
+            paymentMethod: 'CASH',
+            createPaymentRecord: false
         });
 
-        res.json({ message: "Training session booked. Pay at the front desk." });
+        res.json({
+            message: "Training session booked. Pay at the front desk.",
+            bookedCount: createdSessions.length,
+            sessionDates: createdSessions.map((session) => session.date)
+        });
     } catch (e) {
+        if (Number.isInteger(e?.status) && e.status >= 400 && e.status < 500) {
+            return res.status(e.status).json({
+                error: e.message || 'Booking failed',
+                ...(e.detail ? { detail: e.detail } : {})
+            });
+        }
         res.status(500).json({ error: "Failed to book training session", detail: e?.message });
     }
 };
@@ -801,15 +1027,92 @@ const getMyTrainingSessions = async (req, res) => {
                         id: true,
                         name: true,
                         specialization: true,
-                        imageUrl: true
+                        imageUrl: true,
+                        rating: true
                     }
                 }
             },
             orderBy: { date: 'desc' }
         });
-        res.json(sessions);
+        const normalizedSessions = sessions.map((session) => ({
+            ...session,
+            trainer: normalizeTrainerRating(session.trainer)
+        }));
+        res.json(normalizedSessions);
     } catch (e) {
         res.status(500).json({ error: "Failed to fetch training sessions", detail: e?.message });
+    }
+};
+
+const rateTrainingSession = async (req, res) => {
+    if (req.user.role !== 'MEMBER') {
+        return res.status(403).json({ error: "Only member accounts can access this endpoint" });
+    }
+
+    const sessionId = Number(req.params.id);
+    const rawRating = Number(req.body?.rating);
+
+    if (!Number.isInteger(sessionId)) {
+        return res.status(400).json({ error: "Invalid session ID" });
+    }
+    if (!Number.isInteger(rawRating) || rawRating < RATING_MIN || rawRating > RATING_MAX) {
+        return res.status(400).json({ error: `Rating must be an integer between ${RATING_MIN} and ${RATING_MAX}` });
+    }
+
+    try {
+        const session = await prisma.trainingSession.findFirst({
+            where: {
+                id: sessionId,
+                memberId: Number(req.user.id)
+            },
+            select: {
+                id: true,
+                trainerId: true,
+                status: true,
+                memberRating: true,
+                trainer: {
+                    select: {
+                        id: true,
+                        name: true
+                    }
+                }
+            }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: "Training session not found" });
+        }
+        if (String(session.status).toUpperCase() !== 'COMPLETED') {
+            return res.status(400).json({ error: "Only completed sessions can be rated" });
+        }
+        if (session.memberRating !== null && session.memberRating !== undefined) {
+            return res.status(400).json({ error: "This session has already been rated" });
+        }
+
+        const result = await prisma.$transaction(async (tx) => {
+            await tx.trainingSession.update({
+                where: { id: sessionId },
+                data: {
+                    memberRating: rawRating,
+                    memberRatedAt: new Date()
+                }
+            });
+
+            const trainerRating = await recomputeTrainerRating(tx, session.trainerId);
+            return trainerRating;
+        });
+
+        return res.json({
+            message: "Session rated successfully",
+            sessionId,
+            trainerId: session.trainerId,
+            trainerName: session.trainer?.name || `Trainer #${session.trainerId}`,
+            ratingGiven: rawRating,
+            trainerRating: result.rating,
+            trainerRatingCount: result.ratingCount
+        });
+    } catch (e) {
+        return res.status(500).json({ error: "Failed to submit rating", detail: e?.message });
     }
 };
 
@@ -1480,6 +1783,7 @@ module.exports = {
     bookTrainingCash,
     getMemberProfile,
     getMyTrainingSessions,
+    rateTrainingSession,
     getPaymentMethods,
     addPaymentMethod,
     updatePaymentMethod,

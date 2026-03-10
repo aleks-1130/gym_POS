@@ -107,20 +107,29 @@ const getDashboardStats = async (req, res) => {
             });
         }
 
-        // ADMIN/STAFF stats
-        const today = new Date();
-        const startOfToday = new Date(today);
-        startOfToday.setHours(0, 0, 0, 0);
+        // --- Timezone Management: Force PHT (UTC+8) ---
+        const getPHTNow = () => {
+            const now = new Date();
+            // PHT is UTC+8
+            const phtOffset = 8 * 60 * 60 * 1000;
+            return new Date(now.getTime() + phtOffset);
+        };
+
+        const phtNow = getPHTNow();
+        const startOfToday = new Date(Date.UTC(phtNow.getUTCFullYear(), phtNow.getUTCMonth(), phtNow.getUTCDate()));
+        // Convert back to "real" Date objects for Prisma (which expects UTC)
+        // Since we defined startOfToday in UTC terms of the PHT date, we need to subtract the 8h offset to get the exact UTC boundary
+        startOfToday.setUTCHours(startOfToday.getUTCHours() - 8);
+
+        const firstDayOfMonth = new Date(Date.UTC(phtNow.getUTCFullYear(), phtNow.getUTCMonth(), 1));
+        firstDayOfMonth.setUTCHours(firstDayOfMonth.getUTCHours() - 8);
 
         const totalMembers = await prisma.member.count({ where: { status: 'ACTIVE' } });
 
         // Date Logic - Dynamic Range
         console.log("Stats Query Params:", req.query);
-        const queryStart = req.query.startDate ? new Date(req.query.startDate) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-        const queryEnd = req.query.endDate ? new Date(new Date(req.query.endDate).setHours(23, 59, 59, 999)) : new Date();
-        console.log("Parsed Range:", queryStart, queryEnd);
-
-        const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        const queryStart = req.query.startDate ? new Date(req.query.startDate) : firstDayOfMonth;
+        const queryEnd = req.query.endDate ? new Date(new Date(req.query.endDate).setUTCHours(23, 59, 59, 999)) : new Date();
 
         // 1. Parallelize Period Financials, Trend, Net Profit basics, Expiring, Distribution, and Legacy Stats
         // 1. Parallelize Period Financials, Trend, Net Profit basics, Expiring, Distribution, and Legacy Stats
@@ -219,16 +228,25 @@ const getDashboardStats = async (req, res) => {
                 where: { date: { gte: queryStart, lte: queryEnd }, type: 'MEMBERSHIP', status: { in: ['COMPLETED', 'RETURNED'] } }
             }),
             getRecentActivity(),
-            // 6-Month History (exclude voided)
+            // 6-Month History (exclude voided) - Calculate start range using PHT
             prisma.payment.groupBy({
                 by: ['date'],
                 _sum: { amount: true, refundedAmount: true },
-                where: { date: { gte: new Date(new Date().setMonth(new Date().getMonth() - 5)) }, status: { in: ['COMPLETED', 'RETURNED'] } }
+                where: {
+                    date: {
+                        gte: new Date(Date.UTC(phtNow.getUTCFullYear(), phtNow.getUTCMonth() - 5, 1, -8))
+                    },
+                    status: { in: ['COMPLETED', 'RETURNED'] }
+                }
             }),
             prisma.expense.groupBy({
                 by: ['date'],
                 _sum: { amount: true },
-                where: { date: { gte: new Date(new Date().setMonth(new Date().getMonth() - 5)) } }
+                where: {
+                    date: {
+                        gte: new Date(Date.UTC(phtNow.getUTCFullYear(), phtNow.getUTCMonth() - 5, 1, -8))
+                    }
+                }
             }),
             // Expense Breakdown by Category
             prisma.expense.groupBy({
@@ -354,12 +372,14 @@ const getDashboardStats = async (req, res) => {
         }
 
         sixMonthPayments.forEach(p => {
-            const key = `${monthNames[new Date(p.date).getMonth()]} ${new Date(p.date).getFullYear()}`;
+            const pDate = new Date(p.date.getTime() + (8 * 60 * 60 * 1000));
+            const key = `${monthNames[pDate.getUTCMonth()]} ${pDate.getUTCFullYear()}`;
             if (pnlMap[key]) pnlMap[key].revenue += (p._sum.amount || 0) - (p._sum.refundedAmount || 0);
         });
 
         sixMonthExpenses.forEach(e => {
-            const key = `${monthNames[new Date(e.date).getMonth()]} ${new Date(e.date).getFullYear()}`;
+            const eDate = new Date(e.date.getTime() + (8 * 60 * 60 * 1000));
+            const key = `${monthNames[eDate.getUTCMonth()]} ${eDate.getUTCFullYear()}`;
             if (pnlMap[key]) pnlMap[key].expense += e._sum.amount || 0;
         });
 

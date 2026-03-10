@@ -32,6 +32,9 @@ model User {
   trainer     Trainer?     @relation("TrainerUser", fields: [trainerId], references: [id])
   expenses    Expense[]    @relation("StaffExpense")
   stockOrdersCreated StockOrder[] @relation("StockOrderCreator")
+  trainerChangeRequestsSubmitted    TrainerChangeRequest[] @relation("TrainerChangeRequestedBy")
+  trainerChangeRequestsAdminReviewed TrainerChangeRequest[] @relation("TrainerChangeAdminDecisionBy")
+  trainerChangeRequestsOwnerReviewed TrainerChangeRequest[] @relation("TrainerChangeOwnerDecisionBy")
 }
 
 model AuditLog {
@@ -155,6 +158,8 @@ model TrainingSession {
   duration       Int
   price          Float
   status         String            @default("SCHEDULED")
+  memberRating   Int?
+  memberRatedAt  DateTime?
   commissionPaid Boolean           @default(false)
   materialsCost  Float             @default(0.0)
   paymentStatus  String            @default("PAID")
@@ -319,23 +324,54 @@ model Trainer {
   phone            String?
   bio              String?
   imageUrl         String?
+  cardImageUrl     String?
   experience       Int?
-  rating           Float?            @default(5.0)
+  rating           Float?            @default(0.0)
   sessionPrice     Float             @default(50.0)
   commissionRate   Float             @default(0.0)
   baseSalary       Float             @default(0.0)
   sessionDurations String            @default("60")
   availableSlots   Int?              @default(5)
   specialties      String?
+  statusDescription String?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   classes          Class[]
+  classSessions    ClassSession[]
   classHistory     ClassHistory[]
   trainingSessions TrainingSession[]
   user             User?                @relation("TrainerUser")
   availability     TrainerAvailability?
+  changeRequests   TrainerChangeRequest[]
   expenses         Expense[]
   accessLogs       AccessLog[]
+}
+
+model TrainerChangeRequest {
+  id               Int       @id @default(autoincrement())
+  trainerId        Int
+  requestedById    Int?
+  requestType      String    @default("PROFILE_UPDATE")
+  payload          Json
+  currentData      Json
+  status           String    @default("PENDING_ADMIN")
+  adminDecisionBy  Int?
+  adminDecisionAt  DateTime?
+  adminNote        String?
+  ownerDecisionBy  Int?
+  ownerDecisionAt  DateTime?
+  ownerNote        String?
+  appliedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  trainer          Trainer   @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+  requestedBy      User?     @relation("TrainerChangeRequestedBy", fields: [requestedById], references: [id])
+  adminReviewer    User?     @relation("TrainerChangeAdminDecisionBy", fields: [adminDecisionBy], references: [id])
+  ownerReviewer    User?     @relation("TrainerChangeOwnerDecisionBy", fields: [ownerDecisionBy], references: [id])
+
+  @@index([trainerId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model TrainerAvailability {
@@ -366,6 +402,7 @@ model SessionMaterial {
 model Class {
   id        Int       @id @default(autoincrement())
   name      String
+  imageUrl  String?
   trainerId Int
   scheduleType String @default("RECURRING")
   oneTimeDate DateTime?
@@ -378,6 +415,7 @@ model Class {
   createdAt DateTime  @default(now())
   bookings  Booking[]
   trainer   Trainer   @relation(fields: [trainerId], references: [id])
+  sessions  ClassSession[]
   history   ClassHistory[]
 }
 
@@ -410,6 +448,29 @@ model Booking {
 
   @@index([classId, sessionDate])
   @@index([memberId, sessionDate])
+}
+
+model ClassSession {
+  id              Int      @id @default(autoincrement())
+  classId         Int
+  trainerId       Int
+  sessionDate     DateTime
+  status          String   @default("SCHEDULED")
+  startedAt       DateTime?
+  completedAt     DateTime?
+  startedByRole   String?
+  completedByRole String?
+  completionNote  String?
+  isAutoStarted   Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  class           Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  trainer         Trainer  @relation(fields: [trainerId], references: [id])
+
+  @@unique([classId, sessionDate])
+  @@index([trainerId, sessionDate])
+  @@index([status, sessionDate])
 }
 
 model Order {

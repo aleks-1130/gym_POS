@@ -1,15 +1,48 @@
-﻿import React, { useState, useEffect } from 'react';
-import { useCurrency } from '../../context/CurrencyContext';
+import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import DataTable from '../../components/common/DataTable';
+import { useCurrency } from '../../context/CurrencyContext';
 import { EXPENSE_CATEGORIES } from '../../constants/categories';
 import { useConfirm } from '../../context/ConfirmContext';
 
+const VIEW_MODES = ['LIST', 'DAILY', 'MONTHLY', 'YEARLY'];
+
+const categoryLabel = (value) => String(value || '').replace(/_/g, ' ');
+
+const formatDate = (value) => new Date(value).toLocaleDateString();
+
+const getGroupMeta = (expense, mode) => {
+    const date = new Date(expense.date);
+    if (mode === 'DAILY') {
+        const key = date.toISOString().split('T')[0];
+        return {
+            key,
+            label: date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+            sortValue: new Date(key).getTime()
+        };
+    }
+    if (mode === 'MONTHLY') {
+        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        return {
+            key,
+            label: date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
+            sortValue: new Date(date.getFullYear(), date.getMonth(), 1).getTime()
+        };
+    }
+    return {
+        key: String(date.getFullYear()),
+        label: String(date.getFullYear()),
+        sortValue: new Date(date.getFullYear(), 0, 1).getTime()
+    };
+};
+
 const Expenses = () => {
-    const { confirm, alert } = useConfirm();
+    const { confirm, alert: showAlert } = useConfirm();
+    const { formatPrice } = useCurrency();
     const [expenses, setExpenses] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
+    const [viewMode, setViewMode] = useState('LIST');
+    const [selectedCategory, setSelectedCategory] = useState('ALL');
     const [formData, setFormData] = useState({
         title: '',
         amount: '',
@@ -24,16 +57,27 @@ const Expenses = () => {
 
     const fetchExpenses = async () => {
         try {
+            setLoading(true);
             const token = localStorage.getItem('token');
             const res = await axios.get('/api/expenses', {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            setExpenses(res.data);
-            setLoading(false);
+            setExpenses(res.data || []);
         } catch (error) {
             console.error(error);
+        } finally {
             setLoading(false);
         }
+    };
+
+    const resetForm = () => {
+        setFormData({
+            title: '',
+            amount: '',
+            category: EXPENSE_CATEGORIES.UTILITIES,
+            date: new Date().toISOString().split('T')[0],
+            notes: ''
+        });
     };
 
     const handleDelete = async (id) => {
@@ -43,7 +87,6 @@ const Expenses = () => {
             type: 'danger',
             confirmLabel: 'Delete'
         });
-
         if (!isConfirmed) return;
 
         try {
@@ -51,9 +94,9 @@ const Expenses = () => {
             await axios.delete(`/api/expenses/${id}`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            fetchExpenses();
-        } catch (error) {
-            showAlert({ title: 'Error', message: 'Failed to delete expense. Please try again.', type: 'danger' });
+            await fetchExpenses();
+        } catch {
+            await showAlert({ title: 'Delete Failed', message: 'Failed to delete expense. Please try again.', type: 'danger' });
         }
     };
 
@@ -61,317 +104,377 @@ const Expenses = () => {
         e.preventDefault();
         try {
             const token = localStorage.getItem('token');
-            await axios.post('/api/expenses', formData, {
+            const payload = {
+                ...formData,
+                amount: Number(formData.amount)
+            };
+
+            await axios.post('/api/expenses', payload, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setShowModal(false);
-            setFormData({
-                title: '',
-                amount: '',
-                category: EXPENSE_CATEGORIES.UTILITIES,
-                date: new Date().toISOString().split('T')[0],
-                notes: ''
-            });
-            fetchExpenses();
-        } catch (error) {
-            showAlert({ title: 'Submission Failed', message: 'Failed to add expense. Please check your inputs.', type: 'danger' });
+            resetForm();
+            await fetchExpenses();
+            await showAlert({ title: 'Saved', message: 'Expense recorded successfully.', type: 'success' });
+        } catch {
+            await showAlert({ title: 'Submission Failed', message: 'Failed to add expense. Please check your inputs.', type: 'danger' });
         }
     };
 
-    const { formatPrice } = useCurrency();
-    const totalExpenses = expenses.reduce((sum, item) => sum + item.amount, 0);
+    const filteredExpenses = useMemo(() => {
+        const byCategory = expenses.filter((expense) => selectedCategory === 'ALL' || expense.category === selectedCategory);
+        return [...byCategory].sort((a, b) => new Date(b.date) - new Date(a.date));
+    }, [expenses, selectedCategory]);
 
+    const groupedExpenses = useMemo(() => {
+        if (viewMode === 'LIST') return [];
+        const buckets = new Map();
+        filteredExpenses.forEach((expense) => {
+            const meta = getGroupMeta(expense, viewMode);
+            if (!buckets.has(meta.key)) {
+                buckets.set(meta.key, {
+                    key: meta.key,
+                    label: meta.label,
+                    sortValue: meta.sortValue,
+                    total: 0,
+                    items: []
+                });
+            }
+            const bucket = buckets.get(meta.key);
+            bucket.items.push(expense);
+            bucket.total += Number(expense.amount || 0);
+        });
+        return [...buckets.values()].sort((a, b) => b.sortValue - a.sortValue);
+    }, [filteredExpenses, viewMode]);
+
+    const totalExpenses = useMemo(
+        () => filteredExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0),
+        [filteredExpenses]
+    );
     const currentMonth = new Date().getMonth();
     const currentYear = new Date().getFullYear();
-    const mtdExpenses = expenses.reduce((sum, item) => {
-        const itemDate = new Date(item.date);
-        if (itemDate.getMonth() === currentMonth && itemDate.getFullYear() === currentYear) {
-            return sum + item.amount;
-        }
-        return sum;
-    }, 0);
-
+    const mtdExpenses = useMemo(
+        () =>
+            filteredExpenses.reduce((sum, expense) => {
+                const date = new Date(expense.date);
+                if (date.getMonth() === currentMonth && date.getFullYear() === currentYear) {
+                    return sum + Number(expense.amount || 0);
+                }
+                return sum;
+            }, 0),
+        [filteredExpenses, currentMonth, currentYear]
+    );
+    const averageExpense = filteredExpenses.length ? totalExpenses / filteredExpenses.length : 0;
     const currentMonthName = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
 
-    const [viewMode, setViewMode] = useState('LIST'); // LIST, DAILY, MONTHLY, YEARLY
-    const [selectedCategory, setSelectedCategory] = useState('ALL');
+    const exportCurrentExpenses = () => {
+        if (filteredExpenses.length === 0) {
+            showAlert({ title: 'Nothing to Export', message: 'No expenses in the current filter.', type: 'warning' });
+            return;
+        }
 
-    const filteredExpenses = expenses.filter(expense => {
-        if (selectedCategory === 'ALL') return true;
-        return expense.category === selectedCategory;
-    });
-
-    const groupExpenses = () => {
-        if (viewMode === 'LIST') return null;
-
-        return filteredExpenses.reduce((groups, expense) => {
-            let key;
-            const date = new Date(expense.date);
-
-            if (viewMode === 'DAILY') {
-                key = date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-            } else if (viewMode === 'MONTHLY') {
-                key = date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-            } else if (viewMode === 'YEARLY') {
-                key = date.getFullYear().toString();
-            }
-
-            if (!groups[key]) groups[key] = [];
-            groups[key].push(expense);
-            return groups;
-        }, {});
+        const escapeCsv = (value) => {
+            const str = String(value ?? '').replace(/"/g, '""');
+            return /[",\n]/.test(str) ? `"${str}"` : str;
+        };
+        const headers = ['Date', 'Title', 'Category', 'Amount', 'Notes'];
+        const rows = filteredExpenses.map((expense) => ([
+            formatDate(expense.date),
+            expense.title,
+            categoryLabel(expense.category),
+            Number(expense.amount || 0).toFixed(2),
+            expense.notes || ''
+        ]));
+        const csv = [headers, ...rows].map((line) => line.map(escapeCsv).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `expenses-${viewMode.toLowerCase()}-${selectedCategory.toLowerCase()}.csv`;
+        link.click();
+        URL.revokeObjectURL(url);
     };
 
-    const groupedExpenses = groupExpenses();
-
     return (
-        <div className="p-6">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Operational Expenses</h1>
-                    <p className="text-gray-500 dark:text-gray-400 mt-1">Manage and track your business spending</p>
-                </div>
-
-                <div className="flex gap-2">
-                    {/* Category Filter */}
-                    <select
-                        value={selectedCategory}
-                        onChange={(e) => setSelectedCategory(e.target.value)}
-                        className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-sm rounded-lg px-3 py-2 outline-none focus:border-red-500"
-                    >
-                        <option value="ALL">All Categories</option>
-                        {Object.values(EXPENSE_CATEGORIES).map(cat => (
-                            <option key={cat} value={cat}>{cat.replace('_', ' ')}</option>
-                        ))}
-                    </select>
-
-                    <div className="bg-white dark:bg-gray-800 p-1 rounded-lg border border-gray-200 dark:border-gray-700 flex">
-                        {['LIST', 'DAILY', 'MONTHLY', 'YEARLY'].map((mode) => (
-                            <button
-                                key={mode}
-                                onClick={() => setViewMode(mode)}
-                                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${viewMode === mode
-                                    ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
-                                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-                                    }`}
-                            >
-                                {mode.charAt(0) + mode.slice(1).toLowerCase()}
-                            </button>
-                        ))}
+        <div className="space-y-5 p-6">
+            <header className="rounded-3xl border border-white/10 bg-surface p-5 shadow-sm">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                    <div>
+                        <h1 className="text-2xl font-bold text-white">Operational Expenses</h1>
+                        <p className="mt-1 text-sm text-text-muted">Track, group, and audit expense records with cleaner controls.</p>
                     </div>
-                    <button
-                        onClick={() => setShowModal(true)}
-                        className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
-                    >
-                        + Add Expense
-                    </button>
-                </div>
-            </div>
 
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                {/* All Time */}
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden">
-                    <div className="relative z-10">
-                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Expenses (All Time)</p>
-                        <h2 className="text-3xl font-bold text-gray-800 dark:text-white mt-2">
-                            {formatPrice(totalExpenses)}
-                        </h2>
-                    </div>
-                </div>
-
-                {/* MTD */}
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 relative overflow-hidden">
-                    <div className="relative z-10">
-                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Expenses ({currentMonthName})</p>
-                        <h2 className="text-3xl font-bold text-red-500 mt-2">
-                            {formatPrice(mtdExpenses)}
-                        </h2>
-                    </div>
-                    {/* Decorative Icon Background */}
-                    <div className="absolute -right-4 -bottom-4 text-red-500/10">
-                        <span className="material-icons-round text-9xl">calendar_today</span>
-                    </div>
-                </div>
-            </div>
-
-            {/* View Rendering */}
-            {viewMode === 'LIST' ? (
-                <DataTable
-                    columns={[
-                        { header: 'Date', accessor: (expense) => new Date(expense.date).toLocaleDateString() },
-                        { header: 'Title', accessor: 'title', cellClassName: 'font-medium' },
-                        {
-                            header: 'Category',
-                            accessor: (expense) => (
-                                <span className="px-2 py-1 text-xs rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
-                                    {expense.category}
-                                </span>
-                            )
-                        },
-                        {
-                            header: 'Amount',
-                            accessor: (expense) => formatPrice(expense.amount),
-                            cellClassName: 'font-semibold text-red-500'
-                        },
-                        { header: 'Notes', accessor: (expense) => expense.notes || '-', cellClassName: 'text-sm text-gray-500' }
-                    ]}
-                    data={filteredExpenses}
-                    actions={(expense) => (
+                    <div className="flex flex-wrap items-center gap-2">
                         <button
-                            onClick={() => handleDelete(expense.id)}
-                            className="text-red-500 hover:text-red-700 text-sm"
+                            onClick={exportCurrentExpenses}
+                            className="rounded-xl border border-white/10 bg-surfaceHighlight px-3 py-2 text-sm font-semibold text-white transition-colors hover:border-primary/50 hover:text-primary"
                         >
-                            Delete
+                            Export CSV
                         </button>
-                    )}
-                    isLoading={loading}
-                    emptyMessage="No expenses recorded yet."
-                />
-            ) : (
-                <div className="space-y-8">
-                    {groupedExpenses && Object.entries(groupedExpenses).map(([group, groupExpenses]) => (
-                        <div key={group} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm overflow-hidden border border-gray-100 dark:border-gray-700">
-                            <div className="bg-gray-50 dark:bg-gray-900/50 px-6 py-3 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
-                                <h3 className="font-semibold text-gray-700 dark:text-gray-300">{group}</h3>
-                                <span className="text-sm text-gray-500 dark:text-gray-400">
-                                    {groupExpenses.length} transaction{groupExpenses.length !== 1 ? 's' : ''}
-                                </span>
-                            </div>
-                            <table className="w-full text-left">
-                                <thead className="bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-b border-gray-50 dark:border-gray-700">
+                        <select
+                            value={selectedCategory}
+                            onChange={(e) => setSelectedCategory(e.target.value)}
+                            className="rounded-xl border border-white/10 bg-surfaceHighlight px-3 py-2 text-sm text-white outline-none transition-colors focus:border-primary"
+                        >
+                            <option value="ALL">All Categories</option>
+                            {Object.values(EXPENSE_CATEGORIES)
+                                .filter((cat) => cat !== 'INVENTORY')
+                                .map((cat) => (
+                                    <option key={cat} value={cat}>{categoryLabel(cat)}</option>
+                                ))}
+                        </select>
+                        <button
+                            onClick={() => setShowModal(true)}
+                            className="rounded-xl bg-primary px-4 py-2 text-sm font-bold text-background transition-colors hover:bg-orange-600"
+                        >
+                            + Add Expense
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <section className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-xl border border-white/10 bg-surface px-3 py-2.5">
+                    <p className="text-[10px] uppercase tracking-widest text-text-muted">Total Expenses</p>
+                    <p className="mt-1 text-base font-bold text-white">{formatPrice(totalExpenses)}</p>
+                    <p className="text-[10px] text-text-muted">Current filter</p>
+                </div>
+                <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2.5">
+                    <p className="text-[10px] uppercase tracking-widest text-red-300">This Month</p>
+                    <p className="mt-1 text-base font-bold text-red-300">{formatPrice(mtdExpenses)}</p>
+                    <p className="text-[10px] text-red-300/80">{currentMonthName}</p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-surface px-3 py-2.5">
+                    <p className="text-[10px] uppercase tracking-widest text-text-muted">Average Expense</p>
+                    <p className="mt-1 text-base font-bold text-white">{formatPrice(averageExpense)}</p>
+                    <p className="text-[10px] text-text-muted">Per transaction</p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-surface px-3 py-2.5">
+                    <p className="text-[10px] uppercase tracking-widest text-text-muted">Records</p>
+                    <p className="mt-1 text-base font-bold text-white">{filteredExpenses.length}</p>
+                    <p className="text-[10px] text-text-muted">Current view</p>
+                </div>
+            </section>
+
+            <section className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="grid w-full grid-cols-4 rounded-xl border border-white/10 bg-surfaceHighlight p-1 md:max-w-xl">
+                    {VIEW_MODES.map((mode) => (
+                        <button
+                            key={mode}
+                            onClick={() => setViewMode(mode)}
+                            className={`w-full rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${viewMode === mode
+                                ? 'bg-white/10 text-white'
+                                : 'text-text-secondary hover:text-white'
+                                }`}
+                        >
+                            {mode.charAt(0) + mode.slice(1).toLowerCase()}
+                        </button>
+                    ))}
+                </div>
+                <p className="text-xs text-text-muted">
+                    {viewMode === 'LIST' ? 'Chronological list view' : `Grouped by ${viewMode.toLowerCase()}`}
+                </p>
+            </section>
+
+            {loading ? (
+                <div className="rounded-2xl border border-white/10 bg-surface p-10 text-center text-text-muted">
+                    Loading expenses...
+                </div>
+            ) : viewMode === 'LIST' ? (
+                <div className="rounded-2xl border border-white/10 bg-surface shadow-sm overflow-hidden">
+                    <div className="overflow-x-auto">
+                        <table className="w-full table-fixed text-left text-sm tabular-nums">
+                            <colgroup>
+                                <col className="w-[13%]" />
+                                <col className="w-[24%]" />
+                                <col className="w-[16%]" />
+                                <col className="w-[14%]" />
+                                <col className="w-[25%]" />
+                                <col className="w-[8%]" />
+                            </colgroup>
+                            <thead className="sticky top-0 z-10 border-b border-white/10 bg-surface/95 text-[11px] uppercase tracking-wide text-text-muted backdrop-blur">
+                                <tr>
+                                    <th className="p-3">Date</th>
+                                    <th className="p-3">Title</th>
+                                    <th className="p-3">Category</th>
+                                    <th className="p-3 text-right">Amount</th>
+                                    <th className="p-3">Notes</th>
+                                    <th className="p-3 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                                {filteredExpenses.length === 0 ? (
                                     <tr>
-                                        {viewMode !== 'DAILY' && <th className="p-4">Date</th>}
-                                        <th className="p-4 w-1/4">Title</th>
-                                        <th className="p-4">Category</th>
-                                        <th className="p-4">Amount</th>
-                                        <th className="p-4 w-1/3">Notes</th>
-                                        <th className="p-4 text-right">Actions</th>
+                                        <td colSpan="6" className="p-6 text-center text-text-muted">No expenses recorded yet.</td>
                                     </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                                    {groupExpenses.map((expense) => (
-                                        <tr key={expense.id} className="text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                                            {viewMode !== 'DAILY' && <td className="p-4 text-gray-500">{new Date(expense.date).toLocaleDateString()}</td>}
-                                            <td className="p-4 font-medium">{expense.title}</td>
-                                            <td className="p-4">
-                                                <span className="px-2 py-1 text-xs rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
-                                                    {expense.category}
+                                ) : (
+                                    filteredExpenses.map((expense, index) => (
+                                        <tr key={expense.id} className={`${index % 2 === 0 ? 'bg-white/[0.01]' : ''} transition-colors hover:bg-white/5`}>
+                                            <td className="p-3 text-text-secondary">{formatDate(expense.date)}</td>
+                                            <td className="p-3 font-medium text-white">{expense.title}</td>
+                                            <td className="p-3">
+                                                <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-text-secondary">
+                                                    {categoryLabel(expense.category)}
                                                 </span>
                                             </td>
-                                            <td className="p-4 font-semibold text-red-500">
-                                                {formatPrice(expense.amount)}
-                                            </td>
-                                            <td className="p-4 text-sm text-gray-500">{expense.notes || '-'}</td>
-                                            <td className="p-4 text-right">
+                                            <td className="p-3 text-right font-semibold text-red-300">{formatPrice(expense.amount)}</td>
+                                            <td className="p-3 text-sm text-text-muted">{expense.notes || '-'}</td>
+                                            <td className="p-3 text-right">
                                                 <button
                                                     onClick={() => handleDelete(expense.id)}
-                                                    className="text-red-500 hover:text-red-700 text-sm font-medium"
+                                                    className="rounded-lg border border-red-500/20 bg-red-500/10 px-2.5 py-1 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/20"
                                                 >
                                                     Delete
                                                 </button>
                                             </td>
                                         </tr>
-                                    ))}
-                                </tbody>
-                                {/* Group Footer with Total */}
-                                <tfoot className="bg-gray-50 dark:bg-gray-900/50 border-t border-gray-100 dark:border-gray-700">
-                                    <tr>
-                                        <td colSpan={viewMode !== 'DAILY' ? 3 : 2} className="p-4 text-right font-medium text-gray-500 dark:text-gray-400">
-                                            Total for {group}:
-                                        </td>
-                                        <td className="p-4 font-bold text-red-500 text-lg">
-                                            {formatPrice(groupExpenses.reduce((sum, e) => sum + e.amount, 0))}
-                                        </td>
-                                        <td colSpan={2}></td>
-                                    </tr>
-                                </tfoot>
-                            </table>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            ) : (
+                <div className="space-y-5">
+                    {groupedExpenses.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-white/20 bg-surface p-12 text-center">
+                            <p className="text-text-muted">No grouped expenses in this filter.</p>
                         </div>
-                    ))}
-                    {expenses.length === 0 && !loading && (
-                        <div className="p-12 text-center bg-white dark:bg-gray-800 rounded-xl border border-dashed border-gray-200 dark:border-gray-700">
-                            <p className="text-gray-500 dark:text-gray-400">No expenses recorded yet.</p>
-                            <button
-                                onClick={() => setShowModal(true)}
-                                className="mt-4 text-blue-500 hover:text-blue-600 font-medium"
-                            >
-                                Record your first expense
-                            </button>
-                        </div>
+                    ) : (
+                        groupedExpenses.map((group) => (
+                            <div key={group.key} className="rounded-2xl border border-white/10 bg-surface shadow-sm overflow-hidden">
+                                <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.03] px-4 py-3">
+                                    <h3 className="text-sm font-semibold text-white">{group.label}</h3>
+                                    <div className="flex items-center gap-3 text-xs">
+                                        <span className="text-text-muted">{group.items.length} transaction{group.items.length !== 1 ? 's' : ''}</span>
+                                        <span className="font-semibold text-red-300">{formatPrice(group.total)}</span>
+                                    </div>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-sm tabular-nums">
+                                        <thead className="border-b border-white/10 bg-white/[0.02] text-[11px] uppercase tracking-wide text-text-muted">
+                                            <tr>
+                                                {viewMode !== 'DAILY' && <th className="p-3">Date</th>}
+                                                <th className="p-3">Title</th>
+                                                <th className="p-3">Category</th>
+                                                <th className="p-3 text-right">Amount</th>
+                                                <th className="p-3">Notes</th>
+                                                <th className="p-3 text-right">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-white/5">
+                                            {group.items.map((expense, index) => (
+                                                <tr key={expense.id} className={`${index % 2 === 0 ? 'bg-white/[0.01]' : ''} transition-colors hover:bg-white/5`}>
+                                                    {viewMode !== 'DAILY' && <td className="p-3 text-text-secondary">{formatDate(expense.date)}</td>}
+                                                    <td className="p-3 font-medium text-white">{expense.title}</td>
+                                                    <td className="p-3">
+                                                        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-text-secondary">
+                                                            {categoryLabel(expense.category)}
+                                                        </span>
+                                                    </td>
+                                                    <td className="p-3 text-right font-semibold text-red-300">{formatPrice(expense.amount)}</td>
+                                                    <td className="p-3 text-sm text-text-muted">{expense.notes || '-'}</td>
+                                                    <td className="p-3 text-right">
+                                                        <button
+                                                            onClick={() => handleDelete(expense.id)}
+                                                            className="rounded-lg border border-red-500/20 bg-red-500/10 px-2.5 py-1 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/20"
+                                                        >
+                                                            Delete
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        ))
                     )}
                 </div>
             )}
 
-            {/* Modal */}
             {showModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded-xl w-full max-w-md">
-                        <h2 className="text-xl font-bold mb-4 dark:text-white">New Expense</h2>
-                        <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm">
+                    <div className="w-full max-w-md rounded-2xl border border-white/10 bg-surface p-5 shadow-2xl">
+                        <h2 className="text-lg font-bold text-white">New Expense</h2>
+                        <p className="mt-1 text-xs text-text-muted">Capture operational spending details.</p>
+
+                        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
                             <div>
-                                <label className="block text-sm text-gray-500 mb-1">Title</label>
+                                <label className="mb-1 block text-xs uppercase tracking-wide text-text-muted">Title</label>
                                 <input
                                     type="text"
                                     required
-                                    className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                    className="w-full rounded-xl border border-white/10 bg-surfaceHighlight px-3 py-2.5 text-white outline-none transition-colors focus:border-primary"
                                     value={formData.title}
-                                    onChange={e => setFormData({ ...formData, title: e.target.value })}
+                                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                                 />
                             </div>
-                            <div className="grid grid-cols-2 gap-4">
+
+                            <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-sm text-gray-500 mb-1">Amount</label>
+                                    <label className="mb-1 block text-xs uppercase tracking-wide text-text-muted">Amount</label>
                                     <input
                                         type="number"
                                         required
-                                        className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                        min="0"
+                                        step="0.01"
+                                        className="w-full rounded-xl border border-white/10 bg-surfaceHighlight px-3 py-2.5 text-white outline-none transition-colors focus:border-primary"
                                         value={formData.amount}
-                                        onChange={e => setFormData({ ...formData, amount: e.target.value })}
+                                        onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm text-gray-500 mb-1">Category</label>
+                                    <label className="mb-1 block text-xs uppercase tracking-wide text-text-muted">Category</label>
                                     <select
-                                        className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                        className="w-full rounded-xl border border-white/10 bg-surfaceHighlight px-3 py-2.5 text-white outline-none transition-colors focus:border-primary"
                                         value={formData.category}
-                                        onChange={e => setFormData({ ...formData, category: e.target.value })}
+                                        onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                                     >
-                                        {Object.values(EXPENSE_CATEGORIES).filter(c => c !== 'INVENTORY').map(cat => (
-                                            <option key={cat} value={cat}>{cat.replace('_', ' ')}</option>
-                                        ))}
+                                        {Object.values(EXPENSE_CATEGORIES)
+                                            .filter((cat) => cat !== 'INVENTORY')
+                                            .map((cat) => (
+                                                <option key={cat} value={cat}>{categoryLabel(cat)}</option>
+                                            ))}
                                     </select>
                                 </div>
                             </div>
+
                             <div>
-                                <label className="block text-sm text-gray-500 mb-1">Date</label>
+                                <label className="mb-1 block text-xs uppercase tracking-wide text-text-muted">Date</label>
                                 <input
                                     type="date"
                                     required
-                                    className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                    className="w-full rounded-xl border border-white/10 bg-surfaceHighlight px-3 py-2.5 text-white outline-none transition-colors focus:border-primary"
                                     value={formData.date}
-                                    onChange={e => setFormData({ ...formData, date: e.target.value })}
+                                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                                 />
                             </div>
+
                             <div>
-                                <label className="block text-sm text-gray-500 mb-1">Notes</label>
+                                <label className="mb-1 block text-xs uppercase tracking-wide text-text-muted">Notes</label>
                                 <textarea
-                                    className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                    rows="3"
+                                    className="w-full rounded-xl border border-white/10 bg-surfaceHighlight px-3 py-2.5 text-white outline-none transition-colors focus:border-primary"
                                     value={formData.notes}
-                                    onChange={e => setFormData({ ...formData, notes: e.target.value })}
+                                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                                 />
                             </div>
-                            <div className="flex gap-3 mt-6">
+
+                            <div className="mt-5 flex gap-3">
                                 <button
                                     type="button"
-                                    onClick={() => setShowModal(false)}
-                                    className="flex-1 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg"
+                                    onClick={() => {
+                                        setShowModal(false);
+                                        resetForm();
+                                    }}
+                                    className="flex-1 rounded-xl border border-white/10 bg-white/5 py-2.5 text-sm font-semibold text-text-secondary transition-colors hover:text-white"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
-                                    className="flex-1 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+                                    className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-bold text-background transition-colors hover:bg-orange-600"
                                 >
                                     Save Expense
                                 </button>
@@ -385,4 +488,3 @@ const Expenses = () => {
 };
 
 export default Expenses;
-

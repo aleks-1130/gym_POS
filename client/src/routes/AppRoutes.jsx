@@ -49,10 +49,12 @@ import Members from '../features/staff/Members';
 import MemberDetail from '../features/staff/MemberDetail';
 import TransactionDetail from '../features/staff/TransactionDetail';
 import DoorScanner from '../features/staff/DoorScanner';
+import StaffSettings from '../features/staff/StaffSettings';
+import StaffTrainers from '../features/staff/Trainers';
+import StaffClasses from '../features/staff/Classes';
 
 // Trainer Pages
-import TrainerSessions from '../features/trainer/TrainerSessions';
-import TrainerClasses from '../features/trainer/TrainerClasses';
+import TrainerClassesSessions from '../features/trainer/TrainerClassesSessions';
 import TrainerProfile from '../features/trainer/TrainerProfile';
 import TrainerShop from '../features/trainer/TrainerShop';
 import TrainerPaymentMethods from '../features/trainer/TrainerPaymentMethods';
@@ -60,7 +62,6 @@ import TrainerPurchaseHistory from '../features/trainer/TrainerPurchaseHistory';
 import TrainerGymTraffic from '../features/trainer/TrainerGymTraffic';
 import TrainerCommissionHistory from '../features/trainer/TrainerCommissionHistory';
 import TrainerLoyalty from '../features/trainer/TrainerLoyalty';
-import TrainerAvailability from '../features/trainer/TrainerAvailability';
 
 // Member Pages
 import Schedule from '../features/member/Schedule';
@@ -126,13 +127,20 @@ const ProtectedRoute = ({ children, allowedRoles, fullScreen }) => {
 
 export default function AppRoutes() {
     const { user } = useAuth();
+    const isStandaloneApp = typeof window !== 'undefined'
+        && (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true);
+    const rootElement = user
+        ? <Navigate to="/dashboard" replace />
+        : isStandaloneApp
+            ? <Navigate to="/login" replace />
+            : <Landing />;
 
     return (
         <div className="flex-1 w-full bg-background overflow-auto relative">
             <PWAInstallPrompt user={user} />
             <Routes>
                 {/* --- PUBLIC ROUTES --- */}
-                <Route path="/" element={<Landing />} />
+                <Route path="/" element={rootElement} />
                 <Route path="/landing" element={<Landing />} />
                 <Route path="/signup" element={<Signup />} />
                 <Route path="/login" element={<Login />} />
@@ -289,7 +297,7 @@ export default function AppRoutes() {
                     path="/trainers"
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-                            <Trainers />
+                            {user?.role === ROLES.STAFF ? <StaffTrainers /> : <Trainers />}
                         </ProtectedRoute>
                     }
                 />
@@ -297,7 +305,7 @@ export default function AppRoutes() {
                     path="/classes"
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-                            <Classes />
+                            {user?.role === ROLES.STAFF ? <StaffClasses /> : <Classes />}
                         </ProtectedRoute>
                     }
                 />
@@ -312,10 +320,18 @@ export default function AppRoutes() {
 
                 {/* Trainer Routes */}
                 <Route
+                    path="/trainer/classes-sessions"
+                    element={
+                        <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+                            <TrainerClassesSessions />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
                     path="/trainer/sessions"
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
-                            <TrainerSessions />
+                            <Navigate to="/trainer/classes-sessions" replace />
                         </ProtectedRoute>
                     }
                 />
@@ -323,12 +339,44 @@ export default function AppRoutes() {
                     path="/trainer/classes"
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
-                            <TrainerClasses />
+                            <Navigate to="/trainer/classes-sessions" replace />
                         </ProtectedRoute>
                     }
                 />
                 <Route
                     path="/trainer/profile"
+                    element={
+                        <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+                            <TrainerProfile />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/trainer/profile/edit"
+                    element={
+                        <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+                            <TrainerProfile />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/trainer/profile/availability"
+                    element={
+                        <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+                            <TrainerProfile />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/trainer/profile/member-card"
+                    element={
+                        <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
+                            <TrainerProfile />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/trainer/profile/requests"
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
                             <TrainerProfile />
@@ -387,7 +435,7 @@ export default function AppRoutes() {
                     path="/trainer/availability"
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
-                            <TrainerAvailability />
+                            <Navigate to="/trainer/profile/availability" replace />
                         </ProtectedRoute>
                     }
                 />
@@ -527,7 +575,15 @@ export default function AppRoutes() {
                     path="/profile"
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.MEMBER, ROLES.ADMIN, ROLES.STAFF]}>
-                            <Profile />
+                            {user?.role === ROLES.STAFF ? <Navigate to="/staff/settings" replace /> : <Profile />}
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/staff/settings"
+                    element={
+                        <ProtectedRoute allowedRoles={[ROLES.STAFF]}>
+                            <StaffSettings />
                         </ProtectedRoute>
                     }
                 />

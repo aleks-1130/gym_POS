@@ -19,6 +19,13 @@ const DEFAULT_CATEGORY_NAMES = ['SUPPLEMENT', 'DRINK', 'MERCH', 'EQUIPMENT', 'OT
 
 let hasAttemptedMigration = false;
 
+const hasNonZeroValue = (value) => {
+    if (typeof value === 'number') return value > 0;
+    if (Array.isArray(value)) return value.some(hasNonZeroValue);
+    if (value && typeof value === 'object') return Object.values(value).some(hasNonZeroValue);
+    return false;
+};
+
 const toCleanString = (value) => String(value ?? '').trim();
 
 const toSafeNumber = (value, fallback = null) => {
@@ -40,6 +47,7 @@ const parseDate = (value) => {
 const readJsonIfExists = async (filePath) => {
     try {
         const raw = await fs.readFile(filePath, 'utf8');
+        if (!raw || !raw.trim()) return null;
         return JSON.parse(raw);
     } catch (error) {
         if (error.code === 'ENOENT') {
@@ -417,7 +425,9 @@ const migrateInventoryDataToDatabase = async () => {
         summary.receiptSettings = await migrateReceiptSettingsFromJson();
         summary.trainerAvailability = await migrateTrainerAvailabilityFromJson();
 
-        console.log('[Inventory Migration] Completed:', JSON.stringify(summary));
+        if (hasNonZeroValue(summary)) {
+            console.log('[Inventory Migration] Completed:', JSON.stringify(summary));
+        }
         return summary;
     } catch (error) {
         console.error('[Inventory Migration] Failed:', error.message || error);

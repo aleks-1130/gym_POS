@@ -10,6 +10,8 @@ router.put('/:id', authenticateToken, authorize(['ADMIN', 'STAFF', 'TRAINER']), 
 router.delete('/:id', authenticateToken, authorize(['ADMIN', 'STAFF', 'TRAINER']), classController.deleteClass);
 
 // Trainer Routes for Classes
-router.post('/:id/complete', authenticateToken, authorize(['TRAINER', 'ADMIN', 'OWNER']), classController.completeClass);
+router.post('/:id/start', authenticateToken, authorize(['TRAINER']), classController.startClassSession);
+router.post('/:id/complete', authenticateToken, authorize(['TRAINER']), classController.completeClass);
+router.post('/:id/complete-override', authenticateToken, authorize(['ADMIN', 'OWNER']), classController.overrideCompleteClass);
 
 module.exports = router;
