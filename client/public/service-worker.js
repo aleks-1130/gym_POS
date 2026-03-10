@@ -1,17 +1,24 @@
 // Service Worker for FitOS PWA
-const CACHE_NAME = 'fitos-v1';
+const CACHE_NAME = 'fitos-v1.1';
 const urlsToCache = [
   '/',
   '/index.html',
-  '/manifest.json'
+  '/manifest.json',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/vite.svg'
 ];
 
 // Install event - cache static assets
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(urlsToCache))
+      .then(cache => {
+        console.log('[Service Worker] Caching static assets');
+        return cache.addAll(urlsToCache);
+      })
       .then(() => self.skipWaiting())
+      .catch(err => console.error('[Service Worker] Static cache failed:', err))
   );
 });
 
@@ -22,6 +29,7 @@ self.addEventListener('activate', event => {
       return Promise.all(
         cacheNames.map(cacheName => {
           if (cacheName !== CACHE_NAME) {
+            console.log('[Service Worker] Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })
@@ -59,15 +67,25 @@ self.addEventListener('fetch', event => {
           }
           return response;
         })
-        .catch(() => caches.match(event.request))
+        .catch(err => {
+          console.warn(`[Service Worker] API Fetch failed for ${event.request.url}:`, err);
+          return caches.match(event.request);
+        })
     );
     return;
   }
 
-  // For assets, try cache first, then network
+  // For assets, try cache first, then network with catch block
   event.respondWith(
     caches.match(event.request)
-      .then(response => response || fetch(event.request))
+      .then(response => {
+        return response || fetch(event.request)
+          .catch(err => {
+            console.warn(`[Service Worker] Asset Fetch failed for ${event.request.url}:`, err);
+            // Return nothing or a specific fallback if needed
+            return null;
+          });
+      })
   );
 });
 
