@@ -1044,6 +1044,47 @@ const getMyTrainingSessions = async (req, res) => {
     }
 };
 
+const getMyClassBookings = async (req, res) => {
+    if (req.user.role !== 'MEMBER') {
+        return res.status(403).json({ error: "Only member accounts can access this endpoint" });
+    }
+
+    try {
+        const bookings = await prisma.booking.findMany({
+            where: { memberId: Number(req.user.id) },
+            include: {
+                class: {
+                    select: {
+                        id: true,
+                        name: true,
+                        dayOfWeek: true,
+                        time: true,
+                        duration: true,
+                        scheduleType: true,
+                        oneTimeDate: true,
+                        trainer: {
+                            select: {
+                                id: true,
+                                name: true,
+                                specialization: true,
+                                imageUrl: true
+                            }
+                        }
+                    }
+                }
+            },
+            orderBy: [
+                { sessionDate: 'desc' },
+                { createdAt: 'desc' }
+            ]
+        });
+
+        res.json(bookings);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch class bookings", detail: e?.message });
+    }
+};
+
 const rateTrainingSession = async (req, res) => {
     if (req.user.role !== 'MEMBER') {
         return res.status(403).json({ error: "Only member accounts can access this endpoint" });
@@ -1783,6 +1824,7 @@ module.exports = {
     bookTrainingCash,
     getMemberProfile,
     getMyTrainingSessions,
+    getMyClassBookings,
     rateTrainingSession,
     getPaymentMethods,
     addPaymentMethod,

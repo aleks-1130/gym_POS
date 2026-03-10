@@ -4,10 +4,64 @@ import { useAuth } from '../../context/AuthContext';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useConfirm } from '../../context/ConfirmContext';
 
+const normalizeTrainerHistoryStatus = (session) => {
+    const rawStatus = String(session?.status || '').toUpperCase();
+    if (rawStatus === 'CANCELLED' || rawStatus === 'DECLINED') return 'CANCELLED';
+    if (rawStatus === 'NO_SHOW' || rawStatus === 'MISSED') return 'MISSED';
+    if (rawStatus === 'COMPLETED' || rawStatus === 'ATTENDED') return 'COMPLETED';
+    if (rawStatus === 'SCHEDULED' || rawStatus === 'RESCHEDULED' || rawStatus === 'CONFIRMED') return 'MISSED';
+    return 'UNKNOWN';
+};
+
+const toTrainerHistoryStatusLabel = (status) => {
+    if (status === 'COMPLETED') return 'Completed';
+    if (status === 'MISSED') return 'Missed';
+    if (status === 'CANCELLED') return 'Cancelled';
+    return 'Unknown';
+};
+
+const toTrainerHistoryStatusClass = (status) => {
+    if (status === 'COMPLETED') return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
+    if (status === 'MISSED') return 'bg-rose-500/15 text-rose-300 border-rose-500/30';
+    if (status === 'CANCELLED') return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
+    return 'bg-white/10 text-text-muted border-white/20';
+};
+
+const toSessionStatusClass = (status) => {
+    const raw = String(status || '').toUpperCase();
+    if (raw === 'CANCELLED' || raw === 'NO_SHOW') return 'bg-red-500/10 text-red-400 border-red-500/30';
+    if (raw === 'RESCHEDULED') return 'bg-primary/10 text-primary border-primary/30';
+    return 'bg-primary/15 text-primary border-primary/30';
+};
+
+const toPaymentStatusLabel = (status) => {
+    const raw = String(status || '').toUpperCase();
+    if (!raw || raw === 'UNPAID' || raw === 'PENDING') return 'PENDING';
+    if (raw === 'PAID') return 'PAID';
+    if (raw === 'CANCELLED' || raw === 'FAILED' || raw === 'VOID' || raw === 'DECLINED') return 'CANCELLED';
+    return raw.replace(/_/g, ' ');
+};
+
+const toPaymentStatusClass = (status) => {
+    const label = toPaymentStatusLabel(status);
+    if (label === 'PAID') return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
+    if (label === 'PENDING') return 'bg-amber-500/10 text-amber-300 border-amber-500/30';
+    if (label === 'CANCELLED') return 'bg-red-500/10 text-red-400 border-red-500/30';
+    return 'bg-white/10 text-text-muted border-white/20';
+};
+
+const fallbackTrainerImage = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='480' viewBox='0 0 480 480'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop stop-color='%230f172a'/%3E%3Cstop offset='1' stop-color='%231e293b'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='480' height='480' fill='url(%23g)'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%2394a3b8' font-family='Arial' font-size='22'%3ETrainer Image Unavailable%3C/text%3E%3C/svg%3E";
+
+const handleTrainerImageError = (event) => {
+    event.currentTarget.onerror = null;
+    event.currentTarget.src = fallbackTrainerImage;
+};
+
 export default function TrainerBooking() {
     const { user } = useAuth();
     const { formatPrice } = useCurrency();
     const { alert: showAlert, confirm: showConfirm } = useConfirm();
+    const bookingPolicyNote = 'No refund by default for missed sessions. One reschedule is allowed with at least 24-hour notice.';
     const [trainers, setTrainers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedTrainer, setSelectedTrainer] = useState(null);
@@ -23,9 +77,12 @@ export default function TrainerBooking() {
     const [memberSessions, setMemberSessions] = useState([]);
     const [sessionsLoading, setSessionsLoading] = useState(false);
     const [sessionsError, setSessionsError] = useState('');
-    const [activeTab, setActiveTab] = useState('trainers'); // trainers, bookings
+    const [activeTab, setActiveTab] = useState('trainers'); // trainers, bookings, history
     const [filterView, setFilterView] = useState('all'); // all, available, top-rated
-    const [bookingsView, setBookingsView] = useState('all'); // all, pending, upcoming, past
+    const [bookingFilter, setBookingFilter] = useState('all'); // all, upcoming, ratings
+    const [bookingSearch, setBookingSearch] = useState('');
+    const [showBookingFilters, setShowBookingFilters] = useState(false);
+    const [historyFilter, setHistoryFilter] = useState('all');
     const [paymentMethods, setPaymentMethods] = useState([]);
     const [selectedMethodId, setSelectedMethodId] = useState('');
     const [paymentSelection, setPaymentSelection] = useState('CASH'); // CASH | E_WALLET | CARD
@@ -325,6 +382,15 @@ export default function TrainerBooking() {
         if (filterView === 'top-rated') return trainer.rating >= 4.5;
         return true;
     });
+    const trainerCardImageById = useMemo(() => {
+        const map = new Map();
+        trainers.forEach((trainer) => {
+            const trainerId = Number(trainer?.id);
+            if (!Number.isFinite(trainerId)) return;
+            map.set(trainerId, trainer?.cardImageUrl || null);
+        });
+        return map;
+    }, [trainers]);
 
     useEffect(() => {
         if (filterView === 'top-rated' && trainers.length > 0 && filteredTrainers.length === 0) {
@@ -344,16 +410,74 @@ export default function TrainerBooking() {
         String(session?.status || '').toUpperCase() === 'COMPLETED'
         && (session?.memberRating === null || session?.memberRating === undefined)
     );
-    const nextUpcomingSession = upcomingSessions.length > 0
-        ? [...upcomingSessions].sort((a, b) => new Date(a.date) - new Date(b.date))[0]
-        : null;
-    const showPendingSection = bookingsView === 'all' || bookingsView === 'pending';
-    const showUpcomingSection = bookingsView === 'all' || bookingsView === 'upcoming';
-    const showPastSection = bookingsView === 'all' || bookingsView === 'past';
-    const visibleBookingsCount =
-        (showPendingSection ? pendingRatingSessions.length : 0)
-        + (showUpcomingSection ? upcomingSessions.length : 0)
-        + (showPastSection ? pastSessions.length : 0);
+    const bookingEntries = useMemo(() => {
+        const upcoming = upcomingSessions.map((session) => ({ ...session, bookingType: 'upcoming' }));
+        const ratings = pendingRatingSessions.map((session) => ({ ...session, bookingType: 'rating' }));
+
+        return [...upcoming, ...ratings].sort((a, b) => {
+            if (a.bookingType !== b.bookingType) return a.bookingType === 'upcoming' ? -1 : 1;
+            const dateA = new Date(a.date);
+            const dateB = new Date(b.date);
+            if (a.bookingType === 'upcoming') return dateA - dateB;
+            return dateB - dateA;
+        });
+    }, [upcomingSessions, pendingRatingSessions]);
+    const filteredBookingEntries = useMemo(() => {
+        const query = bookingSearch.trim().toLowerCase();
+        return bookingEntries.filter((entry) => {
+            if (bookingFilter === 'upcoming' && entry.bookingType !== 'upcoming') return false;
+            if (bookingFilter === 'ratings' && entry.bookingType !== 'rating') return false;
+
+            if (query) {
+                const searchableText = [
+                    entry?.trainer?.name,
+                    entry?.status,
+                    entry?.paymentStatus,
+                    entry?.notes,
+                    entry?.date
+                ]
+                    .filter(Boolean)
+                    .join(' ')
+                    .toLowerCase();
+                if (!searchableText.includes(query)) return false;
+            }
+            return true;
+        });
+    }, [bookingEntries, bookingFilter, bookingSearch]);
+    const trainerHistoryEntries = useMemo(() => (
+        pastSessions
+            .map((session) => {
+                const date = new Date(session?.date);
+                if (Number.isNaN(date.getTime())) return null;
+                return {
+                    ...session,
+                    date,
+                    normalizedHistoryStatus: normalizeTrainerHistoryStatus(session)
+                };
+            })
+            .filter(Boolean)
+            .sort((a, b) => b.date - a.date)
+    ), [pastSessions]);
+    const filteredTrainerHistoryEntries = useMemo(() => {
+        if (historyFilter === 'all') return trainerHistoryEntries;
+        if (historyFilter === 'completed') return trainerHistoryEntries.filter((entry) => entry.normalizedHistoryStatus === 'COMPLETED');
+        if (historyFilter === 'missed') return trainerHistoryEntries.filter((entry) => entry.normalizedHistoryStatus === 'MISSED');
+        if (historyFilter === 'cancelled') return trainerHistoryEntries.filter((entry) => entry.normalizedHistoryStatus === 'CANCELLED');
+        return trainerHistoryEntries;
+    }, [trainerHistoryEntries, historyFilter]);
+    const trainerHistoryStatusCounts = useMemo(() => ({
+        completed: trainerHistoryEntries.filter((entry) => entry.normalizedHistoryStatus === 'COMPLETED').length,
+        missed: trainerHistoryEntries.filter((entry) => entry.normalizedHistoryStatus === 'MISSED').length,
+        cancelled: trainerHistoryEntries.filter((entry) => entry.normalizedHistoryStatus === 'CANCELLED').length
+    }), [trainerHistoryEntries]);
+    const visibleUpcomingSessions = useMemo(
+        () => filteredBookingEntries.filter((entry) => entry.bookingType === 'upcoming'),
+        [filteredBookingEntries]
+    );
+    const visibleRatingSessions = useMemo(
+        () => filteredBookingEntries.filter((entry) => entry.bookingType === 'rating'),
+        [filteredBookingEntries]
+    );
     const canBookNewSession = pendingRatingSessions.length === 0;
 
     const handleSubmitSessionRating = async (session) => {
@@ -538,6 +662,14 @@ export default function TrainerBooking() {
         return slots;
     }, [rescheduleSession, rescheduleForm.date, getRescheduleAvailableTimeSlots]);
 
+    const showBookingPolicy = async () => {
+        await showAlert({
+            title: 'Trainer Session Policy',
+            message: bookingPolicyNote,
+            type: 'info'
+        });
+    };
+
     const calendarCells = useMemo(() => {
         const start = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
         const end = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0);
@@ -655,59 +787,90 @@ export default function TrainerBooking() {
     }
 
     return (
-        <div className="pb-20 px-4 max-w-6xl mx-auto space-y-4 sm:space-y-6">
+        <div className="pb-20 px-4 max-w-5xl mx-auto space-y-4 sm:space-y-5">
             {/* Header - PWA Sticky */}
-            <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 -mx-4 px-4 py-4">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-xl sm:text-2xl font-bold text-white">1-on-1 Training</h1>
-                        <p className="text-text-muted text-xs sm:text-sm mt-0.5">Book personalized sessions</p>
+            <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 -mx-4 px-4 py-4 space-y-3 border-b border-white/5">
+                <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1">
+                        <h1 className="text-xl font-bold text-white">
+                            {activeTab === 'bookings'
+                                ? 'My Bookings'
+                                : activeTab === 'history'
+                                    ? 'Session History'
+                                    : 'Personal Trainers'}
+                        </h1>
+                        <p className="text-text-muted text-xs mt-0.5">
+                            {activeTab === 'bookings'
+                                ? 'Manage upcoming trainer sessions and pending ratings'
+                                : activeTab === 'history'
+                                    ? 'Review completed, missed, and cancelled past trainer sessions'
+                                    : 'Find your trainer and book sessions quickly'}
+                        </p>
                     </div>
+                    {activeTab !== 'trainers' && (
+                        <button
+                            type="button"
+                            onClick={showBookingPolicy}
+                            className="shrink-0 h-9 w-9 rounded-lg border border-white/10 bg-surface text-text-secondary hover:text-white hover:bg-white/5"
+                            aria-label="View trainer session policy"
+                            title="Session policy"
+                        >
+                            <span className="material-icons-round text-base">info</span>
+                        </button>
+                    )}
                 </div>
 
                 {/* Primary Tabs */}
-                <div className="grid grid-cols-2 gap-2 mt-4 p-1 rounded-xl bg-surface border border-white/10">
+                <div className="grid grid-cols-3 gap-2 rounded-2xl p-1.5 bg-surface/80 border border-white/10 shadow-inner">
                     <button
                         type="button"
                         onClick={() => setActiveTab('trainers')}
-                        className={`px-3 py-2.5 rounded-lg font-semibold text-xs sm:text-sm transition-all ${activeTab === 'trainers'
-                            ? 'bg-primary text-background'
-                            : 'text-text-muted hover:text-white'
+                        className={`py-2.5 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${activeTab === 'trainers'
+                            ? 'bg-primary text-background shadow-md'
+                            : 'text-text-muted hover:text-white hover:bg-white/5'
                             }`}
                     >
-                        All Trainers
+                        <span className="material-icons-round text-base">group</span>
+                        Trainers
                     </button>
                     <button
                         type="button"
                         onClick={() => setActiveTab('bookings')}
-                        className={`px-3 py-2.5 rounded-lg font-semibold text-xs sm:text-sm transition-all ${activeTab === 'bookings'
-                            ? 'bg-primary text-background'
-                            : 'text-text-muted hover:text-white'
+                        className={`relative py-2.5 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${activeTab === 'bookings'
+                            ? 'bg-primary text-background shadow-md'
+                            : 'text-text-muted hover:text-white hover:bg-white/5'
                             }`}
                     >
-                        My Bookings ({memberSessions.length})
+                        <span className="material-icons-round text-base">event_note</span>
+                        <span>My Bookings</span>
+                        {bookingEntries.length > 0 && (
+                            <span className={`absolute right-1.5 top-1.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold leading-none ${activeTab === 'bookings' ? 'bg-background/20 text-background' : 'bg-white/10 text-white'}`}>
+                                {bookingEntries.length}
+                            </span>
+                        )}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('history')}
+                        className={`relative py-2.5 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${activeTab === 'history'
+                            ? 'bg-primary text-background shadow-md'
+                            : 'text-text-muted hover:text-white hover:bg-white/5'
+                            }`}
+                    >
+                        <span className="material-icons-round text-base">history</span>
+                        <span>History</span>
+                        {trainerHistoryEntries.length > 0 && (
+                            <span className={`absolute right-1.5 top-1.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold leading-none ${activeTab === 'history' ? 'bg-background/20 text-background' : 'bg-white/10 text-white'}`}>
+                                {trainerHistoryEntries.length}
+                            </span>
+                        )}
                     </button>
                 </div>
 
                 {/* Trainer Filters */}
                 {activeTab === 'trainers' && (
-                    <div className="space-y-2 mt-3">
-                        <div className="grid grid-cols-2 gap-3">
-                            <div className="bg-surface rounded-xl p-3 border border-white/5">
-                                <p className="text-text-muted text-xs mb-1">Available Trainers</p>
-                                <p className="text-xl sm:text-2xl font-bold text-primary">{trainers.length}</p>
-                            </div>
-                            <div className="bg-surface rounded-xl p-3 border border-white/5">
-                                <p className="text-text-muted text-xs mb-1">Avg. Rate</p>
-                                <p className="text-xl sm:text-2xl font-bold text-white">
-                                    {trainers.length > 0
-                                        ? formatPrice(trainers.reduce((sum, t) => sum + (t.sessionPrice ?? 300), 0) / trainers.length)
-                                        : formatPrice(0)
-                                    }
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex gap-2">
+                    <div className="space-y-2">
+                        <div className="grid grid-cols-3 gap-2">
                             {[
                                 { value: 'all', label: 'All' },
                                 { value: 'available', label: 'Available' },
@@ -716,9 +879,9 @@ export default function TrainerBooking() {
                                 <button
                                     key={tab.value}
                                     onClick={() => setFilterView(tab.value)}
-                                    className={`px-3 py-2 rounded-lg font-medium text-xs sm:text-sm transition-all ${filterView === tab.value
-                                        ? 'bg-primary/15 text-primary border border-primary/30'
-                                        : 'bg-surface text-text-muted hover:text-white border border-white/5'
+                                    className={`px-2.5 py-2 rounded-lg font-bold text-[11px] whitespace-nowrap transition-all border text-center ${filterView === tab.value
+                                        ? 'bg-white text-black shadow-sm border-white'
+                                        : 'bg-surface border-white/10 text-text-muted hover:text-white'
                                         }`}
                                 >
                                     {tab.label}
@@ -726,85 +889,111 @@ export default function TrainerBooking() {
                             ))}
                         </div>
                         {!canBookNewSession && (
-                            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-                                Booking is temporarily locked. Complete the required trainer ratings in <strong>My Bookings</strong>.
+                            <div className="rounded-xl border border-white/10 bg-surface px-3 py-2.5 text-xs text-text-muted flex items-start gap-2">
+                                <span className="material-icons-round text-base text-primary">priority_high</span>
+                                <span>Booking is temporarily locked. Complete the required trainer ratings in <strong>My Bookings</strong>.</span>
                             </div>
                         )}
+                    </div>
+                )}
+
+                {activeTab === 'history' && (
+                    <div className="grid grid-cols-4 gap-2">
+                        {[
+                            { value: 'all', label: 'All' },
+                            { value: 'completed', label: 'Done' },
+                            { value: 'missed', label: 'Missed' },
+                            { value: 'cancelled', label: 'Cancelled' }
+                        ].map((item) => (
+                            <button
+                                key={item.value}
+                                type="button"
+                                onClick={() => setHistoryFilter(item.value)}
+                                className={`px-2 py-2 rounded-lg text-[11px] font-semibold border transition-all ${historyFilter === item.value
+                                    ? 'bg-white text-black border-white shadow-sm'
+                                    : 'bg-surface border-white/10 text-text-muted hover:text-white'
+                                    }`}
+                            >
+                                {item.label}
+                            </button>
+                        ))}
                     </div>
                 )}
             </div>
 
             {activeTab === 'bookings' ? (
                 /* My Booked Sessions */
-                <div className="bg-surface rounded-2xl border border-white/5 p-4 sm:p-5 space-y-4">
-                    <div className="flex items-center justify-between gap-3">
-                        <div>
-                            <h2 className="text-white font-bold text-base sm:text-lg">My Booked Sessions</h2>
-                            <p className="text-text-muted text-xs sm:text-sm mt-0.5">Track your trainer session bookings</p>
+                <div className="space-y-5">
+                    <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
+                            <p className="text-[10px] uppercase tracking-wide text-emerald-300 font-bold">BOOKED SESSIONS</p>
+                            <p className="text-2xl font-black text-white mt-1">{upcomingSessions.length}</p>
+                            <p className="text-[11px] text-text-muted mt-1">Upcoming trainer sessions</p>
                         </div>
+                        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
+                            <p className="text-[10px] uppercase tracking-wide text-amber-300 font-bold">RATINGS</p>
+                            <p className="text-2xl font-black text-white mt-1">{pendingRatingSessions.length}</p>
+                            <p className="text-[11px] text-text-muted mt-1">Needs your rating</p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <label className="relative flex-1">
+                            <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 material-icons-round text-sm text-text-muted">search</span>
+                            <input
+                                type="text"
+                                value={bookingSearch}
+                                onChange={(event) => setBookingSearch(event.target.value)}
+                                placeholder="Search sessions"
+                                className="h-8 w-full rounded-lg border border-white/10 bg-surface pl-8 pr-2 text-xs text-white placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-primary/40"
+                            />
+                        </label>
                         <button
                             type="button"
-                            onClick={fetchMemberSessions}
-                            className="px-3 py-2 rounded-lg bg-white/5 text-text-muted hover:text-white text-xs font-semibold"
+                            onClick={() => setShowBookingFilters((prev) => !prev)}
+                            className={`h-8 px-2.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 ${showBookingFilters || bookingFilter !== 'all'
+                                ? 'bg-white text-black border-white'
+                                : 'bg-surface border-white/10 text-text-muted hover:text-white'
+                                }`}
                         >
-                            Refresh
+                            <span className="material-icons-round text-sm">tune</span>
+                            Filter
                         </button>
                     </div>
+                    <p className="text-[11px] text-text-muted">
+                        {bookingFilter === 'all'
+                            ? 'Showing upcoming bookings and sessions pending rating.'
+                            : bookingFilter === 'upcoming'
+                                ? 'Filter: Upcoming sessions'
+                                : 'Filter: Needs rating'}
+                    </p>
 
-                    <div className="grid grid-cols-3 gap-2">
-                        <div className="bg-white/5 border border-white/10 rounded-xl p-2.5">
-                            <p className="text-[11px] uppercase tracking-wide text-text-muted">Upcoming</p>
-                            <p className="text-lg font-bold text-white mt-1">{upcomingSessions.length}</p>
-                        </div>
-                        <div className="bg-white/5 border border-white/10 rounded-xl p-2.5">
-                            <p className="text-[11px] uppercase tracking-wide text-text-muted">Pending Ratings</p>
-                            <p className="text-lg font-bold text-white mt-1">{pendingRatingSessions.length}</p>
-                        </div>
-                        <div className="bg-white/5 border border-white/10 rounded-xl p-2.5">
-                            <p className="text-[11px] uppercase tracking-wide text-text-muted">Past Sessions</p>
-                            <p className="text-lg font-bold text-white mt-1">{pastSessions.length}</p>
-                        </div>
-                    </div>
-
-                    {nextUpcomingSession && (
-                        <div className="bg-primary/10 border border-primary/30 rounded-xl p-3">
-                            <p className="text-[11px] uppercase tracking-wide text-primary font-semibold">Next Session Reminder</p>
-                            <p className="text-sm text-white font-semibold mt-1">{nextUpcomingSession?.trainer?.name || 'Trainer Session'}</p>
-                            <p className="text-xs text-text-muted mt-0.5">
-                                {new Date(nextUpcomingSession.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
-                                {' at '}
-                                {new Date(nextUpcomingSession.date).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
-                            </p>
+                    {showBookingFilters && (
+                        <div className="grid grid-cols-3 gap-2">
+                            {[
+                                { value: 'all', label: 'All', icon: 'grid_view' },
+                                { value: 'upcoming', label: 'Upcoming', icon: 'event_available' },
+                                { value: 'ratings', label: 'Ratings', icon: 'star' }
+                            ].map((item) => (
+                                <button
+                                    key={item.value}
+                                    type="button"
+                                    onClick={() => setBookingFilter(item.value)}
+                                    className={`px-2.5 py-2 rounded-lg font-bold text-[11px] transition-all border flex items-center justify-center gap-1 ${bookingFilter === item.value
+                                        ? 'bg-white text-black shadow-sm border-white'
+                                        : 'bg-surface border-white/10 text-text-muted hover:text-white'
+                                        }`}
+                                >
+                                    <span className="material-icons-round text-sm">{item.icon}</span>
+                                    {item.label}
+                                </button>
+                            ))}
                         </div>
                     )}
 
-                    <div className="flex gap-2 overflow-x-auto pb-1">
-                        {[
-                            { value: 'all', label: 'All' },
-                            { value: 'pending', label: 'Need Rating' },
-                            { value: 'upcoming', label: 'Upcoming' },
-                            { value: 'past', label: 'Past' }
-                        ].map((view) => (
-                            <button
-                                key={view.value}
-                                type="button"
-                                onClick={() => setBookingsView(view.value)}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap border transition-all ${bookingsView === view.value
-                                    ? 'bg-primary/15 border-primary/30 text-primary'
-                                    : 'bg-white/5 border-white/10 text-text-muted hover:text-white hover:bg-white/10'
-                                    }`}
-                            >
-                                {view.label}
-                            </button>
-                        ))}
-                    </div>
-
-                    <div className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-text-muted">
-                        No refund by default for missed sessions. One reschedule is allowed with at least 24-hour notice.
-                    </div>
-
                     {sessionsLoading ? (
-                        <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-text-muted">
+                        <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-text-muted flex items-center gap-2">
+                            <span className="material-icons-round text-base animate-pulse">autorenew</span>
                             Loading your sessions...
                         </div>
                     ) : sessionsError ? (
@@ -812,170 +1001,251 @@ export default function TrainerBooking() {
                             {sessionsError}
                         </div>
                     ) : memberSessions.length === 0 ? (
-                        <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-text-muted">
+                        <div className="bg-white/5 border border-white/10 rounded-xl p-6 text-sm text-text-muted text-center">
+                            <span className="material-icons-round text-3xl text-text-muted/70 block mb-2">event_busy</span>
                             You have no trainer bookings yet.
                         </div>
                     ) : (
                         <div className="space-y-6">
-                            {visibleBookingsCount === 0 && (
-                                <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-text-muted text-center">
-                                    No sessions found for the selected filter.
-                                </div>
-                            )}
-                            {showPendingSection && pendingRatingSessions.length > 0 && (
-                                <div className="space-y-3">
-                                    <h3 className="text-sm font-bold text-amber-300 flex items-center gap-2">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-300 animate-pulse" />
-                                        Required Ratings (Booking Locked)
-                                    </h3>
-                                    {pendingRatingSessions.map((session) => {
-                                        const sessionDate = new Date(session.date);
-                                        const selectedRating = Number(ratingSelections[session.id] || 0);
-                                        return (
-                                            <div key={`pending-rating-${session.id}`} className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 sm:p-4">
-                                                <div className="flex items-start justify-between gap-3">
-                                                    <div>
-                                                        <p className="text-white font-semibold text-sm sm:text-base">{session.trainer?.name || 'Trainer'}</p>
-                                                        <p className="text-amber-100/70 text-xs sm:text-sm mt-0.5">
-                                                            {sessionDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
-                                                            {' at '}
-                                                            {sessionDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
-                                                        </p>
+                            {bookingFilter !== 'ratings' && (
+                                <section className="space-y-3 rounded-2xl border border-white/10 bg-surface p-3 sm:p-4">
+                                <h3 className="text-sm font-bold text-white flex items-center gap-2 uppercase tracking-wide">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                                    BOOKED SESSIONS
+                                </h3>
+                                {visibleUpcomingSessions.length === 0 ? (
+                                    <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-xs text-text-muted">
+                                        No upcoming booked sessions.
+                                    </div>
+                                ) : visibleUpcomingSessions.map((session) => {
+                                    const sessionDate = new Date(session.date);
+                                    const hoursUntil = (sessionDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+                                    const canRequestReschedule = hoursUntil >= 24 && session.status === 'SCHEDULED';
+                                    const trainerId = Number(session?.trainer?.id || session?.trainerId);
+                                    const trainerImage = trainerCardImageById.get(trainerId) || session?.trainer?.cardImageUrl || null;
+                                    const bookingTimeLabel = sessionDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+                                    const bookingDateLabel = sessionDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+                                    const bookingWeekdayLabel = sessionDate.toLocaleDateString(undefined, { weekday: 'long' });
+                                    return (
+                                        <div key={session.id} className="bg-surface rounded-xl p-4 border border-primary/30 bg-primary/5 transition-all hover:border-primary/40">
+                                            <div className="space-y-3">
+                                                <div className="flex gap-3">
+                                                    <div className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/5">
+                                                        {trainerImage ? (
+                                                            <img src={trainerImage} alt={session.trainer?.name || 'Trainer'} onError={handleTrainerImageError} className="h-full w-full object-cover" />
+                                                        ) : (
+                                                            <div className="flex h-full w-full items-center justify-center text-text-muted">
+                                                                <span className="material-icons-round text-2xl">person</span>
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                    <span className="text-[10px] uppercase tracking-wide font-bold px-2 py-1 rounded-md border bg-white/10 text-amber-200 border-amber-300/30">
-                                                        {session.duration} min
-                                                    </span>
-                                                </div>
-                                                <div className="mt-3 flex items-center gap-1.5">
-                                                    {[1, 2, 3, 4, 5].map((score) => (
-                                                        <button
-                                                            key={`${session.id}-rating-${score}`}
-                                                            type="button"
-                                                            onClick={() => setRatingSelections((prev) => ({ ...prev, [session.id]: score }))}
-                                                            className={`w-9 h-9 rounded-lg border text-lg font-bold transition-all ${selectedRating >= score
-                                                                ? 'bg-yellow-500/20 border-yellow-400/50 text-yellow-300'
-                                                                : 'bg-white/5 border-white/15 text-white/40 hover:text-yellow-300 hover:border-yellow-300/40'
-                                                                }`}
-                                                            aria-label={`Rate ${score} stars`}
-                                                        >
-                                                            <span className="material-icons-round text-base">star</span>
-                                                        </button>
-                                                    ))}
-                                                    <span className="ml-2 text-xs text-amber-100/70">{selectedRating > 0 ? `${selectedRating}/5` : 'Select rating'}</span>
-                                                </div>
-                                                <div className="mt-3 flex items-center justify-between gap-3">
-                                                    <span className="text-[11px] text-amber-100/70">Please rate to unlock new bookings.</span>
-                                                    <button
-                                                        type="button"
-                                                        disabled={ratingSubmittingId === session.id || selectedRating < 1}
-                                                        onClick={() => handleSubmitSessionRating(session)}
-                                                        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                                    >
-                                                        {ratingSubmittingId === session.id ? 'Saving...' : 'Submit Rating'}
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
 
-                            {/* Upcoming Sessions */}
-                            {showUpcomingSection && upcomingSessions.length > 0 && (
-                                <div className="space-y-3">
-                                    <h3 className="text-sm font-bold text-primary flex items-center gap-2">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                                        Upcoming Sessions
-                                    </h3>
-                                    {upcomingSessions.map((session) => {
-                                        const sessionDate = new Date(session.date);
-                                        const hoursUntil = (sessionDate.getTime() - now.getTime()) / (1000 * 60 * 60);
-                                        const canRequestReschedule = hoursUntil >= 24 && session.status === 'SCHEDULED';
-                                        return (
-                                            <div key={session.id} className="bg-white/5 border border-white/10 rounded-xl p-3 sm:p-4 hover:border-primary/30 transition-all">
-                                                <div className="flex items-start justify-between gap-3">
-                                                    <div>
-                                                        <p className="text-white font-semibold text-sm sm:text-base">{session.trainer?.name || 'Trainer'}</p>
-                                                        <p className="text-text-muted text-xs sm:text-sm mt-0.5">
-                                                            {sessionDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
-                                                            {' at '}
-                                                            {sessionDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
-                                                        </p>
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex items-start justify-between gap-2">
+                                                            <div className="min-w-0">
+                                                                <p className="text-[10px] uppercase tracking-wide text-text-muted">Next Session</p>
+                                                                <p className="text-sm font-bold text-white">{bookingDateLabel}</p>
+                                                                <p className="text-[11px] text-text-muted">{bookingWeekdayLabel}</p>
+                                                                <p className="mt-0.5 text-lg font-extrabold text-primary leading-none">{bookingTimeLabel}</p>
+                                                            </div>
+                                                            <div className="shrink-0 flex flex-col items-end gap-1">
+                                                                <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${toSessionStatusClass(session.status)}`}>
+                                                                    {session.status || 'SCHEDULED'}
+                                                                </span>
+                                                                <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${toPaymentStatusClass(session.paymentStatus)}`}>
+                                                                    {toPaymentStatusLabel(session.paymentStatus)}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+
+                                                        <h3 className="mt-2 text-base font-bold text-white leading-tight break-words">{session.trainer?.name || 'Trainer'}</h3>
+
+                                                        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
+                                                            <span className="inline-flex items-center gap-1">
+                                                                <span className="material-icons-round text-sm">schedule</span>
+                                                                {session.duration} min
+                                                            </span>
+                                                            <span className="inline-flex items-center gap-1">
+                                                                <span className="material-icons-round text-sm">payments</span>
+                                                                {formatPrice(session.price)}
+                                                            </span>
+                                                        </div>
                                                     </div>
-                                                    <span className={`text-[10px] uppercase tracking-wide font-bold px-2 py-1 rounded-md border ${session.status === 'CANCELLED' || session.status === 'NO_SHOW'
-                                                        ? 'bg-red-500/10 text-red-400 border-red-500/30'
-                                                        : session.status === 'RESCHEDULED'
-                                                            ? 'bg-primary/10 text-primary border-primary/30'
-                                                            : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                                                        }`}>
-                                                        {session.status}
-                                                    </span>
                                                 </div>
-                                                <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs">
-                                                    <span className="px-2 py-1 rounded-md bg-white/10 text-text-muted">{session.duration} min</span>
-                                                    <span className="px-2 py-1 rounded-md bg-white/10 text-text-muted">{formatPrice(session.price)}</span>
-                                                    <span className={`px-2 py-1 rounded-md border ${session.paymentStatus === 'PAID'
-                                                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
-                                                        : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                                                        }`}>
-                                                        {session.paymentStatus || 'UNPAID'}
-                                                    </span>
-                                                </div>
-                                                <div className="mt-4 flex items-center justify-end gap-2">
+
+                                                <div className="flex items-center gap-2">
                                                     {canRequestReschedule && (
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); handleOpenRescheduleModal(session); }}
-                                                            className="px-3 py-1.5 bg-primary/10 text-primary border border-primary/30 rounded-lg text-xs font-bold hover:bg-primary/20 transition-all"
+                                                            className="flex-1 py-2.5 rounded-lg bg-primary/10 text-primary font-bold hover:bg-primary/20 active:scale-95 transition-all text-sm border border-primary/25 flex items-center justify-center gap-1"
                                                         >
+                                                            <span className="material-icons-round text-base">update</span>
                                                             Reschedule
                                                         </button>
                                                     )}
                                                     {session.status !== 'CANCELLED' && session.status !== 'NO_SHOW' && (
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); handleCancelSession(session.id); }}
-                                                            className="px-3 py-1.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg text-xs font-bold hover:bg-red-500/20 transition-all"
+                                                            className={`${canRequestReschedule ? 'flex-1' : 'w-full'} py-2.5 rounded-lg bg-red-500/10 text-red-400 font-bold hover:bg-red-500/20 active:scale-95 transition-all text-sm border border-red-500/20 flex items-center justify-center gap-1`}
                                                         >
-                                                            Cancel
+                                                            <span className="material-icons-round text-base">cancel</span>
+                                                            Cancel Booking
                                                         </button>
                                                     )}
                                                 </div>
                                             </div>
-                                        );
-                                    })}
-                                </div>
+                                        </div>
+                                    );
+                                })}
+                                </section>
                             )}
 
-                            {/* Past Sessions */}
-                            {showPastSection && pastSessions.length > 0 && (
-                                <div className="space-y-3">
-                                    <h3 className="text-sm font-bold text-text-muted">Past Sessions</h3>
-                                    <div className="space-y-2">
-                                        {pastSessions.slice(0, 6).map((session) => {
-                                            const sessionDate = new Date(session.date);
-                                            return (
-                                                <div key={session.id} className="bg-white/5 border border-white/5 rounded-xl p-2.5 opacity-70">
-                                                    <p className="text-white font-medium text-xs sm:text-sm">{session.trainer?.name || 'Trainer'}</p>
-                                                    <p className="text-[10px] text-text-muted mt-0.5">
-                                                        {sessionDate.toLocaleDateString()} at {sessionDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
-                                                    </p>
-                                                    <div className="mt-2 flex items-center gap-2">
-                                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-text-muted">{session.status}</span>
-                                                        <span className={`text-[10px] px-1.5 py-0.5 rounded border ${session.paymentStatus === 'PAID' ? 'border-emerald-500/20 text-emerald-400' : 'border-amber-500/20 text-amber-400'}`}>{session.paymentStatus}</span>
-                                                        {String(session.status || '').toUpperCase() === 'COMPLETED' && (
-                                                            <span className="text-[10px] px-1.5 py-0.5 rounded border border-yellow-500/20 text-yellow-300">
-                                                                {session.memberRating ? `Rated ${session.memberRating}/5` : 'Not Rated'}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
+                            {bookingFilter !== 'upcoming' && (
+                                <section className="space-y-3 rounded-2xl border border-white/10 bg-surface p-3 sm:p-4">
+                                <h3 className="text-sm font-bold text-white flex items-center gap-2 uppercase tracking-wide">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-text-muted animate-pulse" />
+                                    RATINGS
+                                </h3>
+                                {visibleRatingSessions.length === 0 ? (
+                                    <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-xs text-text-muted">
+                                        No sessions need rating right now.
                                     </div>
-                                </div>
+                                ) : visibleRatingSessions.map((session) => {
+                                    const sessionDate = new Date(session.date);
+                                    const selectedRating = Number(ratingSelections[session.id] || 0);
+                                    return (
+                                        <div key={`pending-rating-${session.id}`} className="bg-white/5 border border-white/10 rounded-xl p-3 sm:p-4">
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="text-white font-semibold text-sm sm:text-base leading-tight break-words">{session.trainer?.name || 'Trainer'}</p>
+                                                    <p className="text-text-muted text-xs sm:text-sm mt-0.5">
+                                                        {sessionDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                                                        {' at '}
+                                                        {sessionDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                                                    </p>
+                                                </div>
+                                                <span className="text-[10px] uppercase tracking-wide font-bold px-2 py-1 rounded-md border bg-white/10 text-text-secondary border-white/20">
+                                                    {session.duration} min
+                                                </span>
+                                            </div>
+                                            <div className="mt-3 flex items-center gap-1.5">
+                                                {[1, 2, 3, 4, 5].map((score) => (
+                                                    <button
+                                                        key={`${session.id}-rating-${score}`}
+                                                        type="button"
+                                                        onClick={() => setRatingSelections((prev) => ({ ...prev, [session.id]: score }))}
+                                                        className={`w-9 h-9 rounded-lg border text-lg font-bold transition-all ${selectedRating >= score
+                                                            ? 'bg-yellow-500/20 border-yellow-400/50 text-yellow-300'
+                                                            : 'bg-white/5 border-white/15 text-white/40 hover:text-yellow-300 hover:border-yellow-300/40'
+                                                            }`}
+                                                        aria-label={`Rate ${score} stars`}
+                                                    >
+                                                        <span className="material-icons-round text-base">star</span>
+                                                    </button>
+                                                ))}
+                                                <span className="ml-2 text-xs text-text-muted">{selectedRating > 0 ? `${selectedRating}/5` : 'Select rating'}</span>
+                                            </div>
+                                            <div className="mt-3 flex items-center justify-between gap-3">
+                                                <span className="text-[11px] text-text-muted">Please rate to unlock new bookings.</span>
+                                                <button
+                                                    type="button"
+                                                    disabled={ratingSubmittingId === session.id || selectedRating < 1}
+                                                    onClick={() => handleSubmitSessionRating(session)}
+                                                    className="px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-background hover:brightness-110 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    {ratingSubmittingId === session.id ? 'Saving...' : 'Submit Rating'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                                </section>
                             )}
+
                         </div>
                     )}
                 </div>
+            ) : activeTab === 'history' ? (
+                <section className="space-y-4">
+                    <div className="grid grid-cols-3 gap-2">
+                        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5">
+                            <p className="text-[10px] uppercase tracking-wide text-text-muted">Completed</p>
+                            <p className="text-base font-bold text-emerald-300 mt-1">{trainerHistoryStatusCounts.completed}</p>
+                        </div>
+                        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5">
+                            <p className="text-[10px] uppercase tracking-wide text-text-muted">Missed</p>
+                            <p className="text-base font-bold text-rose-300 mt-1">{trainerHistoryStatusCounts.missed}</p>
+                        </div>
+                        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
+                            <p className="text-[10px] uppercase tracking-wide text-text-muted">Cancelled</p>
+                            <p className="text-base font-bold text-amber-300 mt-1">{trainerHistoryStatusCounts.cancelled}</p>
+                        </div>
+                    </div>
+
+                    <div className="bg-surface border border-white/10 rounded-xl p-4 space-y-4">
+                        <div className="flex items-center justify-between gap-2">
+                            <div>
+                                <h2 className="text-white font-bold text-base">Trainer Session History</h2>
+                                <p className="text-text-muted text-xs mt-0.5">Review your completed, missed, and cancelled past trainer sessions</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={fetchMemberSessions}
+                                className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-semibold text-text-muted hover:text-white"
+                            >
+                                Refresh
+                            </button>
+                        </div>
+
+                        {sessionsLoading ? (
+                            <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-4 text-sm text-text-muted">Loading session history...</div>
+                        ) : sessionsError ? (
+                            <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-4 text-sm text-red-300">{sessionsError}</div>
+                        ) : filteredTrainerHistoryEntries.length === 0 ? (
+                            <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-4 text-sm text-text-muted">No past session history found for this filter.</div>
+                        ) : (
+                            <div className="space-y-2.5">
+                                {filteredTrainerHistoryEntries.map((entry) => (
+                                    <article key={`trainer-history-${entry.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div>
+                                                <p className="text-sm font-semibold text-white">{entry?.trainer?.name || 'Trainer Session'}</p>
+                                                <p className="text-[11px] text-text-muted mt-0.5">
+                                                    {entry.date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+                                                    {' at '}
+                                                    {entry.date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                                                </p>
+                                            </div>
+                                            <span className={`rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${toTrainerHistoryStatusClass(entry.normalizedHistoryStatus)}`}>
+                                                {toTrainerHistoryStatusLabel(entry.normalizedHistoryStatus)}
+                                            </span>
+                                        </div>
+                                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
+                                            <span className="inline-flex items-center gap-1">
+                                                <span className="material-icons-round text-sm">schedule</span>
+                                                {entry.duration} min
+                                            </span>
+                                            <span className="inline-flex items-center gap-1">
+                                                <span className="material-icons-round text-sm">payments</span>
+                                                {formatPrice(entry.price)}
+                                            </span>
+                                            <span className="inline-flex items-center gap-1">
+                                                <span className="material-icons-round text-sm">event</span>
+                                                {String(entry.status || '').replace(/_/g, ' ') || 'N/A'}
+                                            </span>
+                                            {String(entry.status || '').toUpperCase() === 'COMPLETED' && (
+                                                <span className="inline-flex items-center gap-1">
+                                                    <span className="material-icons-round text-sm">star</span>
+                                                    {entry.memberRating ? `Rated ${entry.memberRating}/5` : 'Not Rated'}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </article>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </section>
             ) : (
                 filteredTrainers.length === 0 ? (
                     <div className="text-center py-12 px-4">
@@ -989,11 +1259,11 @@ export default function TrainerBooking() {
                         </button>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
                         {filteredTrainers.map(trainer => (
-                            <div key={trainer.id} className="bg-surface rounded-2xl border border-white/5 overflow-hidden hover:border-primary/30 transition-all group flex flex-col">
+                            <div key={trainer.id} className="bg-surface/95 rounded-2xl border border-white/10 overflow-hidden hover:border-primary/30 transition-all group flex flex-col shadow-lg shadow-black/15">
                                 {/* Trainer Image */}
-                                <div className="aspect-[4/3] sm:aspect-square bg-white/5 overflow-hidden relative">
+                                <div className="aspect-[4/3] bg-white/5 overflow-hidden relative">
                                     {trainer.cardImageUrl ? (
                                         <img
                                             src={trainer.cardImageUrl}
@@ -1008,61 +1278,61 @@ export default function TrainerBooking() {
                                     )}
 
                                     {/* Rating Badge */}
-                                    <div className="absolute top-3 right-3 bg-black/70 backdrop-blur-md rounded-full px-3 py-1.5 flex items-center gap-1">
-                                        <span className="material-icons-round text-base text-yellow-400">star</span>
-                                        <span className="text-white font-bold text-sm">{Number(trainer.rating || 0).toFixed(1)}</span>
+                                    <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-md rounded-full px-2 py-1 flex items-center gap-1">
+                                        <span className="material-icons-round text-sm text-yellow-400">star</span>
+                                        <span className="text-white font-bold text-xs">{Number(trainer.rating || 0).toFixed(1)}</span>
                                     </div>
 
                                     {/* Experience Tag */}
                                     {trainer.experience && (
-                                        <div className="absolute bottom-3 left-3 bg-black/70 backdrop-blur-md rounded-lg px-3 py-1.5">
-                                            <span className="text-white font-medium text-xs">{trainer.experience}y exp</span>
+                                        <div className="absolute bottom-2 left-2 bg-black/70 backdrop-blur-md rounded-lg px-2 py-1">
+                                            <span className="text-white font-medium text-[10px]">{trainer.experience}y exp</span>
                                         </div>
                                     )}
                                 </div>
 
                                 {/* Trainer Info */}
-                                <div className="p-4 sm:p-5 flex flex-col flex-1">
-                                    <div className="mb-3">
-                                        <h3 className="font-bold text-white text-lg sm:text-xl">{trainer.name}</h3>
-                                        <p className="text-text-muted text-sm mt-0.5">{trainer.specialization || 'Personal Trainer'}</p>
+                                <div className="p-3 sm:p-4 flex flex-col flex-1">
+                                    <div className="mb-2.5">
+                                        <h3 className="font-bold text-white text-sm sm:text-base leading-tight line-clamp-2">{trainer.name}</h3>
+                                        <p className="text-text-muted text-[11px] mt-0.5 line-clamp-1">{trainer.specialization || 'Personal Trainer'}</p>
                                         {trainer.statusDescription && (
-                                            <p className="text-xs text-white/70 mt-2 line-clamp-2">{trainer.statusDescription}</p>
+                                            <p className="text-[11px] text-white/70 mt-1.5 line-clamp-2">{trainer.statusDescription}</p>
                                         )}
                                     </div>
 
                                     {/* Bio */}
                                     {trainer.bio && (
-                                        <p className="text-text-muted text-sm mb-3 line-clamp-2 leading-relaxed">
+                                        <p className="hidden sm:block text-text-muted text-xs mb-2.5 line-clamp-2 leading-relaxed">
                                             {trainer.bio}
                                         </p>
                                     )}
 
                                     {/* Specializations */}
                                     {getTrainerSpecialties(trainer).length > 0 && (
-                                        <div className="mb-4 flex flex-wrap gap-2">
-                                            {getTrainerSpecialties(trainer).slice(0, 3).map((specialty, idx) => (
-                                                <span key={idx} className="bg-white/10 text-text-secondary px-2.5 py-1 rounded-md text-xs font-medium">
+                                        <div className="mb-3 flex flex-wrap gap-1.5">
+                                            {getTrainerSpecialties(trainer).slice(0, 2).map((specialty, idx) => (
+                                                <span key={idx} className="bg-white/10 text-text-secondary px-2 py-0.5 rounded-md text-[10px] font-medium">
                                                     {specialty}
                                                 </span>
                                             ))}
-                                            {getTrainerSpecialties(trainer).length > 3 && (
-                                                <span className="text-text-muted text-xs py-1 px-1">+{getTrainerSpecialties(trainer).length - 3} more</span>
+                                            {getTrainerSpecialties(trainer).length > 2 && (
+                                                <span className="text-text-muted text-[10px] py-0.5 px-1">+{getTrainerSpecialties(trainer).length - 2} more</span>
                                             )}
                                         </div>
                                     )}
 
-                                    <div className="mt-auto space-y-3">
+                                    <div className="mt-auto space-y-2.5">
                                         {/* Price */}
-                                        <div className="flex justify-between items-center py-2 border-t border-white/5">
-                                            <span className="text-text-muted text-sm">Per Session (60 min)</span>
-                                            <span className="text-primary font-bold text-xl">{formatPrice(trainer.sessionPrice ?? 300)}</span>
+                                        <div className="flex justify-between items-center py-2 border-t border-white/10">
+                                            <span className="text-text-muted text-[11px]">60 min</span>
+                                            <span className="text-primary font-extrabold text-base sm:text-lg">{formatPrice(trainer.sessionPrice ?? 300)}</span>
                                         </div>
 
                                         {/* Availability */}
-                                        <div className="flex items-center gap-2 text-sm">
-                                            <div className={`w-2 h-2 rounded-full ${(trainer.availabilityByDay && Object.keys(trainer.availabilityByDay).length > 0) ? 'bg-green-400' : 'bg-amber-400'}`}></div>
-                                            <span className={(trainer.availabilityByDay && Object.keys(trainer.availabilityByDay).length > 0) ? 'text-green-400' : 'text-amber-400'}>
+                                        <div className="flex items-center gap-1.5 text-[11px]">
+                                            <div className={`w-1.5 h-1.5 rounded-full ${(trainer.availabilityByDay && Object.keys(trainer.availabilityByDay).length > 0) ? 'bg-green-400' : 'bg-amber-400'}`}></div>
+                                            <span className={`line-clamp-1 ${(trainer.availabilityByDay && Object.keys(trainer.availabilityByDay).length > 0) ? 'text-green-400' : 'text-amber-400'}`}>
                                                 {(trainer.availabilityByDay && Object.keys(trainer.availabilityByDay).length > 0)
                                                     ? `${Object.keys(trainer.availabilityByDay).length} available day(s)`
                                                     : 'Availability not set'
@@ -1102,13 +1372,13 @@ export default function TrainerBooking() {
                                                 setShowBookingModal(true);
                                             }}
                                             disabled={!canBookNewSession}
-                                            className={`w-full py-3.5 sm:py-3 rounded-xl font-bold text-sm sm:text-base transition-all active:scale-95 flex items-center justify-center gap-2 touch-manipulation ${canBookNewSession
+                                            className={`w-full py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all active:scale-95 flex items-center justify-center gap-1.5 touch-manipulation ${canBookNewSession
                                                 ? 'bg-primary text-background hover:brightness-110 shadow-lg shadow-primary/25'
                                                 : 'bg-white/10 text-text-muted border border-white/10 cursor-not-allowed'
                                                 }`}
                                         >
-                                            <span className="material-icons-round text-lg">event</span>
-                                            {canBookNewSession ? 'Book Session' : 'Rate Session First'}
+                                            <span className="material-icons-round text-base">event</span>
+                                            {canBookNewSession ? 'Book Now' : 'Rate First'}
                                         </button>
                                     </div>
                                 </div>
@@ -1551,7 +1821,7 @@ export default function TrainerBooking() {
                                 <div className="flex justify-between gap-3">
                                     <span className="text-text-muted">Payment</span>
                                     <span className="text-white font-semibold">
-                                                            <span className="material-icons-round text-base">star</span>
+                                        <span className="material-icons-round text-base">star</span>
                                     </span>
                                 </div>
                             </div>

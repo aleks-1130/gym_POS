@@ -591,7 +591,7 @@ export default function AppRoutes() {
                 <Route
                     path="/attendance"
                     element={
-                        <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
+                        <ProtectedRoute allowedRoles={[ROLES.MEMBER]}>
                             <Attendance />
                         </ProtectedRoute>
                     }
