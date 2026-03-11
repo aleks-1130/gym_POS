@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useNavigate } from 'react-router-dom';
@@ -18,6 +18,12 @@ export default function TrainerShop() {
     const [cart, setCart] = useState([]);
     const [addingToCart, setAddingToCart] = useState({});
     const [showCartModal, setShowCartModal] = useState(false);
+    const [cartPopup, setCartPopup] = useState({ show: false, itemName: '' });
+    const cartPopupTimerRef = useRef(null);
+    const [activeCategory, setActiveCategory] = useState('ALL');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [sortBy, setSortBy] = useState('featured');
+    const [viewMode, setViewMode] = useState('compact'); // compact | detailed
 
     const [showPaymentModal, setShowPaymentModal] = useState(false);
     const [selectedMethodId, setSelectedMethodId] = useState(null);
@@ -69,6 +75,24 @@ export default function TrainerShop() {
         setSelectedMethodId(null);
     }, [selectedPaymentType, showPaymentModal, paymentMethods]);
 
+    useEffect(() => {
+        return () => {
+            if (cartPopupTimerRef.current) {
+                clearTimeout(cartPopupTimerRef.current);
+            }
+        };
+    }, []);
+
+    const showAddToCartPopup = (itemName) => {
+        if (cartPopupTimerRef.current) {
+            clearTimeout(cartPopupTimerRef.current);
+        }
+        setCartPopup({ show: true, itemName });
+        cartPopupTimerRef.current = setTimeout(() => {
+            setCartPopup((prev) => ({ ...prev, show: false }));
+        }, 1600);
+    };
+
     const saveCart = (updatedCart) => {
         localStorage.setItem(STORAGE_KEYS.cart, JSON.stringify(updatedCart));
         setCart(updatedCart);
@@ -87,6 +111,7 @@ export default function TrainerShop() {
                 updatedCart = [...cart, { ...product, quantity: 1 }];
             }
             saveCart(updatedCart);
+            showAddToCartPopup(product.name);
             setAddingToCart((prev) => ({ ...prev, [product.id]: false }));
         }, 250);
     };
@@ -110,6 +135,44 @@ export default function TrainerShop() {
 
     const getCartTotal = () => cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
     const getTotalItems = () => cart.reduce((sum, item) => sum + item.quantity, 0);
+    const categories = useMemo(() => {
+        const values = products
+            .map((p) => String(p.category || '').trim())
+            .filter(Boolean);
+        return ['ALL', ...Array.from(new Set(values)).sort((a, b) => a.localeCompare(b))];
+    }, [products]);
+    const visibleProducts = useMemo(() => {
+        let list = products;
+
+        if (activeCategory !== 'ALL') {
+            list = list.filter((p) => String(p.category || '').trim() === activeCategory);
+        }
+
+        const q = searchQuery.trim().toLowerCase();
+        if (q) {
+            list = list.filter((p) => {
+                const name = String(p.name || '').toLowerCase();
+                const desc = String(p.description || '').toLowerCase();
+                const category = String(p.category || '').toLowerCase();
+                return name.includes(q) || desc.includes(q) || category.includes(q);
+            });
+        }
+
+        const sorted = [...list];
+        if (sortBy === 'price-asc') sorted.sort((a, b) => Number(a.price || 0) - Number(b.price || 0));
+        if (sortBy === 'price-desc') sorted.sort((a, b) => Number(b.price || 0) - Number(a.price || 0));
+        if (sortBy === 'name-az') sorted.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+        if (sortBy === 'stock-desc') sorted.sort((a, b) => Number(b.stock || 0) - Number(a.stock || 0));
+
+        return sorted;
+    }, [products, activeCategory, searchQuery, sortBy]);
+
+    useEffect(() => {
+        if (!categories.includes(activeCategory)) {
+            setActiveCategory('ALL');
+        }
+    }, [categories, activeCategory]);
+    const isDetailedView = viewMode === 'detailed';
 
     const handleCheckoutInit = () => {
         setShowCartModal(false);
@@ -192,34 +255,90 @@ export default function TrainerShop() {
     return (
         <div className="pb-20 px-4 max-w-6xl mx-auto">
             <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 -mx-4 px-4 py-4 mb-4">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between">
                     <div className="flex-1">
-                        <h1 className="text-xl font-bold text-white">Trainer Shop</h1>
-                        <p className="text-text-muted text-xs mt-0.5">Gym inventory and trainer essentials</p>
+                        <h1 className="text-xl font-bold text-white">Products</h1>
+                        <p className="text-text-muted text-xs mt-0.5">Gym inventory & available items</p>
                     </div>
-                    <button
-                        onClick={() => navigate('/trainer/payment-methods')}
-                        className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-2 transition-all active:scale-95"
-                    >
-                        <span className="material-icons-round text-white text-lg">credit_card</span>
-                        <span className="text-white font-bold text-sm">Methods</span>
-                    </button>
-                    <button
-                        onClick={() => setShowCartModal(true)}
-                        className="relative flex items-center gap-2 bg-primary/10 hover:bg-primary/20 border border-primary/30 hover:border-primary/50 rounded-lg px-3 py-2 transition-all active:scale-95"
-                    >
-                        <span className="material-icons-round text-primary text-lg">shopping_cart</span>
-                        <span className="text-primary font-bold text-sm">{getTotalItems()} items</span>
-                        {cart.length > 0 && (
-                            <div className="absolute -top-1 -right-1 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
-                                {cart.length}
-                            </div>
-                        )}
-                    </button>
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            <div className="mb-3 space-y-2.5">
+                <div className="flex gap-2">
+                    <div className="relative flex-1">
+                        <span className="material-icons-round text-base text-text-muted absolute left-2.5 top-1/2 -translate-y-1/2">search</span>
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder="Search products..."
+                            className="w-full bg-surface border border-white/10 rounded-lg h-10 pl-9 pr-9 text-sm text-white placeholder-text-muted focus:outline-none focus:border-primary/50"
+                        />
+                        {searchQuery && (
+                            <button
+                                type="button"
+                                onClick={() => setSearchQuery('')}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 rounded bg-white/10 text-text-muted hover:text-white"
+                                aria-label="Clear search"
+                            >
+                                <span className="material-icons-round text-sm leading-none">close</span>
+                            </button>
+                        )}
+                    </div>
+                    <select
+                        value={sortBy}
+                        onChange={(e) => setSortBy(e.target.value)}
+                        className="bg-surface border border-white/10 rounded-lg h-10 px-2.5 text-xs font-semibold text-white focus:outline-none focus:border-primary/50"
+                    >
+                        <option value="featured">Featured</option>
+                        <option value="price-asc">Price: Low-High</option>
+                        <option value="price-desc">Price: High-Low</option>
+                        <option value="name-az">Name A-Z</option>
+                        <option value="stock-desc">Most Stock</option>
+                    </select>
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                        <p className="text-[11px] text-text-muted font-semibold uppercase tracking-wide">Categories</p>
+                        <div className="mt-1.5 flex flex-wrap gap-2">
+                            {categories.map((category) => (
+                                <button
+                                    key={category}
+                                    type="button"
+                                    onClick={() => setActiveCategory(category)}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${activeCategory === category
+                                        ? 'bg-primary text-white border-primary/70'
+                                        : 'bg-surface border-white/10 text-text-muted hover:text-white'
+                                        }`}
+                                >
+                                    {category}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-1 bg-surface border border-white/10 rounded-lg p-1 shrink-0 self-start">
+                        <button
+                            type="button"
+                            onClick={() => setViewMode('compact')}
+                            className={`w-8 h-8 rounded-md flex items-center justify-center ${viewMode === 'compact' ? 'bg-primary text-white' : 'text-text-muted hover:text-white hover:bg-white/5'}`}
+                            aria-label="Compact view"
+                        >
+                            <span className="material-icons-round text-base">grid_view</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setViewMode('detailed')}
+                            className={`w-8 h-8 rounded-md flex items-center justify-center ${viewMode === 'detailed' ? 'bg-primary text-white' : 'text-text-muted hover:text-white hover:bg-white/5'}`}
+                            aria-label="Detailed view"
+                        >
+                            <span className="material-icons-round text-base">view_agenda</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div className={`grid ${isDetailedView ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4' : 'grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3'}`}>
                 {products.length === 0 ? (
                     <div className="col-span-full text-center py-16">
                         <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-3">
@@ -227,8 +346,15 @@ export default function TrainerShop() {
                         </div>
                         <p className="text-text-muted text-sm">No products available</p>
                     </div>
+                ) : visibleProducts.length === 0 ? (
+                    <div className="col-span-full text-center py-16">
+                        <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                            <span className="material-icons-round text-3xl text-text-muted">filter_alt_off</span>
+                        </div>
+                        <p className="text-text-muted text-sm">{searchQuery ? 'No products match your search' : 'No products in this category'}</p>
+                    </div>
                 ) : (
-                    products.map((p) => {
+                    visibleProducts.map((p) => {
                         const isSoldOut = !p.stock || p.stock === 0;
                         const cartQuantity = getCartItemQuantity(p.id);
                         const isAdding = addingToCart[p.id];
@@ -236,9 +362,9 @@ export default function TrainerShop() {
                         return (
                             <div
                                 key={p.id}
-                                className={`rounded-xl border border-white/5 overflow-hidden flex flex-col transition-all group ${isSoldOut ? 'bg-black/40 opacity-60 border-white/5' : 'bg-surface hover:border-primary/30'}`}
+                                className={`${isDetailedView ? 'rounded-2xl border-white/10' : 'rounded-xl border-white/5'} overflow-hidden border flex flex-col transition-all group ${isSoldOut ? 'bg-black/40 opacity-60' : 'bg-surface hover:border-primary/30'}`}
                             >
-                                <div className="aspect-square bg-white/5 overflow-hidden relative">
+                                <div className={`${isDetailedView ? 'aspect-[4/3]' : 'aspect-square'} bg-white/5 overflow-hidden relative`}>
                                     {p.imageUrl ? (
                                         <img src={p.imageUrl} alt={p.name} className={`w-full h-full object-cover ${!isSoldOut && 'group-hover:scale-105 transition-transform duration-300'}`} />
                                     ) : (
@@ -270,11 +396,11 @@ export default function TrainerShop() {
                                 </div>
 
                                 <div className="p-3 flex flex-col flex-1">
-                                    <h3 className="font-bold text-white text-sm line-clamp-2 mb-2 min-h-[2.5rem]">{p.name}</h3>
-                                    <p className="text-text-muted text-xs line-clamp-2 mb-3 flex-1">{p.description || 'No description available'}</p>
+                                    <h3 className={`${isDetailedView ? 'text-base min-h-[2.75rem]' : 'text-sm min-h-[2.5rem]'} font-bold text-white line-clamp-2 mb-2`}>{p.name}</h3>
+                                    <p className={`text-text-muted ${isDetailedView ? 'text-sm line-clamp-3' : 'text-xs line-clamp-2'} mb-3 flex-1`}>{p.description || 'No description available'}</p>
 
                                     <div className="space-y-2">
-                                        <div className="text-primary font-bold text-base">{formatPrice(p.price)}</div>
+                                        <div className={`text-primary font-bold ${isDetailedView ? 'text-lg' : 'text-base'}`}>{formatPrice(p.price)}</div>
                                         <div className={`text-xs font-medium ${isSoldOut ? 'text-red-400/70' : p.stock <= 5 ? 'text-yellow-400' : 'text-green-400'}`}>
                                             {isSoldOut ? 'Out of Stock' : p.stock <= 5 ? `Only ${p.stock} left` : `${p.stock} in stock`}
                                         </div>
@@ -304,6 +430,32 @@ export default function TrainerShop() {
                     })
                 )}
             </div>
+
+            {cartPopup.show && (
+                <div className="fixed right-4 sm:right-6 bottom-[10.25rem] sm:bottom-24 z-40 pointer-events-none">
+                    <div className="bg-emerald-500/95 border border-emerald-300/40 text-white rounded-xl px-3 py-2 shadow-2xl shadow-black/40 animate-bounce">
+                        <div className="flex items-center gap-1.5 text-xs font-bold">
+                            <span className="material-icons-round text-base">check_circle</span>
+                            Added to cart
+                        </div>
+                        <p className="text-[11px] text-white/90 mt-0.5 max-w-[180px] truncate">{cartPopup.itemName}</p>
+                    </div>
+                </div>
+            )}
+
+            <button
+                type="button"
+                onClick={() => setShowCartModal(true)}
+                className="fixed right-4 sm:right-6 bottom-[5.25rem] sm:bottom-6 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-2xl shadow-primary/30 hover:brightness-110 active:scale-95 transition-all flex items-center justify-center"
+                aria-label="Open cart"
+            >
+                <span className="material-icons-round text-2xl">shopping_cart</span>
+                {getTotalItems() > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-white text-primary text-[11px] font-bold flex items-center justify-center border border-primary/20">
+                        {getTotalItems()}
+                    </span>
+                )}
+            </button>
 
             {showCartModal && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">

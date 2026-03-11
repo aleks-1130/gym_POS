@@ -1,10 +1,12 @@
 ﻿import { useConfirm } from '../../context/ConfirmContext';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { Calendar, Users, Clock, X, User, CheckCircle2, AlertCircle, Plus, Pencil, Trash2 } from 'lucide-react';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const CLASSES_REFRESH_INTERVAL_MS = 60000;
+const PARTICIPANTS_REFRESH_INTERVAL_MS = 30000;
 
 const parseTimeToMinutes = (timeValue) => {
     const raw = String(timeValue || '').trim().toUpperCase();
@@ -74,6 +76,63 @@ const formatDateLabel = (value) => {
     return new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'short', day: 'numeric' }).format(date);
 };
 
+const DAY_TOKEN_MAP = {
+    MON: 'Monday',
+    MONDAY: 'Monday',
+    TUE: 'Tuesday',
+    TUES: 'Tuesday',
+    TUESDAY: 'Tuesday',
+    WED: 'Wednesday',
+    WEDNESDAY: 'Wednesday',
+    THU: 'Thursday',
+    THUR: 'Thursday',
+    THURS: 'Thursday',
+    THURSDAY: 'Thursday',
+    FRI: 'Friday',
+    FRIDAY: 'Friday',
+    SAT: 'Saturday',
+    SATURDAY: 'Saturday',
+    SUN: 'Sunday',
+    SUNDAY: 'Sunday'
+};
+
+const parseClassDays = (dayOfWeek) => {
+    return String(dayOfWeek || '')
+        .split(/,|\/|&|\band\b/gi)
+        .map((token) => DAY_TOKEN_MAP[String(token || '').trim().toUpperCase().replace(/\./g, '')] || null)
+        .filter(Boolean);
+};
+
+const classMatchesDayFilter = (cls, activeDay) => {
+    const days = parseClassDays(cls?.dayOfWeek);
+    return days.includes(activeDay);
+};
+
+const getClassSessionStatusLabel = (status) => {
+    const normalized = String(status || '').toUpperCase();
+    if (normalized === 'IN_PROGRESS') return 'In Progress';
+    if (normalized === 'COMPLETED') return 'Completed';
+    return 'Scheduled';
+};
+
+const getClassSessionStatusClasses = (status) => {
+    const normalized = String(status || '').toUpperCase();
+    if (normalized === 'IN_PROGRESS') return 'border-amber-500/25 text-amber-300 bg-amber-500/10';
+    if (normalized === 'COMPLETED') return 'border-emerald-500/25 text-emerald-300 bg-emerald-500/10';
+    return 'border-white/10 text-text-muted bg-white/5';
+};
+
+const getOverrideAvailability = (cls) => {
+    const sessionStatus = String(cls?.sessionStatus || '').toUpperCase();
+    if (sessionStatus === 'COMPLETED') return { allowed: false, reason: 'Session is already completed.' };
+
+    const sessionDate = new Date(cls?.sessionDate);
+    if (Number.isNaN(sessionDate.getTime())) return { allowed: false, reason: 'No valid session date.' };
+    if (sessionDate > new Date()) return { allowed: false, reason: 'Cannot override a future session.' };
+
+    return { allowed: true, reason: '' };
+};
+
 const fallbackClassImage = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='720' height='420' viewBox='0 0 720 420'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop stop-color='%230f172a'/%3E%3Cstop offset='1' stop-color='%231e293b'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='720' height='420' fill='url(%23g)'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%2394a3b8' font-family='Arial' font-size='34'%3EClass Image Unavailable%3C/text%3E%3C/svg%3E";
 
 const handleClassImageError = (event) => {
@@ -88,7 +147,7 @@ export default function ClassesManagement({ viewRole = 'ADMIN' }) {
     const pageTitle = canManage ? 'Class Management' : 'Class Schedule';
     const pageDescription = canManage
         ? 'Create weekly classes, assign trainers, and manage capacity.'
-        : 'Review class schedules, check participants, and complete sessions.';
+        : 'Review class schedules and participant activity.';
     const [classes, setClasses] = useState([]);
     const [loading, setLoading] = useState(true);
     const [activeDay, setActiveDay] = useState(DAYS[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1]);
@@ -116,12 +175,7 @@ export default function ClassesManagement({ viewRole = 'ADMIN' }) {
     const totalBookings = classes.reduce((sum, cls) => sum + (cls.bookings?.length || 0), 0);
     const totalCapacity = classes.reduce((sum, cls) => sum + (cls.capacity || 0), 0);
 
-    useEffect(() => {
-        fetchClasses();
-        fetchTrainers();
-    }, []);
-
-    const fetchClasses = async () => {
+    const fetchClasses = useCallback(async () => {
         try {
             const res = await axios.get('/api/classes');
             setClasses(res.data);
@@ -130,30 +184,53 @@ export default function ClassesManagement({ viewRole = 'ADMIN' }) {
             console.error("Failed to fetch classes");
             setLoading(false);
         }
-    };
+    }, []);
 
-    const fetchTrainers = async () => {
+    const fetchTrainers = useCallback(async () => {
         try {
             const res = await axios.get('/api/trainers');
             setTrainers(res.data);
         } catch {
             console.error("Failed to fetch trainers");
         }
-    };
+    }, []);
 
-    const fetchParticipants = async (classId, sessionDate) => {
-        setParticipantsLoading(true);
+    const fetchParticipants = useCallback(async (classId, sessionDate, options = {}) => {
+        const silent = Boolean(options?.silent);
+        if (!silent) setParticipantsLoading(true);
         try {
             const res = await axios.get(`/api/classes/${classId}/participants`, {
                 params: sessionDate ? { sessionDate } : undefined
             });
             setParticipants(res.data);
-            setParticipantsLoading(false);
+            if (!silent) setParticipantsLoading(false);
         } catch {
             console.error("Failed to fetch participants");
-            setParticipantsLoading(false);
+            if (!silent) setParticipantsLoading(false);
         }
-    };
+    }, []);
+
+    useEffect(() => {
+        fetchClasses();
+        fetchTrainers();
+    }, [fetchClasses, fetchTrainers]);
+
+    useEffect(() => {
+        const intervalId = setInterval(() => {
+            if (typeof document !== 'undefined' && document.hidden) return;
+            fetchClasses();
+        }, CLASSES_REFRESH_INTERVAL_MS);
+        return () => clearInterval(intervalId);
+    }, [fetchClasses]);
+
+    useEffect(() => {
+        if (!selectedClass) return undefined;
+        const intervalId = setInterval(() => {
+            if (typeof document !== 'undefined' && document.hidden) return;
+            fetchParticipants(selectedClass.id, selectedClass.sessionDate, { silent: true });
+        }, PARTICIPANTS_REFRESH_INTERVAL_MS);
+        return () => clearInterval(intervalId);
+    }, [selectedClass, fetchParticipants]);
 
     const handleViewParticipants = (cls) => {
         setSelectedClass(cls);
@@ -277,29 +354,35 @@ export default function ClassesManagement({ viewRole = 'ADMIN' }) {
         }
     };
 
-    const handleCompleteClass = async (cls) => {
+    const handleOverrideCompleteClass = async (cls) => {
+        const overrideState = getOverrideAvailability(cls);
+        if (!overrideState.allowed) {
+            await showAlert({ title: 'Override Unavailable', message: overrideState.reason, type: 'warning' });
+            return;
+        }
+
         const confirmed = await showConfirm({
-            title: 'Complete Class?',
-            message: `Mark "${cls.name}" as completed for today? This will record attendance and calculate trainer commission.`,
-            confirmLabel: 'Complete',
-            type: 'info'
+            title: 'Override Complete Class?',
+            message: `Mark "${cls.name}" as completed as an admin override? Use this only when trainer action is unavailable.`,
+            confirmLabel: 'Override Complete',
+            type: 'warning'
         });
         if (!confirmed) return;
         try {
             const token = localStorage.getItem('token');
-            const res = await axios.post(`/api/classes/${cls.id}/complete`, {
+            const res = await axios.post(`/api/classes/${cls.id}/complete-override`, {
                 sessionDate: cls.sessionDate || undefined
             }, {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            showAlert({ title: "Class Completed!", message: `Class completed! ${res.data.attendeeCount} attendees.`, type: "success" });
+            showAlert({ title: 'Class Completed', message: `Override recorded with ${res.data.attendeeCount} attendees.`, type: 'success' });
             await fetchClasses();
         } catch (error) {
-            showAlert({ title: 'Complete Failed', message: error?.response?.data?.error || 'Failed to complete class.', type: 'danger' });
+            showAlert({ title: 'Override Failed', message: error?.response?.data?.error || 'Failed to override complete class.', type: 'danger' });
         }
     };
 
-    const filteredClasses = classes.filter(cls => cls.dayOfWeek === activeDay);
+    const filteredClasses = classes.filter((cls) => classMatchesDayFilter(cls, activeDay));
 
     if (loading) {
         return (
@@ -362,6 +445,8 @@ export default function ClassesManagement({ viewRole = 'ADMIN' }) {
                         const isFull = currentEnrolled >= cls.capacity;
                         const schedule = getClassTimeRange(cls.time, cls.duration);
                         const scheduleType = String(cls.scheduleType || 'RECURRING').toUpperCase();
+                        const sessionStatus = String(cls.sessionStatus || 'SCHEDULED').toUpperCase();
+                        const overrideState = getOverrideAvailability(cls);
                         return (
                             <div key={cls.id} className="group relative overflow-hidden rounded-3xl border border-white/5 bg-surface p-5 transition-all duration-300 hover:border-primary/20 hover:bg-primary/5 hover:shadow-primary/10 shadow-sm">
                                 <div className="pointer-events-none absolute -right-16 -top-16 h-28 w-28 rounded-full bg-primary/10 blur-3xl"></div>
@@ -467,21 +552,20 @@ export default function ClassesManagement({ viewRole = 'ADMIN' }) {
                                     <Users size={16} className="text-primary" />
                                     View Participants
                                 </button>
+                                <div className={`w-full py-2.5 mt-2 rounded-xl border flex items-center justify-center gap-2 text-sm font-medium ${getClassSessionStatusClasses(sessionStatus)}`}>
+                                    <CheckCircle2 size={16} />
+                                    Session: {getClassSessionStatusLabel(sessionStatus)}
+                                </div>
                                 {canManage && (
-                                    cls.completedToday ? (
-                                        <div className="w-full py-2.5 mt-2 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20 flex items-center justify-center gap-2 text-sm font-medium">
-                                            <CheckCircle2 size={16} />
-                                            Completed Today — {cls.todayCompletion?.attendeeCount || 0} attendees · ₱{cls.todayCompletion?.commissionAmount?.toFixed(2) || '0.00'}
-                                        </div>
-                                    ) : (
-                                        <button
-                                            onClick={() => handleCompleteClass(cls)}
-                                            className="w-full py-2.5 mt-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/20 transition-all flex items-center justify-center gap-2 text-sm font-medium"
-                                        >
-                                            <CheckCircle2 size={16} />
-                                            Complete Class
-                                        </button>
-                                    )
+                                    <button
+                                        onClick={() => handleOverrideCompleteClass(cls)}
+                                        disabled={!overrideState.allowed}
+                                        title={overrideState.reason || 'Force complete this class session'}
+                                        className="w-full py-2.5 mt-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 rounded-xl border border-amber-500/20 transition-all flex items-center justify-center gap-2 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        <CheckCircle2 size={16} />
+                                        Override Complete
+                                    </button>
                                 )}
                             </div>
                         );

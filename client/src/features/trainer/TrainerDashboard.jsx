@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import QRCode from 'react-qr-code';
+import { Link } from 'react-router-dom';
 
 export default function TrainerDashboard() {
     const { user } = useAuth();
@@ -86,6 +87,12 @@ export default function TrainerDashboard() {
     const commissionSummary = commissions?.summary || {};
     const loyaltyPoints = Number(trainer?.loyaltyPoints || 0);
     const checkIns = Number(trainer?.checkIns || 0);
+    const quickActions = [
+        { to: '/trainer/classes-sessions', icon: 'event_note', label: 'Class & Session' },
+        { to: '/trainer/gym-traffic', icon: 'timeline', label: 'Traffic' },
+        { to: '/trainer/shop', icon: 'shopping_bag', label: 'Shop' },
+        { to: '/trainer/profile', icon: 'person', label: 'Profile' }
+    ];
 
     return (
         <div className="space-y-4 pb-20 px-4 max-w-2xl mx-auto">
@@ -203,35 +210,17 @@ export default function TrainerDashboard() {
 
             <div>
                 <h3 className="text-sm font-bold text-white mb-3 px-1">Quick Actions</h3>
-                <div className="grid grid-cols-3 gap-2">
-                    <a href="/trainer/sessions" className="bg-surface hover:bg-white/5 p-3 rounded-xl border border-white/5 transition-all active:scale-95 text-center">
-                        <span className="material-icons-round text-primary text-xl block mb-1">event_note</span>
-                        <span className="text-xs font-medium text-white block">Sessions</span>
-                    </a>
-                    <a href="/trainer/classes" className="bg-surface hover:bg-white/5 p-3 rounded-xl border border-white/5 transition-all active:scale-95 text-center">
-                        <span className="material-icons-round text-primary text-xl block mb-1">groups</span>
-                        <span className="text-xs font-medium text-white block">Classes</span>
-                    </a>
-                    <a href="/trainer/shop" className="bg-surface hover:bg-white/5 p-3 rounded-xl border border-white/5 transition-all active:scale-95 text-center">
-                        <span className="material-icons-round text-primary text-xl block mb-1">shopping_bag</span>
-                        <span className="text-xs font-medium text-white block">Shop</span>
-                    </a>
-                    <a href="/trainer/profile" className="bg-surface hover:bg-white/5 p-3 rounded-xl border border-white/5 transition-all active:scale-95 text-center">
-                        <span className="material-icons-round text-primary text-xl block mb-1">person</span>
-                        <span className="text-xs font-medium text-white block">Profile</span>
-                    </a>
-                    <a href="/trainer/payment-methods" className="bg-surface hover:bg-white/5 p-3 rounded-xl border border-white/5 transition-all active:scale-95 text-center">
-                        <span className="material-icons-round text-primary text-xl block mb-1">credit_card</span>
-                        <span className="text-xs font-medium text-white block">Methods</span>
-                    </a>
-                    <a href="/trainer/purchase-history" className="bg-surface hover:bg-white/5 p-3 rounded-xl border border-white/5 transition-all active:scale-95 text-center">
-                        <span className="material-icons-round text-primary text-xl block mb-1">history</span>
-                        <span className="text-xs font-medium text-white block">Purchases</span>
-                    </a>
-                    <a href="/trainer/gym-traffic" className="bg-surface hover:bg-white/5 p-3 rounded-xl border border-white/5 transition-all active:scale-95 text-center">
-                        <span className="material-icons-round text-primary text-xl block mb-1">timeline</span>
-                        <span className="text-xs font-medium text-white block">Traffic</span>
-                    </a>
+                <div className="grid grid-cols-2 gap-2">
+                    {quickActions.map((action) => (
+                        <Link
+                            key={action.to}
+                            to={action.to}
+                            className="bg-surface hover:bg-white/5 p-3 rounded-xl border border-white/5 transition-all active:scale-95 text-center"
+                        >
+                            <span className="material-icons-round text-primary text-xl block mb-1">{action.icon}</span>
+                            <span className="text-xs font-medium text-white block">{action.label}</span>
+                        </Link>
+                    ))}
                 </div>
             </div>
         </div>

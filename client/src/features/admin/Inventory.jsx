@@ -1399,6 +1399,7 @@ function CreateStockOrderPage({ onCancel, onCreated, orderId }) {
     const [supplierId, setSupplierId] = useState('');
     const [notes, setNotes] = useState('');
     const [search, setSearch] = useState('');
+    const [catalogCategory, setCatalogCategory] = useState('');
     const [catalogView, setCatalogView] = useState('grid');
     const [cartItems, setCartItems] = useState([]);
     const [createdAtValue, setCreatedAtValue] = useState(null);
@@ -1469,14 +1470,28 @@ function CreateStockOrderPage({ onCancel, onCreated, orderId }) {
         bootstrap();
     }, [orderId]);
 
+    const catalogCategories = useMemo(() => {
+        const uniqueCategories = new Set();
+        products.forEach((product) => {
+            const category = String(product.category || '').trim();
+            if (category) uniqueCategories.add(category);
+        });
+        return Array.from(uniqueCategories).sort((a, b) => a.localeCompare(b));
+    }, [products]);
+
     const filteredProducts = useMemo(() => {
         const keyword = search.trim().toLowerCase();
-        if (!keyword) return products;
+        const selectedCategory = catalogCategory.trim().toLowerCase();
         return products.filter((product) => {
+            const productCategory = String(product.category || '').trim().toLowerCase();
+            const categoryMatch = !selectedCategory || productCategory === selectedCategory;
+            if (!categoryMatch) return false;
+
+            if (!keyword) return true;
             const haystack = `${product.name || ''} ${product.category || ''} ${product.barcode || product.sku || ''}`.toLowerCase();
             return haystack.includes(keyword);
         });
-    }, [products, search]);
+    }, [products, search, catalogCategory]);
 
     const addToCart = (product) => {
         setCartItems((prev) => {
@@ -1582,12 +1597,6 @@ function CreateStockOrderPage({ onCancel, onCreated, orderId }) {
                         {isEditing ? 'Modify supplier, items, quantities, and costs before saving.' : 'Build and submit a supplier stock order'}
                     </p>
                 </div>
-                <button
-                    onClick={onCancel}
-                    className="px-4 py-2 rounded-xl border border-white/10 text-text-secondary hover:text-white hover:bg-white/5"
-                >
-                    Cancel
-                </button>
             </header>
 
             <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
@@ -1619,12 +1628,24 @@ function CreateStockOrderPage({ onCancel, onCreated, orderId }) {
                                 </button>
                             </div>
                         </div>
-                        <input
-                            value={search}
-                            onChange={(event) => setSearch(event.target.value)}
-                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none"
-                            placeholder="Search by name, category, barcode"
-                        />
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <input
+                                value={search}
+                                onChange={(event) => setSearch(event.target.value)}
+                                className="w-full md:col-span-2 bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none"
+                                placeholder="Search by name or barcode"
+                            />
+                            <select
+                                value={catalogCategory}
+                                onChange={(event) => setCatalogCategory(event.target.value)}
+                                className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none"
+                            >
+                                <option value="">All Categories</option>
+                                {catalogCategories.map((category) => (
+                                    <option key={category} value={category}>{category}</option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
                     {catalogView === 'grid' ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1728,13 +1749,22 @@ function CreateStockOrderPage({ onCancel, onCreated, orderId }) {
 
                         <div className="space-y-3">
                             <h3 className="text-white font-semibold">Order Cart</h3>
-                            <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
+                            <div
+                                className="space-y-2 pr-1 h-[46vh] md:h-[50vh] xl:h-[52vh] overflow-y-auto"
+                            >
                                 {cartItems.map((item) => (
                                     <div key={item.productId} className="bg-white/5 border border-white/10 rounded-xl p-3 space-y-2">
-                                        <div className="flex items-start justify-between gap-2">
-                                            <div className="min-w-0">
-                                                <p className="text-white text-sm font-semibold truncate">{item.name}</p>
-                                                <p className="text-xs text-text-muted font-mono">{item.barcode || 'No barcode'}</p>
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="flex items-start gap-3 min-w-0">
+                                                <div className="w-11 h-11 rounded-lg border border-white/10 bg-white/5 overflow-hidden flex items-center justify-center flex-shrink-0">
+                                                    {item.imageUrl
+                                                        ? <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                                                        : <span className="material-icons-round text-text-muted text-sm">image</span>}
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <p className="text-white text-sm font-semibold truncate">{item.name}</p>
+                                                    <p className="text-xs text-text-muted font-mono">{item.barcode || 'No barcode'}</p>
+                                                </div>
                                             </div>
                                             <button
                                                 onClick={() => removeCartItem(item.productId)}
@@ -1772,8 +1802,18 @@ function CreateStockOrderPage({ onCancel, onCreated, orderId }) {
                                     </div>
                                 ))}
                                 {!cartItems.length && (
-                                    <div className="text-sm text-text-muted text-center py-4 bg-white/5 border border-white/10 rounded-xl">
-                                        No items added yet.
+                                    <div className="h-full flex flex-col items-center justify-center gap-3 px-4 text-center bg-white/5 border border-white/10 rounded-xl">
+                                        <div className="w-14 h-14 rounded-full border border-white/15 bg-white/5 flex items-center justify-center">
+                                            <svg viewBox="0 0 24 24" className="w-7 h-7 text-text-muted" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                                <circle cx="9" cy="20" r="1.2" />
+                                                <circle cx="17" cy="20" r="1.2" />
+                                                <path d="M3 4h2.4l2 10.2a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 7H7.1" />
+                                            </svg>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <p className="text-sm text-white font-semibold">Your cart is empty</p>
+                                            <p className="text-xs text-text-muted">Select products from the catalog to start this stock order.</p>
+                                        </div>
                                     </div>
                                 )}
                             </div>

@@ -43,7 +43,7 @@ const checkBookingConflict = async (trainerId, startDateTime, durationMinutes, e
                 gte: startOfDay,
                 lt: endOfDay
             },
-            status: { not: 'CANCELLED' },
+            status: { notIn: FINALIZED_SESSION_STATUSES },
             ...(excludeSessionId ? { id: { not: Number(excludeSessionId) } } : {})
         }
     });

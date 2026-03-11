@@ -15,6 +15,25 @@ const { sendActivationEmail } = require('../../services/emailService');
 
 const FINALIZED_SESSION_STATUSES = ['CANCELLED', 'COMPLETED', 'NO_SHOW', 'DECLINED'];
 
+const normalizeTrainerRatingValue = (value) => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? Number(numeric.toFixed(2)) : 0;
+};
+
+const withNormalizedTrainerRating = (trainer) => {
+    if (!trainer) return trainer;
+    return {
+        ...trainer,
+        rating: normalizeTrainerRatingValue(trainer.rating)
+    };
+};
+
+const isValidEmailFormat = (value) => {
+    const normalized = String(value || '').trim();
+    if (!normalized) return false;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized);
+};
+
 const toLocalIsoDate = (value) => {
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return '';
@@ -40,20 +59,30 @@ const hasUpcomingSessionOnIsoDate = ({ sessions, isoDate, now = new Date() }) =>
     });
 };
 
-const findAvailabilityConflicts = (sessions, nextAvailability) => {
+const findAvailabilityConflicts = (sessions, currentAvailability, nextAvailability) => {
     return (sessions || [])
         .filter((session) => {
             const date = toLocalIsoDate(session.date);
             const time = toLocalTime(session.date);
             const duration = Number(session.duration) || 0;
             if (!date || !time || duration <= 0) return false;
-            return !isTimeAllowedForAvailability({
+
+            const allowedBefore = isTimeAllowedForAvailability({
+                availability: currentAvailability,
+                date,
+                time,
+                duration,
+                enforceBookingStatus: false
+            });
+            const allowedAfter = isTimeAllowedForAvailability({
                 availability: nextAvailability,
                 date,
                 time,
                 duration,
                 enforceBookingStatus: false
             });
+            // Only block sessions that this update would newly invalidate.
+            return allowedBefore && !allowedAfter;
         })
         .map((session) => ({
             id: session.id,
@@ -83,7 +112,7 @@ const getAllTrainers = async (req, res) => {
         const availabilityMap = await getTrainerAvailabilityMap(trainers.map((trainer) => trainer.id));
         const hydrated = trainers.map((trainer) => {
             const normalized = {
-                ...trainer,
+                ...withNormalizedTrainerRating(trainer),
                 ...(availabilityMap.get(trainer.id) || {
                     availabilityDays: [],
                     availabilityStart: '',
@@ -138,7 +167,8 @@ const getTrainerById = async (req, res) => {
                 }
             }
         });
-        res.json(await withTrainerAvailability(trainer));
+        const normalizedTrainer = withNormalizedTrainerRating(trainer);
+        res.json(await withTrainerAvailability(normalizedTrainer));
     } catch (e) {
         res.status(500).json({ error: "Failed to fetch trainer profile" });
     }
@@ -170,7 +200,7 @@ const getMe = async (req, res) => {
             })
         ]);
         if (!trainer) return res.status(404).json({ error: "Trainer not found" });
-        const trainerWithAvailability = await withTrainerAvailability(trainer);
+        const trainerWithAvailability = await withTrainerAvailability(withNormalizedTrainerRating(trainer));
         res.json({
             ...trainerWithAvailability,
             loyaltyPoints: Number(trainer.user?.loyaltyPoints || 0),
@@ -365,7 +395,7 @@ const updateMyAvailability = async (req, res) => {
             orderBy: { date: 'asc' }
         });
 
-        const conflicts = findAvailabilityConflicts(upcomingSessions, nextAvailability);
+        const conflicts = findAvailabilityConflicts(upcomingSessions, currentAvailability, nextAvailability);
         if (conflicts.length > 0) {
             return res.status(409).json({
                 error: "Cannot save availability because some existing bookings would become unavailable.",
@@ -377,6 +407,98 @@ const updateMyAvailability = async (req, res) => {
         return res.json({ ...trainer, ...availability });
     } catch (e) {
         return res.status(500).json({ error: e.message || "Failed to update trainer availability" });
+    }
+};
+
+const updateMyProfileCredentials = async (req, res) => {
+    try {
+        const trainerId = Number(req.user?.trainerId);
+        if (!trainerId) {
+            return res.status(400).json({ error: "Trainer account is not linked" });
+        }
+
+        const hasEmail = Object.prototype.hasOwnProperty.call(req.body || {}, 'email');
+        const hasPhone = Object.prototype.hasOwnProperty.call(req.body || {}, 'phone');
+        const hasImageUrl = Object.prototype.hasOwnProperty.call(req.body || {}, 'imageUrl');
+
+        if (!hasEmail && !hasPhone && !hasImageUrl) {
+            return res.status(400).json({ error: "No profile fields provided" });
+        }
+
+        const patch = {};
+        if (hasEmail) {
+            const normalizedEmail = String(req.body.email || '').trim().toLowerCase();
+            if (!isValidEmailFormat(normalizedEmail)) {
+                return res.status(400).json({ error: "Please provide a valid email address." });
+            }
+            patch.email = normalizedEmail;
+        }
+        if (hasPhone) {
+            const normalizedPhone = String(req.body.phone || '').trim();
+            patch.phone = normalizedPhone || null;
+        }
+        if (hasImageUrl) {
+            const normalizedImageUrl = String(req.body.imageUrl || '').trim();
+            patch.imageUrl = normalizedImageUrl || null;
+        }
+
+        const updatedTrainer = await prisma.$transaction(async (tx) => {
+            const existingTrainer = await tx.trainer.findUnique({
+                where: { id: trainerId },
+                select: {
+                    id: true,
+                    user: {
+                        select: { id: true }
+                    }
+                }
+            });
+            if (!existingTrainer) {
+                const error = new Error('Trainer not found');
+                error.code = 'TRAINER_NOT_FOUND';
+                throw error;
+            }
+
+            if (patch.email) {
+                const duplicate = await tx.user.findFirst({
+                    where: {
+                        email: patch.email,
+                        id: { not: Number(req.user.id) }
+                    },
+                    select: { id: true }
+                });
+                if (duplicate) {
+                    const error = new Error('Email is already in use by another account.');
+                    error.code = 'EMAIL_CONFLICT';
+                    throw error;
+                }
+            }
+
+            const trainer = await tx.trainer.update({
+                where: { id: trainerId },
+                data: patch
+            });
+
+            if (patch.email && existingTrainer.user?.id) {
+                await tx.user.update({
+                    where: { id: Number(existingTrainer.user.id) },
+                    data: { email: patch.email }
+                });
+            }
+
+            return trainer;
+        });
+
+        const normalizedTrainer = withNormalizedTrainerRating(updatedTrainer);
+        const trainerWithAvailability = await withTrainerAvailability(normalizedTrainer);
+        return res.json(trainerWithAvailability);
+    } catch (e) {
+        if (e?.code === 'EMAIL_CONFLICT') {
+            return res.status(409).json({ error: e.message });
+        }
+        if (e?.code === 'TRAINER_NOT_FOUND') {
+            return res.status(404).json({ error: 'Trainer not found' });
+        }
+        return res.status(500).json({ error: e.message || 'Failed to update trainer profile' });
     }
 };
 
@@ -393,7 +515,6 @@ const createTrainer = async (req, res) => {
             imageUrl,
             cardImageUrl,
             experience,
-            rating,
             sessionPrice,
             sessionDurations,
             availableSlots,
@@ -444,7 +565,7 @@ const createTrainer = async (req, res) => {
                     ? String(cardImageUrl).trim()
                     : (imageUrl ? String(imageUrl).trim() : null),
                 experience: experience !== '' && experience !== undefined ? Number(experience) : null,
-                rating: rating !== '' && rating !== undefined ? Number(rating) : undefined,
+                rating: 0,
                 sessionPrice: sessionPrice !== '' && sessionPrice !== undefined ? Number(sessionPrice) : undefined,
                 sessionDurations: sessionDurations ? String(sessionDurations) : '60',
                 availableSlots: availableSlots !== '' && availableSlots !== undefined ? Number(availableSlots) : null,
@@ -515,7 +636,6 @@ const updateTrainer = async (req, res) => {
             imageUrl,
             cardImageUrl,
             experience,
-            rating,
             sessionPrice,
             sessionDurations,
             availableSlots,
@@ -553,7 +673,6 @@ const updateTrainer = async (req, res) => {
                 ...(imageUrl !== undefined ? { imageUrl: imageUrl ? String(imageUrl).trim() : null } : {}),
                 ...(cardImageUrl !== undefined ? { cardImageUrl: cardImageUrl ? String(cardImageUrl).trim() : null } : {}),
                 ...(experience !== undefined ? { experience: experience === '' ? null : Number(experience) } : {}),
-                ...(rating !== undefined ? { rating: rating === '' ? null : Number(rating) } : {}),
                 ...(sessionPrice !== undefined && sessionPrice !== '' ? { sessionPrice: Number(sessionPrice) } : {}),
                 ...(sessionDurations !== undefined ? { sessionDurations: String(sessionDurations) } : {}),
                 ...(availableSlots !== undefined ? { availableSlots: availableSlots === '' ? null : Number(availableSlots) } : {}),
@@ -646,6 +765,7 @@ module.exports = {
     getMe,
     getMyCommissions,
     updateMyAvailability,
+    updateMyProfileCredentials,
     createTrainer,
     updateTrainer,
     deleteTrainer,
