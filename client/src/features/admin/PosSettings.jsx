@@ -1,4 +1,4 @@
-﻿import { useConfirm } from '../../context/ConfirmContext';
+import { useConfirm } from '../../context/ConfirmContext';
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import Receipt from '../../components/Receipt';
@@ -70,6 +70,20 @@ export default function PosSettings() {
     const [receiptSettings, setReceiptSettings] = useState(DEFAULT_RECEIPT_SETTINGS);
     const [discountPresets, setDiscountPresets] = useState([]);
     const [discountDraft, setDiscountDraft] = useState({ name: '', rate: '', icon: 'local_offer' });
+    
+    // Promo Codes State
+    const [promoCodes, setPromoCodes] = useState([]);
+    const [promoDraft, setPromoDraft] = useState({
+        code: '',
+        type: 'FLAT',
+        value: '',
+        description: '',
+        maxUses: '',
+        expiryDate: ''
+    });
+    const [promoSaving, setPromoSaving] = useState(false);
+    const [promoLoading, setPromoLoading] = useState(false);
+
 
     const authHeaders = () => {
         const token = sessionStorage.getItem('token') || localStorage.getItem('token');
@@ -78,7 +92,9 @@ export default function PosSettings() {
 
     useEffect(() => {
         fetchPosSettings();
+        fetchPromoCodes();
     }, []);
+
 
     const fetchPosSettings = async () => {
         try {
@@ -265,6 +281,71 @@ export default function PosSettings() {
         }
     };
 
+    const fetchPromoCodes = async () => {
+        setPromoLoading(true);
+        try {
+            const res = await axios.get(withApiBase('/api/pos/promo-codes'), {
+                headers: authHeaders()
+            });
+            setPromoCodes(res.data);
+        } catch (e) {
+            console.error('Failed to load promo codes', e);
+        } finally {
+            setPromoLoading(false);
+        }
+    };
+
+    const handleCreatePromoCode = async (e) => {
+        e.preventDefault();
+        if (!promoDraft.code || !promoDraft.value) {
+            await showAlert({ title: 'Validation', message: 'Code and Value are required.', type: 'warning' });
+            return;
+        }
+
+        setPromoSaving(true);
+        try {
+            await axios.post(withApiBase('/api/pos/promo-codes'), promoDraft, {
+                headers: authHeaders()
+            });
+            setPromoDraft({ code: '', type: 'FLAT', value: '', description: '', maxUses: '', expiryDate: '' });
+            await fetchPromoCodes();
+            await showAlert({ title: 'Success', message: 'Promo code created successfully.', type: 'success' });
+        } catch (e) {
+            await showAlert({ title: 'Error', message: e.response?.data?.error || 'Failed to create promo code', type: 'danger' });
+        } finally {
+            setPromoSaving(false);
+        }
+    };
+
+    const togglePromoStatus = async (promo) => {
+        try {
+            await axios.put(withApiBase(`/api/pos/promo-codes/${promo.id}`), {
+                isActive: !promo.isActive
+            }, { headers: authHeaders() });
+            await fetchPromoCodes();
+        } catch (e) {
+            await showAlert({ title: 'Error', message: 'Failed to update promo status', type: 'danger' });
+        }
+    };
+
+    const deletePromoCode = async (id) => {
+        const confirmed = await showAlert({
+            title: 'Confirm Deletion',
+            message: 'Are you sure you want to deactivate this promo code?',
+            type: 'warning',
+            confirmText: 'Yes, Deactivate'
+        });
+        if (!confirmed) return;
+
+        try {
+            await axios.delete(withApiBase(`/api/pos/promo-codes/${id}`), {
+                headers: authHeaders()
+            });
+            await fetchPromoCodes();
+        } catch (e) {
+            await showAlert({ title: 'Error', message: 'Failed to delete promo code', type: 'danger' });
+        }
+    };
 
     const receiptPreviewData = useMemo(() => ({
         transaction: {
@@ -604,6 +685,136 @@ export default function PosSettings() {
                                 <span className="material-icons-round text-base">{discountSaving ? 'sync' : 'save'}</span>
                                 {discountSaving ? 'Saving...' : 'Save Discount Presets'}
                             </button>
+                        </div>
+                    </div>
+
+                    <div className="bg-surface rounded-3xl border border-white/5 p-6 shadow-sm mt-6">
+                        <h3 className="text-xl font-bold text-white mb-1 flex items-center gap-2">
+                            <span className="material-icons-round text-primary">campaign</span>
+                            Global Promo Codes
+                        </h3>
+                        <p className="text-text-muted text-sm mb-6">Create reusable codes applicable to any transaction. These are not tied to specific members.</p>
+                        
+                        <form onSubmit={handleCreatePromoCode} className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-8 bg-surfaceHighlight p-4 rounded-2xl border border-white/5 shadow-inner">
+                            <div className="md:col-span-1">
+                                <label className="block text-[10px] text-text-muted font-bold uppercase mb-1">Code</label>
+                                <input
+                                    type="text"
+                                    className="w-full bg-surface border border-white/10 rounded-xl px-3 py-2 text-white focus:border-primary outline-none uppercase"
+                                    placeholder="SUMMER20"
+                                    value={promoDraft.code}
+                                    onChange={e => setPromoDraft(p => ({ ...p, code: e.target.value.toUpperCase() }))}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] text-text-muted font-bold uppercase mb-1">Type</label>
+                                <select
+                                    className="w-full bg-surface border border-white/10 rounded-xl px-3 py-2 text-white focus:border-primary outline-none"
+                                    value={promoDraft.type}
+                                    onChange={e => setPromoDraft(p => ({ ...p, type: e.target.value }))}
+                                >
+                                    <option value="FLAT">₱ Flat</option>
+                                    <option value="PERCENTAGE">% Percent</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-[10px] text-text-muted font-bold uppercase mb-1">Value</label>
+                                <input
+                                    type="number"
+                                    className="w-full bg-surface border border-white/10 rounded-xl px-3 py-2 text-white focus:border-primary outline-none"
+                                    placeholder={promoDraft.type === 'FLAT' ? '100' : '0.2'}
+                                    value={promoDraft.value}
+                                    onChange={e => setPromoDraft(p => ({ ...p, value: e.target.value }))}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] text-text-muted font-bold uppercase mb-1">Max Uses</label>
+                                <input
+                                    type="number"
+                                    className="w-full bg-surface border border-white/10 rounded-xl px-3 py-2 text-white focus:border-primary outline-none"
+                                    placeholder="Unlimited"
+                                    value={promoDraft.maxUses}
+                                    onChange={e => setPromoDraft(p => ({ ...p, maxUses: e.target.value }))}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] text-text-muted font-bold uppercase mb-1">Expiry Date</label>
+                                <input
+                                    type="date"
+                                    className="w-full bg-surface border border-white/10 rounded-xl px-3 py-2 text-white focus:border-primary outline-none [color-scheme:dark]"
+                                    value={promoDraft.expiryDate}
+                                    onChange={e => setPromoDraft(p => ({ ...p, expiryDate: e.target.value }))}
+                                />
+                            </div>
+                            <div className="flex items-end">
+                                <button
+                                    type="submit"
+                                    disabled={promoSaving}
+                                    className="w-full bg-primary hover:bg-orange-600 text-white font-bold py-2 rounded-xl transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
+                                >
+                                    {promoSaving ? '...' : 'Create Promo'}
+                                </button>
+                            </div>
+                        </form>
+
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left">
+                                <thead className="text-[10px] text-text-muted uppercase font-bold border-b border-white/5">
+                                    <tr>
+                                        <th className="pb-3 px-2">Code</th>
+                                        <th className="pb-3">Value</th>
+                                        <th className="pb-3">Uses</th>
+                                        <th className="pb-3">Expiry</th>
+                                        <th className="pb-3">Status</th>
+                                        <th className="pb-3 text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="text-sm">
+                                    {promoCodes.length === 0 ? (
+                                        <tr>
+                                            <td colSpan="6" className="py-8 text-center text-text-muted">No global promo codes found.</td>
+                                        </tr>
+                                    ) : (
+                                        promoCodes.map(promo => (
+                                            <tr key={promo.id} className="border-b border-white/5 group hover:bg-white/5 transition-colors">
+                                                <td className="py-4 px-2">
+                                                    <span className="font-mono font-bold text-primary">{promo.code}</span>
+                                                    {promo.description && <p className="text-[10px] text-text-muted mt-0.5">{promo.description}</p>}
+                                                </td>
+                                                <td className="py-4 font-bold text-white">
+                                                    {promo.type === 'FLAT' ? `₱${promo.value}` : `${promo.value * 100}%`}
+                                                </td>
+                                                <td className="py-4">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-white">{promo.usedCount}</span>
+                                                        <span className="text-text-muted">/</span>
+                                                        <span className="text-text-muted">{promo.maxUses || '∞'}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="py-4 text-text-muted">
+                                                    {promo.expiryDate ? new Date(promo.expiryDate).toLocaleDateString() : 'Never'}
+                                                </td>
+                                                <td className="py-4">
+                                                    <button 
+                                                        onClick={() => togglePromoStatus(promo)}
+                                                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${promo.isActive ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}
+                                                    >
+                                                        {promo.isActive ? 'ACTIVE' : 'INACTIVE'}
+                                                    </button>
+                                                </td>
+                                                <td className="py-4 text-right">
+                                                    <button 
+                                                        onClick={() => deletePromoCode(promo.id)}
+                                                        className="p-2 text-text-muted hover:text-red-400 transition-colors"
+                                                    >
+                                                        <span className="material-icons-round text-lg">delete</span>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>

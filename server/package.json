@@ -4,7 +4,7 @@
     "description": "Backend for Gym POS System",
     "main": "server.js",
     "scripts": {
-        "start": "npx prisma migrate deploy && npx prisma generate && node server.js",
+        "start": "npx prisma migrate deploy && node server.js",
         "dev": "npx prisma generate && nodemon server.js",
         "prisma:generate": "prisma generate",
         "prisma:push": "prisma db push"
@@ -29,6 +29,7 @@
         "nodemailer": "^8.0.1",
         "prisma": "^5.7.1",
         "react-to-print": "^3.2.0",
+        "redis": "^5.11.0",
         "sqlite3": "^5.1.7"
     },
     "devDependencies": {

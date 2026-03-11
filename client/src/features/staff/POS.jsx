@@ -37,6 +37,10 @@ export default function POS() {
     } = usePOSStore();
 
     const { discountAmount, total: cartTotal } = usePOSStore(useShallow(state => state.getTotals()));
+    const appliedCoupon = usePOSStore(state => state.appliedCoupon);
+    // Effective total after coupon discount (used for cash validation and display)
+    const couponDiscount = appliedCoupon ? (appliedCoupon.discountAmount || 0) : 0;
+    const effectiveCartTotal = Math.max(0, cartTotal - couponDiscount);
 
 
     const [products, setProducts] = useState([]);
@@ -341,12 +345,12 @@ export default function POS() {
         try {
             const { amountTendered, gcashReference, gcashDate, gcashTime } = paymentDetails;
             const parsedTendered = method === 'CASH' ? Number(amountTendered) : null;
-            if (method === 'CASH' && (!Number.isFinite(parsedTendered) || parsedTendered < cartTotal)) {
+            if (method === 'CASH' && (!Number.isFinite(parsedTendered) || parsedTendered < effectiveCartTotal)) {
                 throw new Error("Cash tendered must be a valid amount and at least equal to the total.");
             }
 
             const tendered = method === 'CASH' ? parsedTendered : null;
-            const change = method === 'CASH' ? Number((parsedTendered - cartTotal).toFixed(2)) : null;
+            const change = method === 'CASH' ? Number((parsedTendered - effectiveCartTotal).toFixed(2)) : null;
 
             const trainingItems = cart.filter(i => i.type === 'TRAINING');
             const otherItems = cart.filter(i => i.type !== 'TRAINING');
@@ -385,14 +389,16 @@ export default function POS() {
                 const paymentType = hasPlan ? 'MEMBERSHIP' : hasPackage ? 'CLASS_PACKAGE' : 'POS_SALE';
 
                 const res = await axios.post(withApiBase('/api/payments'), {
-                    amount: cartTotal, // This might need careful handling if sub-totals are different, but usually cartTotal is fine for the single swipe
+                    amount: effectiveCartTotal,
                     type: paymentType,
                     method: method,
                     items: otherItems,
                     discount: discount,
+                    couponCode: appliedCoupon ? appliedCoupon.code : undefined,
                     memberId: memberId || null,
                     cashTendered: tendered,
                     changeDue: change,
+                    sessionId: usePOSStore.getState().sessionId,
                     externalRef: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(method) ? gcashReference : null,
                     externalDate: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(method) ? externalDate : null
                 }, { headers: authHeaders() });

@@ -1,4 +1,11 @@
 import { create } from 'zustand';
+import axios from 'axios';
+import { withApiBase } from '../config/api';
+
+const authHeaders = () => {
+    const token = localStorage.getItem('token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+};
 
 /**
  * usePOSStore - Centralized state for the POS system.
@@ -9,6 +16,18 @@ export const usePOSStore = create((set, get) => ({
     cart: [],
     discount: 0, // Percentage
     selectedMemberId: '',
+    sessionId: null,
+    appliedCoupon: null, // { code, type, value, discountAmount, discountPercent, label }
+
+    // --- SESSION MGMT ---
+    getSessionId: () => {
+        let sid = get().sessionId;
+        if (!sid) {
+            sid = `pos-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+            set({ sessionId: sid });
+        }
+        return sid;
+    },
 
     // --- FILTER STATE ---
     selectedCategory: 'All',
@@ -45,16 +64,32 @@ export const usePOSStore = create((set, get) => ({
     // --- ACTIONS ---
 
     // Cart Actions
-    addToCart: (item, type = 'PRODUCT') => {
+    addToCart: async (item, type = 'PRODUCT') => {
         const state = get();
         const existing = state.cart.find(p => p.id === item.id && p.type === type);
+        const sid = state.getSessionId();
 
-        // Stock Check for Products
+        let newQty = 1;
+        if (existing) {
+             newQty = existing.quantity + 1;
+        }
+
+        // Stock Check for Products via API (allocates Redis memory)
         if (type === 'PRODUCT') {
-            const currentQty = existing ? existing.quantity : 0;
-            if (item.stock !== undefined && (currentQty + 1) > item.stock) {
-                return { success: false, error: `Not enough stock! Only ${item.stock} left.` };
-            }
+             try {
+                 await axios.post(withApiBase('/api/pos/reserve'), {
+                     sessionId: sid,
+                     productId: item.id,
+                     quantity: newQty
+                 }, { headers: authHeaders() });
+             } catch (err) {
+                 const currentQty = existing ? existing.quantity : 0;
+                 if (item.availableStock !== undefined && (currentQty + 1) > item.availableStock) {
+                     return { success: false, error: `Not enough stock! Only ${item.availableStock} left.` };
+                 }
+                 const msg = err.response?.data?.error || 'Failed to reserve stock';
+                 return { success: false, error: msg };
+             }
         }
 
         if (existing) {
@@ -75,23 +110,46 @@ export const usePOSStore = create((set, get) => ({
             ...item,
             type,
             quantity: 1,
+            productId: item.id,
             cartLineId: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
         };
         set({ cart: [...state.cart, newItem] });
         return { success: true };
     },
 
-    removeFromCart: (cartLineId) => {
+    removeFromCart: async (cartLineId) => {
+        const item = get().cart.find(i => i.cartLineId === cartLineId);
+        if (item && item.type === 'PRODUCT') {
+            try {
+                await axios.delete(withApiBase(`/api/pos/reserve/${get().sessionId}/${item.productId}`), { headers: authHeaders() });
+            } catch (e) {
+                console.error('Failed to unreserve stock', e);
+            }
+        }
         set((state) => ({
             cart: state.cart.filter(item => item.cartLineId !== cartLineId)
         }));
     },
 
-    updateQuantity: (cartLineId, quantity, stockLimit) => {
+    updateQuantity: async (cartLineId, quantity, stockLimit) => {
         if (quantity < 1) return { success: false, error: null };
-        if (stockLimit && quantity > stockLimit) {
-            return { success: false, error: `Cannot exceed available stock (${stockLimit})` };
+        const item = get().cart.find(i => i.cartLineId === cartLineId);
+        
+        if (item && item.type === 'PRODUCT') {
+            try {
+                await axios.post(withApiBase('/api/pos/reserve'), {
+                    sessionId: get().sessionId,
+                    productId: item.productId,
+                    quantity
+                }, { headers: authHeaders() });
+            } catch (err) {
+                 if (stockLimit && quantity > stockLimit) {
+                     return { success: false, error: `Cannot exceed available stock (${stockLimit})` };
+                 }
+                return { success: false, error: err.response?.data?.error || 'Failed to reserve stock' };
+            }
         }
+
         set((state) => ({
             cart: state.cart.map(item =>
                 item.cartLineId === cartLineId ? { ...item, quantity } : item
@@ -100,13 +158,26 @@ export const usePOSStore = create((set, get) => ({
         return { success: true };
     },
 
-    clearCart: () => set({ cart: [], discount: 0, selectedMemberId: '' }),
+    clearCart: async () => {
+        const sid = get().sessionId;
+        if (sid) {
+            try {
+                await axios.delete(withApiBase(`/api/pos/reserve/${sid}`), { headers: authHeaders() });
+            } catch (e) {
+                console.error('failed to clear cart reservations', e);
+            }
+        }
+        set({ cart: [], discount: 0, selectedMemberId: '', sessionId: null, appliedCoupon: null });
+    },
 
     // Member Selection
     setSelectedMemberId: (id) => set({ selectedMemberId: id }),
 
     // Discount Action
     setDiscount: (discount) => set({ discount: Number(discount) || 0 }),
+
+    // Coupon Action
+    setAppliedCoupon: (coupon) => set({ appliedCoupon: coupon }),
 
     // Filter Actions
     setCategory: (category) => set({ selectedCategory: category }),
