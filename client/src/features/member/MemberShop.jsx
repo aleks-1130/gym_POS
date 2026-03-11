@@ -14,6 +14,7 @@ export default function MemberShop() {
     const [products, setProducts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [cart, setCart] = useState([]);
+    const [sessionId, setSessionId] = useState(null);
     const [addingToCart, setAddingToCart] = useState({});
     const [showCartModal, setShowCartModal] = useState(false);
     const [cartPopup, setCartPopup] = useState({ show: false, itemName: '' });
@@ -120,48 +121,115 @@ export default function MemberShop() {
         setCart(updatedCart);
     };
 
-    const addToCart = (product) => {
+    const getSessionId = () => {
+        let sid = sessionId;
+        if (!sid) {
+            sid = localStorage.getItem('guestSessionId');
+            if (!sid) {
+                sid = `SESSION_${Math.random().toString(36).substr(2, 9)}_${Date.now()}`;
+                localStorage.setItem('guestSessionId', sid);
+            }
+            setSessionId(sid);
+        }
+        return sid;
+    };
+
+    const addToCart = async (product) => {
         setAddingToCart(prev => ({ ...prev, [product.id]: true }));
+        const sid = getSessionId();
 
-        setTimeout(() => {
+        try {
             const existingItem = cart.find(item => item.id === product.id);
-            let updatedCart;
+            const newQuantity = existingItem ? existingItem.quantity + 1 : 1;
 
+            if (newQuantity > (product.stock || 0)) {
+                await showAlert({ title: 'Stock Limit', message: `Cannot add more than available stock (${product.stock}).`, type: 'warning' });
+                return;
+            }
+
+            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+            const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+
+            await axios.post('/api/pos/reserve', {
+                sessionId: sid,
+                productId: product.id,
+                quantity: newQuantity
+            }, { headers: authHeaders });
+
+            let updatedCart;
             if (existingItem) {
-                // Increment quantity if already in cart
                 updatedCart = cart.map(item =>
                     item.id === product.id
-                        ? { ...item, quantity: item.quantity + 1 }
+                        ? { ...item, quantity: newQuantity }
                         : item
                 );
             } else {
-                // Add new item to cart
                 updatedCart = [...cart, { ...product, quantity: 1 }];
             }
 
             saveCart(updatedCart);
             showAddToCartPopup(product.name);
+        } catch (error) {
+            console.error("Failed to reserve stock", error);
+            await showAlert({ 
+                title: 'Reservation Failed', 
+                message: error.response?.data?.error || 'Failed to add item to cart due to stock limits.', 
+                type: 'warning' 
+            });
+        } finally {
             setAddingToCart(prev => ({ ...prev, [product.id]: false }));
-        }, 300);
+        }
     };
 
-    const updateCartQuantity = (productId, newQuantity) => {
+    const updateCartQuantity = async (productId, newQuantity) => {
         if (newQuantity <= 0) {
-            removeFromCart(productId);
+            await removeFromCart(productId);
             return;
         }
 
-        const updatedCart = cart.map(item =>
-            item.id === productId
-                ? { ...item, quantity: newQuantity }
-                : item
-        );
-        saveCart(updatedCart);
+        const product = products.find(p => p.id === productId);
+        if (product && newQuantity > (product.stock || 0)) {
+            await showAlert({ title: 'Stock Limit', message: `Cannot exceed available stock (${product.stock}).`, type: 'warning' });
+            return;
+        }
+
+        const sid = getSessionId();
+        try {
+            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+            const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+
+            await axios.post('/api/pos/reserve', {
+                sessionId: sid,
+                productId: productId,
+                quantity: newQuantity
+            }, { headers: authHeaders });
+
+            const updatedCart = cart.map(item =>
+                item.id === productId
+                    ? { ...item, quantity: newQuantity }
+                    : item
+            );
+            saveCart(updatedCart);
+        } catch (error) {
+            console.error("Failed to update stock reservation", error);
+            await showAlert({ title: 'Stock Update Failed', message: error.response?.data?.error || 'Failed to update quantity.', type: 'warning' });
+        }
     };
 
-    const removeFromCart = (productId) => {
-        const updatedCart = cart.filter(item => item.id !== productId);
-        saveCart(updatedCart);
+    const removeFromCart = async (productId) => {
+        const sid = getSessionId();
+        try {
+            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+            const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+
+            await axios.delete(`/api/pos/reserve/${sid}/${productId}`, { headers: authHeaders });
+            const updatedCart = cart.filter(item => item.id !== productId);
+            saveCart(updatedCart);
+        } catch (error) {
+            console.error("Failed to release stock reservation", error);
+            const updatedCart = cart.filter(item => item.id !== productId);
+            saveCart(updatedCart);
+        }
     };
 
     const getCartItemQuantity = (productId) => {
@@ -260,6 +328,10 @@ export default function MemberShop() {
             await axios.post('/api/members/checkout', payload, {
                 headers: { Authorization: `Bearer ${token}` }
             });
+
+            await axios.delete(`/api/pos/reserve/${sessionId || getSessionId()}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            }).catch(e => console.error("Failed to clear redis sessionId", e));
 
             setCart([]);
             saveCart([]);

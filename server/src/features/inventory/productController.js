@@ -1,5 +1,6 @@
 const prisma = require('../../config/prisma');
 const { logAudit } = require('../../services/auditService');
+const { redisClient } = require('../../config/redisClient');
 
 const normalizeProductPayload = (payload = {}) => {
     const name = String(payload.name || '').trim();
@@ -64,12 +65,28 @@ const getAllProducts = async (req, res) => {
 
         const isPaginated = Number.isInteger(page) && page > 0 && Number.isInteger(limit) && limit > 0;
 
+        // Fetch global active reservations across all carts from Redis
+        const allKeys = await redisClient.keys('cart:reserve:*');
+        const holds = {};
+        for (const key of allKeys) {
+            const hdata = await redisClient.hGetAll(key);
+            for (const [pid, qty] of Object.entries(hdata)) {
+                holds[pid] = (holds[pid] || 0) + Number(qty);
+            }
+        }
+
+        const mapWithStock = (p) => {
+            const serialized = serializeProduct(p);
+            serialized.availableStock = p.stock - (holds[p.id] || 0);
+            return serialized;
+        };
+
         if (!isPaginated) {
             const products = await prisma.product.findMany({
                 where,
                 orderBy: { name: 'asc' }
             });
-            return res.json(products.map(serializeProduct));
+            return res.json(products.map(mapWithStock));
         }
 
         const [total, rows] = await Promise.all([
@@ -84,7 +101,7 @@ const getAllProducts = async (req, res) => {
         const totalPages = Math.max(1, Math.ceil(total / limit));
 
         res.json({
-            data: rows.map(serializeProduct),
+            data: rows.map(mapWithStock),
             meta: {
                 total,
                 page,

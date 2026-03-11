@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { REWARD_CATEGORIES } from '../../constants/categories';
+import { REWARD_CATEGORIES, REWARD_ACTION_TYPES } from '../../constants/categories';
 import { useConfirm } from '../../context/ConfirmContext';
+import DataTable from '../../components/common/DataTable';
 
 export default function LoyaltyManager() {
     const { alert: showAlert, confirm: showConfirm } = useConfirm();
@@ -11,16 +12,28 @@ export default function LoyaltyManager() {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedMember, setSelectedMember] = useState(null);
     const [totalPoints, setTotalPoints] = useState(0); // Friend's Feature
+    
+    // Member History State
+    const [memberHistory, setMemberHistory] = useState([]);
+    const [loadingHistory, setLoadingHistory] = useState(false);
+    const [historyFilter, setHistoryFilter] = useState('ALL');
 
     // Management State
     const [showManageModal, setShowManageModal] = useState(false);
     const [showManualModal, setShowManualModal] = useState(false); // New: Manual Adjust Modal
+    const [showHistoryModal, setShowHistoryModal] = useState(false);
     const [editReward, setEditReward] = useState(null); // If set, we are editing this reward
-    const [rewardFormData, setRewardFormData] = useState({ name: '', cost: '', category: REWARD_CATEGORIES.MERCHANDISE, description: '', imageUrl: '' });
+    
+    // Reward Form State including Action Type/Value
+    const [rewardFormData, setRewardFormData] = useState({ 
+        name: '', cost: '', category: REWARD_CATEGORIES.MERCHANDISE, 
+        description: '', imageUrl: '', actionType: 'NONE', actionValue: '' 
+    });
 
     // Manual Adjust State (Friend's Feature)
     const [manualPoints, setManualPoints] = useState('');
     const [manualAction, setManualAction] = useState('ADD');
+    const [manualNotes, setManualNotes] = useState('');
 
     useEffect(() => {
         fetchRewards();
@@ -65,6 +78,26 @@ export default function LoyaltyManager() {
         }
     };
 
+    const fetchHistory = async (memberId) => {
+        setLoadingHistory(true);
+        try {
+            const res = await axios.get(`/api/members/${memberId}/loyalty-history`);
+            setMemberHistory(res.data);
+        } catch (e) {
+            console.error("Failed to fetch loyalty history", e);
+        } finally {
+            setLoadingHistory(false);
+        }
+    };
+
+    useEffect(() => {
+        if (selectedMember) {
+            fetchHistory(selectedMember.id);
+        } else {
+            setMemberHistory([]);
+        }
+    }, [selectedMember]);
+
     // --- REDEMPTION LOGIC ---
     const handleRedeem = async (reward) => {
         if (!selectedMember) {
@@ -88,15 +121,17 @@ export default function LoyaltyManager() {
         try {
             await axios.post(`/api/members/${selectedMember.id}/points`, {
                 points: reward.cost,
-                type: 'REDEEM'
+                type: 'REDEEM',
+                rewardId: reward.id
             });
 
             const updatedMember = { ...selectedMember, points: selectedMember.points - reward.cost };
             setSelectedMember(updatedMember);
             setMembers(prev => prev.map(m => m.id === updatedMember.id ? updatedMember : m));
             setTotalPoints(prev => prev - reward.cost);
+            fetchHistory(selectedMember.id);
 
-            await showAlert({ title: 'Redeemed!', message: `Successfully redeemed ${reward.name}!`, type: 'success' });
+            await showAlert({ title: 'Redeemed!', message: `Successfully redeemed ${reward.name}! Actions applied.`, type: 'success' });
         } catch (e) {
             await showAlert({ title: 'Redemption Failed', message: e.response?.data?.error || 'Redemption failed', type: 'danger' });
         }
@@ -113,7 +148,8 @@ export default function LoyaltyManager() {
         try {
             await axios.post(`/api/members/${selectedMember.id}/points`, {
                 points: Number(manualPoints),
-                type: manualAction
+                type: manualAction,
+                description: manualNotes
             });
 
             const impact = manualAction === 'ADD' ? Number(manualPoints) : -Number(manualPoints);
@@ -122,10 +158,12 @@ export default function LoyaltyManager() {
             setSelectedMember(updatedMember);
             setMembers(prev => prev.map(m => m.id === updatedMember.id ? updatedMember : m));
             setTotalPoints(prev => prev + impact);
+            fetchHistory(selectedMember.id);
 
             await showAlert({ title: 'Points Updated', message: 'Points updated successfully!', type: 'success' });
             setShowManualModal(false);
             setManualPoints('');
+            setManualNotes('');
         } catch (e) {
             await showAlert({ title: 'Update Failed', message: e.response?.data?.error || 'Failed to update points', type: 'danger' });
         }
@@ -150,7 +188,7 @@ export default function LoyaltyManager() {
             fetchRewards();
             setShowManageModal(false);
             setEditReward(null);
-            setRewardFormData({ name: '', cost: '', category: 'MERCHANDISE', description: '', imageUrl: '' });
+            setRewardFormData({ name: '', cost: '', category: REWARD_CATEGORIES.MERCHANDISE, description: '', imageUrl: '', actionType: 'NONE', actionValue: '' });
         } catch (e) {
             console.error(e);
             await showAlert({ title: 'Save Failed', message: 'Failed to save reward: ' + (e.response?.data?.error || e.message), type: 'danger' });
@@ -170,13 +208,21 @@ export default function LoyaltyManager() {
 
     const openEdit = (reward) => {
         setEditReward(reward);
-        setRewardFormData({ ...reward });
+        setRewardFormData({ 
+            name: reward.name || '', 
+            cost: reward.cost || '', 
+            category: reward.category || REWARD_CATEGORIES.MERCHANDISE, 
+            description: reward.description || '', 
+            imageUrl: reward.imageUrl || '',
+            actionType: reward.actionType || 'NONE',
+            actionValue: reward.actionValue || ''
+        });
         setShowManageModal(true);
     };
 
     const openCreate = () => {
         setEditReward(null);
-        setRewardFormData({ name: '', cost: '', category: REWARD_CATEGORIES.MERCHANDISE, description: '', imageUrl: '' });
+        setRewardFormData({ name: '', cost: '', category: REWARD_CATEGORIES.MERCHANDISE, description: '', imageUrl: '', actionType: 'NONE', actionValue: '' });
         setShowManageModal(true);
     };
 
@@ -196,6 +242,14 @@ export default function LoyaltyManager() {
                         <span className="block text-[10px] text-text-muted uppercase tracking-widest font-bold">Total Issued</span>
                         <span className="text-xl font-bold text-primary">{totalPoints.toLocaleString()} pts</span>
                     </div>
+
+                    <button
+                        onClick={async () => { if (!selectedMember) { await showAlert({ title: 'No Member Selected', message: 'Select a member first!', type: 'warning' }); return; } setShowHistoryModal(true); }}
+                        className="bg-surfaceHighlight hover:bg-white/10 text-white px-5 py-2.5 rounded-2xl font-bold border border-white/10 flex items-center gap-2 transition-all shadow-sm"
+                    >
+                        <span className="material-icons-round">history</span>
+                        Point History
+                    </button>
 
                     <button
                         onClick={async () => { if (!selectedMember) { await showAlert({ title: 'No Member Selected', message: 'Select a member first!', type: 'warning' }); return; } setShowManualModal(true); }}
@@ -428,6 +482,38 @@ export default function LoyaltyManager() {
                                         placeholder="https://..."
                                     />
                                 </div>
+                                <div className="grid grid-cols-2 gap-4 items-end">
+                                    <div>
+                                        <label className="block text-xs font-bold text-text-secondary uppercase mb-2">Programmatic Action</label>
+                                        <select
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:ring-1 focus:ring-primary/50 outline-none transition-all appearance-none"
+                                            value={rewardFormData.actionType}
+                                            onChange={e => setRewardFormData({ ...rewardFormData, actionType: e.target.value })}
+                                        >
+                                            <option value="NONE">None</option>
+                                            <option value="FREE_CLASS">Free Group Class</option>
+                                            <option value="FREE_SESSION">Free 1-on-1 Session</option>
+                                            <option value="DISCOUNT">Discount Coupon</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-text-secondary uppercase mb-2">
+                                            {rewardFormData.actionType === 'DISCOUNT' ? 'Amount (₱100 flat or 0.2 = 20%)' : 'Quantity'}
+                                        </label>
+                                        <input
+                                            type="number" step="any"
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:ring-1 focus:ring-primary/50 outline-none transition-all"
+                                            value={rewardFormData.actionValue}
+                                            disabled={rewardFormData.actionType === 'NONE'}
+                                            onChange={e => setRewardFormData({ ...rewardFormData, actionValue: e.target.value })}
+                                            placeholder={
+                                                rewardFormData.actionType === 'DISCOUNT' ? 'e.g. 100 for ₱100 off' :
+                                                rewardFormData.actionType === 'NONE' ? 'N/A' : 'e.g. 1'
+                                            }
+                                        />
+                                    </div>
+                                </div>
+                                
                                 <div>
                                     <label className="block text-xs font-bold text-text-secondary uppercase mb-2">Description</label>
                                     <textarea
@@ -445,6 +531,66 @@ export default function LoyaltyManager() {
                                     </button>
                                 </div>
                             </form>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* History Modal */}
+            {showHistoryModal && selectedMember && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-8 animate-fade-in">
+                    <div className="bg-surface w-full max-w-4xl h-[80vh] rounded-[32px] border border-white/10 shadow-2xl p-8 flex flex-col relative">
+                        <button
+                            onClick={() => setShowHistoryModal(false)}
+                            className="absolute top-6 right-6 text-text-muted hover:text-white transition-colors z-10"
+                        >
+                            <span className="material-icons-round">close</span>
+                        </button>
+                        
+                        <div className="flex justify-between items-center mb-6 shrink-0">
+                            <div>
+                                <h3 className="text-2xl font-bold text-white">Point History: {selectedMember.firstName}</h3>
+                                <p className="text-text-muted text-sm mt-1">Total Balance: {selectedMember.points}</p>
+                            </div>
+                            <div className="flex gap-2 mr-8">
+                                {['ALL', 'EARNED', 'REDEEMED', 'ADJUSTED'].map(type => (
+                                    <button
+                                        key={type}
+                                        onClick={() => setHistoryFilter(type)}
+                                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors ${historyFilter === type ? 'bg-primary text-black' : 'bg-surfaceHighlight text-white hover:bg-white/10'}`}
+                                    >
+                                        {type}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="flex-1 overflow-hidden">
+                            <DataTable
+                                data={historyFilter === 'ALL' ? memberHistory : memberHistory.filter(h => h.type === historyFilter)}
+                                isLoading={loadingHistory}
+                                emptyMessage="No transaction history found."
+                                columns={[
+                                    { header: 'Date', accessor: (row) => new Date(row.createdAt).toLocaleString() },
+                                    { 
+                                        header: 'Type', 
+                                        accessor: (row) => (
+                                            <span className={`px-2 py-1 rounded-md text-xs font-bold ${row.type === 'EARNED' ? 'bg-emerald-500/20 text-emerald-400' : row.type === 'REDEEMED' ? 'bg-red-500/20 text-red-400' : 'bg-orange-500/20 text-orange-400'}`}>
+                                                {row.type}
+                                            </span>
+                                        ) 
+                                    },
+                                    { 
+                                        header: 'Points', 
+                                        accessor: (row) => (
+                                            <span className={`font-mono font-bold ${row.points > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                                {row.points > 0 ? `+${row.points}` : row.points}
+                                            </span>
+                                        ) 
+                                    },
+                                    { header: 'Description', accessor: (row) => <span className="text-text-secondary">{row.description}</span> }
+                                ]}
+                            />
                         </div>
                     </div>
                 </div>
@@ -475,6 +621,15 @@ export default function LoyaltyManager() {
                                     value={manualPoints}
                                     onChange={e => setManualPoints(e.target.value)}
                                     placeholder="e.g. 100"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-text-secondary uppercase mb-2">Description / Notes</label>
+                                <input
+                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:ring-1 focus:ring-primary/50 outline-none transition-all"
+                                    value={manualNotes}
+                                    onChange={e => setManualNotes(e.target.value)}
+                                    placeholder="Reason for adjustment"
                                 />
                             </div>
                             <div className="pt-4 flex justify-end gap-3">

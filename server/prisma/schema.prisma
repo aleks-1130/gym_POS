@@ -78,6 +78,8 @@ model Member {
   payments               Payment[]
   paymentMethods         PaymentMethod[]
   trainingSessions       TrainingSession[]
+  loyaltyTransactions    LoyaltyTransaction[]
+  coupons                Coupon[]
   activationToken        String?            @unique
   activationExpires      DateTime?
   resetPasswordToken     String?            @unique
@@ -90,7 +92,15 @@ model Member {
 
 model Payment {
   id             Int           @id @default(autoincrement())
-  amount         Float
+  amount         Float         // Total amount after discounts
+  payableAmount  Float         @default(0) // Final amount to be paid
+  taxAmount      Float         @default(0) // tax_amount
+  taxableAmount  Float         @default(0) // taxable_amount
+  roundingAdjustment Float     @default(0) // rounding_adjustment_amount
+  currency       String        @default("PHP")
+  referenceId    String?       @unique     // reference_id
+  companyId      String?       // company_id
+  financialInstitutionId String? // financial_institution_id for collections
   type           String
   method         String
   status         String        @default("COMPLETED")
@@ -112,6 +122,7 @@ model Payment {
   @@index([date])
   @@index([type])
   @@index([memberId])
+  @@index([referenceId])
 }
 
 model AccessLog {
@@ -513,7 +524,41 @@ model LoyaltyReward {
   description String?
   imageUrl    String?
   category    String?
+  actionType  String?  @default("NONE")
+  actionValue Float?
   createdAt   DateTime @default(now())
+}
+
+model LoyaltyTransaction {
+  id          Int      @id @default(autoincrement())
+  memberId    Int
+  points      Int
+  type        String   // 'EARNED', 'REDEEMED', 'ADJUSTED'
+  description String?
+  createdAt   DateTime @default(now())
+
+  member      Member   @relation(fields: [memberId], references: [id])
+
+  @@index([memberId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+model Coupon {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
+  memberId    Int?
+  type        String   // 'FLAT', 'PERCENTAGE'
+  value       Float
+  status      String   @default("ACTIVE") // 'ACTIVE', 'USED', 'EXPIRED'
+  expiryDate  DateTime?
+  createdAt   DateTime @default(now())
+
+  member      Member?  @relation(fields: [memberId], references: [id])
+
+  @@index([code])
+  @@index([memberId])
+  @@index([status])
 }
 
 model PosConfig {
@@ -573,4 +618,18 @@ model PayrollConfig {
   updatedAt            DateTime @updatedAt
 
   @@map("payroll_config")
+}
+
+model PromoCode {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique
+  type        String    // FLAT | PERCENTAGE
+  value       Float     // 100 = ₱100 flat, 0.2 = 20% off
+  description String?
+  maxUses     Int?      // null = unlimited
+  usedCount   Int       @default(0)
+  isActive    Boolean   @default(true)
+  expiryDate  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 }

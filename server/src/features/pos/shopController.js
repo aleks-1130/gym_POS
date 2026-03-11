@@ -203,6 +203,17 @@ const checkout = async (req, res) => {
             return payment;
         });
 
+        if (req.body.sessionId) {
+            try {
+                const { redisClient } = require('../../config/redisClient');
+                if (redisClient && redisClient.isOpen) {
+                    await redisClient.del(`cart:reserve:${req.body.sessionId}`);
+                }
+            } catch (redisErr) {
+                console.error("Failed to clear redis reservation:", redisErr);
+            }
+        }
+
         res.json(result);
     } catch (e) {
         console.error("Checkout error:", e);

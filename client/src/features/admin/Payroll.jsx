@@ -1,8 +1,9 @@
-﻿import { useConfirm } from '../../context/ConfirmContext';
+import { useConfirm } from '../../context/ConfirmContext';
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useAuth } from '../../context/AuthContext';
+import DataTable from '../../components/common/DataTable';
 
 const Payroll = () => {
     const { alert: showAlert } = useConfirm();
@@ -336,134 +337,130 @@ const Payroll = () => {
     };
 
     const payrollTable = (
-        <div className="rounded-2xl border border-white/10 bg-surface shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-                <table className="w-full table-fixed text-left text-sm tabular-nums">
-                    <colgroup>
-                        <col className={activeTab === 'TRAINERS' ? 'w-[38%]' : 'w-[40%]'} />
-                        <col className="w-[12%]" />
-                        <col className="w-[12%]" />
-                        {activeTab === 'TRAINERS' && <col className="w-[10%]" />}
-                        {activeTab === 'TRAINERS' && <col className="w-[10%]" />}
-                        <col className={activeTab === 'TRAINERS' ? 'w-[18%]' : 'w-[20%]'} />
-                    </colgroup>
-                    <thead className="sticky top-0 z-10 border-b border-white/10 bg-surface/95 text-[11px] uppercase tracking-wide text-text-muted backdrop-blur">
-                        <tr>
-                            <th className="p-3">Name</th>
-                            {activeTab === 'TRAINERS' && <th className="p-3 text-right">Commission</th>}
-                            {activeTab === 'STAFF' && <th className="p-3 text-right">Base Salary</th>}
-                            <th className="p-3 text-right">Paid (Period)</th>
-                            {activeTab === 'TRAINERS' && <th className="p-3 text-right">Unpaid</th>}
-                            {activeTab === 'TRAINERS' && <th className="p-3 text-right">Deductions</th>}
-                            <th className="p-3 text-right">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/5">
-                        {activeTab === 'TRAINERS' ? (
-                            filteredTrainers.length === 0 ? (
-                                <tr>
-                                    <td colSpan="6" className="p-6 text-center text-text-muted">No trainers found.</td>
-                                </tr>
-                            ) : (
-                                filteredTrainers.map((trainer, index) => (
-                                    <tr key={trainer.id} className={`${index % 2 === 0 ? 'bg-white/[0.01]' : ''} transition-colors hover:bg-white/5`}>
-                                        <td className="p-3 align-middle">
-                                            <div className="flex items-center gap-3">
-                                                {trainer.imageUrl && (
-                                                    <img src={`${trainer.imageUrl}`} alt={trainer.name} className="h-8 w-8 rounded-full object-cover" />
-                                                )}
-                                                <span className="truncate font-medium text-white">{trainer.name}</span>
-                                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${trainer.type === 'FREELANCER'
-                                                    ? 'bg-orange-500/15 text-orange-300'
-                                                    : 'bg-blue-500/15 text-blue-300'
-                                                    }`}>
-                                                    {trainer.type === 'FREELANCER' ? 'Freelance' : 'Full-time'}
-                                                </span>
-                                            </div>
-                                        </td>
-                                        <td className="p-3 text-right font-semibold text-text-secondary">{(Number(trainer.commissionRate || 0) * 100).toFixed(0)}%</td>
-                                        <td className="p-3 text-right font-semibold text-emerald-300">{formatPrice(trainer.totalPaid)}</td>
-                                        <td className="p-3 text-right font-semibold text-amber-300">{formatPrice(trainer.unpaidCommissions)}</td>
-                                        <td className="p-3 text-right font-semibold text-red-300">{formatPrice(trainer.outstandingMaterialDeductions || 0)}</td>
-                                        <td className="p-3">
-                                            <div className="flex justify-end gap-1.5">
-                                                <button
-                                                    onClick={() => handlePayCommission(trainer)}
-                                                    className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${trainer.unpaidCommissions > 0
-                                                        ? 'bg-primary text-background hover:bg-orange-600'
-                                                        : 'cursor-not-allowed border border-white/10 bg-white/5 text-text-muted'
-                                                        }`}
-                                                    disabled={trainer.unpaidCommissions <= 0}
-                                                >
-                                                    Pay Commission
-                                                </button>
-                                                <details className="relative">
-                                                    <summary className="list-none cursor-pointer rounded-lg border border-white/10 px-2.5 py-1.5 text-sm font-semibold text-text-secondary transition-colors hover:text-white [&::-webkit-details-marker]:hidden">
-                                                        ⋯
-                                                    </summary>
-                                                    <div className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-white/10 bg-surfaceHighlight p-1 shadow-2xl">
-                                                        <button
-                                                            onClick={() => submitAutoCommissionPayment(trainer.id, trainer.name)}
-                                                            className={`w-full rounded-lg px-2.5 py-2 text-left text-xs font-semibold transition-colors ${trainer.unpaidCommissions > 0
-                                                                ? 'text-rose-300 hover:bg-white/5'
-                                                                : 'cursor-not-allowed text-text-muted'
-                                                                }`}
-                                                            disabled={trainer.unpaidCommissions <= 0}
-                                                        >
-                                                            Auto Settle
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleRecordPayment(trainer, 'TRAINER')}
-                                                            className={`w-full rounded-lg px-2.5 py-2 text-left text-xs font-semibold transition-colors ${canPaySalary(trainer)
-                                                                ? 'text-blue-300 hover:bg-white/5'
-                                                                : 'cursor-not-allowed text-text-muted'
-                                                                }`}
-                                                            disabled={!canPaySalary(trainer)}
-                                                            title={!canPaySalary(trainer) ? "Only Owner can pay Admins" : ""}
-                                                        >
-                                                            Pay Salary
-                                                        </button>
-                                                    </div>
-                                                </details>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
-                            )
-                        ) : (
-                            staff.length === 0 ? (
-                                <tr>
-                                    <td colSpan="4" className="p-6 text-center text-text-muted">No staff found.</td>
-                                </tr>
-                            ) : (
-                                staff.map((user, index) => (
-                                    <tr key={user.id} className={`${index % 2 === 0 ? 'bg-white/[0.01]' : ''} transition-colors hover:bg-white/5`}>
-                                        <td className="p-3 font-medium text-white">
-                                            {user.name} <span className="ml-2 text-xs text-text-muted">({user.role})</span>
-                                        </td>
-                                        <td className="p-3 text-right text-text-secondary">{user.baseSalary ? formatPrice(user.baseSalary) : '-'}</td>
-                                        <td className="p-3 text-right font-semibold text-emerald-300">{formatPrice(user.totalPaid)}</td>
-                                        <td className="p-3 text-right">
-                                            <button
-                                                onClick={() => handleRecordPayment(user, 'STAFF')}
-                                                className={`rounded-lg px-3 py-1.5 text-xs font-bold text-white ${canPaySalary(user)
-                                                    ? 'bg-blue-500 hover:bg-blue-600'
-                                                    : 'cursor-not-allowed bg-white/20'
-                                                    }`}
-                                                disabled={!canPaySalary(user)}
-                                                title={!canPaySalary(user) ? "Only Owner can pay Admins/Owners" : ""}
-                                            >
-                                                Pay Salary
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))
-                            )
-                        )}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+        <DataTable
+            columns={activeTab === 'TRAINERS' ? [
+                {
+                    header: 'Name',
+                    accessor: (trainer) => (
+                        <div className="flex items-center gap-3">
+                            {trainer.imageUrl && (
+                                <img src={`${trainer.imageUrl}`} alt={trainer.name} className="h-8 w-8 rounded-full object-cover" />
+                            )}
+                            <span className="truncate font-medium text-white">{trainer.name}</span>
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${trainer.type === 'FREELANCER'
+                                ? 'bg-orange-500/15 text-orange-300'
+                                : 'bg-blue-500/15 text-blue-300'
+                                }`}>
+                                {trainer.type === 'FREELANCER' ? 'Freelance' : 'Full-time'}
+                            </span>
+                        </div>
+                    ),
+                    className: 'w-[38%]'
+                },
+                {
+                    header: 'Commission',
+                    accessor: (trainer) => <span className="text-text-secondary font-semibold">{(Number(trainer.commissionRate || 0) * 100).toFixed(0)}%</span>,
+                    className: 'w-[12%] text-right',
+                    cellClassName: 'text-right'
+                },
+                {
+                    header: 'Paid (Period)',
+                    accessor: (trainer) => <span className="font-semibold text-emerald-300">{formatPrice(trainer.totalPaid)}</span>,
+                    className: 'w-[12%] text-right',
+                    cellClassName: 'text-right'
+                },
+                {
+                    header: 'Unpaid',
+                    accessor: (trainer) => <span className="font-semibold text-amber-300">{formatPrice(trainer.unpaidCommissions)}</span>,
+                    className: 'w-[10%] text-right',
+                    cellClassName: 'text-right'
+                },
+                {
+                    header: 'Deductions',
+                    accessor: (trainer) => <span className="font-semibold text-red-300">{formatPrice(trainer.outstandingMaterialDeductions || 0)}</span>,
+                    className: 'w-[10%] text-right',
+                    cellClassName: 'text-right'
+                }
+            ] : [
+                {
+                    header: 'Name',
+                    accessor: (user) => (
+                        <span className="font-medium text-white">
+                            {user.name} <span className="ml-2 text-xs text-text-muted">({user.role})</span>
+                        </span>
+                    ),
+                    className: 'w-[40%]'
+                },
+                {
+                    header: 'Base Salary',
+                    accessor: (user) => <span className="text-text-secondary">{user.baseSalary ? formatPrice(user.baseSalary) : '-'}</span>,
+                    className: 'w-[12%] text-right',
+                    cellClassName: 'text-right'
+                },
+                {
+                    header: 'Paid (Period)',
+                    accessor: (user) => <span className="font-semibold text-emerald-300">{formatPrice(user.totalPaid)}</span>,
+                    className: 'w-[12%] text-right',
+                    cellClassName: 'text-right'
+                }
+            ]}
+            data={activeTab === 'TRAINERS' ? filteredTrainers : staff}
+            emptyMessage={`No ${activeTab.toLowerCase()} found.`}
+            actions={(row) => activeTab === 'TRAINERS' ? (
+                <div className="flex justify-end gap-1.5">
+                    <button
+                        onClick={(e) => { e.stopPropagation(); handlePayCommission(row); }}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${row.unpaidCommissions > 0
+                            ? 'bg-primary text-background hover:bg-orange-600'
+                            : 'cursor-not-allowed border border-white/10 bg-white/5 text-text-muted'
+                            }`}
+                        disabled={row.unpaidCommissions <= 0}
+                    >
+                        Pay Commission
+                    </button>
+                    <details className="relative" onClick={(e) => e.stopPropagation()}>
+                        <summary className="list-none cursor-pointer rounded-lg border border-white/10 px-2.5 py-1.5 text-sm font-semibold text-text-secondary transition-colors hover:text-white [&::-webkit-details-marker]:hidden">
+                            ⋯
+                        </summary>
+                        <div className="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-white/10 bg-surfaceHighlight p-1 shadow-2xl">
+                            <button
+                                onClick={() => submitAutoCommissionPayment(row.id, row.name)}
+                                className={`w-full rounded-lg px-2.5 py-2 text-left text-xs font-semibold transition-colors ${row.unpaidCommissions > 0
+                                    ? 'text-rose-300 hover:bg-white/5'
+                                    : 'cursor-not-allowed text-text-muted'
+                                    }`}
+                                disabled={row.unpaidCommissions <= 0}
+                            >
+                                Auto Settle
+                            </button>
+                            <button
+                                onClick={() => handleRecordPayment(row, 'TRAINER')}
+                                className={`w-full rounded-lg px-2.5 py-2 text-left text-xs font-semibold transition-colors ${canPaySalary(row)
+                                    ? 'text-blue-300 hover:bg-white/5'
+                                    : 'cursor-not-allowed text-text-muted'
+                                    }`}
+                                disabled={!canPaySalary(row)}
+                                title={!canPaySalary(row) ? "Only Owner can pay Admins" : ""}
+                            >
+                                Pay Salary
+                            </button>
+                        </div>
+                    </details>
+                </div>
+            ) : (
+                <button
+                    onClick={(e) => { e.stopPropagation(); handleRecordPayment(row, 'STAFF'); }}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-bold text-white ${canPaySalary(row)
+                        ? 'bg-blue-500 hover:bg-blue-600'
+                        : 'cursor-not-allowed bg-white/20'
+                        }`}
+                    disabled={!canPaySalary(row)}
+                    title={!canPaySalary(row) ? "Only Owner can pay Admins/Owners" : ""}
+                >
+                    Pay Salary
+                </button>
+            )}
+        />
     );
 
     return (
