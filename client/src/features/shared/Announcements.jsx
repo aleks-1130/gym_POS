@@ -192,11 +192,13 @@ export default function Announcements() {
 
             {/* Create Announcement Modal */}
             {showCreateModal && (
-                <div className="fixed inset-0 z-[100] overflow-y-auto no-scrollbar">
-                    <div className="fixed inset-0 bg-background/90 backdrop-blur-2xl" onClick={() => setShowCreateModal(false)}></div>
-                    <div className="flex min-h-full items-center justify-center p-4 sm:p-10">
-                        <div className="bg-surface w-full max-w-xl rounded-[3rem] border border-white/10 shadow-2xl relative z-10 animate-in zoom-in-95 duration-300">
-                            <div className="p-8 sm:p-10">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div 
+                        className="fixed inset-0 bg-background/90 backdrop-blur-2xl" 
+                        onClick={() => setShowCreateModal(false)}
+                    />
+                    <div className="bg-surface w-full max-w-xl rounded-[3rem] border border-white/10 shadow-2xl relative z-10 animate-in zoom-in-95 duration-300 max-h-[95vh] overflow-y-auto">
+                        <div className="p-10">
                             <div className="flex items-center justify-between mb-10">
                                 <div>
                                     <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter leading-none">New Broadcast</h2>
@@ -307,7 +309,6 @@ export default function Announcements() {
                                     )}
                                 </button>
                             </form>
-                            </div>
                         </div>
                     </div>
                 </div>
