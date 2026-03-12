@@ -19,7 +19,18 @@ import { authHeaders } from './POSUtils';
  * POSCart Component - Manages the cart items, member selection, and training details.
  */
 export default function POSCart({ members, trainers, discountOptions, initiateCheckout, openReceiptTemplatePreview }) {
-    const { formatPrice } = useCurrency();
+    const { formatPrice: globalFormatPrice, currency: globalCurrency } = useCurrency();
+    
+    // Local currency formatting for flexibility (SGD/PHP)
+    const formatPrice = (amount, currencyCode = globalCurrency) => {
+        const locale = currencyCode === 'SGD' ? 'en-SG' : 'en-PH';
+        return new Intl.NumberFormat(locale, {
+            style: 'currency',
+            currency: currencyCode,
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }).format(amount || 0);
+    };
     const { alert: showAlert } = useConfirm();
 
     // Zustand Store

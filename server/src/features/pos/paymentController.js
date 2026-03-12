@@ -1,6 +1,7 @@
 const prisma = require('../../config/prisma');
 const { getPosConfig } = require('../../services/configService');
 const { getReceiptSettings, saveReceiptSettings } = require('../../services/receiptSettingsService');
+const notificationService = require('../../services/notificationService');
 const bcrypt = require('bcryptjs');
 
 const POS_PIN_MIN_LENGTH = 4;
@@ -140,8 +141,14 @@ const getPaymentDetails = async (req, res) => {
             }
         }
 
+        const collections = [{
+            amount: Number(payment.payableAmount || payment.amount),
+            financial_institution_id: payment.financialInstitutionId || 'N/A'
+        }];
+
         res.json({
             ...payment,
+            collections,
             trainingSessions
         });
     } catch (e) {
@@ -151,7 +158,7 @@ const getPaymentDetails = async (req, res) => {
 
 // POS Payment Creation
 const createPayment = async (req, res) => {
-    const { amount, type, method, memberId, items, discount, cashTendered, changeDue, externalRef, externalDate, couponCode } = req.body;
+    const { amount, type, method, memberId, items, discount, cashTendered, changeDue, externalRef, externalDate, couponCode, currency } = req.body;
     const resolvedMemberId = req.user.role === 'MEMBER'
         ? req.user.id
         : (memberId ? Number(memberId) : null);
@@ -353,7 +360,7 @@ const createPayment = async (req, res) => {
                 taxAmount,
                 taxableAmount,
                 roundingAdjustment: 0,
-                currency: 'PHP',
+                currency: currency || 'PHP',
                 referenceId,
                 financialInstitutionId,
                 companyId: process.env.COMPANY_ID || 'FITOS_GYM_001',
@@ -535,6 +542,18 @@ const createPayment = async (req, res) => {
             return createdPayment;
         });
 
+        // After successful payment, trigger notification/receipt
+        if (payment && resolvedMemberId) {
+            notificationService.sendReceipt({
+                memberId: resolvedMemberId,
+                amount: payment.amount,
+                method: payment.method,
+                items: normalizedItems,
+                receiptId: payment.referenceId || `REC-${payment.id}`,
+                referenceId: payment.referenceId
+            }).catch(err => console.error('Failed to send receipt notification:', err));
+        }
+
         if (req.body.sessionId) {
             try {
                 const { redisClient } = require('../../config/redisClient');
@@ -546,7 +565,15 @@ const createPayment = async (req, res) => {
             }
         }
 
-        res.json(payment);
+        const collections = [{
+            amount: Number(payment.payableAmount || payment.amount),
+            financial_institution_id: payment.financialInstitutionId
+        }];
+
+        res.json({
+            ...payment,
+            collections
+        });
     } catch (e) {
         res.status(e.status || 500).json({ error: e.message || "Payment failed" });
     }

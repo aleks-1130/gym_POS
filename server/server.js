@@ -12,6 +12,9 @@ const { migrateInventoryDataToDatabase } = require('./src/features/inventory/inv
 const { connectRedis } = require('./src/config/redisClient');
 
 const app = express();
+const schedulingService = require('./src/services/schedulingService');
+schedulingService.init();
+
 const PORT = process.env.PORT || 5000;
 
 app.use(helmet());

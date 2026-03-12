@@ -46,4 +46,4 @@ const sendPasswordResetEmail = async (email, name, token) => {
     await sendEmailWebhook(process.env.N8N_ACTIVATION_WEBHOOK_URL, payload);
 };
 
-module.exports = { sendActivationEmail, sendPasswordResetEmail };
+module.exports = { sendActivationEmail, sendPasswordResetEmail, sendEmailWebhook };

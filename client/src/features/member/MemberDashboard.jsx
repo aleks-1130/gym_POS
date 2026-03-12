@@ -67,8 +67,24 @@ const MemberDashboard = ({ stats, user }) => {
         : 'border-primary/15 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent';
     const memberId = member.id || user?.id;
     const [dynamicQr, setDynamicQr] = useState({ qrValue: '', expiresAt: null, loading: false });
+    const [latestNotification, setLatestNotification] = useState(null);
     const loyaltyPoints = stats?.loyaltyPoints ?? member.points ?? 0;
     const checkIns = stats?.checkIns ?? (member.accessLogs?.filter((log) => log.status !== 'DENIED').length || 0);
+
+    useEffect(() => {
+        const fetchLatestNotification = async () => {
+            try {
+                const res = await axios.get('/api/notifications');
+                if (res.data && res.data.length > 0) {
+                    setLatestNotification(res.data[0]); // Most recent first from backend usually
+                }
+            } catch (error) {
+                console.error("Failed to fetch latest notification");
+            }
+        };
+
+        fetchLatestNotification();
+    }, []);
 
     useEffect(() => {
         const fetchDynamicQr = async () => {
@@ -222,15 +238,24 @@ const MemberDashboard = ({ stats, user }) => {
                     <span className="material-icons-round text-primary text-base">notifications_active</span>
                     Latest Update
                 </h3>
-                <div className="p-3 bg-primary/10 rounded-lg border border-primary/20">
-                    <div className="flex gap-3">
-                        <span className="material-icons-round text-primary flex-shrink-0 text-lg">campaign</span>
-                        <div className="min-w-0 flex-1">
-                            <h4 className="font-bold text-primary text-sm mb-1">Welcome to FitOS!</h4>
-                            <p className="text-xs text-white/70 leading-relaxed">We're excited to have you. Check out our latest classes and training programs.</p>
+                {latestNotification ? (
+                    <div className={`p-3 rounded-lg border transition-all ${latestNotification.isRead ? 'bg-white/5 border-white/10' : 'bg-primary/10 border-primary/20'}`}>
+                        <div className="flex gap-3">
+                            <span className="material-icons-round text-primary flex-shrink-0 text-lg">
+                                {latestNotification.isAnnouncement ? 'campaign' : 'info'}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                                <h4 className="font-bold text-primary text-sm mb-1">{latestNotification.title}</h4>
+                                <p className="text-xs text-white/70 leading-relaxed line-clamp-2">{latestNotification.message}</p>
+                                <p className="text-[10px] text-text-muted mt-2">{new Date(latestNotification.createdAt).toLocaleString()}</p>
+                            </div>
                         </div>
                     </div>
-                </div>
+                ) : (
+                    <div className="p-3 bg-white/5 rounded-lg border border-white/10 text-center">
+                        <p className="text-xs text-text-muted">No recent updates</p>
+                    </div>
+                )}
             </div>
 
             {/* Quick Actions - Compact Grid */}

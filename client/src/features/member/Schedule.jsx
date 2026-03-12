@@ -66,8 +66,10 @@ const normalizeClassHistoryStatus = (entry, now) => {
     if (rawStatus === 'CANCELLED' || rawStatus === 'DECLINED') return 'CANCELLED';
     if (rawStatus === 'NO_SHOW' || rawStatus === 'MISSED') return 'MISSED';
     if (rawStatus === 'ATTENDED' || rawStatus === 'COMPLETED') return 'COMPLETED';
+    if (rawStatus === 'WAITLISTED') return 'WAITLISTED';
     if (rawStatus === 'CONFIRMED' && isFuture) return 'UPCOMING';
     if (rawStatus === 'CONFIRMED' && !isFuture) return 'MISSED';
+    return rawStatus || 'UNKNOWN';
     return rawStatus || 'UNKNOWN';
 };
 
@@ -75,6 +77,7 @@ const toHistoryStatusLabel = (status) => {
     if (status === 'COMPLETED') return 'Completed';
     if (status === 'MISSED') return 'Missed';
     if (status === 'CANCELLED') return 'Cancelled';
+    if (status === 'WAITLISTED') return 'Waitlisted';
     return 'Unknown';
 };
 
@@ -82,6 +85,7 @@ const toHistoryStatusClass = (status) => {
     if (status === 'COMPLETED') return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
     if (status === 'MISSED') return 'bg-rose-500/15 text-rose-300 border-rose-500/30';
     if (status === 'CANCELLED') return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
+    if (status === 'WAITLISTED') return 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30';
     return 'bg-white/10 text-text-muted border-white/20';
 };
 
@@ -180,16 +184,29 @@ export default function Schedule() {
     }, [fetchClasses, fetchClassHistory]);
 
     const handleBook = async (classId, sessionDate) => {
+        const classToBook = classes.find(c => c.id === classId);
+        if (!classToBook) return;
+
+        const isFull = classToBook.enrolled >= classToBook.capacity;
+        const confirmLabel = isFull ? 'Join Waitlist' : 'Join Class';
+        const currentPolicyNote = isFull 
+            ? 'Joining the waitlist does NOT consume a session. If a spot opens up, you will be automatically added and 1 session will be consumed.'
+            : 'Joining a class consumes 1 session. If you leave later, that session is still consumed and not refunded.';
+
         const confirmed = await showConfirm({
-            title: 'Session Policy',
-            message: `${sessionPolicyNote} Continue joining this class?`,
-            confirmLabel: 'Join Class'
+            title: isFull ? 'Waitlist' : 'Session Policy',
+            message: `${currentPolicyNote} Continue?`,
+            confirmLabel: confirmLabel
         });
         if (!confirmed) return;
 
         try {
             await axios.post(withApiBase('/api/members/book'), { classId, sessionDate });
-            await showAlert({ title: 'Joined!', message: 'Joined class successfully!', type: 'success' });
+            await showAlert({ 
+                title: isFull ? 'Waitlisted!' : 'Joined!', 
+                message: isFull ? 'You have been added to the waitlist.' : 'Joined class successfully!', 
+                type: 'success' 
+            });
             fetchClasses();
             fetchClassHistory();
         } catch (error) {
@@ -523,7 +540,9 @@ export default function Schedule() {
                                     <div
                                         key={cls.id}
                                         className={`bg-surface rounded-xl p-4 border transition-all ${cls.isBooked
-                                            ? 'border-primary/30 bg-primary/5'
+                                            ? cls.bookingStatus === 'WAITLISTED' 
+                                                ? 'border-cyan-500/30 bg-cyan-500/5'
+                                                : 'border-primary/30 bg-primary/5'
                                             : 'border-white/5 hover:border-white/10'
                                             }`}
                                     >
@@ -538,8 +557,12 @@ export default function Schedule() {
                                                         </div>
                                                     )}
                                                     {cls.isBooked && (
-                                                        <span className="absolute bottom-1 left-1 rounded bg-primary/90 px-1.5 py-0.5 text-[10px] font-bold text-background">
-                                                            BOOKED
+                                                        <span className={`absolute bottom-1 left-1 rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                                                            cls.bookingStatus === 'WAITLISTED' 
+                                                                ? 'bg-cyan-500 text-white' 
+                                                                : 'bg-primary text-background'
+                                                        }`}>
+                                                            {cls.bookingStatus === 'WAITLISTED' ? 'WAITLISTED' : 'BOOKED'}
                                                         </span>
                                                     )}
                                                 </div>
@@ -575,13 +598,18 @@ export default function Schedule() {
                                                 </div>
                                                 <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/5">
                                                     <div
-                                                        className={`h-full transition-all ${isFull ? 'bg-red-500' :
+                                                        className={`h-full transition-all ${isFull ? 'bg-amber-500' :
                                                             capacityPercent > 75 ? 'bg-yellow-500' :
                                                                 'bg-emerald-500'
                                                             }`}
                                                         style={{ width: `${Math.min(capacityPercent, 100)}%` }}
                                                     ></div>
                                                 </div>
+                                                {isFull && (
+                                                    <p className="mt-2 text-[10px] text-amber-300 font-medium">
+                                                        Waitlist: {cls.waitlisted || 0} members already waiting
+                                                    </p>
+                                                )}
                                             </div>
 
                                             {cls.isBooked ? (
@@ -602,9 +630,9 @@ export default function Schedule() {
                                                         }`}
                                                 >
                                                     <span className="material-icons-round text-base">
-                                                        {isFull ? 'block' : noSessionsLeft ? 'lock' : 'add_circle'}
+                                                        {isFull ? 'hourglass_top' : noSessionsLeft ? 'lock' : 'add_circle'}
                                                     </span>
-                                                    {isFull ? 'Class Full' : noSessionsLeft ? 'No Sessions Left' : 'Join Class'}
+                                                    {isFull ? 'Join Waitlist' : noSessionsLeft ? 'No Sessions Left' : 'Join Class'}
                                                 </button>
                                             )}
                                         </div>

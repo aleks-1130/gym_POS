@@ -10,12 +10,15 @@ export default function Announcements() {
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState('all');
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [classes, setClasses] = useState([]);
 
     // New Announcement Form
     const [formData, setFormData] = useState({
         title: '',
         message: '',
         type: 'INFO', // INFO, ALERT, PROMO
+        targetGroup: 'ALL', // ALL, STAFF, TRAINER, CLASS
+        targetId: null
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -23,7 +26,8 @@ export default function Announcements() {
 
     useEffect(() => {
         fetchAnnouncements();
-    }, []);
+        if (isStaff) fetchClasses();
+    }, [isStaff]);
 
     const fetchAnnouncements = async () => {
         try {
@@ -36,12 +40,21 @@ export default function Announcements() {
         }
     };
 
+    const fetchClasses = async () => {
+        try {
+            const res = await axios.get('/api/classes');
+            setClasses(res.data);
+        } catch (error) {
+            console.error("Failed to fetch classes");
+        }
+    };
+
     const handleCreateAnnouncement = async (e) => {
         e.preventDefault();
         setIsSubmitting(true);
         try {
-            await axios.post('/api/notifications', formData);
-            setFormData({ title: '', message: '', type: 'INFO' });
+            await axios.post('/api/notifications/broadcast', formData);
+            setFormData({ title: '', message: '', type: 'INFO', targetGroup: 'ALL', targetId: null });
             setShowCreateModal(false);
             fetchAnnouncements();
         } catch (error) {
@@ -51,8 +64,21 @@ export default function Announcements() {
         }
     };
 
+    const handleDelete = async (id) => {
+        if (!window.confirm("Are you sure you want to delete this broadcast?")) return;
+        try {
+            await axios.delete(`/api/notifications/${id}`);
+            setAnnouncements(prev => prev.filter(a => a.id !== id));
+        } catch (error) {
+            console.error("Failed to delete notification");
+            alert("Failed to delete notification");
+        }
+    };
+
     const formatDate = (dateString) => {
+        if (!dateString) return 'INVALID DATE';
         const date = new Date(dateString);
+        if (isNaN(date.getTime())) return 'INVALID DATE';
         return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     };
 
@@ -117,7 +143,7 @@ export default function Announcements() {
             {/* Announcements Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {announcements
-                    .filter(a => filter === 'all' || a.type === filter)
+                    .filter(a => a.isAnnouncement && (filter === 'all' || a.type === filter))
                     .map(announcement => (
                         <div
                             key={announcement.id}
@@ -129,7 +155,7 @@ export default function Announcements() {
                                 </span>
                                 <div className="text-text-muted text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
                                     <Clock size={12} className="text-primary" />
-                                    {formatDate(announcement.date)}
+                                    {formatDate(announcement.createdAt || announcement.date)}
                                 </div>
                             </div>
 
@@ -144,7 +170,10 @@ export default function Announcements() {
                             <div className="pt-6 border-t border-white/5 flex items-center justify-between">
                                 <span className="text-text-muted text-[9px] font-black uppercase tracking-[0.2em] italic">Channel: FitOS Core</span>
                                 {isStaff && (
-                                    <button className="text-red-500/50 hover:text-red-500 transition-colors">
+                                    <button 
+                                        onClick={() => handleDelete(announcement.id)}
+                                        className="text-red-500/50 hover:text-red-500 transition-colors"
+                                    >
                                         <Trash2 size={16} />
                                     </button>
                                 )}
@@ -165,7 +194,7 @@ export default function Announcements() {
             {showCreateModal && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-background/90 backdrop-blur-2xl" onClick={() => setShowCreateModal(false)}></div>
-                    <div className="bg-surface w-full max-w-xl rounded-[3rem] border border-white/10 shadow-2xl relative z-10 overflow-hidden animate-in zoom-in-95 duration-300">
+                    <div className="bg-surface w-full max-w-xl max-h-[90vh] overflow-y-auto no-scrollbar rounded-[3rem] border border-white/10 shadow-2xl relative z-10 animate-in zoom-in-95 duration-300">
                         <div className="p-10">
                             <div className="flex items-center justify-between mb-10">
                                 <div>
@@ -209,6 +238,49 @@ export default function Announcements() {
                                 </div>
 
                                 <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-text-muted uppercase tracking-widest ml-4 italic">Target Audience</label>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {[
+                                            { id: 'ALL', label: 'All Members' },
+                                            { id: 'STAFF', label: 'Staff Only' },
+                                            { id: 'TRAINER', label: 'Trainers Only' },
+                                            { id: 'CLASS', label: 'Specific Class' }
+                                        ].map(group => (
+                                            <button
+                                                key={group.id}
+                                                type="button"
+                                                onClick={() => setFormData({ ...formData, targetGroup: group.id, targetId: null })}
+                                                className={`py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all ${formData.targetGroup === group.id
+                                                    ? 'bg-primary/20 border-primary text-primary'
+                                                    : 'bg-white/[0.03] border-white/10 text-text-muted hover:border-white/20'
+                                                    }`}
+                                            >
+                                                {group.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {formData.targetGroup === 'CLASS' && (
+                                    <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
+                                        <label className="text-[10px] font-black text-text-muted uppercase tracking-widest ml-4 italic">Select Target Class</label>
+                                        <select
+                                            required
+                                            value={formData.targetId || ''}
+                                            onChange={e => setFormData({ ...formData, targetId: e.target.value })}
+                                            className="w-full bg-white/[0.03] border border-white/10 p-5 rounded-2xl text-white outline-none focus:border-primary/50 transition-all font-bold appearance-none"
+                                        >
+                                            <option value="" className="bg-surface text-text-muted">Choose a class...</option>
+                                            {classes.map(c => (
+                                                <option key={c.id} value={c.id} className="bg-surface text-white">
+                                                    {c.name} ({c.time} - {c.dayOfWeek})
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+
+                                <div className="space-y-2">
                                     <label className="text-[10px] font-black text-text-muted uppercase tracking-widest ml-4 italic">Detailed Message</label>
                                     <textarea
                                         required
@@ -229,7 +301,7 @@ export default function Announcements() {
                                     ) : (
                                         <>
                                             <Send size={18} />
-                                            Send to All Members
+                                            {formData.targetGroup === 'ALL' ? 'Send to All Members' : `Broadcast to ${formData.targetGroup}`}
                                         </>
                                     )}
                                 </button>
