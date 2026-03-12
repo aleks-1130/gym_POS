@@ -171,7 +171,10 @@ const resolveClassMetaFromPayload = ({ payload, existing }) => {
     return {
         scheduleType,
         oneTimeDate: null,
-        dayOfWeek: String(dayOfWeekInput).trim()
+        dayOfWeek: String(dayOfWeekInput).trim(),
+        daysOfWeek: payload?.daysOfWeek ? String(payload.daysOfWeek).trim() : null,
+        startDate: payload?.startDate ? new Date(payload.startDate) : undefined,
+        endDate: payload?.endDate ? new Date(payload.endDate) : undefined
     };
 };
 
@@ -431,7 +434,10 @@ const createClass = async (req, res) => {
                 duration: Number(schedule.duration),
                 capacity: Number(capacity),
                 basePay: basePay !== undefined && basePay !== '' ? Number(basePay) : 0,
-                imageUrl: imageUrl !== undefined && String(imageUrl).trim() !== '' ? String(imageUrl).trim() : null
+                imageUrl: imageUrl !== undefined && String(imageUrl).trim() !== '' ? String(imageUrl).trim() : null,
+                daysOfWeek: scheduleMeta.daysOfWeek,
+                startDate: scheduleMeta.startDate,
+                endDate: scheduleMeta.endDate
             }
         });
         res.json(gymClass);
@@ -500,6 +506,9 @@ const updateClass = async (req, res) => {
                 capacity: capacity !== undefined && capacity !== '' ? Number(capacity) : undefined,
                 trainerId: resolvedTrainerId,
                 basePay: basePay !== undefined && basePay !== '' ? Number(basePay) : undefined,
+                daysOfWeek: scheduleMeta.daysOfWeek,
+                startDate: scheduleMeta.startDate,
+                endDate: scheduleMeta.endDate,
                 ...(imageUrl !== undefined ? { imageUrl: normalizedImageUrl } : {})
             }
         });

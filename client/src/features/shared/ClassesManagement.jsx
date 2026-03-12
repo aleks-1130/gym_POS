@@ -1,4 +1,4 @@
-﻿import { useConfirm } from '../../context/ConfirmContext';
+import { useConfirm } from '../../context/ConfirmContext';
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
@@ -104,7 +104,7 @@ const parseClassDays = (dayOfWeek) => {
 };
 
 const classMatchesDayFilter = (cls, activeDay) => {
-    const days = parseClassDays(cls?.dayOfWeek);
+    const days = parseClassDays(cls?.daysOfWeek || cls?.dayOfWeek);
     return days.includes(activeDay);
 };
 
@@ -165,6 +165,9 @@ export default function ClassesManagement({ viewRole = 'ADMIN' }) {
         trainerId: '',
         scheduleType: 'RECURRING',
         dayOfWeek: activeDay,
+        daysOfWeek: activeDay, // String for backend
+        startDate: '',
+        endDate: '',
         oneTimeDate: '',
         startTime: '',
         endTime: '',
@@ -246,6 +249,9 @@ export default function ClassesManagement({ viewRole = 'ADMIN' }) {
             trainerId: trainers[0]?.id || '',
             scheduleType: 'RECURRING',
             dayOfWeek: activeDay,
+            daysOfWeek: activeDay,
+            startDate: '',
+            endDate: '',
             oneTimeDate: '',
             startTime: '',
             endTime: '',
@@ -267,6 +273,9 @@ export default function ClassesManagement({ viewRole = 'ADMIN' }) {
             trainerId: cls.trainerId || cls.trainer?.id || '',
             scheduleType: cls.scheduleType || 'RECURRING',
             dayOfWeek: cls.dayOfWeek || activeDay,
+            daysOfWeek: cls.daysOfWeek || cls.dayOfWeek || activeDay,
+            startDate: cls.startDate ? toDateInputValue(cls.startDate) : '',
+            endDate: cls.endDate ? toDateInputValue(cls.endDate) : '',
             oneTimeDate: cls.oneTimeDate ? toDateInputValue(cls.oneTimeDate) : '',
             startTime: startMinutes !== null ? minutesTo24Hour(startMinutes) : '',
             endTime: endMinutes !== null ? minutesTo24Hour(endMinutes) : '',
@@ -312,6 +321,9 @@ export default function ClassesManagement({ viewRole = 'ADMIN' }) {
             trainerId: formData.trainerId,
             scheduleType: formData.scheduleType,
             dayOfWeek: formData.dayOfWeek,
+            daysOfWeek: formData.daysOfWeek,
+            startDate: formData.startDate || null,
+            endDate: formData.endDate || null,
             oneTimeDate: formData.scheduleType === 'ONE_TIME' ? formData.oneTimeDate : null,
             startTime: formData.startTime,
             endTime: formData.endTime,
@@ -508,9 +520,16 @@ export default function ClassesManagement({ viewRole = 'ADMIN' }) {
                                     {scheduleType === 'ONE_TIME' ? (
                                         <span className="text-text-muted">One-time class on <span className="text-white font-semibold">{formatDateLabel(cls.oneTimeDate || cls.sessionDate)}</span></span>
                                     ) : (
-                                        <span className="text-text-muted">Recurring every <span className="text-white font-semibold">{cls.dayOfWeek}</span></span>
+                                        <span className="text-text-muted">Recurring on <span className="text-white font-semibold">{cls.daysOfWeek || cls.dayOfWeek}</span></span>
                                     )}
                                 </div>
+
+                                {cls.startDate && (
+                                    <div className="mb-4 flex items-center gap-2 text-xs">
+                                        <span className="material-icons-round text-primary text-[15px]">event</span>
+                                        <span className="text-text-muted">Period: <span className="text-white font-semibold">{formatDateLabel(cls.startDate)} - {cls.endDate ? formatDateLabel(cls.endDate) : 'Endless'}</span></span>
+                                    </div>
+                                )}
 
                                 {cls.basePay > 0 && (
                                     <div className="mb-4 flex items-center gap-2 text-xs">
@@ -773,21 +792,61 @@ export default function ClassesManagement({ viewRole = 'ADMIN' }) {
                                             </>
                                         ) : (
                                             <>
-                                                <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Day</label>
-                                                <select
-                                                    value={formData.dayOfWeek}
-                                                    onChange={(e) => handleFormChange('dayOfWeek', e.target.value)}
-                                                    className="mt-2 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
-                                                >
-                                                    {DAYS.map((day) => (
-                                                        <option key={day} value={day} className="text-black">
-                                                            {day}
-                                                        </option>
-                                                    ))}
-                                                </select>
+                                                <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Recurring Days</label>
+                                                <div className="flex flex-wrap gap-2 mt-2">
+                                                    {DAYS.map((day) => {
+                                                        const currentDays = (formData.daysOfWeek || '').split(',').map(d => d.trim()).filter(Boolean);
+                                                        const isSelected = currentDays.includes(day);
+                                                        return (
+                                                            <button
+                                                                key={day}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    let nextDays;
+                                                                    if (isSelected) {
+                                                                        nextDays = currentDays.filter(d => d !== day);
+                                                                    } else {
+                                                                        nextDays = [...currentDays, day];
+                                                                    }
+                                                                    handleFormChange('daysOfWeek', nextDays.join(','));
+                                                                    // Fallback for legacy code that might only check dayOfWeek
+                                                                    if (nextDays.length > 0) handleFormChange('dayOfWeek', nextDays[0]);
+                                                                }}
+                                                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${isSelected
+                                                                    ? 'bg-primary text-white border-primary shadow-lg shadow-primary/20'
+                                                                    : 'bg-white/5 text-text-muted border-white/10'
+                                                                    }`}
+                                                            >
+                                                                {day.substring(0, 3)}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
                                             </>
                                         )}
                                     </div>
+                                    {formData.scheduleType === 'RECURRING' && (
+                                        <>
+                                            <div>
+                                                <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Availability Start Date</label>
+                                                <input
+                                                    type="date"
+                                                    value={formData.startDate}
+                                                    onChange={(e) => handleFormChange('startDate', e.target.value)}
+                                                    className="mt-2 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Availability End Date (Optional)</label>
+                                                <input
+                                                    type="date"
+                                                    value={formData.endDate}
+                                                    onChange={(e) => handleFormChange('endDate', e.target.value)}
+                                                    className="mt-2 w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
+                                                />
+                                            </div>
+                                        </>
+                                    )}
                                     <div>
                                         <label className="text-xs text-text-muted uppercase tracking-widest font-bold">Start Time</label>
                                         <input

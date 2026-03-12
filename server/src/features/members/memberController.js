@@ -1,6 +1,7 @@
 const prisma = require('../../config/prisma');
 const { isTimeAllowedForTrainer } = require('../../services/trainerAvailabilityService');
 const { sendActivationEmail } = require('../../services/emailService');
+const notificationService = require('../../services/notificationService');
 const crypto = require('crypto');
 const { PAYMENT_METHODS } = require('../../config/businessConfig');
 const {
@@ -325,7 +326,15 @@ const getAvailableClasses = async (req, res) => {
                 where: {
                     classId: cls.id,
                     sessionDate,
-                    status: { in: ACTIVE_CLASS_BOOKING_STATUSES }
+                    status: 'CONFIRMED'
+                }
+            });
+
+            const waitlisted = await prisma.booking.count({
+                where: {
+                    classId: cls.id,
+                    sessionDate,
+                    status: 'WAITLISTED'
                 }
             });
 
@@ -333,6 +342,7 @@ const getAvailableClasses = async (req, res) => {
                 ...cls,
                 sessionDate,
                 enrolled,
+                waitlisted,
                 isBooked: bookKeySet.has(toSessionKey(cls.id, sessionDate)) || legacyBookedClassIds.has(Number(cls.id))
             };
         }));
@@ -424,33 +434,18 @@ const bookClass = async (req, res) => {
                 }
             });
 
-            if (enrolled >= cls.capacity) {
-                return { error: "Class is full", status: 400 };
-            }
-
-            const existing = await tx.booking.findFirst({
-                where: {
-                    memberId,
-                    classId: parsedClassId,
-                    status: { in: ACTIVE_CLASS_BOOKING_STATUSES },
-                    OR: [
-                        { sessionDate: resolvedSessionDate },
-                        { sessionDate: null }
-                    ]
-                }
-            });
-            if (existing) {
-                return { error: "Already booked", status: 400 };
-            }
+            const isWaitlist = enrolled >= cls.capacity;
+            const status = isWaitlist ? 'WAITLISTED' : 'CONFIRMED';
 
             await tx.booking.create({
                 data: {
                     memberId,
                     classId: parsedClassId,
                     sessionDate: resolvedSessionDate,
-                    status: 'CONFIRMED'
+                    status
                 }
             });
+
             await tx.member.update({
                 where: { id: memberId },
                 data: {
@@ -459,14 +454,32 @@ const bookClass = async (req, res) => {
                 }
             });
 
-            return { success: true };
+            // Notification
+            await notificationService.send({
+                memberId,
+                title: isWaitlist ? 'Waitlist Joined' : 'Booking Confirmed',
+                message: isWaitlist 
+                    ? `You've been added to the waitlist for ${cls.name}.` 
+                    : `Your spot for ${cls.name} on ${resolvedSessionDate.toLocaleDateString()} is confirmed!`,
+                type: isWaitlist ? 'WAITLIST_JOINED' : 'BOOKING_CONFIRMED',
+                eventData: {
+                    className: cls.name,
+                    sessionDate: resolvedSessionDate.toLocaleDateString(),
+                    status
+                }
+            });
+
+            return { success: true, isWaitlist };
         });
 
         if (!bookingResult.success) {
             return res.status(bookingResult.status || 400).json({ error: bookingResult.error || "Booking failed" });
         }
 
-        res.json({ message: "Booking confirmed" });
+        res.json({ 
+            message: bookingResult.isWaitlist ? "Added to waitlist" : "Booking confirmed",
+            isWaitlist: bookingResult.isWaitlist 
+        });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -520,13 +533,54 @@ const cancelBooking = async (req, res) => {
             });
 
             if (!booking) {
-                return { error: "Booking not found", status: 404 };
+                return { error: "Booking found, but it cannot be cancelled (maybe already attended or cancelled).", status: 404 };
             }
 
+            const oldStatus = booking.status;
             await tx.booking.update({
                 where: { id: booking.id },
                 data: { status: 'CANCELLED' }
             });
+
+            // Refund session count
+            await tx.member.update({
+                where: { id: memberId },
+                data: {
+                    classSessionsRemaining: { increment: 1 },
+                    classSessionsUsed: { decrement: 1 }
+                }
+            });
+
+            // If a confirmed spot was cancelled, promote someone from waitlist
+            if (oldStatus === 'CONFIRMED') {
+                const nextWaitlisted = await tx.booking.findFirst({
+                    where: {
+                        classId: parsedClassId,
+                        sessionDate: booking.sessionDate,
+                        status: 'WAITLISTED'
+                    },
+                    orderBy: { createdAt: 'asc' }
+                });
+
+                if (nextWaitlisted) {
+                    await tx.booking.update({
+                        where: { id: nextWaitlisted.id },
+                        data: { status: 'CONFIRMED' }
+                    });
+
+                    // Trigger notification for waitlist promotion
+                    await notificationService.send({
+                        memberId: nextWaitlisted.memberId,
+                        title: 'Waitlist Promotion! 🚀',
+                        message: `Good news! You've been promoted from the waitlist for ${cls.name}.`,
+                        type: 'WAITLIST_PROMOTION',
+                        eventData: {
+                            className: cls.name,
+                            sessionDate: booking.sessionDate.toLocaleDateString()
+                        }
+                    });
+                }
+            }
 
             return { success: true };
         });

@@ -8,7 +8,17 @@ import { PAYMENT_METHODS } from '../../../config/businessConfig';
  * POSPaymentModal Component - Handles payment method selection and transaction details.
  */
 export default function POSPaymentModal({ processPayment, loading, totalDue }) {
-    const { formatPrice } = useCurrency();
+    const { formatPrice: globalFormatPrice, currency: globalCurrency } = useCurrency();
+    
+    const formatPrice = (amount, currencyCode = globalCurrency) => {
+        const locale = currencyCode === 'SGD' ? 'en-SG' : 'en-PH';
+        return new Intl.NumberFormat(locale, {
+            style: 'currency',
+            currency: currencyCode,
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }).format(amount || 0);
+    };
 
     // Zustand Store
     const {

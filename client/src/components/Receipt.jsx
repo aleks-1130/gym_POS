@@ -3,7 +3,18 @@ import { useCurrency } from '../context/CurrencyContext';
 
 // This component can be used in a modal or hidden iframe for printing
 export const Receipt = React.forwardRef(({ transaction, items, member, cashierName, discount = 0, paymentDetails, receiptSettings }, ref) => {
-    const { formatPrice } = useCurrency();
+    const transactionCurrency = transaction?.currency || 'PHP';
+    const transactionLocale = transactionCurrency === 'SGD' ? 'en-SG' : 'en-PH';
+
+    const formatCurrency = (amount) => {
+        return new Intl.NumberFormat(transactionLocale, {
+            style: 'currency',
+            currency: transactionCurrency,
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }).format(amount || 0);
+    };
+
     const transactionDate = transaction?.date ? new Date(transaction.date) : new Date();
 
     const settings = {
@@ -43,6 +54,7 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
     const hasVat = settings.vatType === 'VAT';
     const vatRate = Number.isFinite(settings.vatRate) && settings.vatRate >= 0 ? settings.vatRate : 12;
     const vatAmount = hasVat ? (total - (total / (1 + (vatRate / 100)))) : 0;
+
     const customerName = member
         ? `${member.firstName} ${member.lastName}`
         : (transaction?.customerName || 'WALK-IN CUSTOMER');
@@ -112,8 +124,8 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
                             <tr key={idx} className="text-xs">
                                 <td className="align-top py-1">{item.quantity}</td>
                                 <td className="align-top pr-2 py-1">{item.name}</td>
-                                <td className="text-right align-top py-1">{formatPrice(item.price)}</td>
-                                <td className="text-right align-top py-1">{formatPrice(item.price * item.quantity)}</td>
+                                <td className="text-right align-top py-1">{formatCurrency(item.price)}</td>
+                                <td className="text-right align-top py-1">{formatCurrency(item.price * item.quantity)}</td>
                             </tr>
                         ))}
                     </tbody>
@@ -124,35 +136,35 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
             <div className="space-y-1 mb-6 text-sm">
                 <div className="flex justify-between">
                     <span>Subtotal:</span>
-                    <span>{formatPrice(subtotal)}</span>
+                    <span>{formatCurrency(subtotal)}</span>
                 </div>
                 {discount > 0 && (
                     <div className="flex justify-between text-red-600 print:text-black">
                         <span>Discount:</span>
-                        <span>-{formatPrice(discount)}</span>
+                        <span>-{formatCurrency(discount)}</span>
                     </div>
                 )}
                 
                 <div className="border-t border-black border-dotted my-2 pt-2">
                     <div className="flex justify-between text-xs opacity-75">
                         <span>Taxable Amount:</span>
-                        <span>{formatPrice(transaction?.taxableAmount || (total / 1.12))}</span>
+                        <span>{formatCurrency(transaction?.taxableAmount || (total / 1.12))}</span>
                     </div>
                     <div className="flex justify-between text-xs opacity-75">
                         <span>VAT ({vatRate}%):</span>
-                        <span>{formatPrice(transaction?.taxAmount || (total - (total / 1.12)))}</span>
+                        <span>{formatCurrency(transaction?.taxAmount || (total - (total / (1 + (vatRate / 100)))))}</span>
                     </div>
                     {Number(transaction?.roundingAdjustment || 0) !== 0 && (
                         <div className="flex justify-between text-xs opacity-75">
                             <span>Rounding:</span>
-                            <span>{formatPrice(transaction?.roundingAdjustment)}</span>
+                            <span>{formatCurrency(transaction?.roundingAdjustment)}</span>
                         </div>
                     )}
                 </div>
 
                 <div className="flex justify-between font-bold text-lg mt-2 border-t border-dashed border-black pt-2">
                     <span>Payable Amount:</span>
-                    <span>{formatPrice(transaction?.payableAmount || total)}</span>
+                    <span>{formatCurrency(transaction?.payableAmount || total)}</span>
                 </div>
 
                 <div className="mt-4 pt-2 border-t border-dotted border-black">
@@ -164,11 +176,11 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
                         <>
                             <div className="flex justify-between text-xs mt-1">
                                 <span>Cash Tendered:</span>
-                                <span>{formatPrice(paymentDetails.tendered ?? transaction?.cashTendered)}</span>
+                                <span>{formatCurrency(paymentDetails.tendered ?? transaction?.cashTendered)}</span>
                             </div>
                             <div className="flex justify-between text-xs">
                                 <span>Change Due:</span>
-                                <span>{formatPrice(paymentDetails.change ?? transaction?.changeDue)}</span>
+                                <span>{formatCurrency(paymentDetails.change ?? transaction?.changeDue)}</span>
                             </div>
                         </>
                     )}

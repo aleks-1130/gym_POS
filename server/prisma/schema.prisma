@@ -84,6 +84,7 @@ model Member {
   activationExpires      DateTime?
   resetPasswordToken     String?            @unique
   resetPasswordExpires   DateTime?
+  notifications          Notification[]
 
   @@index([status])
   @@index([createdAt])
@@ -423,6 +424,9 @@ model Class {
   capacity  Int
   basePay   Float     @default(0)
   enrolled  Int       @default(0)
+  startDate DateTime  @default(now())
+  endDate   DateTime?
+  daysOfWeek String   @default("")
   createdAt DateTime  @default(now())
   bookings  Booking[]
   trainer   Trainer   @relation(fields: [trainerId], references: [id])
@@ -579,12 +583,17 @@ model ReceiptSettings {
 }
 
 model Notification {
-  id      Int      @id @default(autoincrement())
-  title   String
-  message String
-  type    String
-  date    DateTime @default(now())
-  read    Boolean  @default(false)
+  id             Int      @id @default(autoincrement())
+  title          String
+  message        String
+  type           String
+  createdAt      DateTime @default(now())
+  isRead         Boolean  @default(false)
+  isAnnouncement Boolean  @default(false)
+  targetGroup    String   @default("ALL") // ALL, STAFF, TRAINER, CLASS
+  targetId       Int?     // For specific Class IDs
+  memberId       Int?
+  member         Member?  @relation(fields: [memberId], references: [id])
 }
 
 model MemberNote {
