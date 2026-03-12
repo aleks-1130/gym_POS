@@ -192,10 +192,11 @@ export default function Announcements() {
 
             {/* Create Announcement Modal */}
             {showCreateModal && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-background/90 backdrop-blur-2xl" onClick={() => setShowCreateModal(false)}></div>
-                    <div className="bg-surface w-full max-w-xl max-h-[90vh] overflow-y-auto no-scrollbar rounded-[3rem] border border-white/10 shadow-2xl relative z-10 animate-in zoom-in-95 duration-300">
-                        <div className="p-10">
+                <div className="fixed inset-0 z-[100] overflow-y-auto no-scrollbar">
+                    <div className="fixed inset-0 bg-background/90 backdrop-blur-2xl" onClick={() => setShowCreateModal(false)}></div>
+                    <div className="flex min-h-full items-center justify-center p-4 sm:p-10">
+                        <div className="bg-surface w-full max-w-xl rounded-[3rem] border border-white/10 shadow-2xl relative z-10 animate-in zoom-in-95 duration-300">
+                            <div className="p-8 sm:p-10">
                             <div className="flex items-center justify-between mb-10">
                                 <div>
                                     <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter leading-none">New Broadcast</h2>
@@ -287,7 +288,7 @@ export default function Announcements() {
                                         rows={4}
                                         value={formData.message}
                                         onChange={e => setFormData({ ...formData, message: e.target.value })}
-                                        className="w-full bg-white/[0.03] border border-white/10 p-5 rounded-2xl text-white outline-none focus:border-primary/50 transition-all placeholder:text-text-muted/30 font-medium no-scrollbar resize-none"
+                                        className="w-full bg-white/[0.03] border border-white/10 p-5 rounded-2xl text-white outline-none focus:border-primary/50 transition-all placeholder:text-text-muted/30 font-medium scrollbar-thin scrollbar-thumb-white/10 resize-none"
                                         placeholder="Type your message here..."
                                     />
                                 </div>
@@ -306,6 +307,7 @@ export default function Announcements() {
                                     )}
                                 </button>
                             </form>
+                            </div>
                         </div>
                     </div>
                 </div>
