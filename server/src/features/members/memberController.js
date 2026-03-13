@@ -455,6 +455,9 @@ const bookClass = async (req, res) => {
             });
 
             // Notification
+            const isToday = resolvedSessionDate.toDateString() === new Date().toDateString();
+            const dayLabel = isToday ? 'Today' : 'Tomorrow';
+
             await notificationService.send({
                 memberId,
                 title: isWaitlist ? 'Waitlist Joined' : 'Booking Confirmed',
@@ -464,7 +467,10 @@ const bookClass = async (req, res) => {
                 type: isWaitlist ? 'WAITLIST_JOINED' : 'BOOKING_CONFIRMED',
                 eventData: {
                     className: cls.name,
+                    trainerName: cls.trainer?.name || 'Staff',
                     sessionDate: resolvedSessionDate.toLocaleDateString(),
+                    time: cls.time,
+                    dayLabel,
                     status
                 }
             });
@@ -935,6 +941,9 @@ const bookTraining = async (req, res) => {
         // Immediate Notification
         for (const session of createdSessions) {
             const sessionDate = new Date(session.date);
+            const isToday = sessionDate.toDateString() === new Date().toDateString();
+            const dayLabel = isToday ? 'Today' : 'Tomorrow';
+
             await notificationService.send({
                 memberId,
                 title: 'Training Confirmed 💪',
@@ -944,6 +953,7 @@ const bookTraining = async (req, res) => {
                     trainerName: trainer.name,
                     date: sessionDate.toLocaleDateString(),
                     time: sessionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    dayLabel,
                     status: 'SCHEDULED'
                 }
             });
@@ -1050,6 +1060,9 @@ const bookTrainingCash = async (req, res) => {
         // Immediate Notification
         for (const session of createdSessions) {
             const sessionDate = new Date(session.date);
+            const isToday = sessionDate.toDateString() === new Date().toDateString();
+            const dayLabel = isToday ? 'Today' : 'Tomorrow';
+
             await notificationService.send({
                 memberId: resolvedMemberId,
                 title: 'Training Requested ⏳',
@@ -1059,6 +1072,7 @@ const bookTrainingCash = async (req, res) => {
                     trainerName: trainer.name,
                     date: sessionDate.toLocaleDateString(),
                     time: sessionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    dayLabel,
                     status: 'UNPAID'
                 }
             });

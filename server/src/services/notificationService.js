@@ -25,11 +25,22 @@ const notificationService = {
             // 2. Trigger n8n Email (if webhook URL exists)
             console.log(`[NotificationService] Preparing to trigger n8n for: ${title} (Announcement: ${isAnnouncement})`);
             
+            // Normalize eventType for n8n Switch node
+            let normalizedEventType = type;
+            if (isAnnouncement) {
+                normalizedEventType = 'ANNOUNCEMENT';
+            } else if (type === 'TRAINING_BOOKED') {
+                normalizedEventType = 'TRAINING_REMINDER';
+            } else if (type === 'BOOKING_CONFIRMED') {
+                normalizedEventType = 'CLASS_REMINDER';
+            }
+
             const basePayload = {
                 title,
                 message,
-                eventType: isAnnouncement ? 'ANNOUNCEMENT' : type,
-                category: type, // Original type (INFO, ALERT, PROMO)
+                eventType: normalizedEventType,
+                category: type, // Original type (INFO, ALERT, PROMO, etc.)
+                dayLabel: eventData.dayLabel || 'Upcoming', // Fallback for immediate bookings
                 ...eventData
             };
 
