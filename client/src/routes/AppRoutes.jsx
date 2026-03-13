@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
 import Sidebar from '../components/Sidebar';
+import { useUIStore } from '../stores/useUIStore';
 import BottomNav from '../components/BottomNav';
 import PWAInstallPrompt from '../components/PWAInstallPrompt';
 

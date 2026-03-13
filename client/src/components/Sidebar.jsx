@@ -194,8 +194,7 @@ export default function Sidebar() {
 
             {/* Sidebar */}
             <aside className={`
-                fixed left-0 top-0 h-screen bg-surface border-r border-white/5 flex flex-col z-40 transition-all duration-300
-                lg:static lg:h-full lg:z-auto lg:translate-x-0
+                fixed left-0 top-0 h-screen lg:static lg:h-full lg:relative bg-surface border-r border-white/5 flex flex-col z-[110] transition-all duration-300
                 ${isMobileOpen ? 'w-64 translate-x-0 shadow-2xl' : 'w-20 -translate-x-full lg:translate-x-0'}
                 ${isCollapsed ? 'lg:w-20' : 'lg:w-64'}
             `}>

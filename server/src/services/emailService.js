@@ -5,11 +5,18 @@ const sendEmailWebhook = async (webhookUrl, payload) => {
         console.warn(`[EmailService] Webhook URL not configured. Skipping email.`);
         return;
     }
+
+    console.log(`[EmailService] Attempting to send webhook to: ${webhookUrl.substring(0, 15)}... (len: ${webhookUrl.length})`);
+
     try {
-        await axios.post(webhookUrl, payload);
-        console.log(`[EmailService] Webhook sent for ${payload.email}`);
+        const response = await axios.post(webhookUrl, payload);
+        console.log(`[EmailService] Webhook SUCCESS for ${payload.email} (Status: ${response.status})`);
     } catch (error) {
-        console.error(`[EmailService] Webhook failed for ${payload.email}:`, error.message);
+        console.error(`[EmailService] Webhook FAILED for ${payload.email}:`, error.message);
+        if (error.response) {
+            console.error(`[EmailService] Response data:`, JSON.stringify(error.response.data));
+            console.error(`[EmailService] Response status:`, error.response.status);
+        }
     }
 };
 
@@ -23,9 +30,13 @@ const sendActivationEmail = async (email, name, token, planName, expiryDate, pho
         role, // 'MEMBER' or 'TRAINER'
         activationLink,
         planName,
-        expiryDate
+        expiryDate,
+        phone: phone || 'N/A',
+        birthDate: birthDate || 'N/A',
+        gender: gender || 'N/A'
     };
 
+    console.log(`[EmailService] Sending activation email payload for ${email}`);
     await sendEmailWebhook(process.env.N8N_ACTIVATION_WEBHOOK_URL, payload);
 };
 
@@ -40,6 +51,7 @@ const sendPasswordResetEmail = async (email, name, token) => {
         resetLink
     };
 
+    console.log(`[EmailService] Sending password reset payload for ${email}`);
     await sendEmailWebhook(process.env.N8N_ACTIVATION_WEBHOOK_URL, payload);
 };
 

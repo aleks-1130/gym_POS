@@ -100,7 +100,8 @@ export default function Announcements() {
     }
 
     return (
-        <div className="pb-20 px-4 max-w-5xl mx-auto animate-fade-in">
+        <>
+            <div className="pb-20 px-4 max-w-5xl mx-auto animate-fade-in text-white/90">
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10 mt-4">
                 <div className="flex items-center gap-5">
@@ -189,24 +190,36 @@ export default function Announcements() {
                     </div>
                 )}
             </div>
+            </div>
 
             {/* Create Announcement Modal */}
             {showCreateModal && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-background/90 backdrop-blur-2xl" onClick={() => setShowCreateModal(false)}></div>
-                    <div className="bg-surface w-full max-w-xl max-h-[90vh] overflow-y-auto no-scrollbar rounded-[3rem] border border-white/10 shadow-2xl relative z-10 animate-in zoom-in-95 duration-300">
-                        <div className="p-10">
+                    {/* Overlay Backdrop */}
+                    <div 
+                        className="fixed inset-0 bg-background/90 backdrop-blur-2xl" 
+                        onClick={() => setShowCreateModal(false)}
+                    />
+                    
+                    {/* Modal Surface */}
+                    <div className="bg-surface w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-[3rem] border border-white/10 shadow-2xl relative z-10 animate-in zoom-in-95 duration-300 scrollbar-thin scrollbar-thumb-white/10">
+                        <div className="p-8 sm:p-10">
+                            {/* Modal Header */}
                             <div className="flex items-center justify-between mb-10">
                                 <div>
                                     <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter leading-none">New Broadcast</h2>
                                     <p className="text-primary text-[10px] font-black uppercase tracking-[0.2em] mt-2 italic">Send announcement to all members</p>
                                 </div>
-                                <button onClick={() => setShowCreateModal(false)} className="w-12 h-12 bg-white/5 hover:bg-white/10 rounded-2xl flex items-center justify-center transition-all">
+                                <button 
+                                    onClick={() => setShowCreateModal(false)} 
+                                    className="w-12 h-12 bg-white/5 hover:bg-white/10 rounded-2xl flex items-center justify-center transition-all text-white"
+                                >
                                     <X size={24} />
                                 </button>
                             </div>
 
-                            <form onSubmit={handleCreateAnnouncement} className="space-y-6">
+                            {/* Broadcast Form */}
+                            <form onSubmit={handleCreateAnnouncement} className="space-y-8">
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-black text-text-muted uppercase tracking-widest ml-4 italic">Broadcast Title</label>
                                     <input
@@ -220,16 +233,16 @@ export default function Announcements() {
 
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-black text-text-muted uppercase tracking-widest ml-4 italic">Broadcast Category</label>
-                                    <div className="flex gap-3">
+                                    <div className="grid grid-cols-3 gap-3">
                                         {['INFO', 'PROMO', 'ALERT'].map(type => (
                                             <button
                                                 key={type}
                                                 type="button"
                                                 onClick={() => setFormData({ ...formData, type })}
-                                                className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all ${formData.type === type
-                                                    ? 'bg-primary/20 border-primary text-primary'
+                                                className={`py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all ${formData.type === type
+                                                    ? 'bg-primary/20 border-primary text-primary shadow-lg shadow-primary/10'
                                                     : 'bg-white/[0.03] border-white/10 text-text-muted hover:border-white/20'
-                                                    }`}
+                                                }`}
                                             >
                                                 {type}
                                             </button>
@@ -251,9 +264,9 @@ export default function Announcements() {
                                                 type="button"
                                                 onClick={() => setFormData({ ...formData, targetGroup: group.id, targetId: null })}
                                                 className={`py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all ${formData.targetGroup === group.id
-                                                    ? 'bg-primary/20 border-primary text-primary'
+                                                    ? 'bg-primary/20 border-primary text-primary shadow-lg shadow-primary/10'
                                                     : 'bg-white/[0.03] border-white/10 text-text-muted hover:border-white/20'
-                                                    }`}
+                                                }`}
                                             >
                                                 {group.label}
                                             </button>
@@ -268,7 +281,7 @@ export default function Announcements() {
                                             required
                                             value={formData.targetId || ''}
                                             onChange={e => setFormData({ ...formData, targetId: e.target.value })}
-                                            className="w-full bg-white/[0.03] border border-white/10 p-5 rounded-2xl text-white outline-none focus:border-primary/50 transition-all font-bold appearance-none"
+                                            className="w-full bg-white/[0.03] border border-white/10 p-5 rounded-2xl text-white outline-none focus:border-primary/50 transition-all font-bold appearance-none cursor-pointer"
                                         >
                                             <option value="" className="bg-surface text-text-muted">Choose a class...</option>
                                             {classes.map(c => (
@@ -287,13 +300,14 @@ export default function Announcements() {
                                         rows={4}
                                         value={formData.message}
                                         onChange={e => setFormData({ ...formData, message: e.target.value })}
-                                        className="w-full bg-white/[0.03] border border-white/10 p-5 rounded-2xl text-white outline-none focus:border-primary/50 transition-all placeholder:text-text-muted/30 font-medium no-scrollbar resize-none"
+                                        className="w-full bg-white/[0.03] border border-white/10 p-5 rounded-2xl text-white outline-none focus:border-primary/50 transition-all placeholder:text-text-muted/30 font-medium scrollbar-thin scrollbar-thumb-white/10 resize-none"
                                         placeholder="Type your message here..."
                                     />
                                 </div>
 
                                 <button
                                     disabled={isSubmitting}
+                                    type="submit"
                                     className="w-full bg-primary hover:bg-orange-600 disabled:opacity-50 text-white font-black py-5 rounded-3xl shadow-xl shadow-primary/20 flex items-center justify-center gap-3 transition-all active:scale-95 uppercase text-xs tracking-[0.3em] mt-4"
                                 >
                                     {isSubmitting ? (
@@ -316,6 +330,6 @@ export default function Announcements() {
                 .animate-fade-in { animation: fade-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
                 .no-scrollbar::-webkit-scrollbar { display: none; }
             `}</style>
-        </div>
+        </>
     );
 }
