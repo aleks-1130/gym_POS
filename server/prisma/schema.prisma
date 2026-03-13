@@ -159,6 +159,9 @@ model TrainingSession {
   price          Float
   status         String            @default("SCHEDULED")
   memberRating   Int?
+  memberRatingComment String?
+  memberRatingVoided Boolean       @default(false)
+  memberRatingVoidedAt DateTime?
   memberRatedAt  DateTime?
   commissionPaid Boolean           @default(false)
   materialsCost  Float             @default(0.0)

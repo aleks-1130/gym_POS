@@ -28,6 +28,15 @@ const withNormalizedTrainerRating = (trainer) => {
     };
 };
 
+const toReviewDisplayName = (member) => {
+    const first = String(member?.firstName || '').trim();
+    const last = String(member?.lastName || '').trim();
+    const lastInitial = last ? `${last.charAt(0).toUpperCase()}.` : '';
+    const fallback = 'Gym Member';
+    const assembled = [first, lastInitial].filter(Boolean).join(' ').trim();
+    return assembled || fallback;
+};
+
 const isValidEmailFormat = (value) => {
     const normalized = String(value || '').trim();
     if (!normalized) return false;
@@ -97,22 +106,40 @@ const getAllTrainers = async (req, res) => {
     try {
         const now = new Date();
         const todayIso = toLocalIsoDate(now);
-        const trainers = await prisma.trainer.findMany({
-            include: {
-                classes: true,
-                trainingSessions: {
-                    where: {
-                        date: { gte: now },
-                        status: { not: 'CANCELLED' }
-                    },
-                }
-            },
-            orderBy: { name: 'asc' }
-        });
+        const [trainers, trainerRatingCounts] = await Promise.all([
+            prisma.trainer.findMany({
+                include: {
+                    classes: true,
+                    trainingSessions: {
+                        where: {
+                            date: { gte: now },
+                            status: { not: 'CANCELLED' }
+                        },
+                    }
+                },
+                orderBy: { name: 'asc' }
+            }),
+            prisma.trainingSession.groupBy({
+                by: ['trainerId'],
+                where: {
+                    status: 'COMPLETED',
+                    memberRating: { not: null },
+                    memberRatingVoided: false
+                },
+                _count: { _all: true }
+            })
+        ]);
+        const ratingCountMap = new Map(
+            trainerRatingCounts.map((row) => [
+                Number(row.trainerId),
+                Number(row?._count?._all || 0)
+            ])
+        );
         const availabilityMap = await getTrainerAvailabilityMap(trainers.map((trainer) => trainer.id));
         const hydrated = trainers.map((trainer) => {
             const normalized = {
                 ...withNormalizedTrainerRating(trainer),
+                ratingCount: ratingCountMap.get(Number(trainer.id)) || 0,
                 ...(availabilityMap.get(trainer.id) || {
                     availabilityDays: [],
                     availabilityStart: '',
@@ -171,6 +198,93 @@ const getTrainerById = async (req, res) => {
         res.json(await withTrainerAvailability(normalizedTrainer));
     } catch (e) {
         res.status(500).json({ error: "Failed to fetch trainer profile" });
+    }
+};
+
+const getTrainerReviews = async (req, res) => {
+    const trainerId = Number(req.params.id);
+    const requestedLimit = Number(req.query.limit);
+    const limit = Number.isInteger(requestedLimit)
+        ? Math.min(Math.max(requestedLimit, 1), 50)
+        : 12;
+
+    if (!Number.isInteger(trainerId)) {
+        return res.status(400).json({ error: 'Invalid trainer ID' });
+    }
+
+    try {
+        const trainer = await prisma.trainer.findUnique({
+            where: { id: trainerId },
+            select: { id: true, name: true }
+        });
+        if (!trainer) {
+            return res.status(404).json({ error: 'Trainer not found' });
+        }
+
+        const [aggregate, sessions] = await Promise.all([
+            prisma.trainingSession.aggregate({
+                where: {
+                    trainerId,
+                    status: 'COMPLETED',
+                    memberRating: { not: null },
+                    memberRatingVoided: false
+                },
+                _avg: { memberRating: true },
+                _count: { memberRating: true }
+            }),
+            prisma.trainingSession.findMany({
+                where: {
+                    trainerId,
+                    status: 'COMPLETED',
+                    memberRating: { not: null },
+                    memberRatingVoided: false
+                },
+                select: {
+                    id: true,
+                    date: true,
+                    memberRating: true,
+                    memberRatingComment: true,
+                    memberRatedAt: true,
+                    member: {
+                        select: {
+                            firstName: true,
+                            lastName: true,
+                            imageUrl: true
+                        }
+                    }
+                },
+                orderBy: [
+                    { memberRatedAt: 'desc' },
+                    { date: 'desc' }
+                ],
+                take: limit
+            })
+        ]);
+
+        const average = Number(aggregate?._avg?.memberRating || 0);
+        const rating = Number.isFinite(average) ? Number(average.toFixed(2)) : 0;
+        const ratingCount = Number(aggregate?._count?.memberRating || 0);
+
+        return res.json({
+            trainer: {
+                id: trainer.id,
+                name: trainer.name
+            },
+            summary: {
+                rating,
+                ratingCount
+            },
+            reviews: sessions.map((session) => ({
+                id: session.id,
+                date: session.date,
+                rating: Number(session.memberRating || 0),
+                comment: session.memberRatingComment || '',
+                memberName: toReviewDisplayName(session.member),
+                memberImageUrl: session.member?.imageUrl || ''
+            }))
+        });
+    } catch (e) {
+        return res.status(500).json({ error: 'Failed to fetch trainer reviews', detail: e?.message });
     }
 };
 
@@ -762,6 +876,7 @@ const createTrainerLogin = async (req, res) => {
 module.exports = {
     getAllTrainers,
     getTrainerById,
+    getTrainerReviews,
     getMe,
     getMyCommissions,
     updateMyAvailability,

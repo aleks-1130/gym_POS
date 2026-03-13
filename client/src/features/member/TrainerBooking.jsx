@@ -51,10 +51,37 @@ const toPaymentStatusClass = (status) => {
 };
 
 const fallbackTrainerImage = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='480' viewBox='0 0 480 480'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop stop-color='%230f172a'/%3E%3Cstop offset='1' stop-color='%231e293b'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='480' height='480' fill='url(%23g)'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%2394a3b8' font-family='Arial' font-size='22'%3ETrainer Image Unavailable%3C/text%3E%3C/svg%3E";
+const fallbackMemberAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop stop-color='%23111827'/%3E%3Cstop offset='1' stop-color='%231e293b'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='60' cy='60' r='60' fill='url(%23g)'/%3E%3Ccircle cx='60' cy='46' r='20' fill='%23475569'/%3E%3Cpath d='M24 101c8-17 22-27 36-27s28 10 36 27' fill='%23475569'/%3E%3C/svg%3E";
+const RATING_COMMENT_LIMIT = 500;
+const TOP_RATED_MIN_SCORE = 4.5;
+const TOP_RATED_MIN_COUNT = 5;
 
 const handleTrainerImageError = (event) => {
     event.currentTarget.onerror = null;
     event.currentTarget.src = fallbackTrainerImage;
+};
+
+const handleMemberAvatarError = (event) => {
+    event.currentTarget.onerror = null;
+    event.currentTarget.src = fallbackMemberAvatar;
+};
+
+const getMemberInitials = (name) => {
+    const raw = String(name || '').trim();
+    if (!raw) return 'GM';
+    const parts = raw.split(/\s+/).filter(Boolean);
+    const initials = parts.slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('');
+    return initials || 'GM';
+};
+
+const formatReviewDateLabel = (value) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Unknown date';
+    return date.toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+    });
 };
 
 export default function TrainerBooking() {
@@ -62,9 +89,12 @@ export default function TrainerBooking() {
     const { formatPrice } = useCurrency();
     const { alert: showAlert, confirm: showConfirm } = useConfirm();
     const bookingPolicyNote = 'No refund by default for missed sessions. One reschedule is allowed with at least 24-hour notice.';
+    const trainersInfoNote = 'Review trainer credentials, specialties, ratings, and open slots before confirming your booking.';
+    const historyInfoNote = 'History shows completed, missed, and cancelled trainer sessions including your rating and payment records.';
     const [trainers, setTrainers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedTrainer, setSelectedTrainer] = useState(null);
+    const [showTrainerDetail, setShowTrainerDetail] = useState(false);
     const [showBookingModal, setShowBookingModal] = useState(false);
     const [bookingData, setBookingData] = useState({
         duration: 60,
@@ -79,10 +109,13 @@ export default function TrainerBooking() {
     const [sessionsError, setSessionsError] = useState('');
     const [activeTab, setActiveTab] = useState('trainers'); // trainers, bookings, history
     const [filterView, setFilterView] = useState('all'); // all, available, top-rated
+    const [trainerSearch, setTrainerSearch] = useState('');
+    const [showTrainerFilters, setShowTrainerFilters] = useState(false);
     const [bookingFilter, setBookingFilter] = useState('all'); // all, upcoming, ratings
     const [bookingSearch, setBookingSearch] = useState('');
     const [showBookingFilters, setShowBookingFilters] = useState(false);
     const [historyFilter, setHistoryFilter] = useState('all');
+    const [historySearch, setHistorySearch] = useState('');
     const [paymentMethods, setPaymentMethods] = useState([]);
     const [selectedMethodId, setSelectedMethodId] = useState('');
     const [paymentSelection, setPaymentSelection] = useState('CASH'); // CASH | E_WALLET | CARD
@@ -101,7 +134,10 @@ export default function TrainerBooking() {
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [bookingResult, setBookingResult] = useState(null);
     const [ratingSelections, setRatingSelections] = useState({});
+    const [ratingComments, setRatingComments] = useState({});
     const [ratingSubmittingId, setRatingSubmittingId] = useState(null);
+    const [ratingVoidingId, setRatingVoidingId] = useState(null);
+    const [trainerReviewsById, setTrainerReviewsById] = useState({});
 
     useEffect(() => {
         fetchTrainers();
@@ -143,7 +179,7 @@ export default function TrainerBooking() {
 
     // Prevent body scroll when modal is open (PWA best practice)
     useEffect(() => {
-        const hasOpenModal = showBookingModal || Boolean(rescheduleSession);
+        const hasOpenModal = showBookingModal || showTrainerDetail || Boolean(rescheduleSession);
         if (hasOpenModal) {
             document.body.style.overflow = 'hidden';
             // Add safe area insets for iOS
@@ -159,7 +195,7 @@ export default function TrainerBooking() {
             document.body.style.position = '';
             document.body.style.width = '';
         };
-    }, [showBookingModal, rescheduleSession]);
+    }, [showBookingModal, showTrainerDetail, rescheduleSession]);
 
     const fetchTrainers = async () => {
         try {
@@ -280,15 +316,6 @@ export default function TrainerBooking() {
 
     const handleBookSession = async (e) => {
         e.preventDefault();
-        if (pendingRatingSessions.length > 0) {
-            await showAlert({
-                title: 'Rating Required',
-                message: 'Please rate your completed session(s) before booking another trainer.',
-                type: 'warning'
-            });
-            setActiveTab('bookings');
-            return;
-        }
         if (!selectedTrainer || selectedDates.length === 0) {
             await showAlert({ title: 'Missing Info', message: 'Please fill in all required fields', type: 'warning' });
             return;
@@ -367,6 +394,7 @@ export default function TrainerBooking() {
     };
 
     const closeModal = useCallback(() => {
+        setShowTrainerDetail(false);
         setShowBookingModal(false);
         setSelectedTrainer(null);
         setBookingData({ duration: 60, notes: '', paymentMethod: 'CASH' });
@@ -377,10 +405,26 @@ export default function TrainerBooking() {
         setCalendarMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
     }, []);
 
-    const filteredTrainers = trainers.filter(trainer => {
-        if (filterView === 'available') return (trainer.availabilityByDay && Object.keys(trainer.availabilityByDay).length > 0);
-        if (filterView === 'top-rated') return trainer.rating >= 4.5;
-        return true;
+    const filteredTrainers = trainers.filter((trainer) => {
+        const trainerRating = Number(trainer?.rating || 0);
+        const trainerRatingCount = Number(trainer?.ratingCount || 0);
+        if (filterView === 'available' && !(trainer.availabilityByDay && Object.keys(trainer.availabilityByDay).length > 0)) {
+            return false;
+        }
+        if (filterView === 'top-rated' && !(trainerRating >= TOP_RATED_MIN_SCORE && trainerRatingCount >= TOP_RATED_MIN_COUNT)) {
+            return false;
+        }
+        const query = trainerSearch.trim().toLowerCase();
+        if (!query) return true;
+        const searchableText = [
+            trainer?.name,
+            trainer?.specialization,
+            trainer?.specialty,
+            trainer?.bio,
+            trainer?.specialties,
+            trainer?.statusDescription
+        ].filter(Boolean).join(' ').toLowerCase();
+        return searchableText.includes(query);
     });
     const trainerCardImageById = useMemo(() => {
         const map = new Map();
@@ -409,6 +453,7 @@ export default function TrainerBooking() {
     const pendingRatingSessions = memberSessions.filter((session) =>
         String(session?.status || '').toUpperCase() === 'COMPLETED'
         && (session?.memberRating === null || session?.memberRating === undefined)
+        && !session?.memberRatingVoided
     );
     const bookingEntries = useMemo(() => {
         const upcoming = upcomingSessions.map((session) => ({ ...session, bookingType: 'upcoming' }));
@@ -459,12 +504,30 @@ export default function TrainerBooking() {
             .sort((a, b) => b.date - a.date)
     ), [pastSessions]);
     const filteredTrainerHistoryEntries = useMemo(() => {
-        if (historyFilter === 'all') return trainerHistoryEntries;
-        if (historyFilter === 'completed') return trainerHistoryEntries.filter((entry) => entry.normalizedHistoryStatus === 'COMPLETED');
-        if (historyFilter === 'missed') return trainerHistoryEntries.filter((entry) => entry.normalizedHistoryStatus === 'MISSED');
-        if (historyFilter === 'cancelled') return trainerHistoryEntries.filter((entry) => entry.normalizedHistoryStatus === 'CANCELLED');
-        return trainerHistoryEntries;
-    }, [trainerHistoryEntries, historyFilter]);
+        let historyEntries = trainerHistoryEntries;
+        if (historyFilter === 'completed') historyEntries = trainerHistoryEntries.filter((entry) => entry.normalizedHistoryStatus === 'COMPLETED');
+        if (historyFilter === 'missed') historyEntries = trainerHistoryEntries.filter((entry) => entry.normalizedHistoryStatus === 'MISSED');
+        if (historyFilter === 'cancelled') historyEntries = trainerHistoryEntries.filter((entry) => entry.normalizedHistoryStatus === 'CANCELLED');
+
+        const query = historySearch.trim().toLowerCase();
+        if (!query) return historyEntries;
+
+        return historyEntries.filter((entry) => {
+            const searchableText = [
+                entry?.trainer?.name,
+                entry?.status,
+                entry?.normalizedHistoryStatus,
+                entry?.duration,
+                entry?.price,
+                entry?.memberRating,
+                entry?.date ? entry.date.toISOString() : ''
+            ]
+                .filter((item) => item !== null && item !== undefined && item !== '')
+                .join(' ')
+                .toLowerCase();
+            return searchableText.includes(query);
+        });
+    }, [trainerHistoryEntries, historyFilter, historySearch]);
     const trainerHistoryStatusCounts = useMemo(() => ({
         completed: trainerHistoryEntries.filter((entry) => entry.normalizedHistoryStatus === 'COMPLETED').length,
         missed: trainerHistoryEntries.filter((entry) => entry.normalizedHistoryStatus === 'MISSED').length,
@@ -478,19 +541,123 @@ export default function TrainerBooking() {
         () => filteredBookingEntries.filter((entry) => entry.bookingType === 'rating'),
         [filteredBookingEntries]
     );
-    const canBookNewSession = pendingRatingSessions.length === 0;
+    const bookingActionCount = pendingRatingSessions.length;
+    const hasPendingRatings = bookingActionCount > 0;
+    const nextUpcomingSession = useMemo(() => {
+        if (!Array.isArray(upcomingSessions) || upcomingSessions.length === 0) return null;
+        const sorted = [...upcomingSessions].sort((a, b) => new Date(a.date) - new Date(b.date));
+        return sorted[0] || null;
+    }, [upcomingSessions]);
+    const selectedTrainerReviewState = selectedTrainer
+        ? (trainerReviewsById[selectedTrainer.id] || null)
+        : null;
+
+    const fetchTrainerReviews = useCallback(async (trainerId, { force = false } = {}) => {
+        const numericTrainerId = Number(trainerId);
+        if (!Number.isInteger(numericTrainerId)) return;
+
+        if (!force) {
+            const current = trainerReviewsById[numericTrainerId];
+            if (current && (current.loading || current.loaded)) return;
+        }
+
+        setTrainerReviewsById((prev) => ({
+            ...prev,
+            [numericTrainerId]: {
+                ...(prev[numericTrainerId] || {}),
+                loading: true,
+                loaded: false,
+                error: ''
+            }
+        }));
+
+        try {
+            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+            const response = await axios.get(`/api/trainers/${numericTrainerId}/reviews`, {
+                params: { limit: 12 },
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined
+            });
+            setTrainerReviewsById((prev) => ({
+                ...prev,
+                [numericTrainerId]: {
+                    loading: false,
+                    loaded: true,
+                    error: '',
+                    summary: response?.data?.summary || { rating: 0, ratingCount: 0 },
+                    reviews: Array.isArray(response?.data?.reviews) ? response.data.reviews : []
+                }
+            }));
+        } catch (error) {
+            setTrainerReviewsById((prev) => ({
+                ...prev,
+                [numericTrainerId]: {
+                    ...(prev[numericTrainerId] || {}),
+                    loading: false,
+                    loaded: false,
+                    error: error?.response?.data?.error || 'Failed to load trainer reviews',
+                    summary: prev[numericTrainerId]?.summary || { rating: 0, ratingCount: 0 },
+                    reviews: prev[numericTrainerId]?.reviews || []
+                }
+            }));
+        }
+    }, [trainerReviewsById]);
+
+    const primeBookingForTrainer = useCallback((trainer) => {
+        const defaultMethod = paymentMethods.find((m) => m.isDefault) || paymentMethods[0] || null;
+        if (defaultMethod) {
+            const methodType = String(defaultMethod.type || '').toUpperCase();
+            const isWallet = ['GCASH', 'MAYA'].includes(methodType);
+            setPaymentSelection(isWallet ? 'E_WALLET' : 'CARD');
+            setSelectedMethodId(defaultMethod.id);
+            setBookingData((prev) => ({
+                ...prev,
+                paymentMethod: isWallet ? methodType : 'CARD'
+            }));
+        } else {
+            setPaymentSelection('CASH');
+            setSelectedMethodId('');
+            setBookingData((prev) => ({ ...prev, paymentMethod: 'CASH' }));
+        }
+        setSelectedTrainer(trainer);
+        setCalendarMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+    }, [paymentMethods]);
+
+    const handleOpenTrainerDetail = useCallback((trainer) => {
+        primeBookingForTrainer(trainer);
+        setShowTrainerDetail(true);
+        setShowBookingModal(false);
+    }, [primeBookingForTrainer]);
+
+    const handleOpenBookingModal = useCallback(() => {
+        if (!selectedTrainer) return;
+        setShowTrainerDetail(false);
+        setShowBookingModal(true);
+    }, [selectedTrainer]);
+
+    useEffect(() => {
+        if (!showTrainerDetail || !selectedTrainer?.id) return;
+        fetchTrainerReviews(selectedTrainer.id);
+    }, [showTrainerDetail, selectedTrainer?.id, fetchTrainerReviews]);
 
     const handleSubmitSessionRating = async (session) => {
         const rating = Number(ratingSelections[session.id] || 0);
+        const comment = String(ratingComments[session.id] || '').trim();
         if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
             await showAlert({ title: 'Rating Required', message: 'Please select a star rating (1 to 5).', type: 'warning' });
+            return;
+        }
+        if (comment.length > RATING_COMMENT_LIMIT) {
+            await showAlert({ title: 'Comment Too Long', message: `Please keep your comment within ${RATING_COMMENT_LIMIT} characters.`, type: 'warning' });
             return;
         }
 
         setRatingSubmittingId(session.id);
         try {
             const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-            await axios.post(`/api/members/me/training-sessions/${session.id}/rate`, { rating }, {
+            await axios.post(`/api/members/me/training-sessions/${session.id}/rate`, {
+                rating,
+                comment
+            }, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined
             });
             setRatingSelections((prev) => {
@@ -498,7 +665,15 @@ export default function TrainerBooking() {
                 delete next[session.id];
                 return next;
             });
+            setRatingComments((prev) => {
+                const next = { ...prev };
+                delete next[session.id];
+                return next;
+            });
             await Promise.all([fetchMemberSessions(), fetchTrainers()]);
+            if (selectedTrainer?.id && Number(selectedTrainer.id) === Number(session?.trainer?.id || session?.trainerId)) {
+                await fetchTrainerReviews(selectedTrainer.id, { force: true });
+            }
             await showAlert({ title: 'Thanks for the rating', message: 'Your trainer rating has been recorded.', type: 'success' });
         } catch (error) {
             const message = error?.response?.data?.error || 'Failed to submit trainer rating.';
@@ -508,12 +683,43 @@ export default function TrainerBooking() {
         }
     };
 
-    useEffect(() => {
-        if (showBookingModal && !canBookNewSession) {
-            closeModal();
-        }
-    }, [showBookingModal, canBookNewSession, closeModal]);
+    const handleVoidSessionRating = async (session) => {
+        const confirmed = await showConfirm({
+            title: 'Skip This Rating?',
+            message: 'This session will be marked as skipped and will not affect trainer ratings or reviews.',
+            confirmLabel: 'Skip Rating',
+            type: 'warning'
+        });
+        if (!confirmed) return;
 
+        setRatingVoidingId(session.id);
+        try {
+            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+            await axios.post(`/api/members/me/training-sessions/${session.id}/rate/void`, {}, {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined
+            });
+            setRatingSelections((prev) => {
+                const next = { ...prev };
+                delete next[session.id];
+                return next;
+            });
+            setRatingComments((prev) => {
+                const next = { ...prev };
+                delete next[session.id];
+                return next;
+            });
+            await Promise.all([fetchMemberSessions(), fetchTrainers()]);
+            if (selectedTrainer?.id && Number(selectedTrainer.id) === Number(session?.trainer?.id || session?.trainerId)) {
+                await fetchTrainerReviews(selectedTrainer.id, { force: true });
+            }
+            await showAlert({ title: 'Rating Skipped', message: 'You can continue booking without rating this session.', type: 'success' });
+        } catch (error) {
+            const message = error?.response?.data?.error || 'Failed to skip rating.';
+            await showAlert({ title: 'Skip Failed', message, type: 'danger' });
+        } finally {
+            setRatingVoidingId(null);
+        }
+    };
 
     const getTrainerSpecialties = (trainer) => {
         if (!trainer?.specialties) return [];
@@ -662,7 +868,23 @@ export default function TrainerBooking() {
         return slots;
     }, [rescheduleSession, rescheduleForm.date, getRescheduleAvailableTimeSlots]);
 
-    const showBookingPolicy = async () => {
+    const showTabInfo = async () => {
+        if (activeTab === 'trainers') {
+            await showAlert({
+                title: 'Trainer Booking Info',
+                message: trainersInfoNote,
+                type: 'info'
+            });
+            return;
+        }
+        if (activeTab === 'history') {
+            await showAlert({
+                title: 'Session History Info',
+                message: historyInfoNote,
+                type: 'info'
+            });
+            return;
+        }
         await showAlert({
             title: 'Trainer Session Policy',
             message: bookingPolicyNote,
@@ -789,9 +1011,9 @@ export default function TrainerBooking() {
     return (
         <div className="pb-20 px-4 max-w-5xl mx-auto space-y-4 sm:space-y-5">
             {/* Header - PWA Sticky */}
-            <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 -mx-4 px-4 py-4 space-y-3 border-b border-white/5">
-                <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1">
+            <div className={`sticky top-0 bg-background/95 backdrop-blur-sm z-10 -mx-4 px-4 py-4 space-y-3 ${activeTab === 'history' ? 'border-b border-white/5' : ''}`}>
+                <div className="flex items-start justify-between gap-3 min-h-[60px]">
+                    <div className="flex-1 min-h-[60px] flex flex-col justify-center">
                         <h1 className="text-xl font-bold text-white">
                             {activeTab === 'bookings'
                                 ? 'My Bookings'
@@ -799,7 +1021,7 @@ export default function TrainerBooking() {
                                     ? 'Session History'
                                     : 'Personal Trainers'}
                         </h1>
-                        <p className="text-text-muted text-xs mt-0.5">
+                        <p className="text-text-muted text-xs mt-0.5 leading-4 min-h-[32px]">
                             {activeTab === 'bookings'
                                 ? 'Manage upcoming trainer sessions and pending ratings'
                                 : activeTab === 'history'
@@ -807,25 +1029,23 @@ export default function TrainerBooking() {
                                     : 'Find your trainer and book sessions quickly'}
                         </p>
                     </div>
-                    {activeTab !== 'trainers' && (
-                        <button
-                            type="button"
-                            onClick={showBookingPolicy}
-                            className="shrink-0 h-9 w-9 rounded-lg border border-white/10 bg-surface text-text-secondary hover:text-white hover:bg-white/5"
-                            aria-label="View trainer session policy"
-                            title="Session policy"
-                        >
-                            <span className="material-icons-round text-base">info</span>
-                        </button>
-                    )}
+                    <button
+                        type="button"
+                        onClick={showTabInfo}
+                        className="shrink-0 h-9 w-9 rounded-lg border border-white/10 bg-surface text-text-secondary hover:text-white hover:bg-white/5 mt-0.5"
+                        aria-label="View tab info"
+                        title="Tab info"
+                    >
+                        <span className="material-icons-round text-base">info</span>
+                    </button>
                 </div>
 
                 {/* Primary Tabs */}
-                <div className="grid grid-cols-3 gap-2 rounded-2xl p-1.5 bg-surface/80 border border-white/10 shadow-inner">
+                <div className="grid grid-cols-3 gap-2 rounded-2xl p-1 bg-surface/80 border border-white/10 shadow-inner">
                     <button
                         type="button"
                         onClick={() => setActiveTab('trainers')}
-                        className={`py-2.5 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${activeTab === 'trainers'
+                        className={`py-2 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${activeTab === 'trainers'
                             ? 'bg-primary text-background shadow-md'
                             : 'text-text-muted hover:text-white hover:bg-white/5'
                             }`}
@@ -836,106 +1056,130 @@ export default function TrainerBooking() {
                     <button
                         type="button"
                         onClick={() => setActiveTab('bookings')}
-                        className={`relative py-2.5 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${activeTab === 'bookings'
+                        className={`relative py-2 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${activeTab === 'bookings'
                             ? 'bg-primary text-background shadow-md'
                             : 'text-text-muted hover:text-white hover:bg-white/5'
                             }`}
                     >
                         <span className="material-icons-round text-base">event_note</span>
                         <span>My Bookings</span>
-                        {bookingEntries.length > 0 && (
-                            <span className={`absolute right-1.5 top-1.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold leading-none ${activeTab === 'bookings' ? 'bg-background/20 text-background' : 'bg-white/10 text-white'}`}>
-                                {bookingEntries.length}
+                        {bookingActionCount > 0 && (
+                            <span className={`absolute right-1 top-1 min-w-[16px] h-4 px-1 rounded-md text-[9px] font-bold leading-none inline-flex items-center justify-center ${activeTab === 'bookings' ? 'bg-amber-400 text-black' : 'bg-amber-500/90 text-black'}`}>
+                                {bookingActionCount > 9 ? '9+' : bookingActionCount}
                             </span>
                         )}
                     </button>
                     <button
                         type="button"
                         onClick={() => setActiveTab('history')}
-                        className={`relative py-2.5 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${activeTab === 'history'
+                        className={`relative py-2 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${activeTab === 'history'
                             ? 'bg-primary text-background shadow-md'
                             : 'text-text-muted hover:text-white hover:bg-white/5'
                             }`}
                     >
                         <span className="material-icons-round text-base">history</span>
                         <span>History</span>
-                        {trainerHistoryEntries.length > 0 && (
-                            <span className={`absolute right-1.5 top-1.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold leading-none ${activeTab === 'history' ? 'bg-background/20 text-background' : 'bg-white/10 text-white'}`}>
-                                {trainerHistoryEntries.length}
-                            </span>
-                        )}
                     </button>
                 </div>
 
-                {/* Trainer Filters */}
+                {/* Trainer Search + Filters */}
                 {activeTab === 'trainers' && (
-                    <div className="space-y-2">
-                        <div className="grid grid-cols-3 gap-2">
-                            {[
-                                { value: 'all', label: 'All' },
-                                { value: 'available', label: 'Available' },
-                                { value: 'top-rated', label: 'Top Rated' }
-                            ].map((tab) => (
-                                <button
-                                    key={tab.value}
-                                    onClick={() => setFilterView(tab.value)}
-                                    className={`px-2.5 py-2 rounded-lg font-bold text-[11px] whitespace-nowrap transition-all border text-center ${filterView === tab.value
-                                        ? 'bg-white text-black shadow-sm border-white'
-                                        : 'bg-surface border-white/10 text-text-muted hover:text-white'
-                                        }`}
-                                >
-                                    {tab.label}
-                                </button>
-                            ))}
+                    <div className="-mx-4 px-4 space-y-2 border-t border-white/5 pt-3">
+                        <div className="flex items-center gap-2">
+                            <label className="relative flex-1">
+                                <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 material-icons-round text-sm text-text-muted">search</span>
+                                <input
+                                    type="text"
+                                    value={trainerSearch}
+                                    onChange={(event) => setTrainerSearch(event.target.value)}
+                                    placeholder="Search trainers, specialty, skills..."
+                                    className="h-8 w-full rounded-lg border border-white/10 bg-surface pl-8 pr-2 text-xs text-white placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-primary/40"
+                                />
+                            </label>
+                            <button
+                                type="button"
+                                onClick={() => setShowTrainerFilters((prev) => !prev)}
+                                className={`h-8 px-2.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 ${showTrainerFilters || filterView !== 'all'
+                                    ? 'bg-white text-black border-white'
+                                    : 'bg-surface border-white/10 text-text-muted hover:text-white'
+                                    }`}
+                            >
+                                <span className="material-icons-round text-sm">tune</span>
+                                Filter
+                            </button>
                         </div>
-                        {!canBookNewSession && (
+                        <p className="text-[11px] text-text-muted">
+                            {filterView === 'all'
+                                ? 'Showing all trainers.'
+                                : filterView === 'available'
+                                    ? 'Filter: Available trainers'
+                                    : `Filter: Top rated (${TOP_RATED_MIN_SCORE}+ with ${TOP_RATED_MIN_COUNT}+ ratings)`}
+                        </p>
+                        {showTrainerFilters && (
+                            <div className="grid grid-cols-3 gap-2">
+                                {[
+                                    { value: 'all', label: 'All' },
+                                    { value: 'available', label: 'Available' },
+                                    { value: 'top-rated', label: 'Top Rated' }
+                                ].map((tab) => (
+                                    <button
+                                        key={tab.value}
+                                        onClick={() => setFilterView(tab.value)}
+                                        className={`px-2.5 py-2 rounded-lg font-bold text-[11px] whitespace-nowrap transition-all border text-center ${filterView === tab.value
+                                            ? 'bg-white text-black shadow-sm border-white'
+                                            : 'bg-surface border-white/10 text-text-muted hover:text-white'
+                                            }`}
+                                    >
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                        {hasPendingRatings && (
                             <div className="rounded-xl border border-white/10 bg-surface px-3 py-2.5 text-xs text-text-muted flex items-start gap-2">
                                 <span className="material-icons-round text-base text-primary">priority_high</span>
-                                <span>Booking is temporarily locked. Complete the required trainer ratings in <strong>My Bookings</strong>.</span>
+                                <span>You still have unrated completed sessions. You can continue booking, but please rate or skip those sessions in <strong>My Bookings</strong>.</span>
                             </div>
                         )}
                     </div>
                 )}
 
-                {activeTab === 'history' && (
-                    <div className="grid grid-cols-4 gap-2">
-                        {[
-                            { value: 'all', label: 'All' },
-                            { value: 'completed', label: 'Done' },
-                            { value: 'missed', label: 'Missed' },
-                            { value: 'cancelled', label: 'Cancelled' }
-                        ].map((item) => (
-                            <button
-                                key={item.value}
-                                type="button"
-                                onClick={() => setHistoryFilter(item.value)}
-                                className={`px-2 py-2 rounded-lg text-[11px] font-semibold border transition-all ${historyFilter === item.value
-                                    ? 'bg-white text-black border-white shadow-sm'
-                                    : 'bg-surface border-white/10 text-text-muted hover:text-white'
-                                    }`}
-                            >
-                                {item.label}
-                            </button>
-                        ))}
-                    </div>
-                )}
             </div>
 
             {activeTab === 'bookings' ? (
                 /* My Booked Sessions */
                 <div className="space-y-5">
-                    <div className="grid grid-cols-2 gap-2">
-                        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
-                            <p className="text-[10px] uppercase tracking-wide text-emerald-300 font-bold">BOOKED SESSIONS</p>
+                    <div className="grid grid-cols-2 gap-2.5">
+                        <div className="rounded-2xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/20 to-emerald-500/5 p-3.5">
+                            <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-300/90 font-bold">Upcoming</p>
                             <p className="text-2xl font-black text-white mt-1">{upcomingSessions.length}</p>
-                            <p className="text-[11px] text-text-muted mt-1">Upcoming trainer sessions</p>
+                            <p className="text-[11px] text-emerald-100/75 mt-1">Booked sessions</p>
                         </div>
-                        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
-                            <p className="text-[10px] uppercase tracking-wide text-amber-300 font-bold">RATINGS</p>
+                        <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-500/20 to-amber-500/5 p-3.5">
+                            <p className="text-[10px] uppercase tracking-[0.16em] text-amber-300/90 font-bold">Pending Rating</p>
                             <p className="text-2xl font-black text-white mt-1">{pendingRatingSessions.length}</p>
-                            <p className="text-[11px] text-text-muted mt-1">Needs your rating</p>
+                            <p className="text-[11px] text-amber-100/75 mt-1">Complete to unlock booking</p>
                         </div>
                     </div>
+
+                    {nextUpcomingSession && (
+                        <div className="rounded-2xl border border-primary/30 bg-gradient-to-r from-primary/20 via-primary/10 to-transparent p-4">
+                            <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                    <p className="text-[10px] uppercase tracking-[0.18em] text-primary/90 font-bold">Next Session</p>
+                                    <p className="text-base font-bold text-white mt-1 truncate">{nextUpcomingSession?.trainer?.name || 'Trainer'}</p>
+                                    <p className="text-[11px] text-text-muted mt-0.5">
+                                        {new Date(nextUpcomingSession.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                                        {' at '}
+                                        {new Date(nextUpcomingSession.date).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                                    </p>
+                                </div>
+                                <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${toSessionStatusClass(nextUpcomingSession.status)}`}>
+                                    {nextUpcomingSession.status || 'SCHEDULED'}
+                                </span>
+                            </div>
+                        </div>
+                    )}
 
                     <div className="flex items-center gap-2">
                         <label className="relative flex-1">
@@ -1113,6 +1357,8 @@ export default function TrainerBooking() {
                                 ) : visibleRatingSessions.map((session) => {
                                     const sessionDate = new Date(session.date);
                                     const selectedRating = Number(ratingSelections[session.id] || 0);
+                                    const commentValue = String(ratingComments[session.id] || '');
+                                    const ratingBusy = ratingSubmittingId === session.id || ratingVoidingId === session.id;
                                     return (
                                         <div key={`pending-rating-${session.id}`} className="bg-white/5 border border-white/10 rounded-xl p-3 sm:p-4">
                                             <div className="flex items-start justify-between gap-3">
@@ -1133,6 +1379,7 @@ export default function TrainerBooking() {
                                                     <button
                                                         key={`${session.id}-rating-${score}`}
                                                         type="button"
+                                                        disabled={ratingBusy}
                                                         onClick={() => setRatingSelections((prev) => ({ ...prev, [session.id]: score }))}
                                                         className={`w-9 h-9 rounded-lg border text-lg font-bold transition-all ${selectedRating >= score
                                                             ? 'bg-yellow-500/20 border-yellow-400/50 text-yellow-300'
@@ -1145,16 +1392,42 @@ export default function TrainerBooking() {
                                                 ))}
                                                 <span className="ml-2 text-xs text-text-muted">{selectedRating > 0 ? `${selectedRating}/5` : 'Select rating'}</span>
                                             </div>
-                                            <div className="mt-3 flex items-center justify-between gap-3">
-                                                <span className="text-[11px] text-text-muted">Please rate to unlock new bookings.</span>
-                                                <button
-                                                    type="button"
-                                                    disabled={ratingSubmittingId === session.id || selectedRating < 1}
-                                                    onClick={() => handleSubmitSessionRating(session)}
-                                                    className="px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-background hover:brightness-110 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                                >
-                                                    {ratingSubmittingId === session.id ? 'Saving...' : 'Submit Rating'}
-                                                </button>
+                                            <div className="mt-3">
+                                                <label className="block text-[11px] font-semibold text-text-muted mb-1.5">Comment (optional)</label>
+                                                <textarea
+                                                    rows={2}
+                                                    value={commentValue}
+                                                    onChange={(event) => {
+                                                        const value = event.target.value;
+                                                        if (value.length > RATING_COMMENT_LIMIT) return;
+                                                        setRatingComments((prev) => ({ ...prev, [session.id]: value }));
+                                                    }}
+                                                    placeholder="Share your experience with this trainer"
+                                                    disabled={ratingBusy}
+                                                    className="w-full px-3 py-2 bg-black/20 border border-white/10 rounded-lg text-xs text-white placeholder:text-text-muted focus:outline-none focus:border-primary resize-none"
+                                                />
+                                                <p className="mt-1 text-[10px] text-text-muted text-right">{commentValue.length}/{RATING_COMMENT_LIMIT}</p>
+                                            </div>
+                                            <div className="mt-3 flex flex-wrap items-center justify-between gap-2.5">
+                                                <span className="text-[11px] text-text-muted">Rate or skip to keep your trainer feedback updated.</span>
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        disabled={ratingBusy}
+                                                        onClick={() => handleVoidSessionRating(session)}
+                                                        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white/10 text-text-secondary hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        {ratingVoidingId === session.id ? 'Skipping...' : 'Skip'}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={ratingBusy || selectedRating < 1}
+                                                        onClick={() => handleSubmitSessionRating(session)}
+                                                        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-background hover:brightness-110 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    >
+                                                        {ratingSubmittingId === session.id ? 'Saving...' : 'Submit Rating'}
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
                                     );
@@ -1182,7 +1455,40 @@ export default function TrainerBooking() {
                         </div>
                     </div>
 
-                    <div className="bg-surface border border-white/10 rounded-xl p-4 space-y-4">
+                    <div className="space-y-2 rounded-xl border border-white/10 bg-surface p-3">
+                        <label className="relative block">
+                            <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 material-icons-round text-sm text-text-muted">search</span>
+                            <input
+                                type="text"
+                                value={historySearch}
+                                onChange={(event) => setHistorySearch(event.target.value)}
+                                placeholder="Search trainer, status, date..."
+                                className="h-8 w-full rounded-lg border border-white/10 bg-background/40 pl-8 pr-2 text-xs text-white placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-primary/40"
+                            />
+                        </label>
+                        <div className="grid grid-cols-4 gap-2">
+                            {[
+                                { value: 'all', label: 'All' },
+                                { value: 'completed', label: 'Done' },
+                                { value: 'missed', label: 'Missed' },
+                                { value: 'cancelled', label: 'Cancelled' }
+                            ].map((item) => (
+                                <button
+                                    key={item.value}
+                                    type="button"
+                                    onClick={() => setHistoryFilter(item.value)}
+                                    className={`px-2 py-2 rounded-lg text-[11px] font-semibold border transition-all ${historyFilter === item.value
+                                        ? 'bg-white text-black border-white shadow-sm'
+                                        : 'bg-surface border-white/10 text-text-muted hover:text-white'
+                                        }`}
+                                >
+                                    {item.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="bg-surface border border-white/10 rounded-2xl p-4 space-y-4">
                         <div className="flex items-center justify-between gap-2">
                             <div>
                                 <h2 className="text-white font-bold text-base">Trainer Session History</h2>
@@ -1205,43 +1511,65 @@ export default function TrainerBooking() {
                             <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-4 text-sm text-text-muted">No past session history found for this filter.</div>
                         ) : (
                             <div className="space-y-2.5">
-                                {filteredTrainerHistoryEntries.map((entry) => (
-                                    <article key={`trainer-history-${entry.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                                        <div className="flex items-start justify-between gap-2">
-                                            <div>
-                                                <p className="text-sm font-semibold text-white">{entry?.trainer?.name || 'Trainer Session'}</p>
-                                                <p className="text-[11px] text-text-muted mt-0.5">
-                                                    {entry.date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
-                                                    {' at '}
-                                                    {entry.date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
-                                                </p>
-                                            </div>
-                                            <span className={`rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${toTrainerHistoryStatusClass(entry.normalizedHistoryStatus)}`}>
-                                                {toTrainerHistoryStatusLabel(entry.normalizedHistoryStatus)}
-                                            </span>
-                                        </div>
-                                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
-                                            <span className="inline-flex items-center gap-1">
-                                                <span className="material-icons-round text-sm">schedule</span>
-                                                {entry.duration} min
-                                            </span>
-                                            <span className="inline-flex items-center gap-1">
-                                                <span className="material-icons-round text-sm">payments</span>
-                                                {formatPrice(entry.price)}
-                                            </span>
-                                            <span className="inline-flex items-center gap-1">
-                                                <span className="material-icons-round text-sm">event</span>
-                                                {String(entry.status || '').replace(/_/g, ' ') || 'N/A'}
-                                            </span>
-                                            {String(entry.status || '').toUpperCase() === 'COMPLETED' && (
-                                                <span className="inline-flex items-center gap-1">
-                                                    <span className="material-icons-round text-sm">star</span>
-                                                    {entry.memberRating ? `Rated ${entry.memberRating}/5` : 'Not Rated'}
+                                {filteredTrainerHistoryEntries.map((entry) => {
+                                    const trainerId = Number(entry?.trainer?.id || entry?.trainerId);
+                                    const matchedTrainer = trainers.find((trainer) => Number(trainer.id) === trainerId) || null;
+                                    return (
+                                        <article key={`trainer-history-${entry.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3.5">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div>
+                                                    <p className="text-sm font-semibold text-white">{entry?.trainer?.name || 'Trainer Session'}</p>
+                                                    <p className="text-[11px] text-text-muted mt-0.5">
+                                                        {entry.date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+                                                        {' at '}
+                                                        {entry.date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                                                    </p>
+                                                </div>
+                                                <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${toTrainerHistoryStatusClass(entry.normalizedHistoryStatus)}`}>
+                                                    {toTrainerHistoryStatusLabel(entry.normalizedHistoryStatus)}
                                                 </span>
+                                            </div>
+                                            <div className="mt-2.5 grid grid-cols-2 gap-2 text-[11px] text-text-muted">
+                                                <span className="inline-flex items-center gap-1">
+                                                    <span className="material-icons-round text-sm">schedule</span>
+                                                    {entry.duration} min
+                                                </span>
+                                                <span className="inline-flex items-center gap-1">
+                                                    <span className="material-icons-round text-sm">payments</span>
+                                                    {formatPrice(entry.price)}
+                                                </span>
+                                                <span className="inline-flex items-center gap-1 col-span-2">
+                                                    <span className="material-icons-round text-sm">event</span>
+                                                    {String(entry.status || '').replace(/_/g, ' ') || 'N/A'}
+                                                </span>
+                                                {String(entry.status || '').toUpperCase() === 'COMPLETED' && Boolean(entry.memberRatingVoided) && (
+                                                    <span className="inline-flex items-center gap-1 col-span-2">
+                                                        <span className="material-icons-round text-sm">remove_circle</span>
+                                                        Rating skipped
+                                                    </span>
+                                                )}
+                                                {String(entry.status || '').toUpperCase() === 'COMPLETED' && (
+                                                    <span className="inline-flex items-center gap-1 col-span-2">
+                                                        <span className="material-icons-round text-sm">star</span>
+                                                        {entry.memberRating ? `Rated ${entry.memberRating}/5` : (entry.memberRatingVoided ? 'Not Rated (Skipped)' : 'Not Rated')}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {matchedTrainer && (
+                                                <div className="mt-3 pt-3 border-t border-white/10">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleOpenTrainerDetail(matchedTrainer)}
+                                                        className="w-full py-2 rounded-lg bg-primary/10 text-primary border border-primary/25 font-semibold text-xs hover:bg-primary/20 transition-colors flex items-center justify-center gap-1.5"
+                                                    >
+                                                        <span className="material-icons-round text-sm">replay</span>
+                                                        Book Again
+                                                    </button>
+                                                </div>
                                             )}
-                                        </div>
-                                    </article>
-                                ))}
+                                        </article>
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
@@ -1259,133 +1587,385 @@ export default function TrainerBooking() {
                         </button>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
-                        {filteredTrainers.map(trainer => (
-                            <div key={trainer.id} className="bg-surface/95 rounded-2xl border border-white/10 overflow-hidden hover:border-primary/30 transition-all group flex flex-col shadow-lg shadow-black/15">
-                                {/* Trainer Image */}
-                                <div className="aspect-[4/3] bg-white/5 overflow-hidden relative">
-                                    {trainer.cardImageUrl ? (
-                                        <img
-                                            src={trainer.cardImageUrl}
-                                            alt={trainer.name}
-                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                            loading="lazy"
-                                        />
-                                    ) : (
-                                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-primary/5">
-                                            <span className="material-icons-round text-6xl text-primary/30">person</span>
-                                        </div>
-                                    )}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
+                        {filteredTrainers.map((trainer) => {
+                            const specialties = getTrainerSpecialties(trainer);
+                            const availableDays = trainer.availabilityByDay ? Object.keys(trainer.availabilityByDay).length : 0;
+                            const todayIso = toIsoDate(new Date());
+                            const todayWindow = getTrainerDateWindow(trainer, todayIso);
+                            const bookingStatusLabel = String(trainer.bookingStatus || 'OPEN').toUpperCase();
+                            const sessionDurations = getTrainerDurations(trainer);
+                            const isTrainerOpen = bookingStatusLabel === 'OPEN' || isTrainerTemporarilyOpenForDate(trainer, todayIso);
 
-                                    {/* Rating Badge */}
-                                    <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-md rounded-full px-2 py-1 flex items-center gap-1">
-                                        <span className="material-icons-round text-sm text-yellow-400">star</span>
-                                        <span className="text-white font-bold text-xs">{Number(trainer.rating || 0).toFixed(1)}</span>
+                            return (
+                                <article key={trainer.id} className="bg-surface/95 rounded-2xl border border-white/10 overflow-hidden hover:border-primary/30 transition-all group flex flex-col shadow-lg shadow-black/15">
+                                    <div className="aspect-[16/9] bg-white/5 overflow-hidden relative">
+                                        {trainer.cardImageUrl ? (
+                                            <img
+                                                src={trainer.cardImageUrl}
+                                                alt={trainer.name}
+                                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                                loading="lazy"
+                                                onError={handleTrainerImageError}
+                                            />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-primary/5">
+                                                <span className="material-icons-round text-6xl text-primary/30">person</span>
+                                            </div>
+                                        )}
+                                        <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
+                                            <div className="flex items-center justify-between">
+                                                <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${isTrainerOpen
+                                                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                                                    : 'bg-red-500/10 border-red-500/30 text-red-300'
+                                                    }`}>
+                                                    {isTrainerOpen ? 'Open for booking' : 'Closed'}
+                                                </span>
+                                                <span className="rounded-full bg-black/70 backdrop-blur-md px-2 py-1 flex items-center gap-1">
+                                                    <span className="material-icons-round text-xs text-yellow-400">star</span>
+                                                    <span className="text-white font-bold text-xs">{Number(trainer.rating || 0).toFixed(1)}</span>
+                                                    <span className="text-[10px] text-white/70">({Number(trainer.ratingCount || 0)})</span>
+                                                </span>
+                                            </div>
+                                        </div>
                                     </div>
 
-                                    {/* Experience Tag */}
-                                    {trainer.experience && (
-                                        <div className="absolute bottom-2 left-2 bg-black/70 backdrop-blur-md rounded-lg px-2 py-1">
-                                            <span className="text-white font-medium text-[10px]">{trainer.experience}y exp</span>
+                                    <div className="p-4 flex flex-col flex-1">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <div className="min-w-0">
+                                                <h3 className="font-bold text-white text-base leading-tight truncate">{trainer.name}</h3>
+                                                <p className="text-text-muted text-xs mt-1 truncate">{trainer.specialization || 'Personal Trainer'}</p>
+                                            </div>
+                                            {trainer.experience && (
+                                                <span className="shrink-0 text-[10px] font-semibold text-text-secondary rounded-md border border-white/15 bg-white/5 px-2 py-1">
+                                                    {trainer.experience}y exp
+                                                </span>
+                                            )}
                                         </div>
-                                    )}
-                                </div>
 
-                                {/* Trainer Info */}
-                                <div className="p-3 sm:p-4 flex flex-col flex-1">
-                                    <div className="mb-2.5">
-                                        <h3 className="font-bold text-white text-sm sm:text-base leading-tight line-clamp-2">{trainer.name}</h3>
-                                        <p className="text-text-muted text-[11px] mt-0.5 line-clamp-1">{trainer.specialization || 'Personal Trainer'}</p>
+                                        {specialties.length > 0 && (
+                                            <div className="mt-3 flex flex-wrap gap-1.5">
+                                                {specialties.slice(0, 3).map((specialty, idx) => (
+                                                    <span key={idx} className="bg-white/10 text-text-secondary px-2 py-0.5 rounded-md text-[10px] font-medium">
+                                                        {specialty}
+                                                    </span>
+                                                ))}
+                                                {specialties.length > 3 && (
+                                                    <span className="text-text-muted text-[10px] py-0.5 px-1">+{specialties.length - 3} more</span>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-2.5 space-y-1.5">
+                                            <div className="flex items-center justify-between text-[11px]">
+                                                <span className="text-text-muted">Session Price</span>
+                                                <span className="text-primary font-extrabold">{formatPrice(trainer.sessionPrice ?? 300)}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between text-[11px]">
+                                                <span className="text-text-muted">Durations</span>
+                                                <span className="text-white font-medium">{sessionDurations.join(', ')} min</span>
+                                            </div>
+                                            <div className="flex items-center justify-between text-[11px]">
+                                                <span className="text-text-muted">Availability</span>
+                                                <span className={`${availableDays > 0 ? 'text-emerald-300' : 'text-amber-300'} font-medium`}>
+                                                    {availableDays > 0 ? `${availableDays} day(s)` : 'Not set'}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center justify-between text-[11px]">
+                                                <span className="text-text-muted">Today</span>
+                                                <span className="text-white/90 font-medium">
+                                                    {todayWindow ? `${formatTimeLabel(todayWindow.start)} - ${formatTimeLabel(todayWindow.end)}` : 'Unavailable'}
+                                                </span>
+                                            </div>
+                                        </div>
+
                                         {trainer.statusDescription && (
-                                            <p className="text-[11px] text-white/70 mt-1.5 line-clamp-2">{trainer.statusDescription}</p>
+                                            <p className="mt-2.5 text-[11px] text-white/70 line-clamp-2">{trainer.statusDescription}</p>
+                                        )}
+
+                                        <div className="mt-auto pt-3">
+                                            <button
+                                                onClick={() => handleOpenTrainerDetail(trainer)}
+                                                className="w-full py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95 flex items-center justify-center gap-1.5 touch-manipulation bg-primary text-background hover:brightness-110 shadow-lg shadow-primary/25"
+                                            >
+                                                <span className="material-icons-round text-base">fitness_center</span>
+                                                View Details & Book
+                                            </button>
+                                        </div>
+                                    </div>
+                                </article>
+                            );
+                        })}
+                    </div>
+                )
+            )}
+
+            {showTrainerDetail && selectedTrainer && (
+                <div
+                    className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center sm:justify-center"
+                    onClick={closeModal}
+                    style={{
+                        paddingBottom: 'env(safe-area-inset-bottom)',
+                        paddingTop: 'env(safe-area-inset-top)'
+                    }}
+                >
+                    <div
+                        className="w-full sm:max-w-2xl bg-surface rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 flex flex-col max-h-[90vh] overflow-hidden animate-slide-up sm:animate-none"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-start justify-between p-5 border-b border-white/10">
+                            <div>
+                                <p className="text-[10px] uppercase tracking-[0.18em] text-primary/90 font-bold">Trainer Profile</p>
+                                <h2 className="text-xl font-bold text-white mt-1">Review Before Booking</h2>
+                            </div>
+                            <button
+                                onClick={closeModal}
+                                className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors"
+                                aria-label="Close trainer details"
+                            >
+                                <span className="material-icons-round text-white text-2xl">close</span>
+                            </button>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                                <div className="flex gap-4">
+                                    <div className="w-20 h-20 rounded-2xl overflow-hidden bg-white/10 flex items-center justify-center shrink-0">
+                                        {selectedTrainer.cardImageUrl ? (
+                                            <img src={selectedTrainer.cardImageUrl} alt={selectedTrainer.name} className="w-full h-full object-cover" onError={handleTrainerImageError} />
+                                        ) : (
+                                            <span className="material-icons-round text-text-muted text-3xl">person</span>
                                         )}
                                     </div>
+                                    <div className="min-w-0 flex-1">
+                                        <h3 className="text-lg font-bold text-white truncate">{selectedTrainer.name}</h3>
+                                        <p className="text-xs text-text-muted mt-0.5 truncate">{selectedTrainer.specialization || 'Personal Trainer'}</p>
+                                        {selectedTrainer.statusDescription && (
+                                            <p className="text-xs text-white/70 mt-2 leading-relaxed">
+                                                {selectedTrainer.statusDescription}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
 
-                                    {/* Bio */}
-                                    {trainer.bio && (
-                                        <p className="hidden sm:block text-text-muted text-xs mb-2.5 line-clamp-2 leading-relaxed">
-                                            {trainer.bio}
+                                <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                    <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">
+                                        <p className="text-[10px] uppercase tracking-wide text-text-muted">Rating</p>
+                                        <p className="mt-1 text-sm font-bold text-white inline-flex items-center gap-1">
+                                            {Number(selectedTrainer.rating || 0).toFixed(1)}
+                                            <span className="material-icons-round text-sm text-yellow-400">star</span>
                                         </p>
-                                    )}
+                                        <p className="mt-1 text-[11px] text-text-muted">
+                                            {Number(selectedTrainerReviewState?.summary?.ratingCount ?? selectedTrainer.ratingCount ?? 0)} member ratings
+                                        </p>
+                                    </div>
+                                    <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">
+                                        <p className="text-[10px] uppercase tracking-wide text-text-muted">Experience</p>
+                                        <p className="mt-1 text-sm font-bold text-white">
+                                            {selectedTrainer.experience ? `${selectedTrainer.experience} years` : 'N/A'}
+                                        </p>
+                                    </div>
+                                    <div className="rounded-xl border border-primary/20 bg-primary/10 px-3 py-2.5">
+                                        <p className="text-[10px] uppercase tracking-wide text-primary/80">Rate</p>
+                                        <p className="mt-1 text-sm font-bold text-white">{formatPrice(selectedTrainer.sessionPrice ?? 300)}</p>
+                                    </div>
+                                    <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">
+                                        <p className="text-[10px] uppercase tracking-wide text-text-muted">Durations</p>
+                                        <p className="mt-1 text-sm font-bold text-white">
+                                            {getTrainerDurations(selectedTrainer).join(', ')} min
+                                        </p>
+                                    </div>
+                                </div>
 
-                                    {/* Specializations */}
-                                    {getTrainerSpecialties(trainer).length > 0 && (
-                                        <div className="mb-3 flex flex-wrap gap-1.5">
-                                            {getTrainerSpecialties(trainer).slice(0, 2).map((specialty, idx) => (
-                                                <span key={idx} className="bg-white/10 text-text-secondary px-2 py-0.5 rounded-md text-[10px] font-medium">
+                                <div className="mt-3">
+                                    <p className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-2">Specialties</p>
+                                    {getTrainerSpecialties(selectedTrainer).length > 0 ? (
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {getTrainerSpecialties(selectedTrainer).map((specialty, idx) => (
+                                                <span key={`${specialty}-${idx}`} className="bg-white/10 text-text-secondary px-2 py-1 rounded-md text-[11px] font-medium">
                                                     {specialty}
                                                 </span>
                                             ))}
-                                            {getTrainerSpecialties(trainer).length > 2 && (
-                                                <span className="text-text-muted text-[10px] py-0.5 px-1">+{getTrainerSpecialties(trainer).length - 2} more</span>
-                                            )}
                                         </div>
+                                    ) : (
+                                        <p className="text-xs text-text-muted">No specialties listed yet.</p>
                                     )}
-
-                                    <div className="mt-auto space-y-2.5">
-                                        {/* Price */}
-                                        <div className="flex justify-between items-center py-2 border-t border-white/10">
-                                            <span className="text-text-muted text-[11px]">60 min</span>
-                                            <span className="text-primary font-extrabold text-base sm:text-lg">{formatPrice(trainer.sessionPrice ?? 300)}</span>
-                                        </div>
-
-                                        {/* Availability */}
-                                        <div className="flex items-center gap-1.5 text-[11px]">
-                                            <div className={`w-1.5 h-1.5 rounded-full ${(trainer.availabilityByDay && Object.keys(trainer.availabilityByDay).length > 0) ? 'bg-green-400' : 'bg-amber-400'}`}></div>
-                                            <span className={`line-clamp-1 ${(trainer.availabilityByDay && Object.keys(trainer.availabilityByDay).length > 0) ? 'text-green-400' : 'text-amber-400'}`}>
-                                                {(trainer.availabilityByDay && Object.keys(trainer.availabilityByDay).length > 0)
-                                                    ? `${Object.keys(trainer.availabilityByDay).length} available day(s)`
-                                                    : 'Availability not set'
-                                                }
-                                            </span>
-                                        </div>
-
-                                        {/* Book Button - Touch Optimized */}
-                                        <button
-                                            onClick={() => {
-                                                if (!canBookNewSession) {
-                                                    showAlert({
-                                                        title: 'Rating Required',
-                                                        message: 'Please rate your completed session(s) first.',
-                                                        type: 'warning'
-                                                    });
-                                                    setActiveTab('bookings');
-                                                    return;
-                                                }
-                                                const defaultMethod = paymentMethods.find((m) => m.isDefault) || paymentMethods[0] || null;
-                                                if (defaultMethod) {
-                                                    const methodType = String(defaultMethod.type || '').toUpperCase();
-                                                    const isWallet = ['GCASH', 'MAYA'].includes(methodType);
-                                                    setPaymentSelection(isWallet ? 'E_WALLET' : 'CARD');
-                                                    setSelectedMethodId(defaultMethod.id);
-                                                    setBookingData((prev) => ({
-                                                        ...prev,
-                                                        paymentMethod: isWallet ? methodType : 'CARD'
-                                                    }));
-                                                } else {
-                                                    setPaymentSelection('CASH');
-                                                    setSelectedMethodId('');
-                                                    setBookingData((prev) => ({ ...prev, paymentMethod: 'CASH' }));
-                                                }
-                                                setSelectedTrainer(trainer);
-                                                setCalendarMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
-                                                setShowBookingModal(true);
-                                            }}
-                                            disabled={!canBookNewSession}
-                                            className={`w-full py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all active:scale-95 flex items-center justify-center gap-1.5 touch-manipulation ${canBookNewSession
-                                                ? 'bg-primary text-background hover:brightness-110 shadow-lg shadow-primary/25'
-                                                : 'bg-white/10 text-text-muted border border-white/10 cursor-not-allowed'
-                                                }`}
-                                        >
-                                            <span className="material-icons-round text-base">event</span>
-                                            {canBookNewSession ? 'Book Now' : 'Rate First'}
-                                        </button>
-                                    </div>
                                 </div>
                             </div>
-                        ))}
+
+                            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                                <div className="flex items-center justify-between mb-2">
+                                    <p className="text-[11px] font-bold uppercase tracking-wide text-text-muted">Quick Availability</p>
+                                    <span className={`text-[10px] font-bold uppercase tracking-wide ${String(selectedTrainer.bookingStatus || 'OPEN').toUpperCase() === 'CLOSED' && !selectedTrainer.temporarilyOpenToday
+                                        ? 'text-red-300'
+                                        : 'text-emerald-300'
+                                        }`}>
+                                        {String(selectedTrainer.bookingStatus || 'OPEN').toUpperCase() === 'CLOSED' && !selectedTrainer.temporarilyOpenToday ? 'Closed' : 'Open'}
+                                    </span>
+                                </div>
+                                <div className="space-y-2">
+                                    {(() => {
+                                        const rows = [];
+                                        const today = new Date();
+                                        for (let offset = 0; offset < 10 && rows.length < 4; offset += 1) {
+                                            const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset);
+                                            const iso = toIsoDate(date);
+                                            if (!isTrainerDateAvailable(selectedTrainer, iso)) continue;
+                                            const slots = getAvailableTimeSlots(iso).slice(0, 3);
+                                            rows.push({ date, slots });
+                                        }
+                                        if (rows.length === 0) {
+                                            return (
+                                                <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-xs text-text-muted">
+                                                    No open dates found in the next 10 days.
+                                                </div>
+                                            );
+                                        }
+                                        return rows.map((row) => (
+                                            <div key={row.date.toISOString()} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className="text-sm font-semibold text-white">
+                                                        {row.date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                                                    </span>
+                                                    <span className="text-[11px] text-text-muted">
+                                                        {row.slots.length > 0 ? `${row.slots.length}+ open slot(s)` : 'No open slot'}
+                                                    </span>
+                                                </div>
+                                                {row.slots.length > 0 && (
+                                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                                        {row.slots.map((slot) => (
+                                                            <span key={`${row.date.toISOString()}-${slot}`} className="rounded-md bg-primary/10 border border-primary/25 px-2 py-1 text-[10px] font-semibold text-primary">
+                                                                {formatTimeLabel(slot)}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ));
+                                    })()}
+                                </div>
+                            </div>
+
+                            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                                <div className="flex items-start justify-between gap-3 mb-3">
+                                    <div>
+                                        <p className="text-[11px] font-bold uppercase tracking-wide text-text-muted">Member Reviews</p>
+                                        <p className="text-xs text-text-muted mt-0.5">Latest verified feedback from completed sessions</p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => fetchTrainerReviews(selectedTrainer.id, { force: true })}
+                                        className="h-8 px-3 rounded-lg border border-white/15 bg-black/20 text-[11px] font-semibold text-primary hover:bg-black/30"
+                                        disabled={Boolean(selectedTrainerReviewState?.loading)}
+                                    >
+                                        {selectedTrainerReviewState?.loading ? 'Refreshing...' : 'Refresh'}
+                                    </button>
+                                </div>
+
+                                <div className="mb-3 grid grid-cols-2 gap-2">
+                                    <div className="rounded-xl border border-primary/20 bg-primary/10 px-3 py-2.5">
+                                        <p className="text-[10px] uppercase tracking-wide text-primary/80">Average Rating</p>
+                                        <div className="mt-1 flex items-center gap-1.5">
+                                            <span className="text-lg font-extrabold text-white">
+                                                {Number(selectedTrainerReviewState?.summary?.rating ?? selectedTrainer.rating ?? 0).toFixed(1)}
+                                            </span>
+                                            <span className="material-icons-round text-base text-yellow-400">star</span>
+                                        </div>
+                                    </div>
+                                    <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">
+                                        <p className="text-[10px] uppercase tracking-wide text-text-muted">Total Reviews</p>
+                                        <p className="mt-1 text-lg font-bold text-white">
+                                            {Number(selectedTrainerReviewState?.summary?.ratingCount || 0)}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {selectedTrainerReviewState?.loading ? (
+                                    <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-xs text-text-muted">
+                                        Loading member feedback...
+                                    </div>
+                                ) : selectedTrainerReviewState?.error ? (
+                                    <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-3 text-xs text-red-300">
+                                        {selectedTrainerReviewState.error}
+                                    </div>
+                                ) : Array.isArray(selectedTrainerReviewState?.reviews) && selectedTrainerReviewState.reviews.length > 0 ? (
+                                    <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                                        {selectedTrainerReviewState.reviews.map((review) => {
+                                            const normalizedRating = Number(review.rating || 0);
+                                            const initials = getMemberInitials(review.memberName);
+                                            return (
+                                                <article key={`trainer-review-${review.id}`} className="rounded-xl border border-white/10 bg-black/20 p-3.5">
+                                                    <div className="flex items-start gap-3">
+                                                        <div className="w-11 h-11 rounded-full overflow-hidden border border-white/15 bg-slate-700/50 shrink-0 flex items-center justify-center">
+                                                            {review.memberImageUrl ? (
+                                                                <img
+                                                                    src={review.memberImageUrl}
+                                                                    alt={review.memberName || 'Gym Member'}
+                                                                    className="w-full h-full object-cover"
+                                                                    onError={handleMemberAvatarError}
+                                                                />
+                                                            ) : (
+                                                                <span className="text-[11px] font-bold tracking-wide text-white">{initials}</span>
+                                                            )}
+                                                        </div>
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                                                <div className="min-w-0">
+                                                                    <p className="text-sm font-semibold text-white truncate">{review.memberName || 'Gym Member'}</p>
+                                                                    <p className="text-[11px] text-text-muted">{formatReviewDateLabel(review.date)}</p>
+                                                                </div>
+                                                                <div className="shrink-0">
+                                                                    <div className="flex items-center gap-0.5">
+                                                                        {[1, 2, 3, 4, 5].map((score) => (
+                                                                            <span
+                                                                                key={`review-${review.id}-star-${score}`}
+                                                                                className={`material-icons-round text-sm ${score <= normalizedRating ? 'text-yellow-400' : 'text-white/25'}`}
+                                                                            >
+                                                                                star
+                                                                            </span>
+                                                                        ))}
+                                                                    </div>
+                                                                    <p className="mt-0.5 text-[10px] text-right text-text-muted">{normalizedRating}/5</p>
+                                                                </div>
+                                                            </div>
+                                                            <div className="mt-2 rounded-lg border border-white/10 bg-slate-900/40 px-3 py-2.5">
+                                                                <p className="text-xs text-text-secondary leading-relaxed">
+                                                                    {review.comment ? review.comment : 'Member left a star-only rating without a written comment.'}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </article>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-xs text-text-muted">
+                                        No published reviews yet for this trainer.
+                                    </div>
+                                )}
+                            </div>
+
+                        </div>
+
+                        <div className="border-t border-white/10 p-5 bg-surface space-y-2">
+                            <button
+                                type="button"
+                                onClick={handleOpenBookingModal}
+                                className="w-full py-3.5 rounded-xl font-bold bg-primary text-background hover:brightness-110 transition-all"
+                            >
+                                Continue Booking
+                            </button>
+                            <button
+                                type="button"
+                                onClick={closeModal}
+                                className="w-full py-3 rounded-xl font-medium bg-white/5 text-white hover:bg-white/10 transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
                     </div>
-                )
+                </div>
             )}
 
             {/* Booking Modal - Mobile Optimized */}
@@ -1765,7 +2345,7 @@ export default function TrainerBooking() {
                             <div className="border-t border-white/10 p-5 sm:p-6 bg-surface sticky bottom-0 space-y-3">
                                 <button
                                     onClick={handleBookSession}
-                                    disabled={!canBookNewSession || bookingLoading || selectedDates.length === 0 || Object.keys(selectedTimesByDate).length !== selectedDates.length || (!selectedMethodId && bookingData.paymentMethod !== 'CASH')}
+                                    disabled={bookingLoading || selectedDates.length === 0 || Object.keys(selectedTimesByDate).length !== selectedDates.length || (!selectedMethodId && bookingData.paymentMethod !== 'CASH')}
                                     className="w-full py-4 bg-primary text-background rounded-xl font-bold text-base hover:brightness-110 active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
                                 >
                                     <span className="material-icons-round text-xl">check_circle</span>

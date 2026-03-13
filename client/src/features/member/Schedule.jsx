@@ -58,6 +58,13 @@ const formatTimeLabel = (value) => {
     return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 };
 
+const getClassSessionDate = (cls) => {
+    const rawValue = cls?.sessionDate || cls?.oneTimeDate;
+    if (!rawValue) return null;
+    const parsed = new Date(rawValue);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 const normalizeClassHistoryStatus = (entry, now) => {
     const rawStatus = String(entry?.status || '').toUpperCase();
     const date = new Date(entry?.sessionDate || entry?.class?.oneTimeDate);
@@ -102,7 +109,7 @@ export default function Schedule() {
         canBookClasses: false
     });
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState('schedule'); // schedule | history
+    const [activeTab, setActiveTab] = useState('schedule'); // schedule | my-classes | history
     const [filter, setFilter] = useState('all');
     const [showClassFilters, setShowClassFilters] = useState(false);
     const [classSearch, setClassSearch] = useState('');
@@ -227,8 +234,8 @@ export default function Schedule() {
     const filteredClasses = useMemo(() => {
         const searchQuery = classSearch.trim().toLowerCase();
         const base = classes.filter((cls) => {
-            if (filter === 'booked' && !cls.isBooked) return false;
-            if (filter === 'available' && (cls.isBooked || cls.enrolled >= cls.capacity)) return false;
+            if (cls.isBooked) return false;
+            if (filter === 'available' && cls.enrolled >= cls.capacity) return false;
             if (searchQuery) {
                 const searchableText = [
                     cls?.name,
@@ -261,16 +268,76 @@ export default function Schedule() {
             return true;
         });
 
-        // Default flow: joined classes first, then available classes.
-        if (filter !== 'all') return base;
         return [...base].sort((a, b) => {
-            const bookedDelta = Number(Boolean(b.isBooked)) - Number(Boolean(a.isBooked));
-            if (bookedDelta !== 0) return bookedDelta;
             const fullDelta = Number((a.enrolled >= a.capacity)) - Number((b.enrolled >= b.capacity));
             if (fullDelta !== 0) return fullDelta;
             return String(a.name || '').localeCompare(String(b.name || ''));
         });
     }, [classes, filter, classSearch, selectedDay]);
+
+    const filteredJoinedClasses = useMemo(() => {
+        const searchQuery = classSearch.trim().toLowerCase();
+        const base = classes.filter((cls) => {
+            if (!cls.isBooked) return false;
+
+            if (searchQuery) {
+                const searchableText = [
+                    cls?.name,
+                    cls?.trainer?.name,
+                    cls?.dayOfWeek,
+                    cls?.scheduleType,
+                    cls?.oneTimeDate,
+                    cls?.sessionDate
+                ]
+                    .filter(Boolean)
+                    .join(' ')
+                    .toLowerCase();
+                if (!searchableText.includes(searchQuery)) return false;
+            }
+
+            if (selectedDay) {
+                const dayMapping = {
+                    M: ['Mon', 'Monday'],
+                    T: ['Tue', 'Tuesday'],
+                    W: ['Wed', 'Wednesday'],
+                    TH: ['Thu', 'Thursday'],
+                    F: ['Fri', 'Friday'],
+                    S: ['Sat', 'Saturday'],
+                    SUN: ['Sun', 'Sunday']
+                };
+                const matchDays = dayMapping[selectedDay];
+                if (!matchDays?.some((day) => cls.dayOfWeek?.includes(day))) return false;
+            }
+
+            return true;
+        });
+
+        return [...base].sort((a, b) => {
+            const dateA = getClassSessionDate(a);
+            const dateB = getClassSessionDate(b);
+            if (dateA && dateB) return dateA - dateB;
+            if (dateA) return -1;
+            if (dateB) return 1;
+            return String(a.name || '').localeCompare(String(b.name || ''));
+        });
+    }, [classes, classSearch, selectedDay]);
+
+    const joinedClasses = useMemo(
+        () => classes.filter((cls) => Boolean(cls?.isBooked)),
+        [classes]
+    );
+
+    const nextJoinedClass = useMemo(() => {
+        const sorted = [...joinedClasses].sort((a, b) => {
+            const dateA = getClassSessionDate(a);
+            const dateB = getClassSessionDate(b);
+            if (dateA && dateB) return dateA - dateB;
+            if (dateA) return -1;
+            if (dateB) return 1;
+            return String(a.name || '').localeCompare(String(b.name || ''));
+        });
+        return sorted[0] || null;
+    }, [joinedClasses]);
 
     const historyEntries = useMemo(() => {
         const now = new Date();
@@ -310,6 +377,7 @@ export default function Schedule() {
         { value: 'S', label: 'S' },
         { value: 'SUN', label: 'SUN' }
     ];
+    const visibleClasses = activeTab === 'my-classes' ? filteredJoinedClasses : filteredClasses;
 
     const showSessionPolicy = async () => {
         await showAlert({
@@ -336,12 +404,18 @@ export default function Schedule() {
                 <div className="flex items-start justify-between gap-3">
                     <div>
                         <h1 className="text-xl font-bold text-white">
-                            {activeTab === 'history' ? 'Class History' : 'Gym Class Schedule'}
+                            {activeTab === 'history'
+                                ? 'Class History'
+                                : activeTab === 'my-classes'
+                                    ? 'Joined Classes'
+                                    : 'Classes'}
                         </h1>
                         <p className="text-text-muted text-xs mt-0.5">
                             {activeTab === 'history'
                                 ? 'Track your completed, missed, and cancelled past classes'
-                                : 'Join class sessions and manage your bookings in one place'}
+                                : activeTab === 'my-classes'
+                                    ? 'View classes you joined and manage upcoming sessions'
+                                    : 'Browse and join available classes'}
                         </p>
                     </div>
                     <button
@@ -355,11 +429,11 @@ export default function Schedule() {
                     </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 rounded-2xl p-1.5 bg-surface/80 border border-white/10 shadow-inner">
+                <div className="grid grid-cols-3 gap-2 rounded-2xl p-1 bg-surface/80 border border-white/10 shadow-inner">
                     <button
                         type="button"
                         onClick={() => setActiveTab('schedule')}
-                        className={`py-2.5 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${activeTab === 'schedule'
+                        className={`py-2 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${activeTab === 'schedule'
                             ? 'bg-primary text-background shadow-md'
                             : 'text-text-muted hover:text-white hover:bg-white/5'
                             }`}
@@ -369,19 +443,25 @@ export default function Schedule() {
                     </button>
                     <button
                         type="button"
+                        onClick={() => setActiveTab('my-classes')}
+                        className={`py-2 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${activeTab === 'my-classes'
+                            ? 'bg-primary text-background shadow-md'
+                            : 'text-text-muted hover:text-white hover:bg-white/5'
+                            }`}
+                    >
+                        <span className="material-icons-round text-base">check_circle</span>
+                        Joined
+                    </button>
+                    <button
+                        type="button"
                         onClick={() => setActiveTab('history')}
-                        className={`relative py-2.5 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${activeTab === 'history'
+                        className={`py-2 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${activeTab === 'history'
                             ? 'bg-primary text-background shadow-md'
                             : 'text-text-muted hover:text-white hover:bg-white/5'
                             }`}
                     >
                         <span className="material-icons-round text-base">history</span>
                         <span>History</span>
-                        {historyEntries.length > 0 && (
-                            <span className={`absolute right-1.5 top-1.5 px-1.5 py-0.5 rounded-md text-[10px] font-bold leading-none ${activeTab === 'history' ? 'bg-background/20 text-background' : 'bg-white/10 text-white'}`}>
-                                {historyEntries.length}
-                            </span>
-                        )}
                     </button>
                 </div>
 
@@ -409,30 +489,62 @@ export default function Schedule() {
                 )}
             </div>
 
-            {activeTab === 'schedule' ? (
+            {activeTab !== 'history' ? (
                 <>
                     <div className="space-y-3">
-                        <div className="grid grid-cols-2 gap-2">
-                            <div className={`w-full rounded-xl px-3 py-2.5 text-xs font-bold border ${sessionInfo.classSessionsRemaining > 0
-                                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                                : 'border-red-500/30 bg-red-500/10 text-red-300'
-                                }`}>
-                                <p className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide opacity-90">
-                                    <span className="material-icons-round text-sm">event_available</span>
-                                    Sessions Left
-                                </p>
-                                <p className="mt-1 text-lg font-extrabold">{sessionInfo.classSessionsRemaining}</p>
+                        {activeTab === 'schedule' ? (
+                            <>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div className={`w-full rounded-xl px-3 py-2.5 text-xs font-bold border ${sessionInfo.classSessionsRemaining > 0
+                                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                                        : 'border-red-500/30 bg-red-500/10 text-red-300'
+                                        }`}>
+                                        <p className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide opacity-90">
+                                            <span className="material-icons-round text-sm">event_available</span>
+                                            Sessions Left
+                                        </p>
+                                        <p className="mt-1 text-lg font-extrabold">{sessionInfo.classSessionsRemaining}</p>
+                                    </div>
+                                    <div className="w-full rounded-xl px-3 py-2.5 border border-red-500/30 bg-red-500/10 text-red-300">
+                                        <p className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-red-200">
+                                            <span className="material-icons-round text-sm">history</span>
+                                            Sessions Used
+                                        </p>
+                                        <p className="mt-1 text-lg font-extrabold text-red-300">{sessionInfo.classSessionsUsed}</p>
+                                    </div>
+                                </div>
+                                {sessionInfo.classSessionsRemaining <= 0 && (
+                                    <p className="text-xs text-red-400">No class sessions left. Buy a class session package at the front desk to join again.</p>
+                                )}
+                            </>
+                        ) : (
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="w-full rounded-xl px-3 py-2.5 border border-primary/30 bg-primary/10 text-primary">
+                                    <p className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide">
+                                        <span className="material-icons-round text-sm">check_circle</span>
+                                        Joined Classes
+                                    </p>
+                                    <p className="mt-1 text-lg font-extrabold text-white">{joinedClasses.length}</p>
+                                </div>
+                                <div className="w-full rounded-xl px-3 py-2.5 border border-white/15 bg-white/5 text-text-secondary">
+                                    <p className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-text-muted">
+                                        <span className="material-icons-round text-sm">upcoming</span>
+                                        Next Class
+                                    </p>
+                                    {nextJoinedClass ? (
+                                        <>
+                                            <p className="mt-1 text-sm font-bold text-white line-clamp-1">{nextJoinedClass.name || 'Joined Class'}</p>
+                                            <p className="text-[11px] text-text-muted mt-0.5">
+                                                {nextJoinedClass.dayOfWeek || formatDateLabel(nextJoinedClass.oneTimeDate || nextJoinedClass.sessionDate)}
+                                                {' \u00b7 '}
+                                                {getClassTimeRange(nextJoinedClass.time, nextJoinedClass.duration).start}
+                                            </p>
+                                        </>
+                                    ) : (
+                                        <p className="mt-1 text-sm font-bold text-text-muted">No joined classes yet</p>
+                                    )}
+                                </div>
                             </div>
-                            <div className="w-full rounded-xl px-3 py-2.5 border border-red-500/30 bg-red-500/10 text-red-300">
-                                <p className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-red-200">
-                                    <span className="material-icons-round text-sm">history</span>
-                                    Sessions Used
-                                </p>
-                                <p className="mt-1 text-lg font-extrabold text-red-300">{sessionInfo.classSessionsUsed}</p>
-                            </div>
-                        </div>
-                        {sessionInfo.classSessionsRemaining <= 0 && (
-                            <p className="text-xs text-red-400">No class sessions left. Buy a class session package at the front desk to join again.</p>
                         )}
 
                         <div className="flex items-center gap-2">
@@ -442,47 +554,53 @@ export default function Schedule() {
                                     type="text"
                                     value={classSearch}
                                     onChange={(event) => setClassSearch(event.target.value)}
-                                    placeholder="Search classes"
+                                    placeholder={activeTab === 'my-classes' ? 'Search joined classes' : 'Search classes'}
                                     className="h-8 w-full rounded-lg border border-white/10 bg-surface pl-8 pr-2 text-xs text-white placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-primary/40"
                                 />
                             </label>
-                            <button
-                                type="button"
-                                onClick={() => setShowClassFilters((prev) => !prev)}
-                                className={`h-8 px-2.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 ${showClassFilters || filter !== 'all'
-                                    ? 'bg-white text-black border-white'
-                                    : 'bg-surface border-white/10 text-text-muted hover:text-white'
-                                    }`}
-                            >
-                                <span className="material-icons-round text-sm">tune</span>
-                                Filter
-                            </button>
+                            {activeTab === 'schedule' && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowClassFilters((prev) => !prev)}
+                                    className={`h-8 px-2.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 ${showClassFilters || filter !== 'all'
+                                        ? 'bg-white text-black border-white'
+                                        : 'bg-surface border-white/10 text-text-muted hover:text-white'
+                                        }`}
+                                >
+                                    <span className="material-icons-round text-sm">tune</span>
+                                    Filter
+                                </button>
+                            )}
                         </div>
-                        <p className="text-[11px] text-text-muted">
-                            {filter === 'all' ? 'Showing joined classes first, then available.' : `Filter: ${filter === 'booked' ? 'Joined' : 'Available'}`}
-                        </p>
-
-                        {showClassFilters && (
-                            <div className="grid grid-cols-3 gap-2">
-                                {[
-                                    { value: 'all', label: 'All Classes', icon: 'grid_view' },
-                                    { value: 'booked', label: 'Joined', icon: 'check_circle' },
-                                    { value: 'available', label: 'Available', icon: 'event_available' }
-                                ].map((f) => (
-                                    <button
-                                        key={f.value}
-                                        type="button"
-                                        onClick={() => setFilter(f.value)}
-                                        className={`px-2.5 py-2 rounded-lg font-bold text-[11px] transition-all border flex items-center justify-center gap-1 ${filter === f.value
-                                            ? 'bg-white text-black shadow-sm border-white'
-                                            : 'bg-surface border-white/10 text-text-muted hover:text-white'
-                                            }`}
-                                    >
-                                        <span className="material-icons-round text-sm">{f.icon}</span>
-                                        {f.label}
-                                    </button>
-                                ))}
-                            </div>
+                        {activeTab === 'schedule' ? (
+                            <>
+                                <p className="text-[11px] text-text-muted">
+                                    {filter === 'available' ? 'Filter: Available classes' : 'Showing all classes. Use Available to hide full classes.'}
+                                </p>
+                                {showClassFilters && (
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {[
+                                            { value: 'all', label: 'All Classes', icon: 'grid_view' },
+                                            { value: 'available', label: 'Available', icon: 'event_available' }
+                                        ].map((f) => (
+                                            <button
+                                                key={f.value}
+                                                type="button"
+                                                onClick={() => setFilter(f.value)}
+                                                className={`px-2.5 py-2 rounded-lg font-bold text-[11px] transition-all border flex items-center justify-center gap-1 ${filter === f.value
+                                                    ? 'bg-white text-black shadow-sm border-white'
+                                                    : 'bg-surface border-white/10 text-text-muted hover:text-white'
+                                                    }`}
+                                            >
+                                                <span className="material-icons-round text-sm">{f.icon}</span>
+                                                {f.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </>
+                        ) : (
+                            <p className="text-[11px] text-text-muted">Showing only classes you already joined.</p>
                         )}
 
                         <div className="grid grid-cols-7 gap-2">
@@ -503,15 +621,15 @@ export default function Schedule() {
                     </div>
 
                     <div className="space-y-3">
-                        {filteredClasses.length === 0 ? (
+                        {visibleClasses.length === 0 ? (
                             <div className="text-center py-16">
                                 <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-3">
                                     <span className="material-icons-round text-3xl text-text-muted">event_busy</span>
                                 </div>
-                                <p className="text-text-muted text-sm">No classes found</p>
+                                <p className="text-text-muted text-sm">{activeTab === 'my-classes' ? 'No joined classes found' : 'No classes found'}</p>
                             </div>
                         ) : (
-                            filteredClasses.map((cls) => {
+                            visibleClasses.map((cls) => {
                                 const isFull = cls.enrolled >= cls.capacity;
                                 const capacityPercent = (cls.enrolled / cls.capacity) * 100;
                                 const noSessionsLeft = sessionInfo.classSessionsRemaining <= 0;

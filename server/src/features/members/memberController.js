@@ -12,7 +12,7 @@ const FINALIZED_SESSION_STATUSES = ['CANCELLED', 'COMPLETED', 'NO_SHOW', 'DECLIN
 const ACTIVE_CLASS_BOOKING_STATUSES = ['CONFIRMED', 'ATTENDED'];
 const RATING_MIN = 1;
 const RATING_MAX = 5;
-const PENDING_RATING_MESSAGE = 'Please rate your completed training session(s) before booking another trainer session.';
+const RATING_COMMENT_MAX_LENGTH = 500;
 
 const toLocalIsoDate = (value) => {
     const d = new Date(value);
@@ -718,42 +718,12 @@ const bookTrainingSlots = async ({
     };
 };
 
-const getPendingTrainerRatings = async (memberId) => {
-    return prisma.trainingSession.findMany({
-        where: {
-            memberId: Number(memberId),
-            status: 'COMPLETED',
-            memberRating: null
-        },
-        select: {
-            id: true,
-            date: true,
-            trainerId: true,
-            trainer: {
-                select: {
-                    id: true,
-                    name: true
-                }
-            }
-        },
-        orderBy: { date: 'asc' }
-    });
-};
-
-const summarizePendingRatings = (sessions = []) => {
-    return sessions.map((session) => ({
-        sessionId: session.id,
-        date: session.date,
-        trainerId: session.trainerId,
-        trainerName: session.trainer?.name || `Trainer #${session.trainerId}`
-    }));
-};
-
 const recomputeTrainerRating = async (tx, trainerId) => {
     const aggregate = await tx.trainingSession.aggregate({
         where: {
             trainerId: Number(trainerId),
-            memberRating: { not: null }
+            memberRating: { not: null },
+            memberRatingVoided: false
         },
         _avg: { memberRating: true },
         _count: { memberRating: true }
@@ -800,14 +770,6 @@ const bookTraining = async (req, res) => {
         const member = await prisma.member.findUnique({ where: { id: Number(memberId) } });
         if (!member) {
             return res.status(404).json({ error: "Member profile not found. Please log in again as a member." });
-        }
-
-        const pendingRatings = await getPendingTrainerRatings(memberId);
-        if (pendingRatings.length > 0) {
-            return res.status(409).json({
-                error: PENDING_RATING_MESSAGE,
-                pendingRatings: summarizePendingRatings(pendingRatings)
-            });
         }
 
         const trainer = await prisma.trainer.findUnique({ where: { id: Number(trainerId) } });
@@ -925,14 +887,6 @@ const bookTrainingCash = async (req, res) => {
         const member = await prisma.member.findUnique({ where: { id: Number(resolvedMemberId) } });
         if (!member) {
             return res.status(404).json({ error: "Member profile not found. Please log in again as a member." });
-        }
-
-        const pendingRatings = await getPendingTrainerRatings(resolvedMemberId);
-        if (pendingRatings.length > 0) {
-            return res.status(409).json({
-                error: PENDING_RATING_MESSAGE,
-                pendingRatings: summarizePendingRatings(pendingRatings)
-            });
         }
 
         const trainer = await prisma.trainer.findUnique({ where: { id: Number(trainerId) } });
@@ -1092,12 +1046,17 @@ const rateTrainingSession = async (req, res) => {
 
     const sessionId = Number(req.params.id);
     const rawRating = Number(req.body?.rating);
+    const rawComment = typeof req.body?.comment === 'string' ? req.body.comment.trim() : '';
+    const normalizedComment = rawComment.length > 0 ? rawComment.slice(0, RATING_COMMENT_MAX_LENGTH) : null;
 
     if (!Number.isInteger(sessionId)) {
         return res.status(400).json({ error: "Invalid session ID" });
     }
     if (!Number.isInteger(rawRating) || rawRating < RATING_MIN || rawRating > RATING_MAX) {
         return res.status(400).json({ error: `Rating must be an integer between ${RATING_MIN} and ${RATING_MAX}` });
+    }
+    if (rawComment.length > RATING_COMMENT_MAX_LENGTH) {
+        return res.status(400).json({ error: `Comment must not exceed ${RATING_COMMENT_MAX_LENGTH} characters` });
     }
 
     try {
@@ -1111,6 +1070,7 @@ const rateTrainingSession = async (req, res) => {
                 trainerId: true,
                 status: true,
                 memberRating: true,
+                memberRatingVoided: true,
                 trainer: {
                     select: {
                         id: true,
@@ -1126,6 +1086,9 @@ const rateTrainingSession = async (req, res) => {
         if (String(session.status).toUpperCase() !== 'COMPLETED') {
             return res.status(400).json({ error: "Only completed sessions can be rated" });
         }
+        if (session.memberRatingVoided) {
+            return res.status(400).json({ error: "This session rating was skipped and cannot be rated anymore." });
+        }
         if (session.memberRating !== null && session.memberRating !== undefined) {
             return res.status(400).json({ error: "This session has already been rated" });
         }
@@ -1135,6 +1098,9 @@ const rateTrainingSession = async (req, res) => {
                 where: { id: sessionId },
                 data: {
                     memberRating: rawRating,
+                    memberRatingComment: normalizedComment,
+                    memberRatingVoided: false,
+                    memberRatingVoidedAt: null,
                     memberRatedAt: new Date()
                 }
             });
@@ -1149,11 +1115,83 @@ const rateTrainingSession = async (req, res) => {
             trainerId: session.trainerId,
             trainerName: session.trainer?.name || `Trainer #${session.trainerId}`,
             ratingGiven: rawRating,
+            comment: normalizedComment,
             trainerRating: result.rating,
             trainerRatingCount: result.ratingCount
         });
     } catch (e) {
         return res.status(500).json({ error: "Failed to submit rating", detail: e?.message });
+    }
+};
+
+const voidTrainingSessionRating = async (req, res) => {
+    if (req.user.role !== 'MEMBER') {
+        return res.status(403).json({ error: "Only member accounts can access this endpoint" });
+    }
+
+    const sessionId = Number(req.params.id);
+    if (!Number.isInteger(sessionId)) {
+        return res.status(400).json({ error: "Invalid session ID" });
+    }
+
+    try {
+        const session = await prisma.trainingSession.findFirst({
+            where: {
+                id: sessionId,
+                memberId: Number(req.user.id)
+            },
+            select: {
+                id: true,
+                trainerId: true,
+                status: true,
+                memberRating: true,
+                memberRatingVoided: true,
+                trainer: {
+                    select: {
+                        id: true,
+                        name: true
+                    }
+                }
+            }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: "Training session not found" });
+        }
+        if (String(session.status).toUpperCase() !== 'COMPLETED') {
+            return res.status(400).json({ error: "Only completed sessions can be skipped" });
+        }
+        if (session.memberRating !== null && session.memberRating !== undefined) {
+            return res.status(400).json({ error: "This session has already been rated and cannot be skipped" });
+        }
+        if (session.memberRatingVoided) {
+            return res.json({
+                message: "Session rating is already skipped",
+                sessionId,
+                trainerId: session.trainerId,
+                trainerName: session.trainer?.name || `Trainer #${session.trainerId}`
+            });
+        }
+
+        await prisma.trainingSession.update({
+            where: { id: sessionId },
+            data: {
+                memberRating: null,
+                memberRatingComment: null,
+                memberRatingVoided: true,
+                memberRatingVoidedAt: new Date(),
+                memberRatedAt: null
+            }
+        });
+
+        return res.json({
+            message: "Rating skipped for this session",
+            sessionId,
+            trainerId: session.trainerId,
+            trainerName: session.trainer?.name || `Trainer #${session.trainerId}`
+        });
+    } catch (e) {
+        return res.status(500).json({ error: "Failed to skip rating", detail: e?.message });
     }
 };
 
@@ -1826,6 +1864,7 @@ module.exports = {
     getMyTrainingSessions,
     getMyClassBookings,
     rateTrainingSession,
+    voidTrainingSessionRating,
     getPaymentMethods,
     addPaymentMethod,
     updatePaymentMethod,

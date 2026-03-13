@@ -33,6 +33,7 @@ router.post('/change-requests/:id/admin-review', authenticateToken, authorize(['
 
 // Public / Member Views
 router.get('/', authenticateToken, trainerController.getAllTrainers);
+router.get('/:id/reviews', authenticateToken, trainerController.getTrainerReviews);
 router.get('/:id', authenticateToken, trainerController.getTrainerById);
 router.get('/:id/sessions', authenticateToken, trainingSessionController.getTrainerSessions);
 
