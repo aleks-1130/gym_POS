@@ -385,7 +385,7 @@ const bookClass = async (req, res) => {
             const now = new Date();
             const [member, cls] = await Promise.all([
                 tx.member.findUnique({ where: { id: memberId } }),
-                tx.class.findUnique({ where: { id: parsedClassId } })
+                tx.class.findUnique({ where: { id: parsedClassId }, include: { trainer: true } })
             ]);
 
             if (!member) {
