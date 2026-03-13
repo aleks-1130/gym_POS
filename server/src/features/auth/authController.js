@@ -5,6 +5,15 @@ const { isDatabaseUnreachableError } = require('../../utils/prismaError');
 const { syncToNeonAuth } = require('../../services/neonAuthSync');
 
 const SECRET = process.env.JWT_SECRET;
+const IS_PROD = process.env.NODE_ENV === 'production';
+
+// Cross-domain (Vercel→Railway) requires sameSite:'none' + secure:true in production
+const cookieOptions = {
+    httpOnly: true,
+    secure: IS_PROD,
+    sameSite: IS_PROD ? 'none' : 'lax',
+    maxAge: 24 * 60 * 60 * 1000 // 1 day
+};
 
 const login = async (req, res) => {
     const { email, password } = req.body;
@@ -34,12 +43,7 @@ const login = async (req, res) => {
                 const payload = { id: user.id, email: user.email, role: user.role, type: 'USER', trainerId: user.trainerId };
                 console.log("[DEBUG] Signing JWT for user:", user.email, "with SECRET length:", SECRET ? SECRET.length : 0);
                 const token = jwt.sign(payload, SECRET);
-                res.cookie('token', token, {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production', 
-                    sameSite: 'lax', 
-                    maxAge: 24 * 60 * 60 * 1000 // 1 day
-                });
+                res.cookie('token', token, cookieOptions);
                 console.log("[DEBUG] Cookie 'token' set successfully via res.cookie");
                 return res.json({ user: { id: user.id, name: user.name, role: user.role, trainerId: user.trainerId } });
             }
@@ -60,12 +64,7 @@ const login = async (req, res) => {
                 const payload = { id: member.id, email: member.email, role: 'MEMBER', type: 'MEMBER' };
                 console.log("[DEBUG] Signing JWT for member:", member.email, "with SECRET length:", SECRET ? SECRET.length : 0);
                 const token = jwt.sign(payload, SECRET);
-                res.cookie('token', token, {
-                    httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'lax',
-                    maxAge: 24 * 60 * 60 * 1000 // 1 day
-                });
+                res.cookie('token', token, cookieOptions);
                 console.log("[DEBUG] Cookie 'token' set successfully for member");
                 return res.json({ user: { id: member.id, name: member.firstName, role: 'MEMBER' } });
             }
@@ -349,8 +348,8 @@ const resetPassword = async (req, res) => {
 const logout = (req, res) => {
     res.clearCookie('token', {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax'
+        secure: IS_PROD,
+        sameSite: IS_PROD ? 'none' : 'lax'
     });
     res.json({ message: "Logged out successfully" });
 };
