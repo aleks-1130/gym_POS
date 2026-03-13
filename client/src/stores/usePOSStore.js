@@ -225,13 +225,15 @@ export const usePOSStore = create((set, get) => ({
 
     // --- COMPUTED VALUES (using get()) ---
     getTotals: () => {
-        const { cart, discount } = get();
+        const { cart, discount, appliedCoupon } = get();
         const subtotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
         const discountAmount = subtotal * (discount / 100);
+        const couponDiscount = appliedCoupon ? (appliedCoupon.discountAmount || 0) : 0;
         return {
             subtotal,
             discountAmount,
-            total: subtotal - discountAmount
+            couponDiscount,
+            total: Math.max(0, subtotal - discountAmount - couponDiscount)
         };
     }
 }));

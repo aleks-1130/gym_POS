@@ -52,19 +52,15 @@ export default function POSCart({ members, trainers, discountOptions, initiateCh
         clearCart: state.clearCart
     })));
 
-    const { subtotal, discountAmount, total: cartTotal } = usePOSStore(useShallow(state => state.getTotals()));
+    const { subtotal, discountAmount, couponDiscount, total: cartTotal } = usePOSStore(useShallow(state => state.getTotals()));
 
     // Local UI State
     const [openCalendarLineId, setOpenCalendarLineId] = useState(null);
-    const [calendarMonthByLine, setCalendarMonthByLine] = useState();
+    const [calendarMonthByLine, setCalendarMonthByLine] = useState({});
     const [selectedDiscountPresetId, setSelectedDiscountPresetId] = useState('');
     const [couponInput, setCouponInput] = useState('');
     const [couponLoading, setCouponLoading] = useState(false);
     const [couponError, setCouponError] = useState('');
-
-    // Effective total after coupon
-    const couponDiscount = appliedCoupon ? (appliedCoupon.discountAmount || 0) : 0;
-    const effectiveTotal = Math.max(0, cartTotal - couponDiscount);
 
     // Helpers
     const getCalendarMonthForLine = (lineId) => {
@@ -101,15 +97,25 @@ export default function POSCart({ members, trainers, discountOptions, initiateCh
         setCouponLoading(true);
         setCouponError('');
         try {
+            // New endpoint that parses cart items to support BOGO/product-scoped rules
             const { data } = await axios.post(
-                withApiBase('/api/loyalty/coupons/validate'),
-                { code: couponInput.trim(), subtotal, memberId: selectedMemberId || undefined },
+                withApiBase('/api/pos/promo-codes/apply'),
+                { 
+                    code: couponInput.trim(), 
+                    cartItems: cart, 
+                    memberId: selectedMemberId || null 
+                },
                 { headers: authHeaders() }
             );
-            setAppliedCoupon({ code: couponInput.trim().toUpperCase(), ...data });
+            
+            // Expected data: { valid: true, discountAmount: 123.45, type, label, code... }
+            setAppliedCoupon({ 
+                ...data,
+                code: couponInput.trim().toUpperCase() 
+            });
             setCouponInput('');
         } catch (e) {
-            setCouponError(e.response?.data?.error || 'Invalid coupon code');
+            setCouponError(e.response?.data?.error || 'Invalid or inapplicable promo/coupon code');
         }
         setCouponLoading(false);
     };
@@ -306,23 +312,23 @@ export default function POSCart({ members, trainers, discountOptions, initiateCh
                     )}
                     {appliedCoupon && couponDiscount > 0 && (
                         <div className="flex justify-between items-center text-xs">
-                            <span className="text-amber-400">Coupon ({appliedCoupon.label})</span>
+                            <span className="text-amber-400">Code ({appliedCoupon.label || appliedCoupon.code})</span>
                             <span className="text-amber-400 font-medium">-{formatPrice(couponDiscount)}</span>
                         </div>
                     )}
                     <div className="pt-2 border-t border-white/5 space-y-1">
                         <div className="flex justify-between items-center text-[10px] opacity-50">
                             <span>Taxable Amount</span>
-                            <span>{formatPrice(effectiveTotal / 1.12)}</span>
+                            <span>{formatPrice(cartTotal / 1.12)}</span>
                         </div>
                         <div className="flex justify-between items-center text-[10px] opacity-50">
                             <span>VAT (12%)</span>
-                            <span>{formatPrice(effectiveTotal - (effectiveTotal / 1.12))}</span>
+                            <span>{formatPrice(cartTotal - (cartTotal / 1.12))}</span>
                         </div>
                     </div>
                     <div className="flex justify-between items-center pt-2 border-t border-white/10">
                         <span className="text-white font-bold">Total Due</span>
-                        <span className="text-xl font-black text-primary">{formatPrice(effectiveTotal)}</span>
+                        <span className="text-xl font-black text-primary">{formatPrice(cartTotal)}</span>
                     </div>
                 </div>
 

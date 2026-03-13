@@ -627,9 +627,13 @@ model PayrollConfig {
 model PromoCode {
   id          Int       @id @default(autoincrement())
   code        String    @unique
-  type        String
+  type        String    // PERCENTAGE | FIXED | BOGO
   value       Float
   description String?
+  scope       String    @default("ORDER") // ORDER | PRODUCT | CATEGORY
+  productIds  Int[]     @default([])
+  categories  String[]  @default([])
+  bogoConfig  Json?     // { buyQty: Int, getQty: Int, getProductId?: Int }
   maxUses     Int?
   usedCount   Int       @default(0)
   isActive    Boolean   @default(true)

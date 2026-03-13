@@ -3,6 +3,7 @@ const { getPosConfig } = require('../../services/configService');
 const { getReceiptSettings, saveReceiptSettings } = require('../../services/receiptSettingsService');
 const notificationService = require('../../services/notificationService');
 const bcrypt = require('bcryptjs');
+const { calculateDiscount } = require('./promoController');
 
 const POS_PIN_MIN_LENGTH = 4;
 const MAX_DISCOUNT_PRESETS = 50;
@@ -275,6 +276,7 @@ const createPayment = async (req, res) => {
         // --- Coupon / Promo Validation ---
         let appliedCoupon = null;
         let appliedPromo = null;
+        let discountValue = Number((authoritativeAmount * (effectiveDiscountPercent / 100)).toFixed(2));
         
         if (couponCode) {
             const codeUpper = couponCode.toUpperCase();
@@ -288,8 +290,13 @@ const createPayment = async (req, res) => {
                 if (!appliedPromo.isActive) badRequest('Promo code is inactive');
                 if (appliedPromo.expiryDate && new Date(appliedPromo.expiryDate) < new Date()) badRequest('Promo code has expired');
                 if (appliedPromo.maxUses && appliedPromo.usedCount >= appliedPromo.maxUses) badRequest('Promo code usage limit reached');
+                
+                // Calculate actual discount based on new scope/BOGO logic
+                const { discountAmount } = calculateDiscount(appliedPromo, normalizedItems);
+                discountValue = discountAmount;
+                
             } else {
-                // Validate loyalty coupon
+                // Validate loyalty coupon (Coupons are still legacy FLAT/PERCENTAGE on total)
                 if (appliedCoupon.status !== 'ACTIVE') badRequest('Coupon is already used or expired');
                 if (appliedCoupon.expiryDate && new Date(appliedCoupon.expiryDate) < new Date()) badRequest('Coupon has expired');
 
@@ -297,22 +304,15 @@ const createPayment = async (req, res) => {
                 if (appliedCoupon.memberId && resolvedMemberId && Number(appliedCoupon.memberId) !== Number(resolvedMemberId)) {
                     badRequest('This coupon belongs to a different member and cannot be applied here.');
                 }
-            }
-
-            const discountSource = appliedCoupon || appliedPromo;
-            
-            // Convert to effective discount percent
-            if (discountSource.type === 'FLAT') {
-                const flatAmount = Math.min(discountSource.value, authoritativeAmount);
-                effectiveDiscountPercent = authoritativeAmount > 0 ? (flatAmount / authoritativeAmount) * 100 : 0;
-            } else if (discountSource.type === 'PERCENTAGE') {
-                effectiveDiscountPercent = discountSource.value * 100;
+                
+                if (appliedCoupon.type === 'FLAT') {
+                    discountValue = Math.min(appliedCoupon.value, authoritativeAmount);
+                } else if (appliedCoupon.type === 'PERCENTAGE') {
+                    discountValue = authoritativeAmount * (appliedCoupon.value / 100);
+                }
             }
         }
 
-
-
-        const discountValue = Number((authoritativeAmount * (effectiveDiscountPercent / 100)).toFixed(2));
         const discountedAmount = Number(Math.max(0, authoritativeAmount - discountValue).toFixed(2));
 
         // Invoice/Receipt specific calculations

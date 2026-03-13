@@ -36,11 +36,10 @@ export default function POS() {
         openModal, closeModal, setCollectField, clearCart
     } = usePOSStore();
 
-    const { discountAmount, total: cartTotal } = usePOSStore(useShallow(state => state.getTotals()));
+    const { discountAmount, couponDiscount, total: cartTotal } = usePOSStore(useShallow(state => state.getTotals()));
     const appliedCoupon = usePOSStore(state => state.appliedCoupon);
-    // Effective total after coupon discount (used for cash validation and display)
-    const couponDiscount = appliedCoupon ? (appliedCoupon.discountAmount || 0) : 0;
-    const effectiveCartTotal = Math.max(0, cartTotal - couponDiscount);
+    // effectiveCartTotal is now identical to cartTotal from getTotals()
+    const effectiveCartTotal = cartTotal;
 
 
     const [products, setProducts] = useState([]);
@@ -394,6 +393,7 @@ export default function POS() {
                     items: otherItems,
                     discount: discount,
                     couponCode: appliedCoupon ? appliedCoupon.code : undefined,
+                    promoCodeId: appliedCoupon ? (appliedCoupon.promoCodeId || appliedCoupon.id) : undefined,
                     memberId: memberId || null,
                     cashTendered: tendered,
                     changeDue: change,

@@ -75,11 +75,17 @@ export default function PosSettings() {
     const [promoCodes, setPromoCodes] = useState([]);
     const [promoDraft, setPromoDraft] = useState({
         code: '',
-        type: 'FLAT',
+        type: 'PERCENTAGE',
         value: '',
         description: '',
         maxUses: '',
-        expiryDate: ''
+        expiryDate: '',
+        scope: 'ORDER', // 'ORDER', 'PRODUCT', 'CATEGORY'
+        productIds: '', // comma separated IDs for simplicity
+        categories: '', // comma separated categories
+        bogoBuyQty: 1,
+        bogoGetQty: 1,
+        bogoGetProductId: ''
     });
     const [promoSaving, setPromoSaving] = useState(false);
     const [promoLoading, setPromoLoading] = useState(false);
@@ -301,12 +307,23 @@ export default function PosSettings() {
             return;
         }
 
+        const payload = {
+            ...promoDraft,
+            productIds: promoDraft.scope === 'PRODUCT' ? promoDraft.productIds.split(',').map(s => Number(s.trim())).filter(n => !isNaN(n)) : [],
+            categories: promoDraft.scope === 'CATEGORY' ? promoDraft.categories.split(',').map(s => s.trim()).filter(Boolean) : [],
+            bogoConfig: promoDraft.type === 'BOGO' ? {
+                buyQty: parseInt(promoDraft.bogoBuyQty) || 1,
+                getQty: parseInt(promoDraft.bogoGetQty) || 1,
+                getProductId: promoDraft.bogoGetProductId ? Number(promoDraft.bogoGetProductId) : null
+            } : null
+        };
+
         setPromoSaving(true);
         try {
-            await axios.post(withApiBase('/api/pos/promo-codes'), promoDraft, {
+            await axios.post(withApiBase('/api/pos/promo-codes'), payload, {
                 headers: authHeaders()
             });
-            setPromoDraft({ code: '', type: 'FLAT', value: '', description: '', maxUses: '', expiryDate: '' });
+            setPromoDraft({ code: '', type: 'PERCENTAGE', value: '', description: '', maxUses: '', expiryDate: '', scope: 'ORDER', productIds: '', categories: '', bogoBuyQty: 1, bogoGetQty: 1, bogoGetProductId: '' });
             await fetchPromoCodes();
             await showAlert({ title: 'Success', message: 'Promo code created successfully.', type: 'success' });
         } catch (e) {
@@ -712,47 +729,116 @@ export default function PosSettings() {
                                     value={promoDraft.type}
                                     onChange={e => setPromoDraft(p => ({ ...p, type: e.target.value }))}
                                 >
-                                    <option value="FLAT">₱ Flat</option>
                                     <option value="PERCENTAGE">% Percent</option>
+                                    <option value="FLAT">₱ Flat</option>
+                                    <option value="BOGO">Buy 1 Get 1</option>
                                 </select>
                             </div>
+
+                            {promoDraft.type !== 'BOGO' ? (
+                                <div>
+                                    <label className="block text-[10px] text-text-muted font-bold uppercase mb-1">Value</label>
+                                    <input
+                                        type="number"
+                                        className="w-full bg-surface border border-white/10 rounded-xl px-3 py-2 text-white focus:border-primary outline-none"
+                                        placeholder={promoDraft.type === 'FLAT' ? '100' : '20'}
+                                        value={promoDraft.value}
+                                        onChange={e => setPromoDraft(p => ({ ...p, value: e.target.value }))}
+                                    />
+                                </div>
+                            ) : (
+                                <div className="col-span-1 grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label className="block text-[10px] text-text-muted font-bold uppercase mb-1">Buy Qty</label>
+                                        <input
+                                            type="number"
+                                            className="w-full bg-surface border border-white/10 rounded-xl px-3 py-2 text-white focus:border-primary outline-none"
+                                            placeholder="1"
+                                            value={promoDraft.bogoBuyQty}
+                                            onChange={e => setPromoDraft(p => ({ ...p, bogoBuyQty: e.target.value }))}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] text-text-muted font-bold uppercase mb-1">Get Qty</label>
+                                        <input
+                                            type="number"
+                                            className="w-full bg-surface border border-white/10 rounded-xl px-3 py-2 text-white focus:border-primary outline-none"
+                                            placeholder="1"
+                                            value={promoDraft.bogoGetQty}
+                                            onChange={e => setPromoDraft(p => ({ ...p, bogoGetQty: e.target.value }))}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
                             <div>
-                                <label className="block text-[10px] text-text-muted font-bold uppercase mb-1">Value</label>
-                                <input
-                                    type="number"
+                                <label className="block text-[10px] text-text-muted font-bold uppercase mb-1">Scope</label>
+                                <select
                                     className="w-full bg-surface border border-white/10 rounded-xl px-3 py-2 text-white focus:border-primary outline-none"
-                                    placeholder={promoDraft.type === 'FLAT' ? '100' : '0.2'}
-                                    value={promoDraft.value}
-                                    onChange={e => setPromoDraft(p => ({ ...p, value: e.target.value }))}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-[10px] text-text-muted font-bold uppercase mb-1">Max Uses</label>
-                                <input
-                                    type="number"
-                                    className="w-full bg-surface border border-white/10 rounded-xl px-3 py-2 text-white focus:border-primary outline-none"
-                                    placeholder="Unlimited"
-                                    value={promoDraft.maxUses}
-                                    onChange={e => setPromoDraft(p => ({ ...p, maxUses: e.target.value }))}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-[10px] text-text-muted font-bold uppercase mb-1">Expiry Date</label>
-                                <input
-                                    type="date"
-                                    className="w-full bg-surface border border-white/10 rounded-xl px-3 py-2 text-white focus:border-primary outline-none [color-scheme:dark]"
-                                    value={promoDraft.expiryDate}
-                                    onChange={e => setPromoDraft(p => ({ ...p, expiryDate: e.target.value }))}
-                                />
-                            </div>
-                            <div className="flex items-end">
-                                <button
-                                    type="submit"
-                                    disabled={promoSaving}
-                                    className="w-full bg-primary hover:bg-orange-600 text-white font-bold py-2 rounded-xl transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
+                                    value={promoDraft.scope}
+                                    onChange={e => setPromoDraft(p => ({ ...p, scope: e.target.value }))}
                                 >
-                                    {promoSaving ? '...' : 'Create Promo'}
-                                </button>
+                                    <option value="ORDER">Entire Order</option>
+                                    <option value="PRODUCT">Specific Products</option>
+                                    <option value="CATEGORY">Specific Categories</option>
+                                </select>
+                            </div>
+
+                            {promoDraft.scope === 'PRODUCT' && (
+                                <div>
+                                    <label className="block text-[10px] text-text-muted font-bold uppercase mb-1">Product IDs (comma separated)</label>
+                                    <input
+                                        type="text"
+                                        className="w-full bg-surface border border-white/10 rounded-xl px-3 py-2 text-white focus:border-primary outline-none"
+                                        placeholder="1, 2, 3"
+                                        value={promoDraft.productIds}
+                                        onChange={e => setPromoDraft(p => ({ ...p, productIds: e.target.value }))}
+                                    />
+                                </div>
+                            )}
+
+                            {promoDraft.scope === 'CATEGORY' && (
+                                <div>
+                                    <label className="block text-[10px] text-text-muted font-bold uppercase mb-1">Categories (comma separated)</label>
+                                    <input
+                                        type="text"
+                                        className="w-full bg-surface border border-white/10 rounded-xl px-3 py-2 text-white focus:border-primary outline-none"
+                                        placeholder="Merchandise, Supplements"
+                                        value={promoDraft.categories}
+                                        onChange={e => setPromoDraft(p => ({ ...p, categories: e.target.value }))}
+                                    />
+                                </div>
+                            )}
+
+                            <div className={promoDraft.scope === 'ORDER' ? 'xl:col-span-2 grid grid-cols-2 gap-3' : 'xl:col-span-6 grid grid-cols-2 lg:grid-cols-4 gap-3 pt-3 mt-3 border-t border-white/5'}>
+                                <div>
+                                    <label className="block text-[10px] text-text-muted font-bold uppercase mb-1">Max Uses</label>
+                                    <input
+                                        type="number"
+                                        className="w-full bg-surface border border-white/10 rounded-xl px-3 py-2 text-white focus:border-primary outline-none"
+                                        placeholder="Unlimited"
+                                        value={promoDraft.maxUses}
+                                        onChange={e => setPromoDraft(p => ({ ...p, maxUses: e.target.value }))}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] text-text-muted font-bold uppercase mb-1">Expiry Date</label>
+                                    <input
+                                        type="date"
+                                        className="w-full bg-surface border border-white/10 rounded-xl px-3 py-2 text-white focus:border-primary outline-none [color-scheme:dark]"
+                                        value={promoDraft.expiryDate}
+                                        onChange={e => setPromoDraft(p => ({ ...p, expiryDate: e.target.value }))}
+                                    />
+                                </div>
+                                <div className={`flex items-end ${promoDraft.scope !== 'ORDER' ? 'lg:col-start-4' : ''}`}>
+                                    <button
+                                        type="submit"
+                                        disabled={promoSaving}
+                                        className="w-full bg-primary hover:bg-orange-600 text-white font-bold py-2 rounded-xl transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
+                                    >
+                                        {promoSaving ? '...' : 'Create Promo'}
+                                    </button>
+                                </div>
                             </div>
                         </form>
 
@@ -778,10 +864,14 @@ export default function PosSettings() {
                                             <tr key={promo.id} className="border-b border-white/5 group hover:bg-white/5 transition-colors">
                                                 <td className="py-4 px-2">
                                                     <span className="font-mono font-bold text-primary">{promo.code}</span>
-                                                    {promo.description && <p className="text-[10px] text-text-muted mt-0.5">{promo.description}</p>}
+                                                    {promo.scope !== 'ORDER' && (
+                                                        <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold bg-white/10 text-white">
+                                                            SCOPE: {promo.scope}
+                                                        </span>
+                                                    )}
                                                 </td>
                                                 <td className="py-4 font-bold text-white">
-                                                    {promo.type === 'FLAT' ? `₱${promo.value}` : `${promo.value * 100}%`}
+                                                    {promo.type === 'FLAT' ? `₱${promo.value}` : promo.type === 'PERCENTAGE' ? `${promo.value}%` : `Buy ${promo.bogoConfig?.buyQty || 1} Get ${promo.bogoConfig?.getQty || 1}`}
                                                 </td>
                                                 <td className="py-4">
                                                     <div className="flex items-center gap-2">
