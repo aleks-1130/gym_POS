@@ -9,18 +9,38 @@ const notificationService = {
     /**
      * Send a notification to a specific member or broadcast to all
      */
-    async send({ memberId, title, message, type = 'INFO', isAnnouncement = false, eventData = {} }) {
+    async send({ memberId, title, message, type = 'INFO', isAnnouncement = false, eventData = {}, excludeEmail = false }) {
         try {
-            // 1. Create In-App Notification
-            const notification = await prisma.notification.create({
-                data: {
-                    title,
-                    message,
-                    type,
-                    isAnnouncement,
-                    memberId: memberId ? parseInt(memberId) : null
-                }
-            });
+            // 0. Fetch Preferences (if applicable)
+            let prefs = null;
+            if (memberId) {
+                prefs = await prisma.notificationPreference.findUnique({
+                    where: { memberId: parseInt(memberId) }
+                });
+            }
+
+            // Default to true if no preference record exists yet
+            const shouldSendApp = isAnnouncement 
+                ? (prefs?.appAnnouncements ?? true)
+                : (prefs?.appReminders ?? true);
+            
+            const shouldSendEmail = isAnnouncement
+                ? (prefs?.emailAnnouncements ?? true)
+                : (prefs?.emailReminders ?? true);
+
+            // 1. Create In-App Notification (if allowed)
+            let notification = null;
+            if (shouldSendApp || !memberId) { // Always record broadcasts in-app for now
+                notification = await prisma.notification.create({
+                    data: {
+                        title,
+                        message,
+                        type,
+                        isAnnouncement,
+                        memberId: memberId ? parseInt(memberId) : null
+                    }
+                });
+            }
 
             // 2. Trigger n8n Email (if webhook URL exists)
             console.log(`[NotificationService] Preparing to trigger n8n for: ${title} (Announcement: ${isAnnouncement})`);
@@ -45,7 +65,7 @@ const notificationService = {
             };
 
             // Only trigger n8n for announcements or specific membership events
-            if (process.env.N8N_NOTIFICATIONS_WEBHOOK_URL) {
+            if (process.env.N8N_NOTIFICATIONS_WEBHOOK_URL && !excludeEmail && (shouldSendEmail || !memberId)) {
                 if (isAnnouncement && !memberId) {
                     // BROADCAST CASE: Resolve target group and send individual emails
                     console.log(`[NotificationService] Resolving recipients for broadcast group: ${eventData.targetGroup || 'ALL'}`);
@@ -140,8 +160,19 @@ const notificationService = {
                 referenceId
             };
 
-            // In-app record for the member
+            // Fetch Preferences for receipt
+            let prefs = null;
             if (memberId) {
+                prefs = await prisma.notificationPreference.findUnique({
+                    where: { memberId: parseInt(memberId) }
+                });
+            }
+            
+            const shouldSendApp = prefs?.appReceipts ?? true;
+            const shouldSendEmail = prefs?.emailReceipts ?? true;
+
+            // In-app record for the member
+            if (memberId && shouldSendApp) {
                 await prisma.notification.create({
                     data: {
                         title: 'Payment Received',
@@ -152,11 +183,11 @@ const notificationService = {
                 });
             }
 
-            if (process.env.N8N_NOTIFICATIONS_WEBHOOK_URL && (member?.email || !memberId)) {
+            if (process.env.N8N_NOTIFICATIONS_WEBHOOK_URL && (member?.email || !memberId) && shouldSendEmail) {
                 console.log(`[NotificationService] Dispatching receipt to unified-notifications webhook for ${member?.email || 'Walk-in'}`);
                 await sendEmailWebhook(process.env.N8N_NOTIFICATIONS_WEBHOOK_URL, payload);
             } else {
-                console.warn(`[NotificationService] Skipped receipt webhook (URL missing or no recipient email)`);
+                console.warn(`[NotificationService] Skipped receipt webhook (URL missing, disabled by user, or no recipient email)`);
             }
         } catch (error) {
             console.error('[NotificationService] Error sending receipt:', error);

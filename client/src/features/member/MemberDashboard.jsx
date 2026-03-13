@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import QRCode from 'react-qr-code';
 import axios from 'axios';
+import { Link } from 'react-router-dom';
 
 const formatPlanDate = (value) => {
     if (!value) return 'N/A';
@@ -233,30 +234,48 @@ const MemberDashboard = ({ stats, user }) => {
             </div>
 
             {/* Latest Update/Notification */}
-            <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
-                <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
-                    <span className="material-icons-round text-primary text-base">notifications_active</span>
-                    Latest Update
-                </h3>
-                {latestNotification ? (
-                    <div className={`p-3 rounded-lg border transition-all ${latestNotification.isRead ? 'bg-white/5 border-white/10' : 'bg-primary/10 border-primary/20'}`}>
-                        <div className="flex gap-3">
-                            <span className="material-icons-round text-primary flex-shrink-0 text-lg">
-                                {latestNotification.isAnnouncement ? 'campaign' : 'info'}
-                            </span>
+            <Link to="/announcements" className="block outline-none active:scale-[0.98] transition-all">
+                <div className="bg-surface p-5 rounded-[2rem] border border-white/5 shadow-xl shadow-black/20 group relative overflow-hidden">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-[10px] font-black text-white uppercase tracking-[0.2em] italic flex items-center gap-2">
+                            <span className="material-icons-round text-primary text-base animate-pulse">notifications_active</span>
+                            Latest Update
+                        </h3>
+                        {latestNotification && !latestNotification.isRead && (
+                            <span className="px-2 py-0.5 rounded-full bg-primary/20 text-primary text-[8px] font-black uppercase tracking-widest border border-primary/30">New</span>
+                        )}
+                    </div>
+                    {latestNotification ? (
+                        <div className="flex gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0 group-hover:border-primary/30 transition-colors">
+                                <span className="material-icons-round text-primary text-xl">
+                                    {latestNotification.isAnnouncement ? 'campaign' : 'info'}
+                                </span>
+                            </div>
                             <div className="min-w-0 flex-1">
-                                <h4 className="font-bold text-primary text-sm mb-1">{latestNotification.title}</h4>
-                                <p className="text-xs text-white/70 leading-relaxed line-clamp-2">{latestNotification.message}</p>
-                                <p className="text-[10px] text-text-muted mt-2">{new Date(latestNotification.createdAt).toLocaleString()}</p>
+                                <h4 className="font-black text-white uppercase italic tracking-tighter text-sm mb-1 line-clamp-1 group-hover:text-primary transition-colors">
+                                    {latestNotification.title}
+                                </h4>
+                                <p className="text-[11px] text-text-secondary leading-relaxed line-clamp-2 font-medium">
+                                    {latestNotification.message}
+                                </p>
+                                <p className="text-[9px] text-text-muted mt-2 font-mono uppercase tracking-widest font-black">
+                                    {new Date(latestNotification.createdAt).toLocaleDateString()}
+                                </p>
                             </div>
                         </div>
+                    ) : (
+                        <div className="py-4 text-center">
+                            <p className="text-[10px] text-text-muted font-black uppercase tracking-widest italic">All caught up!</p>
+                        </div>
+                    )}
+                    
+                    {/* Subtle arrow indicator */}
+                    <div className="absolute right-6 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
+                        <span className="material-icons-round text-primary">chevron_right</span>
                     </div>
-                ) : (
-                    <div className="p-3 bg-white/5 rounded-lg border border-white/10 text-center">
-                        <p className="text-xs text-text-muted">No recent updates</p>
-                    </div>
-                )}
-            </div>
+                </div>
+            </Link>
 
             {/* Quick Actions - Compact Grid */}
             <div>

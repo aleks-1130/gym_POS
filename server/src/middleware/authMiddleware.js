@@ -70,11 +70,13 @@ const authenticateToken = async (req, res, next) => {
             }
         } catch (dbError) {
             console.error("[DEBUG] DB Session lookup failed:", dbError);
+            console.log("[DEBUG] Returning 403 because DB lookup failed");
             return res.sendStatus(403);
         }
     }
 
     if (!email) {
+        console.log("[DEBUG] Returning 403 because email is null");
         return res.status(403).json({ error: "Invalid token structure or session expired" });
     }
 
@@ -112,7 +114,7 @@ const authenticateToken = async (req, res, next) => {
         }
 
         if (!userRole) {
-            console.log("[DEBUG] User not found in local DB.");
+            console.log("[DEBUG] User not found in local DB. Email:", email);
             return res.status(403).json({ error: "User not found in system records" });
         }
 
@@ -151,6 +153,7 @@ const authorize = (roles = []) => {
         // Exact match
         if (roles.includes(userRole)) return next();
 
+        console.log(`[DEBUG] Access denied for role: ${userRole}. Required roles: ${roles.join(',')}`);
         return res.status(403).json({ error: "Access denied" });
     };
 };

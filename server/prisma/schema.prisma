@@ -30,6 +30,7 @@ model User {
   trainerChangeRequestsOwnerReviewed TrainerChangeRequest[] @relation("TrainerChangeOwnerDecisionBy")
   trainerChangeRequestsSubmitted     TrainerChangeRequest[] @relation("TrainerChangeRequestedBy")
   trainer                            Trainer?               @relation("TrainerUser", fields: [trainerId], references: [id])
+  notificationPreference             NotificationPreference?
 }
 
 model AuditLog {
@@ -80,6 +81,7 @@ model Member {
   payments               Payment[]
   paymentMethods         PaymentMethod[]
   trainingSessions       TrainingSession[]
+  notificationPreference NotificationPreference?
 
   @@index([status])
   @@index([createdAt])
@@ -174,6 +176,7 @@ model TrainingSession {
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
   reminderSent         Boolean           @default(false)
+  finalReminderSent    Boolean           @default(false)
   memberRatedAt        DateTime?
   memberRating         Int?
   memberRatingComment  String?
@@ -451,6 +454,7 @@ model Booking {
   classId     Int
   status      String    @default("CONFIRMED")
   reminderSent Boolean   @default(false)
+  finalReminderSent Boolean @default(false)
   createdAt   DateTime  @default(now())
   sessionDate DateTime?
   class       Class     @relation(fields: [classId], references: [id])
@@ -632,6 +636,22 @@ model PromoCode {
   expiryDate  DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+}
+
+model NotificationPreference {
+  id                 Int      @id @default(autoincrement())
+  memberId           Int?     @unique
+  userId             Int?     @unique
+  emailAnnouncements Boolean  @default(true)
+  emailReminders     Boolean  @default(true)
+  emailReceipts      Boolean  @default(true)
+  appAnnouncements   Boolean  @default(true)
+  appReminders       Boolean  @default(true)
+  appReceipts        Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  member             Member?  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  user               User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 enum TrainerType {

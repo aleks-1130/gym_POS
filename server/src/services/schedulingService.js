@@ -27,12 +27,14 @@ const schedulingService = {
         console.log('[SchedulingService] Checking for upcoming class reminders...');
         const now = new Date();
         const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+        const soon = new Date(now.getTime() + 2 * 60 * 60 * 1000); // 2 hours out for final check
         
         try {
-            const bookings = await prisma.booking.findMany({
+            // 1. Initial 24-hour Reminders (Email + App)
+            const initialBookings = await prisma.booking.findMany({
                 where: {
                     sessionDate: {
-                        gt: now, // Must be in the future
+                        gt: now,
                         lte: tomorrow
                     },
                     status: 'CONFIRMED',
@@ -40,40 +42,75 @@ const schedulingService = {
                 },
                 include: {
                     member: true,
-                    class: {
-                        include: { trainer: true }
-                    }
+                    class: { include: { trainer: true } }
                 }
             });
 
-            for (const booking of bookings) {
-                if (booking.member?.email) {
-                    const sessionDate = new Date(booking.sessionDate);
-                    const isToday = sessionDate.toDateString() === now.toDateString();
-                    const dayLabel = isToday ? 'Today' : 'Tomorrow';
+            for (const booking of initialBookings) {
+                const sessionDate = new Date(booking.sessionDate);
+                const isToday = sessionDate.toDateString() === now.toDateString();
+                const dayLabel = isToday ? 'today' : 'tomorrow';
 
-                    await notificationService.send({
-                        memberId: booking.memberId,
-                        title: 'Upcoming Class Reminder 🔔',
-                        message: `Reminder: You have the class "${booking.class.name}" with ${booking.class.trainer?.name || 'your trainer'} scheduled for ${dayLabel.toLowerCase()}.`,
-                        type: 'CLASS_REMINDER',
-                        eventData: {
-                            className: booking.class.name,
-                            trainerName: booking.class.trainer?.name || 'Staff',
-                            sessionDate: sessionDate.toLocaleDateString(),
-                            time: booking.class.time,
-                            dayLabel // For n8n template logic
-                        }
-                    });
+                await notificationService.send({
+                    memberId: booking.memberId,
+                    title: 'Upcoming Class Reminder 🔔',
+                    message: `Reminder: You have the class "${booking.class.name}" with ${booking.class.trainer?.name || 'your trainer'} scheduled for ${dayLabel}.`,
+                    type: 'CLASS_REMINDER',
+                    isAnnouncement: true, // Show on News & Broadcasts
+                    eventData: {
+                        className: booking.class.name,
+                        trainerName: booking.class.trainer?.name || 'Staff',
+                        sessionDate: sessionDate.toLocaleDateString(),
+                        time: booking.class.time,
+                        dayLabel
+                    }
+                });
 
-                    // Mark as sent
-                    await prisma.booking.update({
-                        where: { id: booking.id },
-                        data: { reminderSent: true }
-                    });
-                }
+                await prisma.booking.update({
+                    where: { id: booking.id },
+                    data: { reminderSent: true }
+                });
             }
-            if (bookings.length > 0) console.log(`[SchedulingService] Sent ${bookings.length} class reminders.`);
+
+            // 2. Final 1-hour Reminders (App ONLY Highlights)
+            const finalBookings = await prisma.booking.findMany({
+                where: {
+                    sessionDate: {
+                        gt: now,
+                        lte: soon
+                    },
+                    status: 'CONFIRMED',
+                    finalReminderSent: false
+                },
+                include: {
+                    member: true,
+                    class: { include: { trainer: true } }
+                }
+            });
+
+            for (const booking of finalBookings) {
+                const sessionDate = new Date(booking.sessionDate);
+                await notificationService.send({
+                    memberId: booking.memberId,
+                    title: 'Final Call! 🚀',
+                    message: `Your class "${booking.class.name}" starts in about an hour! See you at ${booking.class.time}.`,
+                    type: 'CLASS_REMINDER',
+                    isAnnouncement: true,
+                    excludeEmail: true, // App only for 1-hour out
+                    eventData: {
+                        className: booking.class.name,
+                        time: booking.class.time
+                    }
+                });
+
+                await prisma.booking.update({
+                    where: { id: booking.id },
+                    data: { finalReminderSent: true }
+                });
+            }
+
+            const total = initialBookings.length + finalBookings.length;
+            if (total > 0) console.log(`[SchedulingService] Sent ${initialBookings.length} initial and ${finalBookings.length} final class reminders.`);
         } catch (error) {
             console.error('[SchedulingService] Error sending class reminders:', error);
         }
@@ -86,51 +123,84 @@ const schedulingService = {
         console.log('[SchedulingService] Checking for upcoming training reminders...');
         const now = new Date();
         const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+        const soon = new Date(now.getTime() + 2 * 60 * 60 * 1000);
 
         try {
-            const sessions = await prisma.trainingSession.findMany({
+            // 1. Initial 24-hour Reminders (Email + App)
+            const initialSessions = await prisma.trainingSession.findMany({
                 where: {
                     date: {
-                        gt: new Date(now.getTime() - 15 * 60 * 1000), // Only sessions starting now or in the future (or very recently started)
+                        gt: now,
                         lte: tomorrow
                     },
                     status: 'SCHEDULED',
                     reminderSent: false
                 },
-                include: {
-                    member: true,
-                    trainer: true
-                }
+                include: { member: true, trainer: true }
             });
 
-            for (const session of sessions) {
-                if (session.member?.email) {
-                    const sessionDate = new Date(session.date);
-                    const isToday = sessionDate.toDateString() === now.toDateString();
-                    const dayLabel = isToday ? 'Today' : 'Tomorrow';
+            for (const session of initialSessions) {
+                const sessionDate = new Date(session.date);
+                const isToday = sessionDate.toDateString() === now.toDateString();
+                const dayLabel = isToday ? 'today' : 'tomorrow';
 
-                    await notificationService.send({
-                        memberId: session.memberId,
-                        title: 'Personal Training Reminder 💪',
-                        message: `Reminder: Your session with Coach ${session.trainer?.name || 'Staff'} is scheduled for ${dayLabel.toLowerCase()} at ${sessionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`,
-                        type: 'TRAINING_REMINDER',
-                        eventData: {
-                            className: 'Personal Training',
-                            trainerName: session.trainer?.name || 'Staff',
-                            sessionDate: sessionDate.toLocaleDateString(),
-                            time: sessionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                            dayLabel // For n8n template logic
-                        }
-                    });
+                await notificationService.send({
+                    memberId: session.memberId,
+                    title: 'Personal Training Reminder 💪',
+                    message: `Reminder: Your session with Coach ${session.trainer?.name || 'Staff'} is scheduled for ${dayLabel} at ${sessionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`,
+                    type: 'TRAINING_REMINDER',
+                    isAnnouncement: true, // Show on News & Broadcasts
+                    eventData: {
+                        className: 'Personal Training',
+                        trainerName: session.trainer?.name || 'Staff',
+                        sessionDate: sessionDate.toLocaleDateString(),
+                        time: sessionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                        dayLabel
+                    }
+                });
 
-                    // Mark as sent
-                    await prisma.trainingSession.update({
-                        where: { id: session.id },
-                        data: { reminderSent: true }
-                    });
-                }
+                await prisma.trainingSession.update({
+                    where: { id: session.id },
+                    data: { reminderSent: true }
+                });
             }
-            if (sessions.length > 0) console.log(`[SchedulingService] Sent ${sessions.length} training reminders.`);
+
+            // 2. Final 1-hour Reminders (App ONLY Highlights)
+            const finalSessions = await prisma.trainingSession.findMany({
+                where: {
+                    date: {
+                        gt: now,
+                        lte: soon
+                    },
+                    status: 'SCHEDULED',
+                    finalReminderSent: false
+                },
+                include: { member: true, trainer: true }
+            });
+
+            for (const session of finalSessions) {
+                const sessionDate = new Date(session.date);
+                await notificationService.send({
+                    memberId: session.memberId,
+                    title: 'Training Starting Soon! 💪',
+                    message: `Get ready! Your session with Coach ${session.trainer?.name || 'Staff'} starts in about an hour (${sessionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}).`,
+                    type: 'TRAINING_REMINDER',
+                    isAnnouncement: true,
+                    excludeEmail: true,
+                    eventData: {
+                        trainerName: session.trainer?.name || 'Staff',
+                        time: sessionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    }
+                });
+
+                await prisma.trainingSession.update({
+                    where: { id: session.id },
+                    data: { finalReminderSent: true }
+                });
+            }
+
+            const total = initialSessions.length + finalSessions.length;
+            if (total > 0) console.log(`[SchedulingService] Sent ${initialSessions.length} initial and ${finalSessions.length} final training reminders.`);
         } catch (error) {
             console.error('[SchedulingService] Error sending training reminders:', error);
         }
