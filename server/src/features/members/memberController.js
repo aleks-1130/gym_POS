@@ -10,7 +10,8 @@ const {
 } = require('../training/classScheduleUtils');
 
 const FINALIZED_SESSION_STATUSES = ['CANCELLED', 'COMPLETED', 'NO_SHOW', 'DECLINED'];
-const ACTIVE_CLASS_BOOKING_STATUSES = ['CONFIRMED', 'ATTENDED'];
+const ACTIVE_OCCUPANCY_STATUSES = ['CONFIRMED', 'ATTENDED'];
+const BOOKED_STATUSES = ['CONFIRMED', 'ATTENDED', 'WAITLISTED'];
 const RATING_MIN = 1;
 const RATING_MAX = 5;
 const PENDING_RATING_MESSAGE = 'Please rate your completed training session(s) before booking another trainer session.';
@@ -276,7 +277,7 @@ const getAvailableClasses = async (req, res) => {
             prisma.booking.findMany({
                 where: {
                     memberId,
-                    status: { in: ACTIVE_CLASS_BOOKING_STATUSES }
+                    status: { in: BOOKED_STATUSES }
                 },
                 select: {
                     classId: true,
@@ -430,9 +431,22 @@ const bookClass = async (req, res) => {
                 where: {
                     classId: parsedClassId,
                     sessionDate: resolvedSessionDate,
-                    status: { in: ACTIVE_CLASS_BOOKING_STATUSES }
+                    status: { in: ACTIVE_OCCUPANCY_STATUSES }
                 }
             });
+
+            const alreadyBooked = await tx.booking.findFirst({
+                where: {
+                    memberId,
+                    classId: parsedClassId,
+                    sessionDate: resolvedSessionDate,
+                    status: { in: BOOKED_STATUSES }
+                }
+            });
+
+            if (alreadyBooked) {
+                return { error: `You are already ${alreadyBooked.status.toLowerCase()} for this session.`, status: 400 };
+            }
 
             const isWaitlist = enrolled >= cls.capacity;
             const status = isWaitlist ? 'WAITLISTED' : 'CONFIRMED';
@@ -446,13 +460,15 @@ const bookClass = async (req, res) => {
                 }
             });
 
-            await tx.member.update({
-                where: { id: memberId },
-                data: {
-                    classSessionsRemaining: { decrement: 1 },
-                    classSessionsUsed: { increment: 1 }
-                }
-            });
+            if (status === 'CONFIRMED') {
+                await tx.member.update({
+                    where: { id: memberId },
+                    data: {
+                        classSessionsRemaining: { decrement: 1 },
+                        classSessionsUsed: { increment: 1 }
+                    }
+                });
+            }
 
             // Notification
             const isToday = resolvedSessionDate.toDateString() === new Date().toDateString();
@@ -524,7 +540,7 @@ const cancelBooking = async (req, res) => {
                     ? {
                         memberId,
                         classId: parsedClassId,
-                        status: { in: ACTIVE_CLASS_BOOKING_STATUSES },
+                        status: { in: BOOKED_STATUSES },
                         OR: [
                             { sessionDate: resolvedSessionDate },
                             { sessionDate: null }
@@ -533,7 +549,7 @@ const cancelBooking = async (req, res) => {
                     : {
                         memberId,
                         classId: parsedClassId,
-                        status: { in: ACTIVE_CLASS_BOOKING_STATUSES }
+                        status: { in: BOOKED_STATUSES }
                     },
                 orderBy: { sessionDate: 'asc' }
             });
@@ -548,14 +564,16 @@ const cancelBooking = async (req, res) => {
                 data: { status: 'CANCELLED' }
             });
 
-            // Refund session count
-            await tx.member.update({
-                where: { id: memberId },
-                data: {
-                    classSessionsRemaining: { increment: 1 },
-                    classSessionsUsed: { decrement: 1 }
-                }
-            });
+            // Refund session count if they were confirmed
+            if (oldStatus === 'CONFIRMED' || oldStatus === 'ATTENDED') {
+                await tx.member.update({
+                    where: { id: memberId },
+                    data: {
+                        classSessionsRemaining: { increment: 1 },
+                        classSessionsUsed: { decrement: 1 }
+                    }
+                });
+            }
 
             // If a confirmed spot was cancelled, promote someone from waitlist
             if (oldStatus === 'CONFIRMED') {

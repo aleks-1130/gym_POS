@@ -32,10 +32,11 @@ const schedulingService = {
             const bookings = await prisma.booking.findMany({
                 where: {
                     sessionDate: {
-                        gte: now,
+                        gt: now, // Must be in the future
                         lte: tomorrow
                     },
-                    status: 'CONFIRMED'
+                    status: 'CONFIRMED',
+                    reminderSent: false
                 },
                 include: {
                     member: true,
@@ -64,6 +65,12 @@ const schedulingService = {
                             dayLabel // For n8n template logic
                         }
                     });
+
+                    // Mark as sent
+                    await prisma.booking.update({
+                        where: { id: booking.id },
+                        data: { reminderSent: true }
+                    });
                 }
             }
             if (bookings.length > 0) console.log(`[SchedulingService] Sent ${bookings.length} class reminders.`);
@@ -84,10 +91,11 @@ const schedulingService = {
             const sessions = await prisma.trainingSession.findMany({
                 where: {
                     date: {
-                        gte: now,
+                        gt: new Date(now.getTime() - 15 * 60 * 1000), // Only sessions starting now or in the future (or very recently started)
                         lte: tomorrow
                     },
-                    status: 'SCHEDULED'
+                    status: 'SCHEDULED',
+                    reminderSent: false
                 },
                 include: {
                     member: true,
@@ -113,6 +121,12 @@ const schedulingService = {
                             time: sessionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                             dayLabel // For n8n template logic
                         }
+                    });
+
+                    // Mark as sent
+                    await prisma.trainingSession.update({
+                        where: { id: session.id },
+                        data: { reminderSent: true }
                     });
                 }
             }

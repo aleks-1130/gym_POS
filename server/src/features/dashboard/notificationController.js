@@ -9,7 +9,9 @@ const getNotifications = async (req, res) => {
         // Find member associated with user if not provided
         let targetMemberId = memberId;
         if (!targetMemberId && role === 'MEMBER') {
-            const member = await prisma.member.findFirst({ where: { email: req.user.email } });
+            const member = await prisma.member.findFirst({ 
+                where: { email: { equals: req.user.email, mode: 'insensitive' } } 
+            });
             targetMemberId = member?.id;
         }
 
@@ -52,13 +54,61 @@ const getNotifications = async (req, res) => {
 const markAsRead = async (req, res) => {
     try {
         const { id } = req.params;
+        console.log(`[DEBUG] Marking notification as read. ID: ${id}`);
         await prisma.notification.update({
             where: { id: parseInt(id) },
             data: { isRead: true }
         });
+        console.log(`[DEBUG] Successfully marked notification ${id} as read`);
         res.json({ success: true });
     } catch (e) {
+        console.error('[NotificationController] Mark as read error:', e);
         res.status(500).json({ error: "Failed to mark notification as read" });
+    }
+};
+
+const markAllAsRead = async (req, res) => {
+    try {
+        const { id: userId, role } = req.user;
+        
+        let targetMemberId = null;
+        if (role === 'MEMBER') {
+            const member = await prisma.member.findFirst({ 
+                where: { email: { equals: req.user.email, mode: 'insensitive' } } 
+            });
+            targetMemberId = member?.id;
+        }
+
+        // We mark as read using the same logic as getNotifications visibility
+        const where = {
+            OR: [
+                { targetGroup: 'ALL' },
+                { isAnnouncement: true, targetGroup: 'ALL' },
+                ...(role === 'ADMIN' || role === 'OWNER' || role === 'STAFF' 
+                    ? [{ targetGroup: 'STAFF' }] 
+                    : []),
+                ...(role === 'TRAINER' ? [{ targetGroup: 'TRAINER' }] : []),
+                ...(targetMemberId ? [{ memberId: targetMemberId }] : []),
+                // Class-based targeting (simple version for updateMany)
+                ...(targetMemberId ? [{
+                    targetGroup: 'CLASS'
+                }] : [])
+            ],
+            isRead: false
+        };
+
+        const finalWhere = (role === 'ADMIN' || role === 'OWNER') ? { isRead: false } : where;
+
+        const result = await prisma.notification.updateMany({
+            where: finalWhere,
+            data: { isRead: true }
+        });
+
+        console.log(`[DEBUG] Mark All as Read triggered. Count: ${result.count}`);
+        res.json({ success: true, count: result.count });
+    } catch (e) {
+        console.error('[NotificationController] Mark all as read error:', e);
+        res.status(500).json({ error: "Failed to mark all as read" });
     }
 };
 
@@ -110,6 +160,7 @@ const deleteNotification = async (req, res) => {
 module.exports = {
     getNotifications,
     markAsRead,
+    markAllAsRead,
     broadcastAnnouncement,
     deleteNotification
 };

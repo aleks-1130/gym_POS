@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Megaphone, Calendar, Clock, Pin, AlertCircle, Send, Trash2, Plus, X, Tag } from 'lucide-react';
+import { Megaphone, Calendar, Clock, Pin, AlertCircle, Send, Trash2, Plus, X, Tag, CheckCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { ROLES } from '../../constants/roles';
+import ConfirmDialog from '../../components/common/ConfirmDialog';
 
 export default function Announcements() {
     const { user } = useAuth();
@@ -21,6 +22,9 @@ export default function Announcements() {
         targetId: null
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [deleteConfig, setDeleteConfig] = useState({ isOpen: false, id: null, isDeleting: false });
+    const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+    const [isMarkingAll, setIsMarkingAll] = useState(false);
 
     const isStaff = [ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF].includes(user?.role);
 
@@ -64,14 +68,41 @@ export default function Announcements() {
         }
     };
 
-    const handleDelete = async (id) => {
-        if (!window.confirm("Are you sure you want to delete this broadcast?")) return;
+    const handleDelete = async () => {
+        const { id } = deleteConfig;
+        setDeleteConfig(prev => ({ ...prev, isDeleting: true }));
         try {
             await axios.delete(`/api/notifications/${id}`);
             setAnnouncements(prev => prev.filter(a => a.id !== id));
+            setDeleteConfig({ isOpen: false, id: null, isDeleting: false });
         } catch (error) {
             console.error("Failed to delete notification");
-            alert("Failed to delete notification");
+            setDeleteConfig(prev => ({ ...prev, isDeleting: false }));
+        }
+    };
+
+    const handleMarkAllRead = async () => {
+        setIsMarkingAll(true);
+        try {
+            await axios.patch('/api/notifications/read-all');
+            setAnnouncements(prev => prev.map(a => ({ ...a, isRead: true })));
+            setIsConfirmOpen(false);
+        } catch (error) {
+            console.error("Failed to mark all as read:", error);
+        } finally {
+            setIsMarkingAll(false);
+        }
+    };
+
+    const handleMarkAsRead = async (id, isRead) => {
+        if (isRead) return;
+        try {
+            await axios.patch(`/api/notifications/${id}/read`);
+            setAnnouncements(prev => 
+                prev.map(a => a.id === id ? { ...a, isRead: true } : a)
+            );
+        } catch (error) {
+            console.error("Failed to mark notification as read:", error);
         }
     };
 
@@ -114,15 +145,24 @@ export default function Announcements() {
                     </div>
                 </div>
 
-                {isStaff && (
+                <div className="flex gap-2">
                     <button
-                        onClick={() => setShowCreateModal(true)}
-                        className="bg-primary hover:bg-orange-600 text-white font-black py-4 px-8 rounded-2xl shadow-2xl shadow-primary/20 flex items-center gap-3 transition-all active:scale-95 uppercase text-xs tracking-widest"
+                        onClick={() => setIsConfirmOpen(true)}
+                        className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-text-muted hover:text-white transition-all active:scale-95"
+                        title="Mark all as read"
                     >
-                        <Plus size={18} />
-                        New Broadcast
+                        <CheckCheck size={20} className={announcements.some(a => !a.isRead) ? "text-primary animate-pulse" : ""} />
                     </button>
-                )}
+                    {isStaff && (
+                        <button
+                            onClick={() => setShowCreateModal(true)}
+                            className="bg-primary hover:bg-orange-600 text-white font-black py-4 px-8 rounded-2xl shadow-2xl shadow-primary/20 flex items-center gap-3 transition-all active:scale-95 uppercase text-xs tracking-widest"
+                        >
+                            <Plus size={18} />
+                            New Broadcast
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* Filter Tabs */}
@@ -148,12 +188,20 @@ export default function Announcements() {
                     .map(announcement => (
                         <div
                             key={announcement.id}
-                            className={`bg-surface border border-white/5 rounded-[2.5rem] p-8 hover:border-white/10 transition-all group relative overflow-hidden flex flex-col`}
+                            onClick={() => handleMarkAsRead(announcement.id, announcement.isRead)}
+                            className={`bg-surface border rounded-[2.5rem] p-8 hover:border-white/10 transition-all group relative overflow-hidden flex flex-col cursor-pointer ${
+                                announcement.isRead ? 'border-white/5 opacity-80' : 'border-primary/20 bg-gradient-to-br from-primary/5 to-transparent'
+                            }`}
                         >
                             <div className="flex justify-between items-start mb-6">
-                                <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border ${getCategoryColor(announcement.type)}`}>
-                                    {announcement.type}
-                                </span>
+                                <div className="flex gap-2 items-center">
+                                    <span className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border ${getCategoryColor(announcement.type)}`}>
+                                        {announcement.type}
+                                    </span>
+                                    {!announcement.isRead && (
+                                        <span className="flex h-2 w-2 rounded-full bg-primary animate-pulse" />
+                                    )}
+                                </div>
                                 <div className="text-text-muted text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
                                     <Clock size={12} className="text-primary" />
                                     {formatDate(announcement.createdAt || announcement.date)}
@@ -172,7 +220,7 @@ export default function Announcements() {
                                 <span className="text-text-muted text-[9px] font-black uppercase tracking-[0.2em] italic">Channel: FitOS Core</span>
                                 {isStaff && (
                                     <button 
-                                        onClick={() => handleDelete(announcement.id)}
+                                        onClick={() => setDeleteConfig({ isOpen: true, id: announcement.id, isDeleting: false })}
                                         className="text-red-500/50 hover:text-red-500 transition-colors"
                                     >
                                         <Trash2 size={16} />
@@ -324,6 +372,27 @@ export default function Announcements() {
                     </div>
                 </div>
             )}
+
+            <ConfirmDialog 
+                isOpen={deleteConfig.isOpen}
+                title="Delete Broadcast?"
+                message="This will permanently remove this announcement for all targeted members. This action cannot be undone."
+                confirmLabel={deleteConfig.isDeleting ? "Deleting..." : "Delete Permanently"}
+                cancelLabel="Keep It"
+                type="danger"
+                onConfirm={handleDelete}
+                onCancel={() => setDeleteConfig({ isOpen: false, id: null, isDeleting: false })}
+            />
+
+            <ConfirmDialog 
+                isOpen={isConfirmOpen}
+                title="Mark all as read?"
+                message="This will mark all notifications as seen."
+                confirmLabel={isMarkingAll ? "Marking..." : "Mark All Read"}
+                cancelLabel="Cancel"
+                onConfirm={handleMarkAllRead}
+                onCancel={() => setIsConfirmOpen(false)}
+            />
 
             <style>{`
                 @keyframes fade-in { 0% { opacity: 0; transform: translateY(10px); } 100% { opacity: 1; transform: translateY(0); } }
