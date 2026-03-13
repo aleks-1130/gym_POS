@@ -215,8 +215,8 @@ export default function AppRoutes() {
                 <Route
                     path="/announcements"
                     element={
-                        <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-                            {user?.role === ROLES.MEMBER ? <MemberAnnouncements /> : <Announcements />}
+                        <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF, ROLES.TRAINER]}>
+                            {user?.role === ROLES.MEMBER || user?.role === ROLES.TRAINER ? <MemberAnnouncements /> : <Announcements />}
                         </ProtectedRoute>
                     }
                 />
