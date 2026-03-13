@@ -559,33 +559,53 @@ const cancelBooking = async (req, res) => {
 
             // If a confirmed spot was cancelled, promote someone from waitlist
             if (oldStatus === 'CONFIRMED') {
-                const nextWaitlisted = await tx.booking.findFirst({
-                    where: {
-                        classId: parsedClassId,
-                        sessionDate: booking.sessionDate,
-                        status: 'WAITLISTED'
-                    },
-                    orderBy: { createdAt: 'asc' }
-                });
-
-                if (nextWaitlisted) {
-                    await tx.booking.update({
-                        where: { id: nextWaitlisted.id },
-                        data: { status: 'CONFIRMED' }
+                    // Find the first waitlisted member who has sessions left
+                    let memberToPromote = null;
+                    const waitlistedBookings = await tx.booking.findMany({
+                        where: {
+                            classId: parsedClassId,
+                            sessionDate: booking.sessionDate,
+                            status: 'WAITLISTED'
+                        },
+                        include: { member: true },
+                        orderBy: { createdAt: 'asc' }
                     });
 
-                    // Trigger notification for waitlist promotion
-                    await notificationService.send({
-                        memberId: nextWaitlisted.memberId,
-                        title: 'Waitlist Promotion! 🚀',
-                        message: `Good news! You've been promoted from the waitlist for ${cls.name}.`,
-                        type: 'WAITLIST_PROMOTION',
-                        eventData: {
-                            className: cls.name,
-                            sessionDate: booking.sessionDate.toLocaleDateString()
+                    for (const wb of waitlistedBookings) {
+                        if (wb.member && wb.member.classSessionsRemaining > 0) {
+                            memberToPromote = wb;
+                            break;
                         }
-                    });
-                }
+                    }
+
+                    if (memberToPromote) {
+                        await tx.booking.update({
+                            where: { id: memberToPromote.id },
+                            data: { status: 'CONFIRMED' }
+                        });
+
+                        // Deduct session from the promoted member
+                        await tx.member.update({
+                            where: { id: memberToPromote.memberId },
+                            data: {
+                                classSessionsRemaining: { decrement: 1 },
+                                classSessionsUsed: { increment: 1 }
+                            }
+                        });
+
+                        // Trigger notification for waitlist promotion
+                        await notificationService.send({
+                            memberId: memberToPromote.memberId,
+                            title: 'Waitlist Promotion! 🚀',
+                            message: `Good news! You've been promoted from the waitlist for ${cls.name}.`,
+                            type: 'WAITLIST_PROMOTION',
+                            eventData: {
+                                className: cls.name,
+                                sessionDate: booking.sessionDate.toLocaleDateString(),
+                                dayLabel: 'Upcoming' // Fallback label
+                            }
+                        });
+                    }
             }
 
             return { success: true };

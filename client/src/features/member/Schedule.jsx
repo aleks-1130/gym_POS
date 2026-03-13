@@ -532,7 +532,7 @@ export default function Schedule() {
                                 const isFull = cls.enrolled >= cls.capacity;
                                 const capacityPercent = (cls.enrolled / cls.capacity) * 100;
                                 const noSessionsLeft = sessionInfo.classSessionsRemaining <= 0;
-                                const cannotJoin = isFull || noSessionsLeft;
+                                const cannotJoin = noSessionsLeft;
                                 const classTime = getClassTimeRange(cls.time, cls.duration);
                                 const scheduleType = String(cls.scheduleType || 'RECURRING').toUpperCase();
 
