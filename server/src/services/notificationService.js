@@ -23,6 +23,7 @@ const notificationService = {
             });
 
             // 2. Trigger n8n Email (if webhook URL exists)
+            console.log(`[NotificationService] Preparing to trigger n8n for: ${title} (Announcement: ${isAnnouncement})`);
             const emailPayload = {
                 title,
                 message,
@@ -45,8 +46,13 @@ const notificationService = {
             if (process.env.N8N_NOTIFICATIONS_WEBHOOK_URL) {
                 // If it's a private notification, only send if we have an email
                 if (!memberId || (memberId && emailPayload.email)) {
+                    console.log(`[NotificationService] Dispatching to unified-notifications webhook for ${emailPayload.email || 'ALL'}`);
                     await sendEmailWebhook(process.env.N8N_NOTIFICATIONS_WEBHOOK_URL, emailPayload);
+                } else {
+                    console.warn(`[NotificationService] Skipped: Private notification for ID ${memberId} but no email found.`);
                 }
+            } else {
+                console.warn(`[NotificationService] Skipped: N8N_NOTIFICATIONS_WEBHOOK_URL is not set.`);
             }
 
             return notification;
@@ -89,7 +95,10 @@ const notificationService = {
             }
 
             if (process.env.N8N_NOTIFICATIONS_WEBHOOK_URL && (member?.email || !memberId)) {
+                console.log(`[NotificationService] Dispatching receipt to unified-notifications webhook for ${member?.email || 'Walk-in'}`);
                 await sendEmailWebhook(process.env.N8N_NOTIFICATIONS_WEBHOOK_URL, payload);
+            } else {
+                console.warn(`[NotificationService] Skipped receipt webhook (URL missing or no recipient email)`);
             }
         } catch (error) {
             console.error('[NotificationService] Error sending receipt:', error);
