@@ -28,7 +28,8 @@ const notificationService = {
             const basePayload = {
                 title,
                 message,
-                eventType: type,
+                eventType: isAnnouncement ? 'ANNOUNCEMENT' : type,
+                category: type, // Original type (INFO, ALERT, PROMO)
                 ...eventData
             };
 

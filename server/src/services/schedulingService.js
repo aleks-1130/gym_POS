@@ -47,16 +47,21 @@ const schedulingService = {
 
             for (const booking of bookings) {
                 if (booking.member?.email) {
+                    const sessionDate = new Date(booking.sessionDate);
+                    const isToday = sessionDate.toDateString() === now.toDateString();
+                    const dayLabel = isToday ? 'Today' : 'Tomorrow';
+
                     await notificationService.send({
                         memberId: booking.memberId,
                         title: 'Upcoming Class Reminder 🔔',
-                        message: `Reminder: You have the class "${booking.class.name}" with ${booking.class.trainer?.name || 'your trainer'} scheduled for tomorrow.`,
+                        message: `Reminder: You have the class "${booking.class.name}" with ${booking.class.trainer?.name || 'your trainer'} scheduled for ${dayLabel.toLowerCase()}.`,
                         type: 'CLASS_REMINDER',
                         eventData: {
                             className: booking.class.name,
                             trainerName: booking.class.trainer?.name || 'Staff',
-                            sessionDate: booking.sessionDate.toLocaleDateString(),
-                            time: booking.class.time
+                            sessionDate: sessionDate.toLocaleDateString(),
+                            time: booking.class.time,
+                            dayLabel // For n8n template logic
                         }
                     });
                 }
@@ -92,16 +97,21 @@ const schedulingService = {
 
             for (const session of sessions) {
                 if (session.member?.email) {
+                    const sessionDate = new Date(session.date);
+                    const isToday = sessionDate.toDateString() === now.toDateString();
+                    const dayLabel = isToday ? 'Today' : 'Tomorrow';
+
                     await notificationService.send({
                         memberId: session.memberId,
                         title: 'Personal Training Reminder 💪',
-                        message: `Reminder: Your session with Coach ${session.trainer?.name || 'Staff'} is scheduled for tomorrow at ${new Date(session.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`,
+                        message: `Reminder: Your session with Coach ${session.trainer?.name || 'Staff'} is scheduled for ${dayLabel.toLowerCase()} at ${sessionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`,
                         type: 'TRAINING_REMINDER',
                         eventData: {
                             className: 'Personal Training',
                             trainerName: session.trainer?.name || 'Staff',
-                            sessionDate: session.date.toLocaleDateString(),
-                            time: new Date(session.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            sessionDate: sessionDate.toLocaleDateString(),
+                            time: sessionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                            dayLabel // For n8n template logic
                         }
                     });
                 }

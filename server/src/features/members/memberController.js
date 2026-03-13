@@ -932,6 +932,23 @@ const bookTraining = async (req, res) => {
             createPaymentRecord: true
         });
 
+        // Immediate Notification
+        for (const session of createdSessions) {
+            const sessionDate = new Date(session.date);
+            await notificationService.send({
+                memberId,
+                title: 'Training Confirmed 💪',
+                message: `Your session with Coach ${trainer.name} on ${sessionDate.toLocaleDateString()} at ${sessionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} is confirmed!`,
+                type: 'TRAINING_BOOKED',
+                eventData: {
+                    trainerName: trainer.name,
+                    date: sessionDate.toLocaleDateString(),
+                    time: sessionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    status: 'SCHEDULED'
+                }
+            });
+        }
+
         res.json({
             message: resolvedPaymentMethod === 'CASH'
                 ? "Training session booked. Pay at the front desk."
@@ -1029,6 +1046,23 @@ const bookTrainingCash = async (req, res) => {
             paymentMethod: 'CASH',
             createPaymentRecord: false
         });
+
+        // Immediate Notification
+        for (const session of createdSessions) {
+            const sessionDate = new Date(session.date);
+            await notificationService.send({
+                memberId: resolvedMemberId,
+                title: 'Training Requested ⏳',
+                message: `Your session with Coach ${trainer.name} on ${sessionDate.toLocaleDateString()} at ${sessionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} is pending payment at the front desk.`,
+                type: 'TRAINING_BOOKED',
+                eventData: {
+                    trainerName: trainer.name,
+                    date: sessionDate.toLocaleDateString(),
+                    time: sessionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    status: 'UNPAID'
+                }
+            });
+        }
 
         res.json({
             message: "Training session booked. Pay at the front desk.",
