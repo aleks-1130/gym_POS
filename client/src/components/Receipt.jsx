@@ -3,7 +3,18 @@ import { useCurrency } from '../context/CurrencyContext';
 
 // This component can be used in a modal or hidden iframe for printing
 export const Receipt = React.forwardRef(({ transaction, items, member, cashierName, discount = 0, paymentDetails, receiptSettings }, ref) => {
-    const { formatPrice } = useCurrency();
+    const transactionCurrency = transaction?.currency || 'PHP';
+    const transactionLocale = transactionCurrency === 'SGD' ? 'en-SG' : 'en-PH';
+
+    const formatCurrency = (amount) => {
+        return new Intl.NumberFormat(transactionLocale, {
+            style: 'currency',
+            currency: transactionCurrency,
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }).format(amount || 0);
+    };
+
     const transactionDate = transaction?.date ? new Date(transaction.date) : new Date();
 
     const settings = {
@@ -43,11 +54,15 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
     const hasVat = settings.vatType === 'VAT';
     const vatRate = Number.isFinite(settings.vatRate) && settings.vatRate >= 0 ? settings.vatRate : 12;
     const vatAmount = hasVat ? (total - (total / (1 + (vatRate / 100)))) : 0;
+
     const customerName = member
         ? `${member.firstName} ${member.lastName}`
         : (transaction?.customerName || 'WALK-IN CUSTOMER');
     const customerTin = member?.tin || transaction?.customerTin || 'N/A';
-    const invoiceNo = String(transaction?.id || 'PENDING');
+    
+    // Dynamic Invoice Logic
+    const invoiceNo = transaction?.referenceId || String(transaction?.id || 'PENDING');
+    const companyId = transaction?.companyId || 'FITOS_GYM_001';
     const serialNo = settings.serialNo ? `${settings.serialNo}${invoiceNo}` : invoiceNo;
 
     return (
@@ -57,8 +72,11 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
                 <p className="text-sm font-bold tracking-wide">{settings.invoiceTitle}</p>
                 <h1 className="text-xl font-bold mb-1 mt-1">{settings.businessName}</h1>
                 <p className="text-xs mb-1">{settings.branchAddress}</p>
-                <p className="text-xs mb-1">TIN: {settings.tin || 'N/A'}</p>
-                <p className="text-xs font-bold">{settings.vatType}</p>
+                <div className="flex justify-center gap-4 text-[10px] opacity-75">
+                    <span>TIN: {settings.tin || 'N/A'}</span>
+                    <span>ID: {companyId}</span>
+                </div>
+                <p className="text-xs font-bold mt-1 uppercase tracking-wider">{settings.vatType}</p>
                 {settings.vatRegTin ? <p className="text-xs mt-1">{settings.vatRegTin}</p> : null}
             </div>
 
@@ -68,11 +86,11 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
                     <span>{settings.issuedDateLabel}:</span>
                     <span>{transactionDate.toLocaleDateString()} {transactionDate.toLocaleTimeString()}</span>
                 </div>
-                <div className="flex justify-between">
-                    <span>Invoice #:</span>
+                <div className="flex justify-between font-bold">
+                    <span>Reference #:</span>
                     <span>{invoiceNo}</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between text-[10px] opacity-70">
                     <span>Serial #:</span>
                     <span>{serialNo}</span>
                 </div>
@@ -94,20 +112,20 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
             <div className="mb-4 border-b border-black pb-4 border-dashed min-h-[100px]">
                 <table className="w-full text-left">
                     <thead>
-                        <tr className="uppercase text-xs">
-                            <th className="w-10">Qty</th>
-                            <th>Desc</th>
-                            <th className="text-right">Price</th>
-                            <th className="text-right">Total</th>
+                        <tr className="uppercase text-xs border-b border-black border-dotted">
+                            <th className="w-10 pb-1">Qty</th>
+                            <th className="pb-1">Desc</th>
+                            <th className="text-right pb-1">Price</th>
+                            <th className="text-right pb-1">Total</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="pt-2">
                         {receiptItems.map((item, idx) => (
-                            <tr key={idx}>
-                                <td className="align-top">{item.quantity}</td>
-                                <td className="align-top pr-2">{item.name}</td>
-                                <td className="text-right align-top">{formatPrice(item.price)}</td>
-                                <td className="text-right align-top">{formatPrice(item.price * item.quantity)}</td>
+                            <tr key={idx} className="text-xs">
+                                <td className="align-top py-1">{item.quantity}</td>
+                                <td className="align-top pr-2 py-1">{item.name}</td>
+                                <td className="text-right align-top py-1">{formatCurrency(item.price)}</td>
+                                <td className="text-right align-top py-1">{formatCurrency(item.price * item.quantity)}</td>
                             </tr>
                         ))}
                     </tbody>
@@ -115,39 +133,64 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
             </div>
 
             {/* Totals */}
-            <div className="space-y-1 mb-6">
+            <div className="space-y-1 mb-6 text-sm">
                 <div className="flex justify-between">
                     <span>Subtotal:</span>
-                    <span>{formatPrice(subtotal)}</span>
+                    <span>{formatCurrency(subtotal)}</span>
                 </div>
                 {discount > 0 && (
                     <div className="flex justify-between text-red-600 print:text-black">
                         <span>Discount:</span>
-                        <span>-{formatPrice(discount)}</span>
+                        <span>-{formatCurrency(discount)}</span>
                     </div>
                 )}
-                {hasVat && (
-                    <div className="flex justify-between">
+                
+                <div className="border-t border-black border-dotted my-2 pt-2">
+                    <div className="flex justify-between text-xs opacity-75">
+                        <span>Taxable Amount:</span>
+                        <span>{formatCurrency(transaction?.taxableAmount || (total / 1.12))}</span>
+                    </div>
+                    <div className="flex justify-between text-xs opacity-75">
                         <span>VAT ({vatRate}%):</span>
-                        <span>{formatPrice(vatAmount)}</span>
+                        <span>{formatCurrency(transaction?.taxAmount || (total - (total / (1 + (vatRate / 100)))))}</span>
                     </div>
-                )}
-                <div className="flex justify-between font-bold text-lg mt-2 border-t border-dashed border-black pt-2">
-                    <span>Total Amount Due:</span>
-                    <span>{formatPrice(total)}</span>
+                    {Number(transaction?.roundingAdjustment || 0) !== 0 && (
+                        <div className="flex justify-between text-xs opacity-75">
+                            <span>Rounding:</span>
+                            <span>{formatCurrency(transaction?.roundingAdjustment)}</span>
+                        </div>
+                    )}
                 </div>
-                {paymentDetails && paymentDetails.method === 'CASH' && (
-                    <>
-                        <div className="flex justify-between mt-2 text-xs">
-                            <span>Cash Tendered:</span>
-                            <span>{formatPrice(paymentDetails.tendered ?? transaction?.cashTendered)}</span>
+
+                <div className="flex justify-between font-bold text-lg mt-2 border-t border-dashed border-black pt-2">
+                    <span>Payable Amount:</span>
+                    <span>{formatCurrency(transaction?.payableAmount || total)}</span>
+                </div>
+
+                <div className="mt-4 pt-2 border-t border-dotted border-black">
+                    <div className="flex justify-between text-xs font-bold">
+                        <span>Payment Method:</span>
+                        <span>{(transaction?.method || paymentDetails?.method || 'N/A').replaceAll('_', ' ')}</span>
+                    </div>
+                    {paymentDetails && paymentDetails.method === 'CASH' && (
+                        <>
+                            <div className="flex justify-between text-xs mt-1">
+                                <span>Cash Tendered:</span>
+                                <span>{formatCurrency(paymentDetails.tendered ?? transaction?.cashTendered)}</span>
+                            </div>
+                            <div className="flex justify-between text-xs">
+                                <span>Change Due:</span>
+                                <span>{formatCurrency(paymentDetails.change ?? transaction?.changeDue)}</span>
+                            </div>
+                        </>
+                    )}
+                    {transaction?.financialInstitutionId && (
+                        <div className="flex justify-between text-[10px] opacity-60 italic">
+                            <span>Financial Inst. ID:</span>
+                            <span>{transaction.financialInstitutionId}</span>
                         </div>
-                        <div className="flex justify-between text-xs">
-                            <span>Change Due:</span>
-                            <span>{formatPrice(paymentDetails.change ?? transaction?.changeDue)}</span>
-                        </div>
-                    </>
-                )}
+                    )}
+                </div>
             </div>
 
             {/* Footer */}

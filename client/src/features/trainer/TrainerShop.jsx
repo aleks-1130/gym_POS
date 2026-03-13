@@ -16,6 +16,7 @@ export default function TrainerShop() {
     const [products, setProducts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [cart, setCart] = useState([]);
+    const [sessionId, setSessionId] = useState(null);
     const [addingToCart, setAddingToCart] = useState({});
     const [showCartModal, setShowCartModal] = useState(false);
     const [cartPopup, setCartPopup] = useState({ show: false, itemName: '' });
@@ -98,34 +99,105 @@ export default function TrainerShop() {
         setCart(updatedCart);
     };
 
-    const addToCart = (product) => {
+    const getSessionId = () => {
+        let sid = sessionId;
+        if (!sid) {
+            sid = localStorage.getItem('trainerSessionId');
+            if (!sid) {
+                sid = `SESSION_${Math.random().toString(36).substr(2, 9)}_${Date.now()}`;
+                localStorage.setItem('trainerSessionId', sid);
+            }
+            setSessionId(sid);
+        }
+        return sid;
+    };
+
+    const addToCart = async (product) => {
         setAddingToCart((prev) => ({ ...prev, [product.id]: true }));
-        setTimeout(() => {
+        const sid = getSessionId();
+
+        try {
             const existingItem = cart.find((item) => item.id === product.id);
+            const newQuantity = existingItem ? existingItem.quantity + 1 : 1;
+
+            if (newQuantity > (product.stock || 0)) {
+                await showAlert({ title: 'Stock Limit', message: `Cannot add more than available stock (${product.stock}).`, type: 'warning' });
+                return;
+            }
+
+            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+            const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+
+            await axios.post('/api/pos/reserve', {
+                sessionId: sid,
+                productId: product.id,
+                quantity: newQuantity
+            }, { headers: authHeaders });
+
             let updatedCart;
             if (existingItem) {
                 updatedCart = cart.map((item) =>
-                    item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+                    item.id === product.id ? { ...item, quantity: newQuantity } : item
                 );
             } else {
                 updatedCart = [...cart, { ...product, quantity: 1 }];
             }
             saveCart(updatedCart);
             showAddToCartPopup(product.name);
+        } catch (error) {
+            console.error("Failed to reserve stock", error);
+            await showAlert({ 
+                title: 'Reservation Failed', 
+                message: error.response?.data?.error || 'Failed to add item to cart due to stock limits.', 
+                type: 'warning' 
+            });
+        } finally {
             setAddingToCart((prev) => ({ ...prev, [product.id]: false }));
-        }, 250);
+        }
     };
 
-    const updateCartQuantity = (productId, newQuantity) => {
+    const updateCartQuantity = async (productId, newQuantity) => {
         if (newQuantity <= 0) {
-            saveCart(cart.filter((item) => item.id !== productId));
+            await removeFromCart(productId);
             return;
         }
-        saveCart(cart.map((item) => (item.id === productId ? { ...item, quantity: newQuantity } : item)));
+
+        const product = products.find(p => p.id === productId);
+        if (product && newQuantity > (product.stock || 0)) {
+            await showAlert({ title: 'Stock Limit', message: `Cannot exceed available stock (${product.stock}).`, type: 'warning' });
+            return;
+        }
+
+        const sid = getSessionId();
+        try {
+            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+            const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+
+            await axios.post('/api/pos/reserve', {
+                sessionId: sid,
+                productId: productId,
+                quantity: newQuantity
+            }, { headers: authHeaders });
+
+            saveCart(cart.map((item) => (item.id === productId ? { ...item, quantity: newQuantity } : item)));
+        } catch (error) {
+            console.error("Failed to update stock reservation", error);
+            await showAlert({ title: 'Stock Update Failed', message: error.response?.data?.error || 'Failed to update quantity.', type: 'warning' });
+        }
     };
 
-    const removeFromCart = (productId) => {
-        saveCart(cart.filter((item) => item.id !== productId));
+    const removeFromCart = async (productId) => {
+        const sid = getSessionId();
+        try {
+            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+            const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+
+            await axios.delete(`/api/pos/reserve/${sid}/${productId}`, { headers: authHeaders });
+            saveCart(cart.filter((item) => item.id !== productId));
+        } catch (error) {
+            console.error("Failed to release stock reservation", error);
+            saveCart(cart.filter((item) => item.id !== productId));
+        }
     };
 
     const getCartItemQuantity = (productId) => {
@@ -216,10 +288,15 @@ export default function TrainerShop() {
                 paymentMethodId: markAsSessionMaterial || selectedPaymentType === 'CASH' ? null : selectedMethodId,
                 gcashReference: null,
                 gcashDate: null,
-                markAsSessionMaterial
+                markAsSessionMaterial,
+                sessionId: sessionId || getSessionId()
             }, {
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined
             });
+
+            await axios.delete(`/api/pos/reserve/${sessionId || getSessionId()}`, {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined
+            }).catch(e => console.error("Failed to clear redis sessionId", e));
 
             setCart([]);
             saveCart([]);

@@ -3,6 +3,7 @@ const router = express.Router();
 const memberController = require('./memberController');
 const paymentController = require('../pos/paymentController');
 const trainingSessionController = require('../training/trainingSessionController');
+const loyaltyController = require('../pos/loyaltyController');
 const { authenticateToken, authorize } = require('../../middleware/authMiddleware');
 
 // Only Staff/Admin can list all members
@@ -40,5 +41,9 @@ router.post('/:id/status', authenticateToken, authorize(['OWNER', 'ADMIN']), mem
 router.put('/:id', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBER']), memberController.updateMember);
 router.delete('/:id', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.deleteMember);
 router.post('/:id/change-password', authenticateToken, authorize(['MEMBER']), memberController.changePassword);
+
+// Member Loyalty
+router.post('/:id/points', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF', 'MEMBER']), loyaltyController.managePoints);
+router.get('/:id/loyalty-history', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF', 'MEMBER']), loyaltyController.getHistory);
 
 module.exports = router;

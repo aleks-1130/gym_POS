@@ -1,6 +1,7 @@
 const prisma = require('../../config/prisma');
 const { getPosConfig } = require('../../services/configService');
 const { getReceiptSettings, saveReceiptSettings } = require('../../services/receiptSettingsService');
+const notificationService = require('../../services/notificationService');
 const bcrypt = require('bcryptjs');
 
 const POS_PIN_MIN_LENGTH = 4;
@@ -140,8 +141,14 @@ const getPaymentDetails = async (req, res) => {
             }
         }
 
+        const collections = [{
+            amount: Number(payment.payableAmount || payment.amount),
+            financial_institution_id: payment.financialInstitutionId || 'N/A'
+        }];
+
         res.json({
             ...payment,
+            collections,
             trainingSessions
         });
     } catch (e) {
@@ -151,7 +158,7 @@ const getPaymentDetails = async (req, res) => {
 
 // POS Payment Creation
 const createPayment = async (req, res) => {
-    const { amount, type, method, memberId, items, discount, cashTendered, changeDue, externalRef, externalDate } = req.body;
+    const { amount, type, method, memberId, items, discount, cashTendered, changeDue, externalRef, externalDate, couponCode, currency } = req.body;
     const resolvedMemberId = req.user.role === 'MEMBER'
         ? req.user.id
         : (memberId ? Number(memberId) : null);
@@ -263,8 +270,65 @@ const createPayment = async (req, res) => {
             badRequest("Invalid payment amount");
         }
 
-        const discountValue = Number((authoritativeAmount * (normalizedDiscount / 100)).toFixed(2));
+        let effectiveDiscountPercent = normalizedDiscount;
+
+        // --- Coupon / Promo Validation ---
+        let appliedCoupon = null;
+        let appliedPromo = null;
+        
+        if (couponCode) {
+            const codeUpper = couponCode.toUpperCase();
+            appliedCoupon = await prisma.coupon.findUnique({ where: { code: codeUpper } });
+            
+            if (!appliedCoupon) {
+                // Fallback to PromoCode
+                appliedPromo = await prisma.promoCode.findUnique({ where: { code: codeUpper } });
+                if (!appliedPromo) badRequest('Coupon / Promo code not found');
+                
+                if (!appliedPromo.isActive) badRequest('Promo code is inactive');
+                if (appliedPromo.expiryDate && new Date(appliedPromo.expiryDate) < new Date()) badRequest('Promo code has expired');
+                if (appliedPromo.maxUses && appliedPromo.usedCount >= appliedPromo.maxUses) badRequest('Promo code usage limit reached');
+            } else {
+                // Validate loyalty coupon
+                if (appliedCoupon.status !== 'ACTIVE') badRequest('Coupon is already used or expired');
+                if (appliedCoupon.expiryDate && new Date(appliedCoupon.expiryDate) < new Date()) badRequest('Coupon has expired');
+
+                // Member-lock check
+                if (appliedCoupon.memberId && resolvedMemberId && Number(appliedCoupon.memberId) !== Number(resolvedMemberId)) {
+                    badRequest('This coupon belongs to a different member and cannot be applied here.');
+                }
+            }
+
+            const discountSource = appliedCoupon || appliedPromo;
+            
+            // Convert to effective discount percent
+            if (discountSource.type === 'FLAT') {
+                const flatAmount = Math.min(discountSource.value, authoritativeAmount);
+                effectiveDiscountPercent = authoritativeAmount > 0 ? (flatAmount / authoritativeAmount) * 100 : 0;
+            } else if (discountSource.type === 'PERCENTAGE') {
+                effectiveDiscountPercent = discountSource.value * 100;
+            }
+        }
+
+
+
+        const discountValue = Number((authoritativeAmount * (effectiveDiscountPercent / 100)).toFixed(2));
         const discountedAmount = Number(Math.max(0, authoritativeAmount - discountValue).toFixed(2));
+
+        // Invoice/Receipt specific calculations
+        const taxableAmount = Number((discountedAmount / 1.12).toFixed(2));
+        const taxAmount = Number((discountedAmount - taxableAmount).toFixed(2));
+        const referenceId = `A321-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+        
+        // Dynamic mapping for Financial Institution ID
+        const financialInstitutionMap = {
+            'CASH': 'CASH_FRONT_DESK',
+            'GCASH': 'GCASH_PAYMENT_GATEWAY',
+            'PAYMAYA': 'PAYMAYA_GATEWAY',
+            'CARD': 'STRIPE_TERMINAL',
+            'BANK_TRANSFER': 'DIRECT_BANK_DEPOSIT'
+        };
+        const financialInstitutionId = financialInstitutionMap[method] || 'EXTERNAL_COLLECTION';
 
         const normalizedCashTendered = method === 'CASH'
             ? (cashTendered !== undefined && cashTendered !== null && cashTendered !== '' ? Number(cashTendered) : null)
@@ -292,6 +356,14 @@ const createPayment = async (req, res) => {
         const payment = await prisma.$transaction(async (tx) => {
             const paymentCreateData = {
                 amount: discountedAmount,
+                payableAmount: discountedAmount,
+                taxAmount,
+                taxableAmount,
+                roundingAdjustment: 0,
+                currency: currency || 'PHP',
+                referenceId,
+                financialInstitutionId,
+                companyId: process.env.COMPANY_ID || 'FITOS_GYM_001',
                 type,
                 method,
                 ...(resolvedMemberId ? { member: { connect: { id: Number(resolvedMemberId) } } } : {}),
@@ -304,7 +376,7 @@ const createPayment = async (req, res) => {
                 discount: normalizedDiscount
             };
 
-            const removableOptionalFields = new Set(['discount', 'cashTendered', 'changeDue', 'externalRef', 'externalDate']);
+            const removableOptionalFields = new Set(['discount', 'cashTendered', 'changeDue', 'externalRef', 'externalDate', 'payableAmount', 'taxAmount', 'taxableAmount', 'roundingAdjustment', 'currency', 'referenceId', 'companyId', 'financialInstitutionId']);
             let createdPayment;
             // eslint-disable-next-line no-constant-condition
             while (true) {
@@ -453,10 +525,55 @@ const createPayment = async (req, res) => {
                 });
             }
 
+            // Mark coupon as used or increment promo use count
+            if (appliedCoupon) {
+                await tx.coupon.update({
+                    where: { id: appliedCoupon.id },
+                    data: { status: 'USED' }
+                });
+            } else if (appliedPromo) {
+                await tx.promoCode.update({
+                    where: { id: appliedPromo.id },
+                    data: { usedCount: { increment: 1 } }
+                });
+            }
+
+
             return createdPayment;
         });
 
-        res.json(payment);
+        // After successful payment, trigger notification/receipt
+        if (payment && resolvedMemberId) {
+            notificationService.sendReceipt({
+                memberId: resolvedMemberId,
+                amount: payment.amount,
+                method: payment.method,
+                items: normalizedItems,
+                receiptId: payment.referenceId || `REC-${payment.id}`,
+                referenceId: payment.referenceId
+            }).catch(err => console.error('Failed to send receipt notification:', err));
+        }
+
+        if (req.body.sessionId) {
+            try {
+                const { redisClient } = require('../../config/redisClient');
+                if (redisClient && redisClient.isOpen) {
+                    await redisClient.del(`cart:reserve:${req.body.sessionId}`);
+                }
+            } catch (redisErr) {
+                console.error("Failed to clear redis reservation:", redisErr);
+            }
+        }
+
+        const collections = [{
+            amount: Number(payment.payableAmount || payment.amount),
+            financial_institution_id: payment.financialInstitutionId
+        }];
+
+        res.json({
+            ...payment,
+            collections
+        });
     } catch (e) {
         res.status(e.status || 500).json({ error: e.message || "Payment failed" });
     }

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Calendar, ShoppingBag, User, Users, Dumbbell, CheckCircle, Menu, X, Gift, History, Megaphone, Activity, CreditCard } from 'lucide-react';
+import { Home, Calendar, ShoppingBag, User, Users, Dumbbell, CheckCircle, Menu, X, Gift, History, Megaphone, Activity, CreditCard, Bell } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
+import axios from 'axios';
 
 export default function BottomNav() {
     const { user } = useAuth();
@@ -10,6 +11,25 @@ export default function BottomNav() {
     const navigate = useNavigate();
     const [activeIndex, setActiveIndex] = useState(0);
     const [showMenu, setShowMenu] = useState(false);
+    const [unreadCount, setUnreadCount] = useState(0);
+
+    useEffect(() => {
+        if (!user) return;
+        const fetchUnreadCount = async () => {
+            try {
+                const res = await axios.get('/api/notifications');
+                // Filter for announcements or notifications meant for this member
+                const unread = res.data.filter(n => !n.isRead).length;
+                setUnreadCount(unread);
+            } catch (error) {
+                console.error("Failed to fetch notification count");
+            }
+        };
+
+        fetchUnreadCount();
+        const interval = setInterval(fetchUnreadCount, 60000); // Check every minute
+        return () => clearInterval(interval);
+    }, [user]);
 
     // Primary navigation items (bottom bar)
     const memberPrimaryNav = [
@@ -145,6 +165,11 @@ export default function BottomNav() {
                                         <span className={`text-sm font-medium ${isActive ? 'text-primary' : 'text-white'}`}>
                                             {item.label}
                                         </span>
+                                        {item.to === '/announcements' && unreadCount > 0 && (
+                                            <span className="ml-2 px-1.5 py-0.5 rounded-full bg-primary text-[10px] font-black text-background">
+                                                {unreadCount > 9 ? '9+' : unreadCount}
+                                            </span>
+                                        )}
                                         {isActive && (
                                             <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />
                                         )}
@@ -271,6 +296,9 @@ export default function BottomNav() {
                                                 `}
                                                 strokeWidth={showMenu ? 2.5 : 2}
                                             />
+                                            {unreadCount > 0 && (
+                                                <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-primary border-2 border-surface rounded-full z-20 animate-pulse" />
+                                            )}
                                         </div>
 
                                         <span className={`

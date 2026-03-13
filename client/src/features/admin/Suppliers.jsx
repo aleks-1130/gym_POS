@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useConfirm } from '../../context/ConfirmContext';
+import DataTable from '../../components/common/DataTable';
 
 const Suppliers = () => {
     const navigate = useNavigate();
@@ -84,6 +85,69 @@ const Suppliers = () => {
         }
     };
 
+    const columns = useMemo(() => [
+        {
+            header: 'Supplier',
+            accessor: (supplier) => (
+                <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-gradient-to-br from-white/10 to-white/5 rounded-xl flex items-center justify-center border border-white/10">
+                        <span className="material-icons-round text-primary text-xl">local_shipping</span>
+                    </div>
+                    <div>
+                        <p className="font-bold text-white group-hover:text-primary transition-colors">{supplier.name}</p>
+                        <p className="text-xs text-text-muted">ID: #{supplier.id}</p>
+                    </div>
+                </div>
+            )
+        },
+        {
+            header: 'Contact Info',
+            accessor: (supplier) => (
+                <div className="space-y-1">
+                    {supplier.contact && (
+                        <div className="flex items-center gap-2 text-sm text-text-secondary">
+                            <span className="material-icons-round text-primary/50 text-[14px]">phone</span>
+                            {supplier.contact}
+                        </div>
+                    )}
+                    {supplier.email && (
+                        <div className="flex items-center gap-2 text-sm text-text-secondary">
+                            <span className="material-icons-round text-primary/50 text-[14px]">email</span>
+                            {supplier.email}
+                        </div>
+                    )}
+                </div>
+            )
+        },
+        {
+            header: 'Address',
+            accessor: (supplier) => (
+                <div className="flex items-center gap-2 text-sm text-text-secondary max-w-[200px]">
+                    {supplier.address && (
+                        <>
+                            <span className="material-icons-round text-primary/50 text-[14px] shrink-0">place</span>
+                            <span className="truncate">{supplier.address}</span>
+                        </>
+                    )}
+                </div>
+            )
+        },
+        {
+            header: 'Stats',
+            accessor: (supplier) => (
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        navigate('/inventory?tab=products');
+                    }}
+                    className="text-xs font-bold text-white bg-white/5 px-3 py-1.5 rounded-lg border border-white/5 hover:bg-primary hover:border-primary transition-colors cursor-pointer"
+                >
+                    {supplier._count?.products || 0} Products
+                </button>
+            )
+        }
+    ], [navigate]);
+
     return (
         <div className="p-8 relative z-10 max-w-7xl mx-auto">
             {/* Header */}
@@ -109,95 +173,23 @@ const Suppliers = () => {
                 </button>
             </div>
 
-            {/* Suppliers Grid */}
-            {loading ? (
-                <div className="flex justify-center items-center h-64">
-                    <span className="material-icons-round animate-spin text-4xl text-primary">loop</span>
-                </div>
-            ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {suppliers.map(supplier => (
-                        <div key={supplier.id} className="group bg-surface hover:bg-surfaceHighlight border border-white/5 rounded-3xl p-6 transition-all duration-300 hover:shadow-2xl hover:shadow-black/50 hover:-translate-y-1 relative overflow-hidden">
-                            {/* Action Buttons (Visible on Hover) */}
-                            <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => handleEdit(supplier)} className="p-2 bg-white/10 hover:bg-primary text-white rounded-xl transition-colors">
-                                    <span className="material-icons-round text-sm">edit</span>
-                                </button>
-                                <button onClick={() => handleDelete(supplier.id)} className="p-2 bg-white/10 hover:bg-red-500 text-white rounded-xl transition-colors">
-                                    <span className="material-icons-round text-sm">delete</span>
-                                </button>
-                            </div>
-
-                            {/* Card Content */}
-                            <div className="flex items-start gap-4 mb-4">
-                                <div className="w-12 h-12 bg-gradient-to-br from-white/10 to-white/5 rounded-2xl flex items-center justify-center border border-white/10">
-                                    <span className="material-icons-round text-primary text-2xl">local_shipping</span>
-                                </div>
-                                <div>
-                                    <h3 className="text-xl font-bold text-white group-hover:text-primary transition-colors">
-                                        {supplier.name}
-                                    </h3>
-                                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-white/5 text-text-muted border border-white/5 inline-block mt-2">
-                                        ID: #{supplier.id}
-                                    </span>
-                                </div>
-                            </div>
-
-                            <div className="space-y-3 mb-6">
-                                {supplier.contact && (
-                                    <div className="flex items-center gap-3 text-sm text-text-secondary">
-                                        <span className="material-icons-round text-primary/50 text-base">phone</span>
-                                        {supplier.contact}
-                                    </div>
-                                )}
-                                {supplier.email && (
-                                    <div className="flex items-center gap-3 text-sm text-text-secondary">
-                                        <span className="material-icons-round text-primary/50 text-base">email</span>
-                                        {supplier.email}
-                                    </div>
-                                )}
-                                {supplier.address && (
-                                    <div className="flex items-center gap-3 text-sm text-text-secondary">
-                                        <span className="material-icons-round text-primary/50 text-base">place</span>
-                                        <span className="truncate">{supplier.address}</span>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="pt-4 border-t border-white/5 flex justify-between items-center">
-                                <div className="flex items-center gap-2">
-                                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                                    <span className="text-xs text-text-muted">Active Vendor</span>
-                                </div>
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        navigate('/inventory?tab=products');
-                                    }}
-                                    className="text-xs font-bold text-white bg-white/5 px-3 py-1.5 rounded-lg border border-white/5 hover:bg-primary hover:border-primary transition-colors cursor-pointer"
-                                >
-                                    {supplier._count?.products || 0} Products
-                                </button>
-                            </div>
-                        </div>
-                    ))}
-
-                    {/* Empty State Add Card */}
-                    <button
-                        onClick={() => {
-                            setFormData({ name: '', contact: '', email: '', address: '', notes: '' });
-                            setEditingId(null);
-                            setShowModal(true);
-                        }}
-                        className="border-2 border-dashed border-white/10 rounded-3xl p-6 flex flex-col items-center justify-center text-text-muted hover:text-white hover:border-primary/50 hover:bg-white/5 transition-all min-h-[280px] group"
-                    >
-                        <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                            <span className="material-icons-round text-3xl">add</span>
-                        </div>
-                        <span className="font-bold">Register New Supplier</span>
-                    </button>
-                </div>
-            )}
+            <DataTable
+                columns={columns}
+                data={suppliers}
+                isLoading={loading}
+                emptyMessage="No suppliers found."
+                onRowClick={(supplier) => handleEdit(supplier)}
+                actions={(supplier) => (
+                    <div className="flex items-center justify-end gap-2">
+                        <button onClick={(e) => { e.stopPropagation(); handleEdit(supplier); }} className="w-9 h-9 flex items-center justify-center bg-white/5 hover:bg-primary text-white rounded-lg border border-white/10 transition-colors" title="Edit Supplier">
+                            <span className="material-icons-round text-[18px]">edit</span>
+                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); handleDelete(supplier.id); }} className="w-9 h-9 flex items-center justify-center bg-white/5 hover:bg-red-500 text-white rounded-lg border border-white/10 transition-colors" title="Delete Supplier">
+                            <span className="material-icons-round text-[18px]">delete</span>
+                        </button>
+                    </div>
+                )}
+            />
 
             {/* Modal */}
             {showModal && (

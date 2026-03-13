@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
+import DataTable from '../../components/common/DataTable';
 
 export default function AuditLogs() {
     const [logs, setLogs] = useState([]);
@@ -19,7 +20,28 @@ export default function AuditLogs() {
         fetchLogs();
     }, []);
 
-    if (loading) return <div className="text-white p-8">Loading Logs...</div>;
+    const columns = useMemo(() => [
+        {
+            header: 'Action',
+            accessor: (log) => <span className="font-mono text-primary font-bold">{log.action}</span>
+        },
+        {
+            header: 'Performed By',
+            accessor: (log) => <span className="text-white">{log.performedBy}</span>
+        },
+        {
+            header: 'Target',
+            accessor: (log) => <span className="text-text-secondary">{log.target}</span>
+        },
+        {
+            header: 'Details',
+            accessor: (log) => <span className="text-text-muted italic">{log.details}</span>
+        },
+        {
+            header: 'Timestamp',
+            accessor: (log) => <span className="text-text-muted">{new Date(log.timestamp).toLocaleString()}</span>
+        }
+    ], []);
 
     return (
         <div className="space-y-6">
@@ -28,33 +50,14 @@ export default function AuditLogs() {
                 <p className="text-text-muted mt-1">Track security events and sensitive actions</p>
             </header>
 
-            <div className="bg-surface rounded-3xl border border-white/5 overflow-hidden shadow-sm">
-                <table className="w-full text-left border-collapse">
-                    <thead>
-                        <tr className="border-b border-white/5 text-text-muted text-sm bg-white/5">
-                            <th className="p-4">Action</th>
-                            <th className="p-4">Performed By</th>
-                            <th className="p-4">Target</th>
-                            <th className="p-4">Details</th>
-                            <th className="p-4">Timestamp</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/5 text-sm">
-                        {logs.map(log => (
-                            <tr key={log.id} className="hover:bg-white/5 transition-colors">
-                                <td className="p-4 font-mono text-primary font-bold">{log.action}</td>
-                                <td className="p-4 text-white">{log.performedBy}</td>
-                                <td className="p-4 text-text-secondary">{log.target}</td>
-                                <td className="p-4 text-text-muted italic">{log.details}</td>
-                                <td className="p-4 text-text-muted">{new Date(log.timestamp).toLocaleString()}</td>
-                            </tr>
-                        ))}
-                        {logs.length === 0 && (
-                            <tr><td colSpan="5" className="p-8 text-center text-text-muted">No logs found.</td></tr>
-                        )}
-                    </tbody>
-                </table>
-            </div>
+            <DataTable
+                columns={columns}
+                data={logs}
+                isLoading={loading}
+                emptyMessage="No logs found."
+                className="bg-surface rounded-3xl border border-white/5 overflow-hidden shadow-sm"
+            />
         </div>
     );
 }
+

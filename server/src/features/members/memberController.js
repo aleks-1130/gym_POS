@@ -1,6 +1,7 @@
 const prisma = require('../../config/prisma');
 const { isTimeAllowedForTrainer } = require('../../services/trainerAvailabilityService');
 const { sendActivationEmail } = require('../../services/emailService');
+const notificationService = require('../../services/notificationService');
 const crypto = require('crypto');
 const { PAYMENT_METHODS } = require('../../config/businessConfig');
 const {
@@ -9,7 +10,8 @@ const {
 } = require('../training/classScheduleUtils');
 
 const FINALIZED_SESSION_STATUSES = ['CANCELLED', 'COMPLETED', 'NO_SHOW', 'DECLINED'];
-const ACTIVE_CLASS_BOOKING_STATUSES = ['CONFIRMED', 'ATTENDED'];
+const ACTIVE_OCCUPANCY_STATUSES = ['CONFIRMED', 'ATTENDED'];
+const BOOKED_STATUSES = ['CONFIRMED', 'ATTENDED', 'WAITLISTED'];
 const RATING_MIN = 1;
 const RATING_MAX = 5;
 const RATING_COMMENT_MAX_LENGTH = 500;
@@ -275,7 +277,7 @@ const getAvailableClasses = async (req, res) => {
             prisma.booking.findMany({
                 where: {
                     memberId,
-                    status: { in: ACTIVE_CLASS_BOOKING_STATUSES }
+                    status: { in: BOOKED_STATUSES }
                 },
                 select: {
                     classId: true,
@@ -325,7 +327,15 @@ const getAvailableClasses = async (req, res) => {
                 where: {
                     classId: cls.id,
                     sessionDate,
-                    status: { in: ACTIVE_CLASS_BOOKING_STATUSES }
+                    status: 'CONFIRMED'
+                }
+            });
+
+            const waitlisted = await prisma.booking.count({
+                where: {
+                    classId: cls.id,
+                    sessionDate,
+                    status: 'WAITLISTED'
                 }
             });
 
@@ -333,6 +343,7 @@ const getAvailableClasses = async (req, res) => {
                 ...cls,
                 sessionDate,
                 enrolled,
+                waitlisted,
                 isBooked: bookKeySet.has(toSessionKey(cls.id, sessionDate)) || legacyBookedClassIds.has(Number(cls.id))
             };
         }));
@@ -375,7 +386,7 @@ const bookClass = async (req, res) => {
             const now = new Date();
             const [member, cls] = await Promise.all([
                 tx.member.findUnique({ where: { id: memberId } }),
-                tx.class.findUnique({ where: { id: parsedClassId } })
+                tx.class.findUnique({ where: { id: parsedClassId }, include: { trainer: true } })
             ]);
 
             if (!member) {
@@ -420,53 +431,77 @@ const bookClass = async (req, res) => {
                 where: {
                     classId: parsedClassId,
                     sessionDate: resolvedSessionDate,
-                    status: { in: ACTIVE_CLASS_BOOKING_STATUSES }
+                    status: { in: ACTIVE_OCCUPANCY_STATUSES }
                 }
             });
 
-            if (enrolled >= cls.capacity) {
-                return { error: "Class is full", status: 400 };
-            }
-
-            const existing = await tx.booking.findFirst({
+            const alreadyBooked = await tx.booking.findFirst({
                 where: {
                     memberId,
                     classId: parsedClassId,
-                    status: { in: ACTIVE_CLASS_BOOKING_STATUSES },
-                    OR: [
-                        { sessionDate: resolvedSessionDate },
-                        { sessionDate: null }
-                    ]
+                    sessionDate: resolvedSessionDate,
+                    status: { in: BOOKED_STATUSES }
                 }
             });
-            if (existing) {
-                return { error: "Already booked", status: 400 };
+
+            if (alreadyBooked) {
+                return { error: `You are already ${alreadyBooked.status.toLowerCase()} for this session.`, status: 400 };
             }
+
+            const isWaitlist = enrolled >= cls.capacity;
+            const status = isWaitlist ? 'WAITLISTED' : 'CONFIRMED';
 
             await tx.booking.create({
                 data: {
                     memberId,
                     classId: parsedClassId,
                     sessionDate: resolvedSessionDate,
-                    status: 'CONFIRMED'
-                }
-            });
-            await tx.member.update({
-                where: { id: memberId },
-                data: {
-                    classSessionsRemaining: { decrement: 1 },
-                    classSessionsUsed: { increment: 1 }
+                    status
                 }
             });
 
-            return { success: true };
+            if (status === 'CONFIRMED') {
+                await tx.member.update({
+                    where: { id: memberId },
+                    data: {
+                        classSessionsRemaining: { decrement: 1 },
+                        classSessionsUsed: { increment: 1 }
+                    }
+                });
+            }
+
+            // Notification
+            const isToday = resolvedSessionDate.toDateString() === new Date().toDateString();
+            const dayLabel = isToday ? 'Today' : 'Tomorrow';
+
+            await notificationService.send({
+                memberId,
+                title: isWaitlist ? 'Waitlist Joined' : 'Booking Confirmed',
+                message: isWaitlist 
+                    ? `You've been added to the waitlist for ${cls.name}.` 
+                    : `Your spot for ${cls.name} on ${resolvedSessionDate.toLocaleDateString()} is confirmed!`,
+                type: isWaitlist ? 'WAITLIST_JOINED' : 'BOOKING_CONFIRMED',
+                eventData: {
+                    className: cls.name,
+                    trainerName: cls.trainer?.name || 'Staff',
+                    sessionDate: resolvedSessionDate.toLocaleDateString(),
+                    time: cls.time,
+                    dayLabel,
+                    status
+                }
+            });
+
+            return { success: true, isWaitlist };
         });
 
         if (!bookingResult.success) {
             return res.status(bookingResult.status || 400).json({ error: bookingResult.error || "Booking failed" });
         }
 
-        res.json({ message: "Booking confirmed" });
+        res.json({ 
+            message: bookingResult.isWaitlist ? "Added to waitlist" : "Booking confirmed",
+            isWaitlist: bookingResult.isWaitlist 
+        });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -505,7 +540,7 @@ const cancelBooking = async (req, res) => {
                     ? {
                         memberId,
                         classId: parsedClassId,
-                        status: { in: ACTIVE_CLASS_BOOKING_STATUSES },
+                        status: { in: BOOKED_STATUSES },
                         OR: [
                             { sessionDate: resolvedSessionDate },
                             { sessionDate: null }
@@ -514,19 +549,82 @@ const cancelBooking = async (req, res) => {
                     : {
                         memberId,
                         classId: parsedClassId,
-                        status: { in: ACTIVE_CLASS_BOOKING_STATUSES }
+                        status: { in: BOOKED_STATUSES }
                     },
                 orderBy: { sessionDate: 'asc' }
             });
 
             if (!booking) {
-                return { error: "Booking not found", status: 404 };
+                return { error: "Booking found, but it cannot be cancelled (maybe already attended or cancelled).", status: 404 };
             }
 
+            const oldStatus = booking.status;
             await tx.booking.update({
                 where: { id: booking.id },
                 data: { status: 'CANCELLED' }
             });
+
+            // Refund session count if they were confirmed
+            if (oldStatus === 'CONFIRMED' || oldStatus === 'ATTENDED') {
+                await tx.member.update({
+                    where: { id: memberId },
+                    data: {
+                        classSessionsRemaining: { increment: 1 },
+                        classSessionsUsed: { decrement: 1 }
+                    }
+                });
+            }
+
+            // If a confirmed spot was cancelled, promote someone from waitlist
+            if (oldStatus === 'CONFIRMED') {
+                    // Find the first waitlisted member who has sessions left
+                    let memberToPromote = null;
+                    const waitlistedBookings = await tx.booking.findMany({
+                        where: {
+                            classId: parsedClassId,
+                            sessionDate: booking.sessionDate,
+                            status: 'WAITLISTED'
+                        },
+                        include: { member: true },
+                        orderBy: { createdAt: 'asc' }
+                    });
+
+                    for (const wb of waitlistedBookings) {
+                        if (wb.member && wb.member.classSessionsRemaining > 0) {
+                            memberToPromote = wb;
+                            break;
+                        }
+                    }
+
+                    if (memberToPromote) {
+                        await tx.booking.update({
+                            where: { id: memberToPromote.id },
+                            data: { status: 'CONFIRMED' }
+                        });
+
+                        // Deduct session from the promoted member
+                        await tx.member.update({
+                            where: { id: memberToPromote.memberId },
+                            data: {
+                                classSessionsRemaining: { decrement: 1 },
+                                classSessionsUsed: { increment: 1 }
+                            }
+                        });
+
+                        // Trigger notification for waitlist promotion
+                        await notificationService.send({
+                            memberId: memberToPromote.memberId,
+                            title: 'Waitlist Promotion! 🚀',
+                            message: `Good news! You've been promoted from the waitlist for ${cls.name}.`,
+                            type: 'WAITLIST_PROMOTION',
+                            eventData: {
+                                className: cls.name,
+                                sessionDate: booking.sessionDate.toLocaleDateString(),
+                                dayLabel: 'Upcoming' // Fallback label
+                            }
+                        });
+                    }
+            }
 
             return { success: true };
         });
@@ -840,6 +938,27 @@ const bookTraining = async (req, res) => {
             createPaymentRecord: true
         });
 
+        // Immediate Notification
+        for (const session of createdSessions) {
+            const sessionDate = new Date(session.date);
+            const isToday = sessionDate.toDateString() === new Date().toDateString();
+            const dayLabel = isToday ? 'Today' : 'Tomorrow';
+
+            await notificationService.send({
+                memberId,
+                title: 'Training Confirmed 💪',
+                message: `Your session with Coach ${trainer.name} on ${sessionDate.toLocaleDateString()} at ${sessionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} is confirmed!`,
+                type: 'TRAINING_BOOKED',
+                eventData: {
+                    trainerName: trainer.name,
+                    date: sessionDate.toLocaleDateString(),
+                    time: sessionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    dayLabel,
+                    status: 'SCHEDULED'
+                }
+            });
+        }
+
         res.json({
             message: resolvedPaymentMethod === 'CASH'
                 ? "Training session booked. Pay at the front desk."
@@ -929,6 +1048,27 @@ const bookTrainingCash = async (req, res) => {
             paymentMethod: 'CASH',
             createPaymentRecord: false
         });
+
+        // Immediate Notification
+        for (const session of createdSessions) {
+            const sessionDate = new Date(session.date);
+            const isToday = sessionDate.toDateString() === new Date().toDateString();
+            const dayLabel = isToday ? 'Today' : 'Tomorrow';
+
+            await notificationService.send({
+                memberId: resolvedMemberId,
+                title: 'Training Requested ⏳',
+                message: `Your session with Coach ${trainer.name} on ${sessionDate.toLocaleDateString()} at ${sessionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} is pending payment at the front desk.`,
+                type: 'TRAINING_BOOKED',
+                eventData: {
+                    trainerName: trainer.name,
+                    date: sessionDate.toLocaleDateString(),
+                    time: sessionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    dayLabel,
+                    status: 'UNPAID'
+                }
+            });
+        }
 
         res.json({
             message: "Training session booked. Pay at the front desk.",

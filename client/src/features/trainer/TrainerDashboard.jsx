@@ -10,6 +10,7 @@ export default function TrainerDashboard() {
     const [sessions, setSessions] = useState([]);
     const [classes, setClasses] = useState([]);
     const [commissions, setCommissions] = useState(null);
+    const [notifications, setNotifications] = useState([]);
     const [loading, setLoading] = useState(true);
     const [dynamicQr, setDynamicQr] = useState({ qrValue: '', expiresAt: null, loading: false });
 
@@ -19,16 +20,18 @@ export default function TrainerDashboard() {
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const [trainerRes, sessionsRes, classesRes, commissionsRes] = await Promise.all([
+                const [trainerRes, sessionsRes, classesRes, commissionsRes, notificationsRes] = await Promise.all([
                     axios.get('/api/trainer/me'),
                     axios.get('/api/trainer/me/sessions'),
                     axios.get('/api/trainer/me/classes'),
-                    axios.get('/api/trainer/me/commissions')
+                    axios.get('/api/trainer/me/commissions'),
+                    axios.get('/api/notifications')
                 ]);
                 setTrainer(trainerRes.data);
                 setSessions(sessionsRes.data || []);
                 setClasses(classesRes.data || []);
                 setCommissions(commissionsRes.data || null);
+                setNotifications(notificationsRes.data || []);
             } catch (e) {
                 console.error('Failed to load trainer dashboard', e);
             } finally {
@@ -223,6 +226,43 @@ export default function TrainerDashboard() {
                     ))}
                 </div>
             </div>
+
+            {/* Latest Update */}
+            <Link to="/announcements" className="block active:scale-[0.98] transition-all">
+                <div className="bg-surface p-5 rounded-[2rem] border border-white/5 shadow-xl relative overflow-hidden group">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-[10px] font-black text-white uppercase tracking-[0.2em] italic flex items-center gap-2">
+                             <span className="material-icons-round text-primary text-base">campaign</span>
+                             Latest Update
+                        </h3>
+                        {notifications.length > 0 && !notifications[0].isRead && (
+                             <span className="px-2 py-0.5 rounded-full bg-primary/20 text-primary text-[8px] font-black uppercase tracking-widest border border-primary/30">New</span>
+                        )}
+                    </div>
+                    {notifications.length > 0 ? (
+                        <div className="flex gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0 group-hover:border-primary/30 transition-colors">
+                                <span className="material-icons-round text-primary text-xl">info</span>
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <h4 className="font-black text-white uppercase italic tracking-tighter text-sm mb-1 truncate group-hover:text-primary transition-colors">
+                                    {notifications[0].title}
+                                </h4>
+                                <p className="text-[11px] text-text-secondary leading-relaxed line-clamp-2 font-medium">
+                                    {notifications[0].message}
+                                </p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="py-4 text-center">
+                            <p className="text-[10px] text-text-muted font-black uppercase tracking-widest italic">No recent broadcasts</p>
+                        </div>
+                    )}
+                    <div className="absolute right-6 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
+                         <span className="material-icons-round text-primary">chevron_right</span>
+                    </div>
+                </div>
+            </Link>
         </div>
     );
 }

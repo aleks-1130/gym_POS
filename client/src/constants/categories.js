@@ -25,6 +25,13 @@ export const REWARD_CATEGORIES = {
     OTHER: 'OTHER'
 };
 
+export const REWARD_ACTION_TYPES = {
+    NONE: 'NONE',
+    FREE_CLASS: 'FREE_CLASS',
+    FREE_SESSION: 'FREE_SESSION',
+    DISCOUNT: 'DISCOUNT'
+};
+
 export const POS_VIEWS = {
     ...PRODUCT_CATEGORIES,
     MEMBERSHIP: 'MEMBERSHIP',

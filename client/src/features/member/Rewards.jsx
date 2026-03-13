@@ -3,20 +3,26 @@ import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { REWARD_CATEGORIES } from '../../constants/categories';
 import { useConfirm } from '../../context/ConfirmContext';
+import DataTable from '../../components/common/DataTable';
 
 export default function Rewards() {
     const { user } = useAuth();
     const { alert: showAlert } = useConfirm();
     const [rewards, setRewards] = useState([]);
     const [myPoints, setMyPoints] = useState(0);
+    const [history, setHistory] = useState([]);
+    const [coupons, setCoupons] = useState([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState('all');
+    const [activeTab, setActiveTab] = useState('SHOP'); // SHOP | HISTORY | COUPONS
     const [selectedReward, setSelectedReward] = useState(null);
     const [showRedeemModal, setShowRedeemModal] = useState(false);
+    const [copied, setCopied] = useState('');
 
     useEffect(() => {
         fetchRewards();
-        fetchMyPoints();
+        fetchMyData();
+        fetchMyCoupons();
     }, []);
 
     const fetchRewards = async () => {
@@ -40,13 +46,27 @@ export default function Rewards() {
         }
     };
 
-    const fetchMyPoints = async () => {
+    const fetchMyData = async () => {
         try {
             const res = await axios.get(`/api/members/${user.id}`);
             setMyPoints(res.data.points || 0);
+
+            const histRes = await axios.get(`/api/members/${user.id}/loyalty-history`);
+            setHistory(histRes.data);
         } catch (e) {
-            console.error("Failed to fetch points", e);
-            setMyPoints(0); // Ensure points is 0 on error
+            console.error("Failed to fetch member data", e);
+            setMyPoints(0);
+            setHistory([]);
+        }
+    };
+
+    const fetchMyCoupons = async () => {
+        try {
+            const res = await axios.get(`/api/loyalty/coupons/${user.id}`);
+            setCoupons(res.data);
+        } catch (e) {
+            console.error("Failed to fetch coupons", e);
+            setCoupons([]);
         }
     };
 
@@ -56,14 +76,25 @@ export default function Rewards() {
             return;
         }
         try {
-            await axios.post(`/api/loyalty/redeem/${reward.id}`);
-            await showAlert({ title: 'Reward Redeemed!', message: 'Reward redeemed successfully!', type: 'success' });
-            fetchMyPoints();
+            await axios.post(`/api/members/${user.id}/points`, {
+                points: reward.cost,
+                type: 'REDEEM',
+                rewardId: reward.id
+            });
+            await showAlert({ title: 'Reward Redeemed!', message: 'Reward redeemed successfully! If this was a discount, a coupon has been added to your account.', type: 'success' });
+            fetchMyData();
             fetchRewards();
+            fetchMyCoupons();
             setShowRedeemModal(false);
         } catch (e) {
             await showAlert({ title: 'Redemption Failed', message: 'Failed to redeem reward', type: 'danger' });
         }
+    };
+
+    const copyCode = (code) => {
+        navigator.clipboard.writeText(code);
+        setCopied(code);
+        setTimeout(() => setCopied(''), 2000);
     };
 
     const categories = ['all', ...Object.values(REWARD_CATEGORIES)];
@@ -85,67 +116,120 @@ export default function Rewards() {
     return (
         <div className="space-y-4 sm:space-y-6">
             {/* Header with Points Balance */}
-            <div className="space-y-4">
+            {/* ── Desktop: title left + compact tabs right ── */}
+            <div className="hidden sm:flex items-start justify-between gap-3">
                 <div>
-                    <h1 className="text-2xl sm:text-3xl font-bold text-white">Rewards Store</h1>
-                    <p className="text-text-muted text-xs sm:text-sm mt-1">Earn & redeem points for amazing rewards</p>
+                    <h1 className="text-3xl font-bold text-white">Rewards Store</h1>
+                    <p className="text-text-muted text-sm mt-1">Earn &amp; redeem points for amazing rewards</p>
                 </div>
-
-                {/* Points Card */}
-                <div className="bg-gradient-to-br from-yellow-600 to-yellow-700 rounded-2xl sm:rounded-3xl p-6 sm:p-8 text-white shadow-lg overflow-hidden relative">
-                    <div className="absolute -top-12 -right-12 w-40 h-40 bg-yellow-500/20 rounded-full blur-3xl"></div>
-                    <div className="relative flex justify-between items-center">
-                        <div>
-                            <p className="text-xs sm:text-sm font-medium opacity-90 mb-1">Available Points</p>
-                            <h2 className="text-4xl sm:text-5xl font-black">{myPoints.toLocaleString()}</h2>
-                            <p className="text-xs opacity-80 mt-2">Ready to redeem amazing rewards</p>
-                        </div>
-                        <span className="material-icons-round text-6xl sm:text-7xl opacity-20">card_giftcard</span>
-                    </div>
-                </div>
-            </div>
-
-            {/* Category Filter */}
-            <div className="space-y-2">
-                <div className="sm:hidden">
-                    <label className="block text-[11px] text-text-muted font-semibold mb-1">Category</label>
-                    <select
-                        value={filter}
-                        onChange={(event) => setFilter(event.target.value)}
-                        className="w-full bg-surface border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-primary"
-                    >
-                        {categories.map((cat) => (
-                            <option key={cat} value={cat} style={{ color: '#111', backgroundColor: '#fff' }}>
-                                {cat === 'all' ? 'All Rewards' : cat}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-
-                <div className="hidden sm:grid grid-cols-5 gap-2">
-                    {categories.map(cat => (
+                <div className="flex gap-1 p-1 bg-surfaceHighlight rounded-lg border border-white/5 ml-auto self-start">
+                    {[['SHOP','Shop'],['COUPONS','Coupons'],['HISTORY','History']].map(([tab, label]) => (
                         <button
-                            key={cat}
-                            onClick={() => setFilter(cat)}
-                            className={`px-2 py-2 rounded-xl font-medium text-xs transition-all leading-tight ${filter === cat
-                                ? 'bg-primary text-background'
-                                : 'bg-surface text-text-secondary border border-white/10 hover:border-primary/30'
-                                }`}
+                            key={tab}
+                            onClick={() => setActiveTab(tab)}
+                            className={`relative px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                                tab === 'COUPONS' && activeTab === tab ? 'bg-amber-500 text-black shadow shadow-amber-500/20'
+                                : activeTab === tab ? 'bg-primary text-black shadow shadow-primary/20'
+                                : 'text-text-muted hover:text-white'
+                            }`}
                         >
-                            {cat === 'all' ? 'All Rewards' : cat}
+                            {label}
+                            {tab === 'COUPONS' && coupons.length > 0 && (
+                                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-400 text-black text-[8px] font-black flex items-center justify-center">
+                                    {coupons.length}
+                                </span>
+                            )}
                         </button>
                     ))}
                 </div>
             </div>
 
-            {/* Rewards Grid */}
-            {filteredRewards.length === 0 ? (
-                <div className="text-center py-16">
-                    <span className="material-icons-round text-5xl text-text-muted opacity-50 block mb-3">card_giftcard</span>
-                    <p className="text-text-muted text-sm">No rewards in this category</p>
+            {/* ── Mobile: title only (tabs shown below) ── */}
+            <div className="sm:hidden">
+                <h1 className="text-2xl font-bold text-white">Rewards Store</h1>
+                <p className="text-text-muted text-xs mt-1">Earn &amp; redeem points for amazing rewards</p>
+            </div>
+
+
+            {/* Points Card */}
+            <div className="bg-gradient-to-br from-yellow-600 to-yellow-700 rounded-2xl sm:rounded-3xl p-6 sm:p-8 text-white shadow-lg overflow-hidden relative">
+                <div className="absolute -top-12 -right-12 w-40 h-40 bg-yellow-500/20 rounded-full blur-3xl"></div>
+                <div className="relative flex justify-between items-center">
+                    <div>
+                        <p className="text-xs sm:text-sm font-medium opacity-90 mb-1">Available Points</p>
+                        <h2 className="text-4xl sm:text-5xl font-black">{myPoints.toLocaleString()}</h2>
+                        <p className="text-xs opacity-80 mt-2">Ready to redeem amazing rewards</p>
+                    </div>
+                    <span className="material-icons-round text-6xl sm:text-7xl opacity-20">card_giftcard</span>
                 </div>
-            ) : (
-                <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
+            </div>
+
+            {/* ── Mobile-only chunky tab bar ── */}
+            <div className="flex sm:hidden gap-2 p-1 bg-surfaceHighlight w-full rounded-xl border border-white/5">
+                {[['SHOP','Rewards Shop'],['COUPONS','My Coupons'],['HISTORY','Point History']].map(([tab, label]) => (
+                    <button
+                        key={tab}
+                        onClick={() => setActiveTab(tab)}
+                        className={`relative flex-1 py-2.5 rounded-lg text-sm font-bold transition-all ${
+                            tab === 'COUPONS' && activeTab === tab ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
+                            : activeTab === tab ? 'bg-primary text-black shadow-lg shadow-primary/20'
+                            : 'text-text-muted hover:text-white'
+                        }`}
+                    >
+                        {label}
+                        {tab === 'COUPONS' && coupons.length > 0 && (
+                            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-400 text-black text-[9px] font-black flex items-center justify-center">
+                                {coupons.length}
+                            </span>
+                        )}
+                    </button>
+                ))}
+            </div>
+
+            {activeTab === 'SHOP' ? (
+                <>
+                    {/* Category Filter */}
+                    <div className="space-y-2">
+                        <div className="sm:hidden">
+                            <label className="block text-[11px] text-text-muted font-semibold mb-1">Category</label>
+                            <select
+                                value={filter}
+                                onChange={(event) => setFilter(event.target.value)}
+                                className="w-full bg-surface border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-primary"
+                            >
+                                {categories.map((cat) => (
+                                    <option key={cat} value={cat} style={{ color: '#111', backgroundColor: '#fff' }}>
+                                        {cat === 'all' ? 'All Rewards' : cat}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="hidden sm:grid grid-cols-5 gap-2">
+                            {categories.map(cat => (
+                                <button
+                                    key={cat}
+                                    onClick={() => setFilter(cat)}
+                                    className={`px-2 py-2 rounded-xl font-medium text-xs transition-all leading-tight ${filter === cat
+                                        ? 'bg-primary text-background'
+                                        : 'bg-surface text-text-secondary border border-white/10 hover:border-primary/30'
+                                        }`}
+                                >
+                                    {cat === 'all' ? 'All Rewards' : cat}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Rewards Grid */}
+                    {filteredRewards.length === 0 ? (
+                        <div className="text-center py-16">
+                            <span className="material-icons-round text-5xl text-text-muted opacity-50 block mb-3">card_giftcard</span>
+                            <p className="text-text-muted text-sm">No rewards in this category</p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
+                            {/* Keep existing reward mapping */}
                     {filteredRewards.map(reward => {
                         const canRedeem = myPoints >= reward.cost;
                         return (
@@ -235,6 +319,91 @@ export default function Rewards() {
                             </div>
                         );
                     })}
+                </div>
+            )}
+                </>
+            ) : activeTab === 'COUPONS' ? (
+                <div className="space-y-3">
+                    {coupons.length === 0 ? (
+                        <div className="text-center py-16 bg-surface rounded-2xl border border-white/5">
+                            <span className="material-icons-round text-5xl text-text-muted opacity-40 block mb-3">redeem</span>
+                            <p className="text-text-muted text-sm font-medium">No active coupons</p>
+                            <p className="text-text-muted text-xs mt-1 opacity-60">Redeem a discount reward to get a coupon</p>
+                        </div>
+                    ) : (
+                        coupons.map(coupon => {
+                            const isFree = coupon.type === 'FREE_SESSION';
+                            const isFlat = coupon.type === 'FLAT';
+                            const label = isFree ? 'Free 1-on-1 Session' : isFlat ? `₱${coupon.value} Off` : `${coupon.value * 100}% Off`;
+                            const icon = isFree ? 'fitness_center' : 'local_offer';
+                            const color = isFree ? 'from-blue-600 to-indigo-700' : 'from-amber-500 to-orange-600';
+                            return (
+                                <div key={coupon.id} className={`relative bg-gradient-to-br ${color} rounded-2xl p-5 overflow-hidden shadow-lg`}>
+                                    {/* Decorative circles */}
+                                    <div className="absolute -right-6 -top-6 w-24 h-24 bg-white/10 rounded-full" />
+                                    <div className="absolute -right-2 -bottom-8 w-32 h-32 bg-white/10 rounded-full" />
+
+                                    <div className="relative flex items-start justify-between gap-4">
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <span className="material-icons-round text-white/80 text-base">{icon}</span>
+                                                <span className="text-white/80 text-xs font-semibold uppercase tracking-wider">{coupon.type.replace('_', ' ')}</span>
+                                            </div>
+                                            <p className="text-white font-black text-2xl mb-3">{label}</p>
+
+                                            {/* Code pill */}
+                                            <div className="inline-flex items-center gap-2 bg-black/20 rounded-xl px-3 py-2">
+                                                <span className="text-white font-mono font-bold text-base tracking-widest">{coupon.code}</span>
+                                                <button
+                                                    onClick={() => copyCode(coupon.code)}
+                                                    className="text-white/70 hover:text-white transition-colors"
+                                                    title="Copy code"
+                                                >
+                                                    <span className="material-icons-round text-sm">
+                                                        {copied === coupon.code ? 'check' : 'content_copy'}
+                                                    </span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <p className="relative text-white/60 text-xs mt-3">
+                                        {isFree
+                                            ? 'Show this code to the front desk to book your free session.'
+                                            : 'Give this code to the staff at checkout to apply your discount.'}
+                                    </p>
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+            ) : (
+                <div className="bg-surface rounded-2xl border border-white/5 overflow-hidden">
+                    <DataTable
+                        data={history}
+                        isLoading={loading}
+                        emptyMessage="No transaction history found."
+                        columns={[
+                            { header: 'Date', accessor: (row) => new Date(row.createdAt).toLocaleString() },
+                            { 
+                                header: 'Type', 
+                                accessor: (row) => (
+                                    <span className={`px-2 py-1 rounded-md text-xs font-bold ${row.type === 'EARNED' ? 'bg-emerald-500/20 text-emerald-400' : row.type === 'REDEEMED' ? 'bg-red-500/20 text-red-400' : 'bg-orange-500/20 text-orange-400'}`}>
+                                        {row.type}
+                                    </span>
+                                ) 
+                            },
+                            { 
+                                header: 'Points', 
+                                accessor: (row) => (
+                                    <span className={`font-mono font-bold ${row.points > 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                        {row.points > 0 ? `+${row.points}` : row.points}
+                                    </span>
+                                ) 
+                            },
+                            { header: 'Description', accessor: (row) => <span className="text-text-secondary">{row.description}</span> }
+                        ]}
+                    />
                 </div>
             )}
 

@@ -3,11 +3,30 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
 import { useUIStore } from '../stores/useUIStore';
+import axios from 'axios';
 
 export default function Sidebar() {
     const { user, logout } = useAuth();
     const { isSidebarCollapsed: isCollapsed, toggleSidebar } = useUIStore();
     const [isMobileOpen, setIsMobileOpen] = useState(false);
+    const [unreadCount, setUnreadCount] = useState(0);
+
+    React.useEffect(() => {
+        if (!user) return;
+        const fetchUnreadCount = async () => {
+            try {
+                const res = await axios.get('/api/notifications');
+                const unread = res.data.filter(n => !n.isRead).length;
+                setUnreadCount(unread);
+            } catch (error) {
+                console.error("Failed to fetch notification count");
+            }
+        };
+
+        fetchUnreadCount();
+        const interval = setInterval(fetchUnreadCount, 60000);
+        return () => clearInterval(interval);
+    }, [user]);
 
     const NavItem = ({ to, icon, label }) => (
         <NavLink
@@ -27,6 +46,14 @@ export default function Sidebar() {
                     <span className={`font-semibold text-[13px] whitespace-nowrap transition-all duration-300 ${isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'}`}>
                         {label}
                     </span>
+                    {(label === 'Announcements' || label === 'Broadcast') && unreadCount > 0 && (
+                        <div className={`
+                            absolute flex items-center justify-center bg-primary text-[10px] font-black text-background rounded-full
+                            ${isCollapsed ? 'top-1 right-1 w-2.5 h-2.5 border-2 border-surface' : 'right-3 px-1.5 py-0.5'}
+                        `}>
+                            {!isCollapsed && (unreadCount > 9 ? '9+' : unreadCount)}
+                        </div>
+                    )}
                     {!isActive && (
                         <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/0 to-white/5 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl"></div>
                     )}
@@ -194,8 +221,7 @@ export default function Sidebar() {
 
             {/* Sidebar */}
             <aside className={`
-                fixed left-0 top-0 h-screen bg-surface border-r border-white/5 flex flex-col z-40 transition-all duration-300
-                lg:static lg:h-full lg:z-auto lg:translate-x-0
+                fixed left-0 top-0 h-screen lg:static lg:h-full lg:relative bg-surface border-r border-white/5 flex flex-col z-[110] transition-all duration-300
                 ${isMobileOpen ? 'w-64 translate-x-0 shadow-2xl' : 'w-20 -translate-x-full lg:translate-x-0'}
                 ${isCollapsed ? 'lg:w-20' : 'lg:w-64'}
             `}>

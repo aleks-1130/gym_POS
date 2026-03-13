@@ -64,16 +64,16 @@ export default function POSGrid({ products, plans, trainers, classPackages }) {
 
         let result;
         if (isTrainer) {
-            result = addToCart({
+            result = await addToCart({
                 ...item,
                 trainerId: item.id,
                 price: item.sessionPrice ?? 0,
                 duration: Number(item.sessionDurations?.split(',')[0]?.trim()) || 60
             }, 'TRAINING');
         } else if (isPackage) {
-            result = addToCart(item, 'CLASS_PACKAGE');
+            result = await addToCart(item, 'CLASS_PACKAGE');
         } else {
-            result = addToCart(item, selectedCategory === POS_VIEWS.MEMBERSHIP ? 'PLAN' : 'PRODUCT');
+            result = await addToCart(item, selectedCategory === POS_VIEWS.MEMBERSHIP ? 'PLAN' : 'PRODUCT');
         }
 
         if (result && !result.success && result.error) {
@@ -81,10 +81,10 @@ export default function POSGrid({ products, plans, trainers, classPackages }) {
         }
     };
 
-    const confirmBarcodeQuantityAdd = () => {
+    const confirmBarcodeQuantityAdd = async () => {
         const qty = parseInt(barcodeQuantityModal.quantity) || 1;
         for (let i = 0; i < qty; i++) {
-            handleAddCatalogItem(barcodeQuantityModal.item);
+            await handleAddCatalogItem(barcodeQuantityModal.item);
         }
         setBarcodeQuantityModal({ open: false, item: null, quantity: '1' });
         setProductSearch('');

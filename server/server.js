@@ -9,8 +9,12 @@ const bcrypt = require('bcryptjs');
 const { authenticateToken, authorize } = require('./src/middleware/authMiddleware');
 const logAudit = require('./src/services/auditService');
 const { migrateInventoryDataToDatabase } = require('./src/features/inventory/inventoryDataMigrationService');
+const { connectRedis } = require('./src/config/redisClient');
 
 const app = express();
+const schedulingService = require('./src/services/schedulingService');
+schedulingService.init();
+
 const PORT = process.env.PORT || 5000;
 
 app.use(helmet());
@@ -43,6 +47,8 @@ app.use('/api/members', require('./src/features/members/memberRoutes'));
 // Shop Routes (checkout, orders - mounted at /api/members for compatibility)
 app.use('/api/members', require('./src/features/pos/shopRoutes'));
 app.use('/api/payments', require('./src/features/pos/paymentRoutes'));
+app.use('/api/pos/reserve', require('./src/features/pos/reserveRoutes')); // Stock Reservation via Redis
+app.use('/api/pos/promo-codes', require('./src/features/pos/promoRoutes'));
 app.use('/api/pos', require('./src/features/pos/paymentRoutes')); // Alias for POS settings frontend
 app.use('/api/access', require('./src/features/members/accessRoutes'));
 app.use('/api/products', require('./src/features/inventory/productRoutes'));
@@ -75,6 +81,7 @@ app.use('/api/owner/projection', require('./src/features/analytics/projectionRou
 app.listen(PORT, '0.0.0.0', async () => {
     console.log(`\n\n=== GYM POS SERVER STARTED ON PORT ${PORT} (0.0.0.0) ===\n\n`);
     try {
+        await connectRedis(); // Boot up Redis for POS Cart Cart Holds
         const userCount = await prisma.user.count();
         if (userCount === 0) {
             console.log("Force Restart (Production Switch): " + new Date().toISOString());

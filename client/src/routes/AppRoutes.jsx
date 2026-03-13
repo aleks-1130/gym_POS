@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
 import Sidebar from '../components/Sidebar';
+import { useUIStore } from '../stores/useUIStore';
 import BottomNav from '../components/BottomNav';
 import PWAInstallPrompt from '../components/PWAInstallPrompt';
 
@@ -214,8 +215,8 @@ export default function AppRoutes() {
                 <Route
                     path="/announcements"
                     element={
-                        <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-                            {user?.role === ROLES.MEMBER ? <MemberAnnouncements /> : <Announcements />}
+                        <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF, ROLES.TRAINER]}>
+                            {user?.role === ROLES.MEMBER || user?.role === ROLES.TRAINER ? <MemberAnnouncements /> : <Announcements />}
                         </ProtectedRoute>
                     }
                 />

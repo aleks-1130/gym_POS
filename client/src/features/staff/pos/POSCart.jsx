@@ -10,36 +10,61 @@ import {
     isTrainerDateAvailable,
     getCalendarCells
 } from './POSUtils';
+import { useConfirm } from '../../../context/ConfirmContext';
+import axios from 'axios';
+import { withApiBase } from '../../../config/api';
+import { authHeaders } from './POSUtils';
 
 /**
  * POSCart Component - Manages the cart items, member selection, and training details.
  */
 export default function POSCart({ members, trainers, discountOptions, initiateCheckout, openReceiptTemplatePreview }) {
-    const { formatPrice } = useCurrency();
+    const { formatPrice: globalFormatPrice, currency: globalCurrency } = useCurrency();
+    
+    // Local currency formatting for flexibility (SGD/PHP)
+    const formatPrice = (amount, currencyCode = globalCurrency) => {
+        const locale = currencyCode === 'SGD' ? 'en-SG' : 'en-PH';
+        return new Intl.NumberFormat(locale, {
+            style: 'currency',
+            currency: currencyCode,
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }).format(amount || 0);
+    };
+    const { alert: showAlert } = useConfirm();
 
     // Zustand Store
     const {
-        cart, selectedMemberId, discount,
-        removeFromCart, updateQuantity, setSelectedMemberId, setDiscount,
+        cart, selectedMemberId, discount, appliedCoupon,
+        removeFromCart, updateQuantity, setSelectedMemberId, setDiscount, setAppliedCoupon,
         updateTrainingDetails, clearCart
     } = usePOSStore(useShallow(state => ({
         cart: state.cart,
         selectedMemberId: state.selectedMemberId,
         discount: state.discount,
+        appliedCoupon: state.appliedCoupon,
         removeFromCart: state.removeFromCart,
         updateQuantity: state.updateQuantity,
         setSelectedMemberId: state.setSelectedMemberId,
         setDiscount: state.setDiscount,
+        setAppliedCoupon: state.setAppliedCoupon,
         updateTrainingDetails: state.updateTrainingDetails,
         clearCart: state.clearCart
     })));
 
     const { subtotal, discountAmount, total: cartTotal } = usePOSStore(useShallow(state => state.getTotals()));
 
-    // Local UI State for Calendar
+    // Local UI State
     const [openCalendarLineId, setOpenCalendarLineId] = useState(null);
     const [calendarMonthByLine, setCalendarMonthByLine] = useState({});
     const [selectedDiscountPresetId, setSelectedDiscountPresetId] = useState('');
+    const [couponInput, setCouponInput] = useState('');
+    const [couponLoading, setCouponLoading] = useState(false);
+    const [couponError, setCouponError] = useState('');
+
+    // Effective total after coupon
+    const couponDiscount = appliedCoupon ? (appliedCoupon.discountAmount || 0) : 0;
+    const effectiveTotal = Math.max(0, cartTotal - couponDiscount);
 
     // Helpers
     const getCalendarMonthForLine = (lineId) => {
@@ -69,6 +94,30 @@ export default function POSCart({ members, trainers, discountOptions, initiateCh
         }
         setSelectedDiscountPresetId(preset.id);
         setDiscount(Number(preset.rate));
+    };
+
+    const applyCoupon = async () => {
+        if (!couponInput.trim()) return;
+        setCouponLoading(true);
+        setCouponError('');
+        try {
+            const { data } = await axios.post(
+                withApiBase('/api/loyalty/coupons/validate'),
+                { code: couponInput.trim(), subtotal, memberId: selectedMemberId || undefined },
+                { headers: authHeaders() }
+            );
+            setAppliedCoupon({ code: couponInput.trim().toUpperCase(), ...data });
+            setCouponInput('');
+        } catch (e) {
+            setCouponError(e.response?.data?.error || 'Invalid coupon code');
+        }
+        setCouponLoading(false);
+    };
+
+    const removeCoupon = () => {
+        setAppliedCoupon(null);
+        setCouponInput('');
+        setCouponError('');
     };
 
     return (
@@ -108,7 +157,7 @@ export default function POSCart({ members, trainers, discountOptions, initiateCh
                                     <h4 className="text-white text-sm font-bold truncate leading-tight mb-1">{item.name}</h4>
                                     <p className="text-primary text-xs font-bold">{formatPrice(item.price)}</p>
                                 </div>
-                                <button onClick={() => removeFromCart(item.cartLineId)} className="text-text-muted hover:text-red-400 transition-colors">
+                                <button onClick={async () => await removeFromCart(item.cartLineId)} className="text-text-muted hover:text-red-400 transition-colors">
                                     <span className="material-icons-round text-lg">close</span>
                                 </button>
                             </div>
@@ -118,14 +167,19 @@ export default function POSCart({ members, trainers, discountOptions, initiateCh
                                 <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-3">
                                     <div className="flex items-center gap-2">
                                         <button
-                                            onClick={() => updateQuantity(item.cartLineId, item.quantity - 1)}
+                                            onClick={async () => await updateQuantity(item.cartLineId, item.quantity - 1)}
                                             className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center text-white hover:bg-white/10 transition-colors"
                                         >
                                             <span className="material-icons-round text-sm">remove</span>
                                         </button>
                                         <span className="text-white font-bold w-6 text-center text-sm">{item.quantity}</span>
                                         <button
-                                            onClick={() => updateQuantity(item.cartLineId, item.quantity + 1, item.stock)}
+                                            onClick={async () => {
+                                                const res = await updateQuantity(item.cartLineId, item.quantity + 1, item.stock);
+                                                if (res && !res.success) {
+                                                    await showAlert({ title: 'Stock Limit', message: res.error, type: 'warning' });
+                                                }
+                                            }}
                                             className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center text-white hover:bg-white/10 transition-colors"
                                         >
                                             <span className="material-icons-round text-sm">add</span>
@@ -250,10 +304,61 @@ export default function POSCart({ members, trainers, discountOptions, initiateCh
                             <span className="text-emerald-400 font-medium">-{formatPrice(discountAmount)}</span>
                         </div>
                     )}
+                    {appliedCoupon && couponDiscount > 0 && (
+                        <div className="flex justify-between items-center text-xs">
+                            <span className="text-amber-400">Coupon ({appliedCoupon.label})</span>
+                            <span className="text-amber-400 font-medium">-{formatPrice(couponDiscount)}</span>
+                        </div>
+                    )}
+                    <div className="pt-2 border-t border-white/5 space-y-1">
+                        <div className="flex justify-between items-center text-[10px] opacity-50">
+                            <span>Taxable Amount</span>
+                            <span>{formatPrice(effectiveTotal / 1.12)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[10px] opacity-50">
+                            <span>VAT (12%)</span>
+                            <span>{formatPrice(effectiveTotal - (effectiveTotal / 1.12))}</span>
+                        </div>
+                    </div>
                     <div className="flex justify-between items-center pt-2 border-t border-white/10">
                         <span className="text-white font-bold">Total Due</span>
-                        <span className="text-xl font-black text-primary">{formatPrice(cartTotal)}</span>
+                        <span className="text-xl font-black text-primary">{formatPrice(effectiveTotal)}</span>
                     </div>
+                </div>
+
+                {/* Coupon Input */}
+                <div className="space-y-1">
+                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Coupon Code</p>
+                    {appliedCoupon ? (
+                        <div className={`flex items-center gap-2 border rounded-xl px-3 py-2 ${appliedCoupon.source === 'PROMO' ? 'bg-blue-500/10 border-blue-500/30' : 'bg-amber-500/10 border-amber-500/30'}`}>
+                            <span className={`material-icons-round text-base ${appliedCoupon.source === 'PROMO' ? 'text-blue-400' : 'text-amber-400'}`}>local_offer</span>
+                            <span className={`text-xs font-bold flex-1 truncate ${appliedCoupon.source === 'PROMO' ? 'text-blue-300' : 'text-amber-300'}`}>{appliedCoupon.code} — {appliedCoupon.label}</span>
+                            <button onClick={removeCoupon} className="text-text-muted hover:text-red-400 transition-colors">
+                                <span className="material-icons-round text-sm">close</span>
+                            </button>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="flex gap-2">
+                                <input
+                                    className="flex-1 bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-white text-xs outline-none focus:border-amber-400 uppercase placeholder:normal-case"
+                                    placeholder="Enter coupon code..."
+                                    value={couponInput}
+                                    onChange={e => { setCouponInput(e.target.value); setCouponError(''); }}
+                                    onKeyDown={e => e.key === 'Enter' && applyCoupon()}
+                                    disabled={couponLoading}
+                                />
+                                <button
+                                    onClick={applyCoupon}
+                                    disabled={!couponInput.trim() || couponLoading}
+                                    className="px-3 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-black font-bold text-xs rounded-xl transition-all"
+                                >
+                                    {couponLoading ? '...' : 'Apply'}
+                                </button>
+                            </div>
+                            {couponError && <p className="text-red-400 text-[10px]">{couponError}</p>}
+                        </>
+                    )}
                 </div>
 
                 {/* Checkout Actions */}

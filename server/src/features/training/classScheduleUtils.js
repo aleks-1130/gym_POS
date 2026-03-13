@@ -139,12 +139,19 @@ const resolveClassSessionStart = (cls, options = {}) => {
         return oneTimeStart;
     }
 
-    const classDays = parseClassDays(cls?.dayOfWeek);
+    const classDays = parseClassDays(cls?.daysOfWeek || cls?.dayOfWeek);
     if (!classDays.length) return null;
+
+    const startDate = cls?.startDate ? new Date(cls.startDate) : null;
+    const endDate = cls?.endDate ? new Date(cls.endDate) : null;
 
     if (requestedSessionDate) {
         const requestedBase = toDayStart(requestedSessionDate);
         if (!requestedBase) return null;
+        
+        // Date range check
+        if (startDate && requestedBase < toDayStart(startDate)) return null;
+        if (endDate && requestedBase > toDayStart(endDate)) return null;
 
         const requestedStart = buildDateAtMinutes(requestedBase, startMinutes);
         if (!requestedStart) return null;
@@ -156,7 +163,10 @@ const resolveClassSessionStart = (cls, options = {}) => {
 
     if (preferToday) {
         const todayDay = normalizeDayToken(getWeekdayName(now));
-        if (todayDay && classDays.includes(todayDay)) {
+        const todayBase = toDayStart(now);
+        const inRange = (!startDate || todayBase >= toDayStart(startDate)) && (!endDate || todayBase <= toDayStart(endDate));
+        
+        if (inRange && todayDay && classDays.includes(todayDay)) {
             return buildDateAtMinutes(now, startMinutes);
         }
     }
@@ -164,9 +174,13 @@ const resolveClassSessionStart = (cls, options = {}) => {
     const todayStart = toDayStart(now);
     if (!todayStart) return null;
 
-    for (let offset = 0; offset < 14; offset += 1) {
+    for (let offset = 0; offset < 28; offset += 1) { // Increased search range to 28 days for future classes
         const candidateDay = new Date(todayStart);
         candidateDay.setDate(candidateDay.getDate() + offset);
+
+        // Date range check
+        if (startDate && candidateDay < toDayStart(startDate)) continue;
+        if (endDate && candidateDay > toDayStart(endDate)) continue;
 
         const candidateToken = normalizeDayToken(getWeekdayName(candidateDay));
         if (!candidateToken || !classDays.includes(candidateToken)) continue;
