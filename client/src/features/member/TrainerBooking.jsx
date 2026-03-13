@@ -641,7 +641,6 @@ export default function TrainerBooking() {
 
         setRatingSubmittingId(session.id);
         try {
-        try {
             await axios.post(`/api/members/me/training-sessions/${session.id}/rate`, {
                 rating,
                 comment
