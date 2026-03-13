@@ -160,29 +160,6 @@ model Expense {
 }
 
 model TrainingSession {
-  id             Int               @id @default(autoincrement())
-  memberId       Int
-  trainerId      Int
-  date           DateTime
-  duration       Int
-  price          Float
-  status         String            @default("SCHEDULED")
-  memberRating   Int?
-  memberRatingComment String?
-  memberRatingVoided Boolean       @default(false)
-  memberRatingVoidedAt DateTime?
-  memberRatedAt  DateTime?
-  commissionPaid Boolean           @default(false)
-  materialsCost  Float             @default(0.0)
-  paymentStatus  String            @default("PAID")
-  paymentMethod  String?
-  paidAt         DateTime?
-  notes          String?
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-  materials      SessionMaterial[]
-  member         Member            @relation(fields: [memberId], references: [id])
-  trainer        Trainer           @relation(fields: [trainerId], references: [id])
   id                   Int               @id @default(autoincrement())
   memberId             Int
   trainerId            Int
