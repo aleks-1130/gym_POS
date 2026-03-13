@@ -66,27 +66,10 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // 2. API strategy: Network First
+  // 2. API strategy: BYPASS Service Worker for all API calls
+  // This ensures fresh data and correct credential handling without SW interference
   if (event.request.url.includes('/api/')) {
-    event.respondWith(
-      fetch(event.request)
-        .then(response => {
-          if (response.status === 200) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
-          }
-          return response;
-        })
-        .catch(err => {
-          console.warn(`[Service Worker] API Fetch failed for ${event.request.url}:`, err);
-          return caches.match(event.request)
-            .then(res => res || new Response(JSON.stringify({ error: 'Offline' }), {
-              status: 503,
-              headers: { 'Content-Type': 'application/json' }
-            }));
-        })
-    );
-    return;
+    return; // Let the browser handle API requests normally
   }
 
   // 3. Asset strategy: Cache First, then Network

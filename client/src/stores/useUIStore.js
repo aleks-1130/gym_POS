@@ -6,8 +6,7 @@ export const useUIStore = create(
         (set) => ({
             isSidebarCollapsed: false,
             toggleSidebar: () => set((state) => ({ isSidebarCollapsed: !state.isSidebarCollapsed })),
-            setSidebarCollapsed: (collapsed) => set({ isSidebarCollapsed: collapsed }),
-        }),
+            setSidebarCollapsed: (collapsed) => set({ isSidebarCollapsed: collapsed }) }),
         {
             name: 'ui-storage', // unique name
         }

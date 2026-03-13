@@ -13,7 +13,7 @@ export default function TrainingManager() {
     const [products, setProducts] = useState([]);
     const [addedMaterials, setAddedMaterials] = useState([]);
     const [materialCandidates, setMaterialCandidates] = useState([]);
-    const [candidateQuantities, setCandidateQuantities] = useState({});
+    const [candidateQuantities, setCandidateQuantities] = useState();
     const [loadingCandidates, setLoadingCandidates] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState('');
     const [quantity, setQuantity] = useState(1);
@@ -41,16 +41,13 @@ export default function TrainingManager() {
             fetchMaterialCandidates(selectedSession.id);
         } else {
             setMaterialCandidates([]);
-            setCandidateQuantities({});
+            setCandidateQuantities();
         }
     }, [selectedSession?.id]);
 
     const fetchSessions = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const res = await axios.get(`/api/training-sessions?t=${new Date().getTime()}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+                        const res = await axios.get(`/api/training-sessions?t=${new Date().getTime()}`);
             console.log("Sessions fetched:", res.data);
             if (Array.isArray(res.data)) {
                 // Filter out any null/undefined items
@@ -70,10 +67,7 @@ export default function TrainingManager() {
 
     const fetchProducts = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const res = await axios.get('/api/products', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+                        const res = await axios.get('/api/products');
             console.log("Products fetched:", res.data);
             if (Array.isArray(res.data)) {
                 setProducts(res.data);
@@ -90,15 +84,12 @@ export default function TrainingManager() {
     const fetchMaterialCandidates = async (sessionId) => {
         if (!sessionId) {
             setMaterialCandidates([]);
-            setCandidateQuantities({});
+            setCandidateQuantities();
             return;
         }
         setLoadingCandidates(true);
         try {
-            const token = localStorage.getItem('token');
-            const res = await axios.get(`/api/training-sessions/${sessionId}/material-candidates`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+                        const res = await axios.get(`/api/training-sessions/${sessionId}/material-candidates`);
             const candidates = Array.isArray(res.data) ? res.data : [];
             setMaterialCandidates(candidates);
             const qtyDefaults = {};
@@ -107,7 +98,7 @@ export default function TrainingManager() {
         } catch (e) {
             console.error("Failed to fetch material candidates", e);
             setMaterialCandidates([]);
-            setCandidateQuantities({});
+            setCandidateQuantities();
         } finally {
             setLoadingCandidates(false);
         }
@@ -216,13 +207,10 @@ export default function TrainingManager() {
 
         setSubmitting(true);
         try {
-            const token = localStorage.getItem('token');
-            await axios.post(`/api/training-sessions/${selectedSession.id}/complete`, {
+                        await axios.post(`/api/training-sessions/${selectedSession.id}/complete`, {
                 materialsCost: totalMaterialCost,
                 materials: addedMaterials,
                 notes
-            }, {
-                headers: { Authorization: `Bearer ${token}` }
             });
 
             showAlert({ title: "Session Completed", message: "Session completed successfully!", type: "success" });
@@ -358,11 +346,8 @@ export default function TrainingManager() {
                                         {session.status === 'COMPLETED' && (
                                             <button
                                                 onClick={async () => {
-                                                    const token = localStorage.getItem('token');
-                                                    try {
-                                                        const res = await axios.get(`/api/training-sessions/${session.id}?t=${new Date().getTime()}`, {
-                                                            headers: { Authorization: `Bearer ${token}` }
-                                                        });
+                                                                                                        try {
+                                                        const res = await axios.get(`/api/training-sessions/${session.id}?t=${new Date().getTime()}`);
                                                         setViewSession(res.data);
                                                     } catch (e) {
                                                         showAlert({ title: "Load Error", message: "Failed to load session details", type: "danger" });

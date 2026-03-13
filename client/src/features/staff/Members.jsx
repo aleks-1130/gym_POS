@@ -72,8 +72,7 @@ export default function Members() {
 
     const handlePrintTC = useReactToPrint({
         contentRef: tcPrintRef,
-        documentTitle: 'Membership_Agreement',
-    });
+        documentTitle: 'Membership_Agreement' });
 
     // Payment State
     const [showPaymentModal, setShowPaymentModal] = useState(false);

@@ -117,8 +117,7 @@ export default function Announcements() {
         const colors = {
             INFO: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
             PROMO: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
-            ALERT: 'bg-red-500/10 text-red-400 border-red-500/30',
-        };
+            ALERT: 'bg-red-500/10 text-red-400 border-red-500/30' };
         return colors[category] || colors.INFO;
     };
 

@@ -86,8 +86,7 @@ export default function PosSettings() {
 
 
     const authHeaders = () => {
-        const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-        return token ? { Authorization: `Bearer ${token}` } : undefined;
+                return undefined;
     };
 
     useEffect(() => {

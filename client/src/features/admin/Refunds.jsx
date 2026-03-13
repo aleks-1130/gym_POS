@@ -50,8 +50,7 @@ export default function Refunds() {
         if (start && end) {
             setDateRange({
                 start: start.toISOString().split('T')[0],
-                end: end.toISOString().split('T')[0],
-            });
+                end: end.toISOString().split('T')[0] });
         }
     }, [dateFilterType]);
 
@@ -75,12 +74,11 @@ export default function Refunds() {
     const fetchHistory = async (page = 1) => {
         setLoading(true);
         try {
-            const token = localStorage.getItem('token');
-            let url = `/api/payments/refunds?page=${page}&limit=${LIMIT}`;
+                        let url = `/api/payments/refunds?page=${page}&limit=${LIMIT}`;
             if (dateRange.start && dateRange.end) {
                 url += `&startDate=${dateRange.start}&endDate=${dateRange.end}`;
             }
-            const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
+            const res = await axios.get(url);
             if (res.data.meta) {
                 setHistory(res.data.data);
                 setTotalPages(res.data.meta.totalPages);
@@ -98,11 +96,8 @@ export default function Refunds() {
     const fetchRefundExceptionRequests = async () => {
         setExceptionsLoading(true);
         try {
-            const token = localStorage.getItem('token');
-            const res = await axios.get('/api/staff/training-sessions/refund-exceptions', {
-                params: { status: 'PENDING' },
-                headers: { Authorization: `Bearer ${token}` },
-            });
+                        const res = await axios.get('/api/staff/training-sessions/refund-exceptions', {
+                params: { status: 'PENDING' } });
             setRefundExceptionRequests(res.data || []);
         } catch (err) {
             console.error('Failed to fetch refund exceptions:', err);
@@ -134,12 +129,9 @@ export default function Refunds() {
         }
 
         try {
-            const token = localStorage.getItem('token');
-            await axios.post(
+                        await axios.post(
                 `/api/staff/training-sessions/${session.id}/refund-exception/resolve`,
-                { decision, note },
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
+                { decision, note });
             setPendingResolve(null);
             await fetchRefundExceptionRequests();
             await showAlert({ title: 'Done!', message: `Refund exception ${isApprove ? 'approved' : 'rejected'}.`, type: 'success' });
@@ -263,8 +255,7 @@ export default function Refunds() {
                                             {new Date(pay.date).toLocaleTimeString()}
                                         </span>
                                     </span>
-                                ),
-                            },
+                                ) },
                             {
                                 header: 'Status',
                                 accessor: (pay) => {
@@ -273,28 +264,23 @@ export default function Refunds() {
                                     if (pay.status === 'RETURNED')
                                         return <span className="px-2 py-1 rounded text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">RETURNED</span>;
                                     return <span className="px-2 py-1 rounded text-xs font-bold bg-white/10 text-text-muted">{pay.status}</span>;
-                                },
-                            },
+                                } },
                             {
                                 header: 'Original Amount',
-                                accessor: (pay) => <span className="text-white font-medium">{formatPrice(pay.amount)}</span>,
-                            },
+                                accessor: (pay) => <span className="text-white font-medium">{formatPrice(pay.amount)}</span> },
                             {
                                 header: 'Refunded',
-                                accessor: (pay) => <span className="text-red-400 font-bold">{formatPrice(pay.refundedAmount || pay.amount)}</span>,
-                            },
+                                accessor: (pay) => <span className="text-red-400 font-bold">{formatPrice(pay.refundedAmount || pay.amount)}</span> },
                             {
                                 header: 'Member',
                                 accessor: (pay) => (
                                     <span className="text-white">
                                         {pay.member ? `${pay.member.firstName} ${pay.member.lastName}` : 'Walk-in'}
                                     </span>
-                                ),
-                            },
+                                ) },
                             {
                                 header: 'Auth Cashier',
-                                accessor: (pay) => <span className="text-white">{pay.cashier?.name || 'N/A'}</span>,
-                            },
+                                accessor: (pay) => <span className="text-white">{pay.cashier?.name || 'N/A'}</span> },
                         ]}
                         data={history}
                         actions={(pay) => (

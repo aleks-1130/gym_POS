@@ -8,11 +8,9 @@ const TrafficReport = ({ data }) => {
     const chartOptions = {
         responsive: true,
         plugins: {
-            legend: { display: false },
-        },
+            legend: { display: false } },
         scales: {
-            y: { beginAtZero: true },
-        }
+            y: { beginAtZero: true } }
     };
 
     // Prepare Data for Charts (Static for print)

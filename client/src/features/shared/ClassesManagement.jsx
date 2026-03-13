@@ -381,11 +381,9 @@ export default function ClassesManagement({ viewRole = 'ADMIN' }) {
         });
         if (!confirmed) return;
         try {
-            const token = localStorage.getItem('token');
+            
             const res = await axios.post(`/api/classes/${cls.id}/complete-override`, {
                 sessionDate: cls.sessionDate || undefined
-            }, {
-                headers: { Authorization: `Bearer ${token}` }
             });
             showAlert({ title: 'Class Completed', message: `Override recorded with ${res.data.attendeeCount} attendees.`, type: 'success' });
             await fetchClasses();

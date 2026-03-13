@@ -9,15 +9,7 @@ export default function DisplayMonitor() {
     useEffect(() => {
         const checkLatestScan = async () => {
             try {
-                const token = localStorage.getItem('token');
-                if (!token) {
-                    console.error("Monitor Error: No authentication token found. Please log in on this browser as STAFF first.");
-                    return;
-                }
-
-                const res = await axios.get('/api/access/latest-event', {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
+                const res = await axios.get('/api/access/latest-event');
 
                 if (res.data) {
                     const latest = res.data;

@@ -5,7 +5,13 @@ const redisClient = createClient({
     url: process.env.REDIS_URL || 'redis://localhost:6379'
 });
 
-redisClient.on('error', (err) => console.log('Redis Client Error', err));
+redisClient.on('error', (err) => {
+    if (err.message && err.message.includes('ECONNREFUSED')) {
+        // Shush connection errors to avoid log spam
+    } else {
+        console.log('Redis Client Error', err);
+    }
+});
 redisClient.on('connect', () => console.log('Connected to Redis'));
 
 // A wrapper to safely connect it on app startup
@@ -15,7 +21,7 @@ const connectRedis = async () => {
             await redisClient.connect();
         }
     } catch (error) {
-        console.error('Failed to connect to Redis:', error);
+        // Shush connection errors to avoid log spam
     }
 };
 

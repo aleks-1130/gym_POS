@@ -266,11 +266,9 @@ export default function TrainerClasses() {
         if (!confirmed) return;
 
         try {
-            const token = localStorage.getItem('token');
+            
             await axios.post(`/api/classes/${cls.id}/complete`, {
                 sessionDate: cls.sessionDate || undefined
-            }, {
-                headers: { Authorization: `Bearer ${token}` }
             });
             await showAlert({ title: 'Success', message: 'Class completed and commission recorded!', type: 'success' });
             refreshClasses();

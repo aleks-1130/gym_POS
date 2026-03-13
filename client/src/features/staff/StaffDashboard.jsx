@@ -8,8 +8,7 @@ import {
     BarElement,
     Title,
     Tooltip,
-    Legend,
-} from 'chart.js';
+    Legend } from 'chart.js';
 import { useCurrency } from '../../context/CurrencyContext';
 
 ChartJS.register(
@@ -40,15 +39,12 @@ const StaffDashboard = ({ stats }) => {
 
         const fetchAll = async () => {
             try {
-                const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-                if (!token) return;
-                const headers = { Authorization: `Bearer ${token}` };
-
+                
                 const [logsRes, membersRes, paymentsRes, trainersRes] = await Promise.all([
-                    axios.get('/api/access/logs', { headers }),
-                    axios.get('/api/members', { headers }),
-                    axios.get('/api/payments', { headers }),
-                    axios.get('/api/trainers', { headers })
+                    axios.get('/api/access/logs'),
+                    axios.get('/api/members'),
+                    axios.get('/api/payments'),
+                    axios.get('/api/trainers')
                 ]);
 
                 const logs = Array.isArray(logsRes.data) ? logsRes.data : [];
@@ -114,8 +110,7 @@ const StaffDashboard = ({ stats }) => {
                 borderRadius: 10,
                 maxBarThickness: 32
             },
-        ],
-    };
+        ] };
 
     const chartOptions = {
         responsive: true,
@@ -125,19 +120,14 @@ const StaffDashboard = ({ stats }) => {
             tooltip: {
                 callbacks: {
                     title: (items) => items[0]?.label || '',
-                    label: (item) => `${item.raw} check-ins`,
-                },
-            },
-        },
+                    label: (item) => `${item.raw} check-ins` } } },
         scales: {
             x: { grid: { display: false }, ticks: { color: '#9CA3AF' } },
             y: {
                 grid: { color: '#252A33' },
                 ticks: { color: '#9CA3AF', precision: 0 },
                 beginAtZero: true
-            },
-        },
-    };
+            } } };
 
     return (
         <div className="space-y-6">

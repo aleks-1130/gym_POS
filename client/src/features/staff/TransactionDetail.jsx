@@ -20,14 +20,13 @@ export default function TransactionDetail() {
     const [completeModalOpen, setCompleteModalOpen] = useState(false);
     const [pin, setPin] = useState('');
     const [cashTendered, setCashTendered] = useState('');
-    const [returnQuantities, setReturnQuantities] = useState({});
+    const [returnQuantities, setReturnQuantities] = useState();
     const [actionLoading, setActionLoading] = useState(false);
     const [receiptSettings, setReceiptSettings] = useState(null);
     const receiptRef = useRef();
 
     const handlePrint = useReactToPrint({
-        content: () => receiptRef.current,
-    });
+        content: () => receiptRef.current });
 
     useEffect(() => {
         fetchPayment();
@@ -35,8 +34,8 @@ export default function TransactionDetail() {
     }, [id]);
 
     const authHeaders = () => {
-        const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-        return token ? { Authorization: `Bearer ${token}` } : undefined;
+        
+        return undefined;
     };
 
     const fetchPayment = async () => {
@@ -67,7 +66,7 @@ export default function TransactionDetail() {
 
     const openReturnModal = () => {
         setPin('');
-        setReturnQuantities({});
+        setReturnQuantities();
         setReturnModalOpen(true);
     };
 

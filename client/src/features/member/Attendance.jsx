@@ -62,8 +62,8 @@ export default function Attendance() {
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
-            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-            const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+            
+            
             const [logsResult, sessionsResult, classesResult, dashboardResult] = await Promise.allSettled([
                 axios.get('/api/access/logs', { headers }),
                 axios.get('/api/members/me/training-sessions', { headers }),

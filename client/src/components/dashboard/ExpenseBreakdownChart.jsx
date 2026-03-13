@@ -15,8 +15,7 @@ const ExpenseBreakdownChart = ({ data }) => {
                 data: data?.map(item => item.amount) || [],
                 backgroundColor: ['#F59E0B', '#3B82F6', '#EF4444', '#8B5CF6', '#10B981', '#6B7280'], // Amber, Blue, Red, Purple, Emerald, Gray
                 borderColor: '#1F2937', // Match bg-surface roughly
-                borderWidth: 2,
-            }
+                borderWidth: 2 }
         ]
     };
 

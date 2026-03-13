@@ -10,8 +10,7 @@ import {
     Title,
     Tooltip,
     Legend,
-    ArcElement,
-} from 'chart.js';
+    ArcElement } from 'chart.js';
 
 ChartJS.register(
     CategoryScale,
@@ -89,8 +88,7 @@ const FinancialsReport = ({ data }) => {
                 borderColor: '#10b981',
                 backgroundColor: 'rgba(16, 185, 129, 0.1)',
                 tension: 0.4,
-                fill: true,
-            }
+                fill: true }
         ]
     };
 

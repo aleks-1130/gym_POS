@@ -11,10 +11,8 @@ export default function TrainerPurchaseHistory() {
     useEffect(() => {
         const fetchOrders = async () => {
             try {
-                const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-                const res = await axios.get('/api/members/orders', {
-                    headers: token ? { Authorization: `Bearer ${token}` } : undefined
-                });
+                
+                const res = await axios.get('/api/members/orders');
                 setOrders(res.data || []);
             } catch (e) {
                 console.error('Failed to fetch trainer orders', e);

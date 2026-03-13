@@ -41,7 +41,7 @@ const normalizeByDay = (trainer = {}) => {
                 end: trainer.availabilityEnd || '18:00'
             };
             return acc;
-        }, {});
+        });
     }
     return {};
 };
@@ -93,7 +93,7 @@ const cloneAvailabilityByDay = (source = {}) => {
             end: value?.end || '18:00'
         };
         return acc;
-    }, {});
+    });
 };
 
 const cloneSpecificDateAvailability = (source = {}) => {
@@ -108,12 +108,12 @@ const cloneSpecificDateAvailability = (source = {}) => {
             end: value?.end || '18:00'
         };
         return acc;
-    }, {});
+    });
 };
 
 const getAuthHeaders = () => {
-    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-    return token ? { Authorization: `Bearer ${token}` } : undefined;
+    
+    return undefined;
 };
 
 export default function TrainerAvailability({ embedded = false, allowBookingStatusChange = true }) {
@@ -131,9 +131,9 @@ export default function TrainerAvailability({ embedded = false, allowBookingStat
     const [sessions, setSessions] = useState([]);
     const [sessionsLoading, setSessionsLoading] = useState(false);
 
-    const [availabilityByDay, setAvailabilityByDay] = useState({});
+    const [availabilityByDay, setAvailabilityByDay] = useState();
     const [availabilityIntervalMinutes, setAvailabilityIntervalMinutes] = useState(30);
-    const [specificDateAvailability, setSpecificDateAvailability] = useState({});
+    const [specificDateAvailability, setSpecificDateAvailability] = useState();
     const [bookingStatus, setBookingStatus] = useState('OPEN');
     const [isBookingStatusModalOpen, setIsBookingStatusModalOpen] = useState(false);
     const [pendingBookingStatus, setPendingBookingStatus] = useState(null);
@@ -154,11 +154,11 @@ export default function TrainerAvailability({ embedded = false, allowBookingStat
         try {
             let res = null;
             try {
-                res = await axios.get('/api/trainer/me/sessions', { headers: getAuthHeaders() });
+                res = await axios.get('/api/trainer/me/sessions');
             } catch (primaryError) {
                 const status = Number(primaryError?.response?.status || 0);
                 if (status === 404 || status === 405) {
-                    res = await axios.get('/api/trainers/me/sessions', { headers: getAuthHeaders() });
+                    res = await axios.get('/api/trainers/me/sessions');
                 } else {
                     throw primaryError;
                 }
@@ -176,11 +176,11 @@ export default function TrainerAvailability({ embedded = false, allowBookingStat
             try {
                 let res = null;
                 try {
-                    res = await axios.get('/api/trainer/me', { headers: getAuthHeaders() });
+                    res = await axios.get('/api/trainer/me');
                 } catch (primaryError) {
                     const status = Number(primaryError?.response?.status || 0);
                     if (status === 404 || status === 405) {
-                        res = await axios.get('/api/trainers/me', { headers: getAuthHeaders() });
+                        res = await axios.get('/api/trainers/me');
                     } else {
                         throw primaryError;
                     }
@@ -323,7 +323,7 @@ export default function TrainerAvailability({ embedded = false, allowBookingStat
     };
 
     const clearAllOverrides = () => {
-        setSpecificDateAvailability({});
+        setSpecificDateAvailability();
     };
 
     const startWeeklyEdit = () => {
@@ -378,11 +378,11 @@ export default function TrainerAvailability({ embedded = false, allowBookingStat
     const patchAvailability = async (payload) => {
         let res = null;
         try {
-            res = await axios.patch('/api/trainer/me/availability', payload, { headers: getAuthHeaders() });
+            res = await axios.patch('/api/trainer/me/availability', payload);
         } catch (primaryError) {
             const status = Number(primaryError?.response?.status || 0);
             if (status === 404 || status === 405) {
-                res = await axios.patch('/api/trainers/me/availability', payload, { headers: getAuthHeaders() });
+                res = await axios.patch('/api/trainers/me/availability', payload);
             } else {
                 throw primaryError;
             }

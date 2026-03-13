@@ -28,11 +28,10 @@ export default function AnalyticsReportPage() {
             }
 
             try {
-                const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-                // Reusing the main analytics endpoint which returns everything
+                                // Reusing the main analytics endpoint which returns everything
                 // Optimization: In the future, we could have specific endpoints for specific reports if payload size becomes an issue
                 const response = await axios.get('/api/analytics', {
-                    headers: { Authorization: `Bearer ${token}` },
+                    
                     params: { startDate, endDate }
                 });
                 setData(response.data);

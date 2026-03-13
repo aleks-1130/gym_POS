@@ -23,9 +23,8 @@ const Analytics = () => {
     const fetchAnalytics = async () => {
         setLoading(true);
         try {
-            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-            const response = await axios.get('/api/analytics', {
-                headers: { Authorization: `Bearer ${token}` },
+                        const response = await axios.get('/api/analytics', {
+                
                 params: {
                     startDate: dateRange.start,
                     endDate: dateRange.end

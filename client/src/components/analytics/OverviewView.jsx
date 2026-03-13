@@ -27,8 +27,7 @@ const OverviewView = ({ data, loading, dateRange }) => {
                 borderColor: '#10b981', // Emerald 500
                 backgroundColor: 'rgba(16, 185, 129, 0.1)',
                 tension: 0.4,
-                fill: true,
-            },
+                fill: true },
             {
                 label: 'Expenses',
                 data: trends?.expenses || [], // New
@@ -66,8 +65,7 @@ const OverviewView = ({ data, loading, dateRange }) => {
                 label: 'Activity Level',
                 data: peakHours,
                 backgroundColor: '#3b82f6',
-                borderRadius: 4,
-            }
+                borderRadius: 4 }
         ]
     };
 

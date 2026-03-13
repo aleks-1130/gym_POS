@@ -81,10 +81,7 @@ export default function Projections() {
         setLoading(true);
         setError(null);
         try {
-            const token = localStorage.getItem('token');
-            const res = await axios.get('/api/owner/projection/snapshot', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+                        const res = await axios.get('/api/owner/projection/snapshot');
             const snap = res.data;
             setSnapshot(snap);
             setAssumptions({

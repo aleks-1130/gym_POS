@@ -17,7 +17,7 @@ export default function TrainerShop() {
     const [loading, setLoading] = useState(true);
     const [cart, setCart] = useState([]);
     const [sessionId, setSessionId] = useState(null);
-    const [addingToCart, setAddingToCart] = useState({});
+    const [addingToCart, setAddingToCart] = useState();
     const [showCartModal, setShowCartModal] = useState(false);
     const [cartPopup, setCartPopup] = useState({ show: false, itemName: '' });
     const cartPopupTimerRef = useRef(null);
@@ -125,14 +125,14 @@ export default function TrainerShop() {
                 return;
             }
 
-            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-            const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+            
+            
 
             await axios.post('/api/pos/reserve', {
                 sessionId: sid,
                 productId: product.id,
                 quantity: newQuantity
-            }, { headers: authHeaders });
+            });
 
             let updatedCart;
             if (existingItem) {
@@ -170,14 +170,14 @@ export default function TrainerShop() {
 
         const sid = getSessionId();
         try {
-            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-            const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+            
+            
 
             await axios.post('/api/pos/reserve', {
                 sessionId: sid,
                 productId: productId,
                 quantity: newQuantity
-            }, { headers: authHeaders });
+            });
 
             saveCart(cart.map((item) => (item.id === productId ? { ...item, quantity: newQuantity } : item)));
         } catch (error) {
@@ -189,10 +189,10 @@ export default function TrainerShop() {
     const removeFromCart = async (productId) => {
         const sid = getSessionId();
         try {
-            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-            const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+            
+            
 
-            await axios.delete(`/api/pos/reserve/${sid}/${productId}`, { headers: authHeaders });
+            await axios.delete(`/api/pos/reserve/${sid}/${productId}`);
             saveCart(cart.filter((item) => item.id !== productId));
         } catch (error) {
             console.error("Failed to release stock reservation", error);
@@ -274,7 +274,7 @@ export default function TrainerShop() {
 
         setIsCheckingOut(true);
         try {
-            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+            
             await axios.post('/api/members/checkout', {
                 items: cart.map((i) => ({ productId: i.id, quantity: i.quantity, price: i.price, name: i.name })),
                 total: getCartTotal(),
@@ -290,13 +290,9 @@ export default function TrainerShop() {
                 gcashDate: null,
                 markAsSessionMaterial,
                 sessionId: sessionId || getSessionId()
-            }, {
-                headers: token ? { Authorization: `Bearer ${token}` } : undefined
             });
 
-            await axios.delete(`/api/pos/reserve/${sessionId || getSessionId()}`, {
-                headers: token ? { Authorization: `Bearer ${token}` } : undefined
-            }).catch(e => console.error("Failed to clear redis sessionId", e));
+            await axios.delete(`/api/pos/reserve/${sessionId || getSessionId()}`).catch(e => console.error("Failed to clear redis sessionId", e));
 
             setCart([]);
             saveCart([]);

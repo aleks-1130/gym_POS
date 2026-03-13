@@ -36,7 +36,7 @@ export default function GymTraffic() {
     useEffect(() => {
         const fetchTraffic = async () => {
             try {
-                const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+                
                 const now = new Date();
                 const start = getStartOfWeekMonday(now);
                 const end = getEndOfWeekSunday(now);
@@ -44,9 +44,7 @@ export default function GymTraffic() {
                     params: {
                         start: start.toISOString(),
                         end: end.toISOString()
-                    },
-                    headers: token ? { Authorization: `Bearer ${token}` } : undefined
-                });
+                    } });
                 const payloadLogs = res.data?.logs || [];
 
                 setLogs(payloadLogs);

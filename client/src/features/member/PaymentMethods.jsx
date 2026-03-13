@@ -45,10 +45,8 @@ export default function PaymentMethods() {
         const fetchMethods = async () => {
             if (!user?.id) return;
             try {
-                const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-                const res = await axios.get(`/api/members/${user.id}/payment-methods`, {
-                    headers: token ? { Authorization: `Bearer ${token}` } : undefined
-                });
+                
+                const res = await axios.get(`/api/members/${user.id}/payment-methods`);
                 setMethods(res.data || []);
             } catch (error) {
                 console.error('Failed to load payment methods', error);
@@ -62,10 +60,8 @@ export default function PaymentMethods() {
 
     const setAsDefault = (id) => {
         if (!user?.id) return;
-        const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-        axios.patch(`/api/members/${user.id}/payment-methods/${id}`, { isDefault: true }, {
-            headers: token ? { Authorization: `Bearer ${token}` } : undefined
-        }).then((res) => {
+        
+        axios.patch(`/api/members/${user.id}/payment-methods/${id}`, { isDefault: true }).then((res) => {
             const updated = res.data;
             setMethods((prev) => prev.map((m) => ({ ...m, isDefault: m.id === updated.id })));
         }).catch((error) => {
@@ -76,10 +72,8 @@ export default function PaymentMethods() {
 
     const removeMethod = (id) => {
         if (!user?.id) return;
-        const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-        axios.delete(`/api/members/${user.id}/payment-methods/${id}`, {
-            headers: token ? { Authorization: `Bearer ${token}` } : undefined
-        }).then(() => {
+        
+        axios.delete(`/api/members/${user.id}/payment-methods/${id}`).then(() => {
             setMethods((prev) => prev.filter((m) => m.id !== id));
         }).catch((error) => {
             console.error('Failed to remove method', error);
@@ -96,7 +90,7 @@ export default function PaymentMethods() {
             return;
         }
 
-        const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+        
         const isMaya = walletForm.provider === 'MAYA';
 
         axios.post(`/api/members/${user.id}/payment-methods`, {
@@ -105,8 +99,6 @@ export default function PaymentMethods() {
             name: walletForm.name.trim(),
             phone: walletForm.phone.trim(),
             isDefault: methods.length === 0
-        }, {
-            headers: token ? { Authorization: `Bearer ${token}` } : undefined
         }).then((res) => {
             setMethods((prev) => [res.data, ...prev]);
             setWalletForm((prev) => ({ ...prev, label: '', name: '', phone: '' }));
@@ -120,7 +112,7 @@ export default function PaymentMethods() {
         e.preventDefault();
         if (!cardForm.name.trim() || !cardForm.last4.trim() || !cardForm.expMonth.trim() || !cardForm.expYear.trim()) return;
 
-        const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+        
         axios.post(`/api/members/${user.id}/payment-methods`, {
             type: 'CARD',
             label: cardForm.label.trim() || 'Card',
@@ -130,8 +122,6 @@ export default function PaymentMethods() {
             expMonth: cardForm.expMonth.trim(),
             expYear: cardForm.expYear.trim(),
             isDefault: methods.length === 0
-        }, {
-            headers: token ? { Authorization: `Bearer ${token}` } : undefined
         }).then((res) => {
             setMethods((prev) => [res.data, ...prev]);
             setCardForm({ label: '', name: '', brand: '', last4: '', expMonth: '', expYear: '' });

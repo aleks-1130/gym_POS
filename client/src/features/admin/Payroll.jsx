@@ -89,14 +89,12 @@ const Payroll = () => {
     const fetchData = useCallback(async () => {
         try {
             setLoading(true);
-            const token = localStorage.getItem('token');
-            const headers = { Authorization: `Bearer ${token}` };
             const params = { startDate: dateRange.start, endDate: dateRange.end };
 
             const [statsRes, trainersRes, staffRes] = await Promise.all([
-                axios.get('/api/admin/payroll/stats', { headers, params }),
-                axios.get('/api/admin/payroll/trainers', { headers, params }),
-                axios.get('/api/admin/payroll/staff', { headers, params })
+                axios.get('/api/admin/payroll/stats', { params }),
+                axios.get('/api/admin/payroll/trainers', { params }),
+                axios.get('/api/admin/payroll/staff', { params })
             ]);
 
             setStats(statsRes.data);
@@ -153,8 +151,7 @@ const Payroll = () => {
     const submitSalaryPayment = async (e) => {
         e.preventDefault();
         try {
-            const token = localStorage.getItem('token');
-            const base = parseFloat(salaryDetails.baseSalary) || 0;
+                        const base = parseFloat(salaryDetails.baseSalary) || 0;
             const bonus = parseFloat(salaryDetails.bonus) || 0;
             const deductions = parseFloat(salaryDetails.deductions) || 0;
             const netPay = base + bonus - deductions;
@@ -170,9 +167,7 @@ const Payroll = () => {
                 [selectedUser.type === 'TRAINER' ? 'trainerId' : 'staffId']: selectedUser.id
             };
 
-            await axios.post('/api/expenses', data, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await axios.post('/api/expenses', data);
 
             showAlert({ title: 'Payment Recorded', message: 'Salary payment recorded successfully!', type: 'success' });
             setShowModal(false);
@@ -187,13 +182,10 @@ const Payroll = () => {
         if (selectedSessions.length === 0 && selectedClasses.length === 0) { await showAlert({ title: "Select Items", message: "Please select at least one item to pay.", type: "warning" }); return; }
 
         try {
-            const token = localStorage.getItem('token');
             await axios.post('/api/admin/payroll/pay-commissions', {
                 trainerId: selectedUser.id,
                 sessionIds: selectedSessions,
                 classHistoryIds: selectedClasses
-            }, {
-                headers: { Authorization: `Bearer ${token}` }
             });
 
             showAlert({ title: 'Paid!', message: 'Commissions paid successfully!', type: 'success' });
@@ -207,11 +199,8 @@ const Payroll = () => {
 
     const submitAutoCommissionPayment = async (trainerId, trainerName) => {
         try {
-            const token = localStorage.getItem('token');
             await axios.post('/api/admin/payroll/pay-commissions-auto', {
                 trainerId
-            }, {
-                headers: { Authorization: `Bearer ${token}` }
             });
 
             showAlert({ title: "Auto-Pay Complete", message: `Auto payout completed for ${trainerName}.`, type: "success" });
@@ -315,11 +304,9 @@ const Payroll = () => {
         }
 
         try {
-            const token = localStorage.getItem('token');
-            const headers = { Authorization: `Bearer ${token}` };
             const results = await Promise.allSettled(
                 eligibleTrainers.map((trainer) =>
-                    axios.post('/api/admin/payroll/pay-commissions-auto', { trainerId: trainer.id }, { headers })
+                    axios.post('/api/admin/payroll/pay-commissions-auto', { trainerId: trainer.id })
                 )
             );
             const successCount = results.filter((entry) => entry.status === 'fulfilled').length;

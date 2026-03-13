@@ -21,8 +21,8 @@ export default function PurchaseHistory() {
 
     const fetchPaymentHistory = async () => {
         try {
-            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-            const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+            
+            
 
             const [transactionsRes, sessionsRes] = await Promise.all([
                 axios.get(withApiBase('/api/members/me/transactions'), { headers }),

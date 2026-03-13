@@ -47,8 +47,7 @@ const AdminDashboard = ({ stats }) => {
         plugins: { legend: { display: false } },
         scales: {
             x: { grid: { display: false }, ticks: { color: '#9CA3AF', padding: 10 } },
-            y: { grid: { color: '#252A33' }, ticks: { color: '#9CA3AF' } },
-        },
+            y: { grid: { color: '#252A33' }, ticks: { color: '#9CA3AF' } } },
         layout: {
             padding: { bottom: 10 }
         }
@@ -71,10 +70,8 @@ const AdminDashboard = ({ stats }) => {
                 borderColor: '#FF8C00',
                 backgroundColor: 'rgba(255, 140, 0, 0.2)',
                 tension: 0.4,
-                fill: true,
-            },
-        ],
-    };
+                fill: true },
+        ] };
 
     // --- Render ---
     return (

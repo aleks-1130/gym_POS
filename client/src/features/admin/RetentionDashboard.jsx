@@ -14,10 +14,7 @@ export default function RetentionDashboard() {
 
     const fetchRetentionData = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const res = await axios.get('/api/analytics/retention', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+                        const res = await axios.get('/api/analytics/retention');
             setMembers(res.data);
         } catch (error) {
             console.error("Failed to fetch retention data", error);

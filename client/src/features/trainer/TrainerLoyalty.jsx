@@ -14,8 +14,8 @@ export default function TrainerLoyalty() {
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-                const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+                
+                
 
                 const [rewardsRes, ordersRes, trainerRes] = await Promise.all([
                     axios.get('/api/loyalty/rewards', { headers }),

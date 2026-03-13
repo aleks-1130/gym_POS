@@ -57,8 +57,7 @@ const ProfitabilityReport = ({ data }) => {
                 borderColor: '#8b5cf6', // Violet
                 backgroundColor: 'rgba(139, 92, 246, 0.1)',
                 tension: 0.4,
-                fill: true,
-            }
+                fill: true }
         ]
     };
 
@@ -70,8 +69,7 @@ const ProfitabilityReport = ({ data }) => {
                 backgroundColor: [
                     '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#06b6d4', '#6366f1'
                 ],
-                borderWidth: 0,
-            }
+                borderWidth: 0 }
         ]
     };
 

@@ -15,8 +15,7 @@ const OperationsView = ({ data }) => {
             label: 'Activity Level',
             data: peakHours,
             backgroundColor: '#3b82f6',
-            borderRadius: 6,
-        }]
+            borderRadius: 6 }]
     };
 
     const chartOptions = {

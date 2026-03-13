@@ -4,8 +4,8 @@ import React from 'react';
  * Helper to get Authorization headers from session or local storage.
  */
 export const authHeaders = () => {
-    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-    return token ? { Authorization: `Bearer ${token}` } : undefined;
+    
+    return undefined;
 };
 
 /**

@@ -196,7 +196,7 @@ export default function TrainerSessions() {
         acc[key] = acc[key] || [];
         acc[key].push(session);
         return acc;
-    }, {});
+    });
     const dayKeys = Object.keys(grouped);
     const currentDay = activeDay || dayKeys[0] || '';
     const currentSessions = currentDay ? grouped[currentDay] : [];
@@ -215,7 +215,7 @@ export default function TrainerSessions() {
         acc[key] = acc[key] || [];
         acc[key].push(session);
         return acc;
-    }, {});
+    });
 
     const getTimeString = (sessionDate) => {
         const d = new Date(sessionDate);

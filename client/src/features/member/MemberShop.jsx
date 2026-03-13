@@ -15,7 +15,7 @@ export default function MemberShop() {
     const [loading, setLoading] = useState(true);
     const [cart, setCart] = useState([]);
     const [sessionId, setSessionId] = useState(null);
-    const [addingToCart, setAddingToCart] = useState({});
+    const [addingToCart, setAddingToCart] = useState();
     const [showCartModal, setShowCartModal] = useState(false);
     const [cartPopup, setCartPopup] = useState({ show: false, itemName: '' });
     const cartPopupTimerRef = useRef(null);
@@ -85,14 +85,10 @@ export default function MemberShop() {
                 return;
             }
             if (!user?.id) return;
-            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-            if (token) {
-                const res = await axios.get(`/api/members/${user?.id}/payment-methods`, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
-                setPaymentMethods(res.data);
-                if (res.data.length > 0) setSelectedMethodId(res.data[0].id);
-            }
+            
+            const res = await axios.get(`/api/members/${user?.id}/payment-methods`);
+            setPaymentMethods(res.data);
+            if (res.data.length > 0) setSelectedMethodId(res.data[0].id);
         } catch (error) {
             console.error("Failed to fetch payment methods");
         }
@@ -147,14 +143,14 @@ export default function MemberShop() {
                 return;
             }
 
-            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-            const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+            
+            
 
             await axios.post('/api/pos/reserve', {
                 sessionId: sid,
                 productId: product.id,
                 quantity: newQuantity
-            }, { headers: authHeaders });
+            });
 
             let updatedCart;
             if (existingItem) {
@@ -195,14 +191,14 @@ export default function MemberShop() {
 
         const sid = getSessionId();
         try {
-            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-            const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+            
+            
 
             await axios.post('/api/pos/reserve', {
                 sessionId: sid,
                 productId: productId,
                 quantity: newQuantity
-            }, { headers: authHeaders });
+            });
 
             const updatedCart = cart.map(item =>
                 item.id === productId
@@ -219,10 +215,10 @@ export default function MemberShop() {
     const removeFromCart = async (productId) => {
         const sid = getSessionId();
         try {
-            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-            const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+            
+            
 
-            await axios.delete(`/api/pos/reserve/${sid}/${productId}`, { headers: authHeaders });
+            await axios.delete(`/api/pos/reserve/${sid}/${productId}`);
             const updatedCart = cart.filter(item => item.id !== productId);
             saveCart(updatedCart);
         } catch (error) {
@@ -313,7 +309,7 @@ export default function MemberShop() {
 
         setIsCheckingOut(true);
         try {
-            const token = localStorage.getItem('token');
+            
             const payload = {
                 items: cart.map(i => ({ productId: i.id, quantity: i.quantity, price: i.price, name: i.name })),
                 total: getCartTotal(),
@@ -325,13 +321,9 @@ export default function MemberShop() {
                 gcashDate: null
             };
 
-            await axios.post('/api/members/checkout', payload, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await axios.post('/api/members/checkout', payload);
 
-            await axios.delete(`/api/pos/reserve/${sessionId || getSessionId()}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            }).catch(e => console.error("Failed to clear redis sessionId", e));
+            await axios.delete(`/api/pos/reserve/${sessionId || getSessionId()}`).catch(e => console.error("Failed to clear redis sessionId", e));
 
             setCart([]);
             saveCart([]);

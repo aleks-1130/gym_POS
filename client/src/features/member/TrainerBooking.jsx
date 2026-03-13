@@ -102,7 +102,7 @@ export default function TrainerBooking() {
         paymentMethod: 'CASH'
     });
     const [selectedDates, setSelectedDates] = useState([]);
-    const [selectedTimesByDate, setSelectedTimesByDate] = useState({});
+    const [selectedTimesByDate, setSelectedTimesByDate] = useState();
     const [bookingLoading, setBookingLoading] = useState(false);
     const [memberSessions, setMemberSessions] = useState([]);
     const [sessionsLoading, setSessionsLoading] = useState(false);
@@ -152,10 +152,8 @@ export default function TrainerBooking() {
         const fetchMethods = async () => {
             if (!user?.id) return;
             try {
-                const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-                const res = await axios.get(`/api/members/${user.id}/payment-methods`, {
-                    headers: token ? { Authorization: `Bearer ${token}` } : undefined
-                });
+                
+                const res = await axios.get(`/api/members/${user.id}/payment-methods`);
                 const methods = res.data || [];
                 setPaymentMethods(methods);
                 const defaultMethod = methods.find((m) => m.isDefault);
@@ -199,10 +197,8 @@ export default function TrainerBooking() {
 
     const fetchTrainers = async () => {
         try {
-            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-            const res = await axios.get('/api/trainers', {
-                headers: token ? { Authorization: `Bearer ${token}` } : undefined
-            });
+            
+            const res = await axios.get('/api/trainers');
             setTrainers(Array.isArray(res.data) ? res.data : []);
         } catch {
             console.error("Failed to fetch trainers");
@@ -216,10 +212,8 @@ export default function TrainerBooking() {
         setSessionsLoading(true);
         setSessionsError('');
         try {
-            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-            const res = await axios.get('/api/members/me/training-sessions', {
-                headers: token ? { Authorization: `Bearer ${token}` } : undefined
-            });
+            
+            const res = await axios.get('/api/members/me/training-sessions');
             setMemberSessions(Array.isArray(res.data) ? res.data : []);
         } catch (error) {
             const status = error?.response?.status;
@@ -241,10 +235,8 @@ export default function TrainerBooking() {
         if (!confirmed) return;
 
         try {
-            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-            await axios.post(`/api/members/me/training-sessions/${sessionId}/cancel`, {}, {
-                headers: token ? { Authorization: `Bearer ${token}` } : undefined
-            });
+            
+            await axios.post(`/api/members/me/training-sessions/${sessionId}/cancel`, {});
             await showAlert({ title: 'Session Cancelled', message: 'Session cancelled successfully.', type: 'success' });
             fetchMemberSessions();
         } catch (error) {
@@ -294,13 +286,11 @@ export default function TrainerBooking() {
         setRescheduleLoading(true);
         setRescheduleError('');
         try {
-            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+            
             await axios.post(`/api/members/me/training-sessions/${rescheduleSession.id}/reschedule`, {
                 date: rescheduleForm.date,
                 time: rescheduleForm.time,
                 reason: rescheduleForm.reason
-            }, {
-                headers: token ? { Authorization: `Bearer ${token}` } : undefined
             });
             await showAlert({ title: 'Rescheduled!', message: 'Session rescheduled successfully.', type: 'success' });
             setRescheduleSession(null);
@@ -346,9 +336,9 @@ export default function TrainerBooking() {
 
         setBookingLoading(true);
         try {
-            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+            
             const endpoint = '/api/members/book-training';
-            const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+            
             const bookingBatchId = `MBR-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
             const payload = {
                 trainerId: selectedTrainer.id,
@@ -376,7 +366,7 @@ export default function TrainerBooking() {
             setSelectedTrainer(null);
             setBookingData({ duration: 60, notes: '', paymentMethod: 'CASH' });
             setSelectedDates([]);
-            setSelectedTimesByDate({});
+            setSelectedTimesByDate();
             fetchTrainers();
             fetchMemberSessions();
             setActiveTab('bookings'); // Auto-switch to bookings tab
@@ -399,7 +389,7 @@ export default function TrainerBooking() {
         setSelectedTrainer(null);
         setBookingData({ duration: 60, notes: '', paymentMethod: 'CASH' });
         setSelectedDates([]);
-        setSelectedTimesByDate({});
+        setSelectedTimesByDate();
         setSelectedMethodId('');
         setPaymentSelection('CASH');
         setCalendarMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
@@ -572,10 +562,8 @@ export default function TrainerBooking() {
         }));
 
         try {
-            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
             const response = await axios.get(`/api/trainers/${numericTrainerId}/reviews`, {
-                params: { limit: 12 },
-                headers: token ? { Authorization: `Bearer ${token}` } : undefined
+                params: { limit: 12 }
             });
             setTrainerReviewsById((prev) => ({
                 ...prev,
@@ -653,12 +641,10 @@ export default function TrainerBooking() {
 
         setRatingSubmittingId(session.id);
         try {
-            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+        try {
             await axios.post(`/api/members/me/training-sessions/${session.id}/rate`, {
                 rating,
                 comment
-            }, {
-                headers: token ? { Authorization: `Bearer ${token}` } : undefined
             });
             setRatingSelections((prev) => {
                 const next = { ...prev };
@@ -694,10 +680,7 @@ export default function TrainerBooking() {
 
         setRatingVoidingId(session.id);
         try {
-            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-            await axios.post(`/api/members/me/training-sessions/${session.id}/rate/void`, {}, {
-                headers: token ? { Authorization: `Bearer ${token}` } : undefined
-            });
+            await axios.post(`/api/members/me/training-sessions/${session.id}/rate/void`, {});
             setRatingSelections((prev) => {
                 const next = { ...prev };
                 delete next[session.id];

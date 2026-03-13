@@ -21,9 +21,8 @@ export default function PnLReportPage() {
             }
 
             try {
-                const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-                const response = await axios.get('/api/analytics', {
-                    headers: { Authorization: `Bearer ${token}` },
+                                const response = await axios.get('/api/analytics', {
+                    
                     params: { startDate, endDate }
                 });
                 setData(response.data);

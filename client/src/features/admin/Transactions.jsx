@@ -22,17 +22,14 @@ export default function Transactions() {
     const fetchHistory = async (page = 1, dateFrom = '', dateTo = '') => {
         setLoading(true);
         try {
-            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-            const params = new URLSearchParams({
+                        const params = new URLSearchParams({
                 page: String(page),
                 limit: String(LIMIT)
             });
             if (dateFrom) params.set('startDate', dateFrom);
             if (dateTo) params.set('endDate', dateTo);
 
-            const res = await axios.get(`/api/payments?${params.toString()}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const res = await axios.get(`/api/payments?${params.toString()}`);
             if (res.data.meta) {
                 setHistory(res.data.data);
                 setTotalPages(res.data.meta.totalPages);

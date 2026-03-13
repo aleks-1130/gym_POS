@@ -36,10 +36,7 @@ export const SettingsProvider = ({ children }) => {
 
     const updateSettings = async (newSettings) => {
         try {
-            const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-            const res = await axios.post('/api/settings', newSettings, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const res = await axios.post('/api/settings', newSettings);
             setSettings(res.data);
             return true;
         } catch (error) {

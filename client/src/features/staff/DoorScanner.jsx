@@ -16,10 +16,8 @@ export default function DoorScanner() {
 
     const fetchLogs = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const res = await axios.get('/api/access/logs', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            
+            const res = await axios.get('/api/access/logs');
             setLogs(res.data);
         } catch {
             console.error("Failed to fetch logs");
@@ -30,11 +28,9 @@ export default function DoorScanner() {
         setScanning(true);
         try {
             // Real simulation call
-            const token = localStorage.getItem('token');
+            
             const res = await axios.post('/api/access/simulate',
-                { status: accessStatus },
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
+                { status: accessStatus });
 
             // Delay for animation effect
             setTimeout(() => {

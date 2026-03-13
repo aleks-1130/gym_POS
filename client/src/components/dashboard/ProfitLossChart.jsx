@@ -8,8 +8,7 @@ import {
     Title,
     Tooltip,
     Legend,
-    BarElement,
-} from 'chart.js';
+    BarElement } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
 import { useCurrency } from '../../context/CurrencyContext';
 
@@ -43,25 +42,21 @@ const ProfitLossChart = ({ data }) => {
                 data: sortedData.map(item => item.revenue),
                 backgroundColor: '#10B981', // Emerald
                 borderRadius: 4,
-                order: 2,
-            },
+                order: 2 },
             {
                 label: 'Expenses',
                 data: sortedData.map(item => item.expense),
                 backgroundColor: '#EF4444', // Red
                 borderRadius: 4,
-                order: 3,
-            }
-        ],
-    };
+                order: 3 }
+        ] };
 
     const options = {
         responsive: true,
         maintainAspectRatio: false,
         interaction: {
             mode: 'index',
-            intersect: false,
-        },
+            intersect: false },
         plugins: {
             legend: {
                 position: 'top',
@@ -90,9 +85,7 @@ const ProfitLossChart = ({ data }) => {
             y: {
                 grid: { color: 'rgba(255, 255, 255, 0.05)' },
                 ticks: { color: '#9CA3AF' }
-            },
-        },
-    };
+            } } };
 
     return (
         <div className="bg-surface border border-white/5 rounded-2xl p-6 h-[380px]">

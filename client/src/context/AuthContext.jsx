@@ -24,21 +24,11 @@ try {
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
-    const [token, setToken] = useState(localStorage.getItem('token') || sessionStorage.getItem('token'));
     const [loading, setLoading] = useState(true);
 
     const isAuthClientReady = Boolean(authClient);
 
-    // Configure axios defaults when token changes
-    useEffect(() => {
-        if (token) {
-            axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-        } else {
-            delete axios.defaults.headers.common['Authorization'];
-        }
-    }, [token]);
-
-    const syncUserWithBackend = async (authToken) => {
+    const syncUserWithBackend = async () => {
         try {
             // We need an endpoint that returns the user's role and details from our local DB
             // We can use a new endpoint or repurpose an existing one. 
@@ -54,14 +44,13 @@ export const AuthProvider = ({ children }) => {
             // However, the app relies heavily on `user.role`.
             // So we MUST fetch the role.
 
-            // We will trust the backend to correctly identify the user from the token.
-            const res = await axios.get(withApiBase('/api/auth/me'), {
-                headers: { Authorization: `Bearer ${authToken}` }
-            });
+            // We will trust the backend to correctly identify the user from the httpOnly cookie.
+            const res = await axios.get(withApiBase('/api/auth/me'));
 
             return res.data; // Should contain { id, role, name, ... }
         } catch (e) {
-            console.error("Failed to sync user with backend:", e);
+            console.error("Failed to sync user with backend. Error data:", e.response?.data);
+            console.error("Error Message:", e.message);
             return null;
         }
     };
@@ -95,12 +84,24 @@ export const AuthProvider = ({ children }) => {
                 throw new Error("Authentication failed to provide token");
             }
 
-            // 2. Set Token immediately
-            setToken(authToken);
-            localStorage.setItem('token', authToken);
-
-            // 3. Sync with Backend to get Role
-            const backendUser = await syncUserWithBackend(authToken);
+            // 2. Sync with Backend
+            // The backend login endpoint already set the httpOnly cookie, so we just need to get the user info
+            // Wait, our backend login endpoint returns the user object directly.
+            // Oh, the Neon auth logic here is a bit detached.
+            // If Neon Auth is used, the backend needs to know about the session.
+            // But we modified the backend /api/auth/login to set the cookie.
+            // Is this frontend login function calling /api/auth/login? 
+            // No, it handles Neon auth directly. 
+            // This is a flaw in the original logic. We need to tell the backend to set the cookie.
+            // For now, let's POST to /api/auth/login with the new token or rely on syncUserWithBackend?
+            // Actually, the original code doesn't call /api/auth/login. It just sets localStorage and calls /me.
+            // To fix this without breaking Neon, we MUST send the Neon token to the backend so the backend can set the cookie.
+            // BUT wait, our backend `/api/auth/login` expects `email` and `password` !
+            // It seems Neon Auth is being used but maybe dual-written?
+            // Let's modify this to ensure the backend sets the cookie. We will pass the token to a new endpoint or just use /api/auth/login directly.
+            // Actually, if we just call the regular backend login, it will set the cookie.
+            const backendLoginRes = await axios.post(withApiBase('/api/auth/login'), { email, password });
+            const backendUser = backendLoginRes.data.user;
 
             if (!backendUser) {
                 // Determine layout/role based on failure or fallback?
@@ -152,13 +153,14 @@ export const AuthProvider = ({ children }) => {
         } catch (e) {
             console.warn("Neon signOut failed", e);
         }
+        try {
+            await axios.post(withApiBase('/api/auth/logout'));
+        } catch (serverErr) {
+            console.warn("Server logout failed", serverErr);
+        }
         setUser(null);
-        setToken(null);
-        localStorage.removeItem('token');
         localStorage.removeItem('user');
-        sessionStorage.removeItem('token');
         sessionStorage.removeItem('user');
-        delete axios.defaults.headers.common['Authorization'];
     };
 
     // Initialize session check
@@ -172,42 +174,14 @@ export const AuthProvider = ({ children }) => {
                 return;
             }
 
-            // Check if we have a token
-            const storedToken = localStorage.getItem('token');
-            if (!storedToken) {
-                setLoading(false);
-                return;
-            }
-
-            // Verify if session is valid with Neon (optional but good)
+            // Verify session entirely using the backend cookie automatically
             try {
-                const result = await authClient.getSession();
-
-                if (result.error || !result.data || !result.data.session) {
-                    throw new Error("Session expired or invalid");
-                }
-
-                const { session } = result.data;
-
-                // Refresh token if needed
-                // Fallback to storedToken if session doesn't explicitly return a new token string
-                const newToken = result.data.token || session?.token || session?.access_token || storedToken;
-
-                if (newToken && newToken !== storedToken) {
-                    setToken(newToken);
-                    localStorage.setItem('token', newToken);
-                }
-
-                // Sync User
-                const backendUser = await syncUserWithBackend(newToken);
+                const backendUser = await syncUserWithBackend();
                 if (backendUser) {
                     setUser(backendUser);
                 } else {
-                    // Fallback to stored user if offline or sync fails?
-                    const storedUser = localStorage.getItem('user');
-                    if (storedUser) setUser(JSON.parse(storedUser));
+                    setUser(null);
                 }
-
             } catch (e) {
                 console.error("Session restoration failed:", e);
                 logout();
@@ -219,7 +193,7 @@ export const AuthProvider = ({ children }) => {
     }, [isAuthClientReady]);
 
     return (
-        <AuthContext.Provider value={{ user, token, login, register, logout, loading }}>
+        <AuthContext.Provider value={{ user, login, register, logout, loading }}>
             {!loading && children}
         </AuthContext.Provider>
     );

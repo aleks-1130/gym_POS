@@ -30,8 +30,8 @@ const getRequestStatusLabel = (status) => {
 };
 
 const getAuthHeaders = () => {
-    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-    return token ? { Authorization: `Bearer ${token}` } : undefined;
+    
+    return undefined;
 };
 
 const getTrainerSpecialties = (trainer) => {
@@ -113,11 +113,11 @@ export default function TrainerProfile() {
     const loadProfile = async () => {
         let res = null;
         try {
-            res = await axios.get('/api/trainer/me', { headers: getAuthHeaders() });
+            res = await axios.get('/api/trainer/me');
         } catch (primaryError) {
             const status = Number(primaryError?.response?.status || 0);
             if (status === 404 || status === 405) {
-                res = await axios.get('/api/trainers/me', { headers: getAuthHeaders() });
+                res = await axios.get('/api/trainers/me');
             } else {
                 throw primaryError;
             }
@@ -144,11 +144,11 @@ export default function TrainerProfile() {
         try {
             let res = null;
             try {
-                res = await axios.get('/api/trainer/me/profile-change-requests', { headers: getAuthHeaders() });
+                res = await axios.get('/api/trainer/me/profile-change-requests');
             } catch (primaryError) {
                 const status = Number(primaryError?.response?.status || 0);
                 if (status === 404 || status === 405) {
-                    res = await axios.get('/api/trainers/me/profile-change-requests', { headers: getAuthHeaders() });
+                    res = await axios.get('/api/trainers/me/profile-change-requests');
                 } else {
                     throw primaryError;
                 }
@@ -192,11 +192,11 @@ export default function TrainerProfile() {
         try {
             let response = null;
             try {
-                response = await axios.patch('/api/trainer/me/profile', { email, phone, imageUrl }, { headers: getAuthHeaders() });
+                response = await axios.patch('/api/trainer/me/profile', { email, phone, imageUrl });
             } catch (primaryError) {
                 const status = Number(primaryError?.response?.status || 0);
                 if (status === 404 || status === 405) {
-                    response = await axios.patch('/api/trainers/me/profile', { email, phone, imageUrl }, { headers: getAuthHeaders() });
+                    response = await axios.patch('/api/trainers/me/profile', { email, phone, imageUrl });
                 } else {
                     throw primaryError;
                 }
@@ -242,15 +242,11 @@ export default function TrainerProfile() {
         setSubmittingRequest(true);
         try {
             try {
-                await axios.post('/api/trainer/me/profile-change-requests', payload, {
-                    headers: getAuthHeaders()
-                });
+                await axios.post('/api/trainer/me/profile-change-requests', payload);
             } catch (primaryError) {
                 const status = Number(primaryError?.response?.status || 0);
                 if (status === 404 || status === 405) {
-                    await axios.post('/api/trainers/me/profile-change-requests', payload, {
-                        headers: getAuthHeaders()
-                    });
+                    await axios.post('/api/trainers/me/profile-change-requests', payload);
                 } else {
                     throw primaryError;
                 }

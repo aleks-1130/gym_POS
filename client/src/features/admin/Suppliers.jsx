@@ -25,10 +25,7 @@ const Suppliers = () => {
 
     const fetchSuppliers = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const res = await axios.get('/api/suppliers', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+                        const res = await axios.get('/api/suppliers');
             setSuppliers(res.data);
             setLoading(false);
         } catch (error) {
@@ -40,15 +37,10 @@ const Suppliers = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-            const token = localStorage.getItem('token');
-            if (editingId) {
-                await axios.put(`/api/suppliers/${editingId}`, formData, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
+                        if (editingId) {
+                await axios.put(`/api/suppliers/${editingId}`, formData);
             } else {
-                await axios.post('/api/suppliers', formData, {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
+                await axios.post('/api/suppliers', formData);
             }
             setShowModal(false);
             setFormData({ name: '', contact: '', email: '', address: '', notes: '' });
@@ -75,10 +67,7 @@ const Suppliers = () => {
         const confirmed = await showConfirm({ title: 'Delete Supplier?', message: 'Delete this supplier? Suppliers with linked products cannot be deleted.', confirmLabel: 'Delete', type: 'danger' });
         if (!confirmed) return;
         try {
-            const token = localStorage.getItem('token');
-            await axios.delete(`/api/suppliers/${id}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+                        await axios.delete(`/api/suppliers/${id}`);
             fetchSuppliers();
         } catch (error) {
             await showAlert({ title: 'Delete Failed', message: 'Failed to delete supplier. It may have linked products.', type: 'danger' });

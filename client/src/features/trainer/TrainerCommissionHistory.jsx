@@ -12,10 +12,8 @@ export default function TrainerCommissionHistory() {
     useEffect(() => {
         const fetchCommissions = async () => {
             try {
-                const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-                const res = await axios.get('/api/trainer/me/commissions', {
-                    headers: token ? { Authorization: `Bearer ${token}` } : undefined
-                });
+                
+                const res = await axios.get('/api/trainer/me/commissions');
                 setData(res.data || null);
             } catch (e) {
                 console.error('Failed to fetch commission history', e);

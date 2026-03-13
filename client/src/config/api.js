@@ -1,4 +1,9 @@
+import axios from 'axios';
+
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+
+// Configure global axios default to send httpOnly cookies automatically
+axios.defaults.withCredentials = true;
 
 export const withApiBase = (path) => {
     if (!path) return API_BASE_URL;

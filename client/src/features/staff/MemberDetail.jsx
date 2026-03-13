@@ -55,7 +55,7 @@ export default function MemberDetail() {
     const [notes, setNotes] = useState([]);
     const [payments, setPayments] = useState([]);
     const [loadingPayments, setLoadingPayments] = useState(false);
-    const [editFormData, setEditFormData] = useState({});
+    const [editFormData, setEditFormData] = useState();
     const [classSessionPurchaseData, setClassSessionPurchaseData] = useState({
         packageId: '',
         method: 'CASH',

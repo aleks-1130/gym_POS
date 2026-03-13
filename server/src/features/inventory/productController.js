@@ -53,7 +53,7 @@ const getAllProducts = async (req, res) => {
         const search = String(req.query.search || '').trim();
         const where = {};
 
-        if (category) {
+        if (category && category !== 'All') {
             where.category = category;
         }
         if (search) {
@@ -65,14 +65,26 @@ const getAllProducts = async (req, res) => {
 
         const isPaginated = Number.isInteger(page) && page > 0 && Number.isInteger(limit) && limit > 0;
 
-        // Fetch global active reservations across all carts from Redis
-        const allKeys = await redisClient.keys('cart:reserve:*');
+        // Fetch global active reservations across all carts from Redis (if available)
         const holds = {};
-        for (const key of allKeys) {
-            const hdata = await redisClient.hGetAll(key);
-            for (const [pid, qty] of Object.entries(hdata)) {
-                holds[pid] = (holds[pid] || 0) + Number(qty);
+        const startRedis = Date.now();
+        if (redisClient.isOpen && redisClient.isReady) {
+            console.log("[DEBUG] Fetching Redis holds...");
+            try {
+                const allKeys = await redisClient.keys('cart:reserve:*');
+                console.log(`[DEBUG] Found ${allKeys.length} hold keys`);
+                for (const key of allKeys) {
+                    const hdata = await redisClient.hGetAll(key);
+                    for (const [pid, qty] of Object.entries(hdata)) {
+                        holds[pid] = (holds[pid] || 0) + Number(qty);
+                    }
+                }
+                console.log(`[DEBUG] Redis hold fetch took ${Date.now() - startRedis}ms`);
+            } catch (err) {
+                console.error("[DEBUG] Product fetch: Redis error ignored:", err.message);
             }
+        } else {
+            console.log(`[DEBUG] Redis not ready (isOpen: ${redisClient.isOpen}, isReady: ${redisClient.isReady}), skipping holds.`);
         }
 
         const mapWithStock = (p) => {
@@ -82,10 +94,13 @@ const getAllProducts = async (req, res) => {
         };
 
         if (!isPaginated) {
+            console.log("[DEBUG] Fetching products from DB (non-paginated)...");
+            const startDb = Date.now();
             const products = await prisma.product.findMany({
                 where,
                 orderBy: { name: 'asc' }
             });
+            console.log(`[DEBUG] DB fetch took ${Date.now() - startDb}ms for ${products.length} products`);
             return res.json(products.map(mapWithStock));
         }
 

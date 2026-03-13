@@ -14,7 +14,7 @@ export const usePWA = () => {
     // Register service worker
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker
-        .register('/service-worker.js?v=1.2')
+        .register('/service-worker.js?v=1.3')
         .then(registration => {
           console.log('Service Worker registered:', registration);
           // Force an update check immediately

@@ -31,8 +31,17 @@ const login = async (req, res) => {
             const match = await bcrypt.compare(password, user.password);
             console.log("[DEBUG] Password Match:", match);
             if (match) {
-                const token = jwt.sign({ id: user.id, role: user.role, type: 'USER', trainerId: user.trainerId }, SECRET);
-                return res.json({ token, user: { id: user.id, name: user.name, role: user.role, trainerId: user.trainerId } });
+                const payload = { id: user.id, email: user.email, role: user.role, type: 'USER', trainerId: user.trainerId };
+                console.log("[DEBUG] Signing JWT for user:", user.email, "with SECRET length:", SECRET ? SECRET.length : 0);
+                const token = jwt.sign(payload, SECRET);
+                res.cookie('token', token, {
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === 'production', 
+                    sameSite: 'lax', 
+                    maxAge: 24 * 60 * 60 * 1000 // 1 day
+                });
+                console.log("[DEBUG] Cookie 'token' set successfully via res.cookie");
+                return res.json({ user: { id: user.id, name: user.name, role: user.role, trainerId: user.trainerId } });
             }
         }
 
@@ -48,8 +57,17 @@ const login = async (req, res) => {
             const match = await bcrypt.compare(password, member.password);
             console.log("[DEBUG] Member Password Match:", match);
             if (match) {
-                const token = jwt.sign({ id: member.id, role: 'MEMBER', type: 'MEMBER' }, SECRET);
-                return res.json({ token, user: { id: member.id, name: member.firstName, role: 'MEMBER' } });
+                const payload = { id: member.id, email: member.email, role: 'MEMBER', type: 'MEMBER' };
+                console.log("[DEBUG] Signing JWT for member:", member.email, "with SECRET length:", SECRET ? SECRET.length : 0);
+                const token = jwt.sign(payload, SECRET);
+                res.cookie('token', token, {
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === 'production',
+                    sameSite: 'lax',
+                    maxAge: 24 * 60 * 60 * 1000 // 1 day
+                });
+                console.log("[DEBUG] Cookie 'token' set successfully for member");
+                return res.json({ user: { id: member.id, name: member.firstName, role: 'MEMBER' } });
             }
         }
 
@@ -328,8 +346,18 @@ const resetPassword = async (req, res) => {
 };
 
 
+const logout = (req, res) => {
+    res.clearCookie('token', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax'
+    });
+    res.json({ message: "Logged out successfully" });
+};
+
 module.exports = {
     login,
+    logout,
     setupMemberPassword,
     getMe,
     verifyToken,

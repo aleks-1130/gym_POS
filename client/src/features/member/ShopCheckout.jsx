@@ -21,10 +21,8 @@ export default function ShopCheckout() {
         const fetchMethods = async () => {
             if (!user?.id) return;
             try {
-                const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-                const res = await axios.get(`/api/members/${user.id}/payment-methods`, {
-                    headers: token ? { Authorization: `Bearer ${token}` } : undefined
-                });
+                
+                const res = await axios.get(`/api/members/${user.id}/payment-methods`);
                 const methods = res.data || [];
                 setPaymentMethods(methods);
                 const defaultMethod = methods.find((m) => m.isDefault);
@@ -68,10 +66,8 @@ export default function ShopCheckout() {
         };
 
         try {
-            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-            await axios.post('/api/payments', payload, {
-                headers: token ? { Authorization: `Bearer ${token}` } : undefined
-            });
+            
+            await axios.post('/api/payments', payload);
             localStorage.removeItem('gymCart');
             navigate('/purchase-history');
         } catch (error) {

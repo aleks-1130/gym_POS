@@ -56,7 +56,7 @@ export default function POSCart({ members, trainers, discountOptions, initiateCh
 
     // Local UI State
     const [openCalendarLineId, setOpenCalendarLineId] = useState(null);
-    const [calendarMonthByLine, setCalendarMonthByLine] = useState({});
+    const [calendarMonthByLine, setCalendarMonthByLine] = useState();
     const [selectedDiscountPresetId, setSelectedDiscountPresetId] = useState('');
     const [couponInput, setCouponInput] = useState('');
     const [couponLoading, setCouponLoading] = useState(false);

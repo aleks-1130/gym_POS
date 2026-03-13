@@ -3,8 +3,8 @@ import axios from 'axios';
 import { withApiBase } from '../config/api';
 
 const authHeaders = () => {
-    const token = localStorage.getItem('token');
-    return token ? { Authorization: `Bearer ${token}` } : {};
+    
+    return undefined;
 };
 
 /**
@@ -39,8 +39,7 @@ export const usePOSStore = create((set, get) => ({
         receiptPreview: false,
         collectCash: false,
         collectPurchase: false,
-        trainerChange: false,
-    },
+        trainerChange: false },
 
     // --- MODAL DATA ---
     paymentDetails: {
@@ -48,18 +47,15 @@ export const usePOSStore = create((set, get) => ({
         method: '',
         gcashReference: '',
         gcashDate: '',
-        gcashTime: '',
-    },
+        gcashTime: '' },
     lastTransaction: null,
     collectData: {
         session: null,
         purchase: null,
-        tendered: '',
-    },
+        tendered: '' },
     trainerChangeData: {
         session: null,
-        resolution: { action: 'MOVE', date: '', time: '', note: '' },
-    },
+        resolution: { action: 'MOVE', date: '', time: '', note: '' } },
 
     // --- ACTIONS ---
 

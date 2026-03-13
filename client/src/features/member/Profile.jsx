@@ -50,8 +50,8 @@ export default function Profile() {
         const fetchMember = async () => {
             if (!user?.id) return;
             try {
-                const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-                const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+                
+                
                 let profileData = null;
 
                 try {
@@ -153,10 +153,8 @@ export default function Profile() {
         e.preventDefault();
         if (!user?.id || !isMember) return;
         try {
-            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-            const res = await axios.put(`/api/members/${user.id}`, editForm, {
-                headers: token ? { Authorization: `Bearer ${token}` } : undefined
-            });
+            
+            const res = await axios.put(`/api/members/${user.id}`, editForm);
             setMember(res.data);
             setShowEditModal(false);
         } catch (error) {
@@ -168,10 +166,8 @@ export default function Profile() {
         e.preventDefault();
         if (!user?.id || !isMember) return;
         try {
-            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-            await axios.post(`/api/members/${user.id}/change-password`, passwordForm, {
-                headers: token ? { Authorization: `Bearer ${token}` } : undefined
-            });
+            
+            await axios.post(`/api/members/${user.id}/change-password`, passwordForm);
             setPasswordForm({ currentPassword: '', newPassword: '' });
             setShowPasswordModal(false);
         } catch (error) {

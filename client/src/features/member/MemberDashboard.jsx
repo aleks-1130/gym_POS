@@ -91,14 +91,8 @@ const MemberDashboard = ({ stats, user }) => {
         const fetchDynamicQr = async () => {
             try {
                 setDynamicQr((prev) => ({ ...prev, loading: true }));
-                const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-                if (!token) {
-                    setDynamicQr({ qrValue: '', expiresAt: null, loading: false });
-                    return;
-                }
-                const res = await axios.get('/api/access/qr-token', {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
+                
+                const res = await axios.get('/api/access/qr-token');
                 setDynamicQr({
                     qrValue: res.data?.qrValue || '',
                     expiresAt: res.data?.expiresAt || null,

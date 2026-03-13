@@ -115,8 +115,7 @@ export default function POS() {
     }, [trainingBookings]);
 
     const handlePrint = useReactToPrint({
-        content: () => receiptRef.current,
-    });
+        content: () => receiptRef.current });
 
     useEffect(() => {
         fetchProducts();

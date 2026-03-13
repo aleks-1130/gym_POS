@@ -11,18 +11,22 @@ const logAudit = require('./src/services/auditService');
 const { migrateInventoryDataToDatabase } = require('./src/features/inventory/inventoryDataMigrationService');
 const { connectRedis } = require('./src/config/redisClient');
 
+const cookieParser = require('cookie-parser');
 const app = express();
 const schedulingService = require('./src/services/schedulingService');
 schedulingService.init();
 
 const PORT = process.env.PORT || 5000;
 
-app.use(helmet());
 app.use(cors({
-    origin: process.env.CORS_ALLOWED_ORIGINS ? process.env.CORS_ALLOWED_ORIGINS.split(',') : '*',
-    credentials: true
+    origin: ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000', 'http://localhost:5174'],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Cookie']
 }));
+app.use(helmet());
 app.use(express.json());
+app.use(cookieParser());
 
 // Serve static files (uploads) - ensure the folder exists or is handled
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -32,11 +36,52 @@ app.get('/', (req, res) => {
     res.send('Gym POS API is running...');
 });
 
-app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString(), message: 'Gym POS API is healthy' });
+app.get('/api/health', async (req, res) => {
+    try {
+        const userCount = await prisma.user.count();
+        const productCount = await prisma.product.count();
+        
+        let redisStatus = 'disconnected';
+        let redisHoldCount = 0;
+        try {
+            const { redisClient } = require('./src/config/redisClient');
+            if (redisClient?.isOpen) {
+                redisStatus = 'connected';
+                const keys = await redisClient.keys('cart:reserve:*');
+                redisHoldCount = keys.length;
+            }
+        } catch (re) {}
+
+        res.json({ 
+            status: 'ok', 
+            db: 'connected', 
+            userCount,
+            productCount,
+            redisStatus,
+            redisHoldCount,
+            timestamp: new Date().toISOString(), 
+            env: process.env.NODE_ENV
+        });
+    } catch (e) {
+        res.status(503).json({ 
+            status: 'error', 
+            db: 'disconnected', 
+            message: e.message,
+            timestamp: new Date().toISOString()
+        });
+    }
 });
 
-// --- MODULE ROUTES ---
+// --- HEALTH CHECK ---
+app.get('/api/debug/env', (req, res) => {
+    res.json({
+        PORT: process.env.PORT,
+        NODE_ENV: process.env.NODE_ENV,
+        JWT_SECRET_PREFIX: process.env.JWT_SECRET ? process.env.JWT_SECRET.slice(0, 3) + '...' : 'MISSING',
+        DB_URL_PREFIX: process.env.DATABASE_URL ? process.env.DATABASE_URL.slice(0, 20) + '...' : 'MISSING'
+    });
+});
+
 // --- MODULE ROUTES ---
 app.use('/api/auth', require('./src/features/auth/authRoutes'));
 app.use('/api/dashboard', require('./src/features/dashboard/dashboardRoutes'));

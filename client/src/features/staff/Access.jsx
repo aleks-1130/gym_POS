@@ -50,10 +50,8 @@ export default function Access() {
 
         const checkLatestScan = async () => {
             try {
-                const token = localStorage.getItem('token');
-                const res = await axios.get('/api/access/logs', {
-                    headers: { Authorization: `Bearer ${token}` }
-                });
+                
+                const res = await axios.get('/api/access/logs');
 
                 if (res.data && res.data.length > 0) {
                     const latest = res.data[0];
@@ -121,10 +119,8 @@ export default function Access() {
     const simulateScan = async () => {
         setScanning(true);
         try {
-            const token = localStorage.getItem('token');
-            const res = await axios.post('/api/access/simulate', { status: 'ALLOWED' }, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            
+            const res = await axios.post('/api/access/simulate', { status: 'ALLOWED' });
 
             setTimeout(() => {
                 setScanError('');
@@ -145,12 +141,10 @@ export default function Access() {
         if (accessTokenMatch?.[1]) {
             setScanning(true);
             try {
-                const token = localStorage.getItem('token');
+                
                 const res = await axios.post(
                     '/api/access/checkin',
-                    { qrToken: accessTokenMatch[1].trim() },
-                    { headers: { Authorization: `Bearer ${token}` } }
-                );
+                    { qrToken: accessTokenMatch[1].trim() });
 
                 if (res.data?.id) {
                     setScanError('');
@@ -183,12 +177,10 @@ export default function Access() {
 
         setScanning(true);
         try {
-            const token = localStorage.getItem('token');
+            
             const res = await axios.post(
                 '/api/access/checkin',
-                payload,
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
+                payload);
 
             if (res.data?.id) {
                 setScanError('');

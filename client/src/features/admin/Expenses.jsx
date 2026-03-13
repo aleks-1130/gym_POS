@@ -58,10 +58,7 @@ const Expenses = () => {
     const fetchExpenses = async () => {
         try {
             setLoading(true);
-            const token = localStorage.getItem('token');
-            const res = await axios.get('/api/expenses', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+                        const res = await axios.get('/api/expenses');
             setExpenses(res.data || []);
         } catch (error) {
             console.error(error);
@@ -90,10 +87,7 @@ const Expenses = () => {
         if (!isConfirmed) return;
 
         try {
-            const token = localStorage.getItem('token');
-            await axios.delete(`/api/expenses/${id}`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+                        await axios.delete(`/api/expenses/${id}`);
             await fetchExpenses();
         } catch {
             await showAlert({ title: 'Delete Failed', message: 'Failed to delete expense. Please try again.', type: 'danger' });
@@ -103,15 +97,12 @@ const Expenses = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-            const token = localStorage.getItem('token');
-            const payload = {
+                        const payload = {
                 ...formData,
                 amount: Number(formData.amount)
             };
 
-            await axios.post('/api/expenses', payload, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await axios.post('/api/expenses', payload);
             setShowModal(false);
             resetForm();
             await fetchExpenses();

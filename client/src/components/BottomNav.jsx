@@ -193,8 +193,7 @@ export default function BottomNav() {
                                     className="absolute bottom-0 h-0.5 bg-gradient-to-r from-primary to-orange-500 transition-all duration-300 ease-out rounded-full"
                                     style={{
                                         left: `${activeIndex * itemWidthPercent}%`,
-                                        width: `${itemWidthPercent}%`,
-                                    }}
+                                        width: `${itemWidthPercent}%` }}
                                 />
                             )}
 
@@ -204,8 +203,7 @@ export default function BottomNav() {
                                     className="absolute inset-y-0 bg-gradient-to-t from-primary/10 to-transparent transition-all duration-300 ease-out pointer-events-none"
                                     style={{
                                         left: `${activeIndex * itemWidthPercent}%`,
-                                        width: `${itemWidthPercent}%`,
-                                    }}
+                                        width: `${itemWidthPercent}%` }}
                                 />
                             )}
                         </div>

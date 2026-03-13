@@ -10,8 +10,7 @@ import {
     Tooltip,
     Legend,
     ArcElement,
-    BarElement,
-} from 'chart.js';
+    BarElement } from 'chart.js';
 import { useCurrency } from '../../context/CurrencyContext';
 
 // Register ChartJS components locally to ensure they render
@@ -56,8 +55,7 @@ const OverviewReport = ({ data }) => {
                 borderColor: '#10b981', // Emerald 500
                 backgroundColor: 'rgba(16, 185, 129, 0.1)',
                 tension: 0.4,
-                fill: true,
-            },
+                fill: true },
             {
                 label: 'Expenses',
                 data: trends?.expenses || [],
@@ -81,8 +79,7 @@ const OverviewReport = ({ data }) => {
                     revenueBySource.pos
                 ],
                 backgroundColor: ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b'],
-                borderWidth: 0,
-            }
+                borderWidth: 0 }
         ]
     };
 

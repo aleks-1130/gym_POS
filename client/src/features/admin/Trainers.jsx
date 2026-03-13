@@ -370,7 +370,7 @@ export default function Trainers() {
                             end: trainer.availabilityEnd || '18:00'
                         };
                         return acc;
-                    }, {})
+                    })
                     : {}),
             availabilityIntervalMinutes: trainer.availabilityIntervalMinutes || 30,
             bio: trainer.bio || '',

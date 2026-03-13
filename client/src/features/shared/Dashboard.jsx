@@ -23,12 +23,7 @@ export default function Dashboard() {
     const { data: stats, isLoading: loading, error } = useQuery({
         queryKey: ['dashboard-stats'],
         queryFn: async () => {
-            const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-            if (!token) throw new Error("No authentication token found");
-
-            const res = await axios.get('/api/dashboard/stats', {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const res = await axios.get('/api/dashboard/stats');
             return res.data;
         },
         retry: 1,

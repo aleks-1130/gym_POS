@@ -26,25 +26,48 @@ async function getJose() {
 
 // Middleware to verify Neon Auth Token
 const authenticateToken = async (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    // Check cookies first, then fallback to Authorization header
+    const token = req.cookies?.token || (req.headers['authorization'] && req.headers['authorization'].split(' ')[1]);
 
     if (!token) return res.sendStatus(401);
 
     let email = null;
     let neonUserId = null;
+    let lastError = null;
+    let decodedPayload = null;
 
     try {
-        // 1. Try JWT Verification (Stateless)
-        const { jwtVerify, JWKS } = await getJose();
+        // 1. Try Local JWT Verification first (most common for cookie-based auth)
+        const jwt = require('jsonwebtoken'); // Lazy require
+        const SECRET = process.env.JWT_SECRET;
+        
+        try {
+            console.log("[DEBUG] Attempting Local JWT Verification...");
+            const decoded = jwt.verify(token, SECRET);
+            console.log("[DEBUG] Local JWT Verification Successful for email:", decoded.email);
+            email = decoded.email;
+            decodedPayload = decoded;
+            // No neonUserId in local token, but that's okay as we use email for sync
+        } catch (localErr) {
+            console.log("[DEBUG] Local JWT Verification Failed:", localErr.message);
+            lastError = `Local: ${localErr.message}`;
+            // 2. Try Neon Remote JWT Verification
+            const { jwtVerify, JWKS } = await getJose();
 
-        if (JWKS) {
-            const { payload } = await jwtVerify(token, JWKS);
-            console.log("[DEBUG] JWT Verification Successful");
-            email = payload.email;
-            neonUserId = payload.sub;
-        } else {
-            throw new Error("JWT verification unavailable (missing NEON_AUTH_URL)");
+            if (JWKS) {
+                try {
+                    const { payload } = await jwtVerify(token, JWKS);
+                    console.log("[DEBUG] Neon JWT Verification Successful");
+                    email = payload.email;
+                    neonUserId = payload.sub;
+                    decodedPayload = payload;
+                } catch (neonErr) {
+                    console.log("[DEBUG] Neon JWT Verification Failed:", neonErr.message);
+                    lastError += ` | Neon: ${neonErr.message}`;
+                }
+            } else {
+                lastError += " | Neon JWKS not configured";
+            }
         }
     } catch (jwtError) {
         // 2. Fallback to Database Session Verification
@@ -69,15 +92,18 @@ const authenticateToken = async (req, res, next) => {
                 throw new Error("Invalid session token");
             }
         } catch (dbError) {
-            console.error("[DEBUG] DB Session lookup failed:", dbError);
-            console.log("[DEBUG] Returning 403 because DB lookup failed");
-            return res.sendStatus(403);
+            console.error("[DEBUG] DB Session lookup failed (DB likely down):", dbError.message);
+            return res.status(503).json({ error: "Database unavailable during session verification", details: dbError.message });
         }
     }
 
     if (!email) {
-        console.log("[DEBUG] Returning 403 because email is null");
-        return res.status(403).json({ error: "Invalid token structure or session expired" });
+        return res.status(403).json({ 
+            error: "Authentication failed: email missing in token payload", 
+            tokenFound: !!token,
+            lastVerificationError: lastError,
+            decodedPayload: decodedPayload || "None"
+        });
     }
 
     try {
@@ -115,7 +141,7 @@ const authenticateToken = async (req, res, next) => {
 
         if (!userRole) {
             console.log("[DEBUG] User not found in local DB. Email:", email);
-            return res.status(403).json({ error: "User not found in system records" });
+            return res.status(403).json({ error: "User not found in system records", debugEmail: email });
         }
 
         // Attach user info to request
@@ -131,6 +157,10 @@ const authenticateToken = async (req, res, next) => {
         next();
     } catch (err) {
         console.error("User sync failed:", err);
+        const { isDatabaseUnreachableError } = require('../utils/prismaError');
+        if (isDatabaseUnreachableError(err)) {
+            return res.status(503).json({ error: "Database unavailable during user details lookup" });
+        }
         return res.sendStatus(500);
     }
 };
