@@ -5,6 +5,7 @@ const { authenticateToken, authorize } = require('../../middleware/authMiddlewar
 
 router.get('/', authenticateToken, expenseController.getExpenses);
 router.post('/', authenticateToken, authorize(['OWNER', 'ADMIN']), expenseController.createExpense);
+router.put('/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), expenseController.updateExpense);
 router.delete('/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), expenseController.deleteExpense);
 
 module.exports = router;

@@ -41,6 +41,7 @@ const Expenses = () => {
     const [expenses, setExpenses] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
+    const [editingExpense, setEditingExpense] = useState(null);
     const [viewMode, setViewMode] = useState('LIST');
     const [selectedCategory, setSelectedCategory] = useState('ALL');
     const [formData, setFormData] = useState({
@@ -75,6 +76,19 @@ const Expenses = () => {
             date: new Date().toISOString().split('T')[0],
             notes: ''
         });
+        setEditingExpense(null);
+    };
+
+    const handleEdit = (expense) => {
+        setEditingExpense(expense);
+        setFormData({
+            title: expense.title || '',
+            amount: String(expense.amount || ''),
+            category: expense.category || EXPENSE_CATEGORIES.UTILITIES,
+            date: expense.date ? new Date(expense.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            notes: expense.notes || ''
+        });
+        setShowModal(true);
     };
 
     const handleDelete = async (id) => {
@@ -97,18 +111,23 @@ const Expenses = () => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-                        const payload = {
-                ...formData,
-                amount: Number(formData.amount)
-            };
+            const payload = { ...formData, amount: Number(formData.amount) };
 
-            await axios.post('/api/expenses', payload);
-            setShowModal(false);
-            resetForm();
-            await fetchExpenses();
-            await showAlert({ title: 'Saved', message: 'Expense recorded successfully.', type: 'success' });
+            if (editingExpense) {
+                await axios.put(`/api/expenses/${editingExpense.id}`, payload);
+                setShowModal(false);
+                resetForm();
+                await fetchExpenses();
+                await showAlert({ title: 'Updated', message: 'Expense updated successfully.', type: 'success' });
+            } else {
+                await axios.post('/api/expenses', payload);
+                setShowModal(false);
+                resetForm();
+                await fetchExpenses();
+                await showAlert({ title: 'Saved', message: 'Expense recorded successfully.', type: 'success' });
+            }
         } catch {
-            await showAlert({ title: 'Submission Failed', message: 'Failed to add expense. Please check your inputs.', type: 'danger' });
+            await showAlert({ title: 'Submission Failed', message: editingExpense ? 'Failed to update expense.' : 'Failed to add expense. Please check your inputs.', type: 'danger' });
         }
     };
 
@@ -311,12 +330,20 @@ const Expenses = () => {
                                             <td className="p-3 text-right font-semibold text-red-300">{formatPrice(expense.amount)}</td>
                                             <td className="p-3 text-sm text-text-muted">{expense.notes || '-'}</td>
                                             <td className="p-3 text-right">
-                                                <button
-                                                    onClick={() => handleDelete(expense.id)}
-                                                    className="rounded-lg border border-red-500/20 bg-red-500/10 px-2.5 py-1 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/20"
-                                                >
-                                                    Delete
-                                                </button>
+                                                <div className="flex items-center justify-end gap-1.5">
+                                                    <button
+                                                        onClick={() => handleEdit(expense)}
+                                                        className="rounded-lg border border-blue-500/20 bg-blue-500/10 px-2.5 py-1 text-xs font-semibold text-blue-300 transition-colors hover:bg-blue-500/20"
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDelete(expense.id)}
+                                                        className="rounded-lg border border-red-500/20 bg-red-500/10 px-2.5 py-1 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/20"
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     ))
@@ -366,12 +393,20 @@ const Expenses = () => {
                                                     <td className="p-3 text-right font-semibold text-red-300">{formatPrice(expense.amount)}</td>
                                                     <td className="p-3 text-sm text-text-muted">{expense.notes || '-'}</td>
                                                     <td className="p-3 text-right">
-                                                        <button
-                                                            onClick={() => handleDelete(expense.id)}
-                                                            className="rounded-lg border border-red-500/20 bg-red-500/10 px-2.5 py-1 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/20"
-                                                        >
-                                                            Delete
-                                                        </button>
+                                                        <div className="flex items-center justify-end gap-1.5">
+                                                            <button
+                                                                onClick={() => handleEdit(expense)}
+                                                                className="rounded-lg border border-blue-500/20 bg-blue-500/10 px-2.5 py-1 text-xs font-semibold text-blue-300 transition-colors hover:bg-blue-500/20"
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDelete(expense.id)}
+                                                                className="rounded-lg border border-red-500/20 bg-red-500/10 px-2.5 py-1 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/20"
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -387,8 +422,8 @@ const Expenses = () => {
             {showModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm">
                     <div className="w-full max-w-md rounded-2xl border border-white/10 bg-surface p-5 shadow-2xl">
-                        <h2 className="text-lg font-bold text-white">New Expense</h2>
-                        <p className="mt-1 text-xs text-text-muted">Capture operational spending details.</p>
+                        <h2 className="text-lg font-bold text-white">{editingExpense ? 'Edit Expense' : 'New Expense'}</h2>
+                        <p className="mt-1 text-xs text-text-muted">{editingExpense ? 'Update the details for this expense.' : 'Capture operational spending details.'}</p>
 
                         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
                             <div>
@@ -467,7 +502,7 @@ const Expenses = () => {
                                     type="submit"
                                     className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-bold text-background transition-colors hover:bg-orange-600"
                                 >
-                                    Save Expense
+                                    {editingExpense ? 'Save Changes' : 'Save Expense'}
                                 </button>
                             </div>
                         </form>

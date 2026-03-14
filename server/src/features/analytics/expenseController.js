@@ -53,6 +53,31 @@ const createExpense = async (req, res) => {
     }
 };
 
+const updateExpense = async (req, res) => {
+    const { id } = req.params;
+    const { title, amount, category, date, notes } = req.body;
+    try {
+        const expense = await prisma.expense.update({
+            where: { id: Number(id) },
+            data: {
+                title,
+                amount: parseFloat(amount),
+                category,
+                date: date ? new Date(date) : undefined,
+                notes
+            }
+        });
+        await logAudit("UPDATE_EXPENSE", req.user.id.toString(), `Expense: ${expense.title}`, `Updated ${expense.amount} in ${expense.category}`);
+        res.json(expense);
+    } catch (e) {
+        if (e.code === 'P2025') {
+            return res.status(404).json({ error: "Expense not found" });
+        }
+        console.error("Update Expense Error:", e);
+        res.status(500).json({ error: "Failed to update expense" });
+    }
+};
+
 const deleteExpense = async (req, res) => {
     const { id } = req.params;
     try {
@@ -67,5 +92,6 @@ const deleteExpense = async (req, res) => {
 module.exports = {
     getExpenses,
     createExpense,
+    updateExpense,
     deleteExpense
 };
