@@ -45,7 +45,7 @@ const createExpense = async (req, res) => {
                 staffId: req.body.staffId ? Number(req.body.staffId) : null
             }
         });
-        await logAudit("CREATE_EXPENSE", req.user.id.toString(), `Expense: ${expense.title}`, `Recorded ${expense.amount} in ${expense.category}`);
+        await logAudit("CREATE_EXPENSE", req.user.email, `Expense: ${expense.title}`, `Recorded ${expense.amount} in ${expense.category}`);
         res.json(expense);
     } catch (e) {
         console.error("Create Expense Error:", e);
@@ -67,7 +67,7 @@ const updateExpense = async (req, res) => {
                 notes
             }
         });
-        await logAudit("UPDATE_EXPENSE", req.user.id.toString(), `Expense: ${expense.title}`, `Updated ${expense.amount} in ${expense.category}`);
+        await logAudit("UPDATE_EXPENSE", req.user.email, `Expense: ${expense.title}`, `Updated ${expense.amount} in ${expense.category}`);
         res.json(expense);
     } catch (e) {
         if (e.code === 'P2025') {
@@ -82,7 +82,7 @@ const deleteExpense = async (req, res) => {
     const { id } = req.params;
     try {
         await prisma.expense.delete({ where: { id: Number(id) } });
-        await logAudit("DELETE_EXPENSE", req.user.id.toString(), `Expense ID: ${id}`, "Deleted expense record");
+        await logAudit("DELETE_EXPENSE", req.user.email, `Expense ID: ${id}`, "Deleted expense record");
         res.json({ message: "Expense deleted" });
     } catch (e) {
         res.status(500).json({ error: "Failed to delete expense" });
