@@ -164,7 +164,7 @@ const createProduct = async (req, res) => {
         const product = await prisma.product.create({
             data: normalized.data
         });
-        await logAudit("CREATE_PRODUCT", req.user.id.toString(), `Product: ${product.name}`, "Created new product");
+        await logAudit("CREATE_PRODUCT", req.user.email, `Product: ${product.name}`, "Created new product");
 
         res.json(serializeProduct(product));
     } catch (e) {
@@ -193,7 +193,7 @@ const updateProduct = async (req, res) => {
             where: { id },
             data: normalized.data
         });
-        await logAudit("UPDATE_PRODUCT", req.user.id.toString(), `Product: ${product.name}`, "Updated details");
+        await logAudit("UPDATE_PRODUCT", req.user.email, `Product: ${product.name}`, "Updated details");
         res.json(serializeProduct(product));
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -209,7 +209,7 @@ const deleteProduct = async (req, res) => {
     try {
         const product = await prisma.product.findUnique({ where: { id } });
         await prisma.product.delete({ where: { id } });
-        await logAudit("DELETE_PRODUCT", req.user.id.toString(), product?.name, `ID: ${id}`);
+        await logAudit("DELETE_PRODUCT", req.user.email, product?.name, `ID: ${id}`);
         res.json({ message: "Product deleted" });
     } catch (e) {
         res.status(500).json({ error: "Failed to delete product" });
@@ -256,7 +256,7 @@ const restockProduct = async (req, res) => {
 
         await logAudit(
             "RESTOCK_INVENTORY",
-            req.user.id.toString(),
+            req.user.email,
             `Product: ${product.name}`,
             `Added ${quantity} units. Fixed Cost: ${totalCost}`
         );

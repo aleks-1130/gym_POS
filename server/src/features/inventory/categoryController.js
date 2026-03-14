@@ -70,7 +70,7 @@ const createCategory = async (req, res) => {
             data: { name, description: description || null }
         });
 
-        await logAudit('CREATE_CATEGORY', req.user.id.toString(), `Category: ${name}`, 'Created inventory category');
+        await logAudit('CREATE_CATEGORY', req.user.email, `Category: ${name}`, 'Created inventory category');
         res.status(201).json({ ...created, description: created.description || '', productCount: 0 });
     } catch (error) {
         res.status(500).json({ error: 'Failed to create category' });
@@ -125,7 +125,7 @@ const updateCategory = async (req, res) => {
 
         await logAudit(
             'UPDATE_CATEGORY',
-            req.user.id.toString(),
+            req.user.email,
             `Category: ${previousName}`,
             `Updated to ${name}`
         );
@@ -161,7 +161,7 @@ const deleteCategory = async (req, res) => {
 
         await logAudit(
             'DELETE_CATEGORY',
-            req.user.id.toString(),
+            req.user.email,
             `Category: ${category.name}`,
             'Deleted inventory category'
         );

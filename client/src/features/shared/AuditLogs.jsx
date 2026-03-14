@@ -9,7 +9,7 @@ export default function AuditLogs() {
     useEffect(() => {
         const fetchLogs = async () => {
             try {
-                const res = await axios.get('/api/owner/audit-logs');
+                const res = await axios.get('/api/admin/owner/audit-logs');
                 setLogs(res.data);
             } catch (error) {
                 console.error("Failed to fetch logs");

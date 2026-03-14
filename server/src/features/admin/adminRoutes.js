@@ -5,7 +5,7 @@ const payrollController = require('./payrollController');
 const payrollConfigController = require('./payrollConfigController');
 const { authenticateToken, authorize } = require('../../middleware/authMiddleware');
 
-router.get('/owner/audit-logs', authenticateToken, authorize('OWNER'), adminController.getAuditLogs);
+router.get('/owner/audit-logs', authenticateToken, authorize(['OWNER', 'ADMIN']), adminController.getAuditLogs);
 router.get('/users', authenticateToken, authorize(['OWNER', 'ADMIN']), adminController.getUsers);
 router.post('/owner/role-change', authenticateToken, authorize('OWNER'), adminController.changeUserRole);
 router.post('/owner/transfer-ownership', authenticateToken, authorize('OWNER'), adminController.transferOwnership);

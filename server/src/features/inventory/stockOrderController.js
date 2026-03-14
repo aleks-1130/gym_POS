@@ -232,7 +232,7 @@ const createStockOrder = async (req, res) => {
 
         await logAudit(
             'CREATE_STOCK_ORDER',
-            req.user.id.toString(),
+            req.user.email,
             created.orderNumber,
             `Created stock order with ${summary.totalLineItems} item(s)`
         );
@@ -342,7 +342,7 @@ const updateStockOrder = async (req, res) => {
 
         await logAudit(
             'UPDATE_STOCK_ORDER',
-            req.user.id.toString(),
+            req.user.email,
             existingOrder.orderNumber,
             `Updated stock order with ${summary.totalLineItems} item(s)`
         );
@@ -411,7 +411,7 @@ const markStockOrderReceived = async (req, res) => {
 
         await logAudit(
             'RECEIVE_STOCK_ORDER',
-            req.user.id.toString(),
+            req.user.email,
             order.orderNumber,
             'Marked order as received'
         );
@@ -457,7 +457,7 @@ const cancelStockOrder = async (req, res) => {
 
         await logAudit(
             'CANCEL_STOCK_ORDER',
-            req.user.id.toString(),
+            req.user.email,
             order.orderNumber,
             'Cancelled stock order'
         );

@@ -19,7 +19,7 @@ const createSupplier = async (req, res) => {
         const supplier = await prisma.supplier.create({
             data: { name, contact, email, address, notes }
         });
-        await logAudit("CREATE_SUPPLIER", req.user.id.toString(), `Supplier: ${supplier.name}`, "Created new supplier");
+        await logAudit("CREATE_SUPPLIER", req.user.email, `Supplier: ${supplier.name}`, "Created new supplier");
         res.json(supplier);
     } catch (e) {
         res.status(500).json({ error: "Failed to create supplier" });
@@ -34,7 +34,7 @@ const updateSupplier = async (req, res) => {
             where: { id: Number(id) },
             data: { name, contact, email, address, notes }
         });
-        await logAudit("UPDATE_SUPPLIER", req.user.id.toString(), `Supplier: ${supplier.name}`, "Updated details");
+        await logAudit("UPDATE_SUPPLIER", req.user.email, `Supplier: ${supplier.name}`, "Updated details");
         res.json(supplier);
     } catch (e) {
         res.status(500).json({ error: "Failed to update supplier" });
@@ -50,7 +50,7 @@ const deleteSupplier = async (req, res) => {
         }
 
         await prisma.supplier.delete({ where: { id: Number(id) } });
-        await logAudit("DELETE_SUPPLIER", req.user.id.toString(), `Supplier ID: ${id}`, "Deleted supplier");
+        await logAudit("DELETE_SUPPLIER", req.user.email, `Supplier ID: ${id}`, "Deleted supplier");
         res.json({ message: "Supplier deleted" });
     } catch (e) {
         res.status(500).json({ error: e.message });
