@@ -182,7 +182,8 @@ export default function Sidebar() {
             {
                 section: "Trainer", items: [
                     { to: "/trainer/sessions", icon: "event_note", label: "Sessions" },
-                    { to: "/trainer/classes", icon: "event", label: "Classes" }
+                    { to: "/trainer/classes", icon: "event", label: "Classes" },
+                    { to: "/announcements", icon: "campaign", label: "Announcements" }
                 ]
             }
         ]

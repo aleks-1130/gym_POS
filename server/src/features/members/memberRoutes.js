@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const memberController = require('./memberController');
 const paymentController = require('../pos/paymentController');
+const shopController = require('../pos/shopController');
 const trainingSessionController = require('../training/trainingSessionController');
 const loyaltyController = require('../pos/loyaltyController');
 const { authenticateToken, authorize } = require('../../middleware/authMiddleware');
@@ -22,6 +23,7 @@ router.post('/me/training-sessions/:id/rate', authenticateToken, authorize(['MEM
 router.post('/me/training-sessions/:id/rate/void', authenticateToken, authorize(['MEMBER']), memberController.voidTrainingSessionRating);
 router.get('/me/training-sessions', authenticateToken, authorize(['MEMBER']), memberController.getMyTrainingSessions);
 router.get('/me/class-bookings', authenticateToken, authorize(['MEMBER']), memberController.getMyClassBookings);
+router.get('/orders', authenticateToken, authorize(['MEMBER', 'TRAINER']), shopController.getMemberOrders);
 
 // Member Profile & Payment Methods
 router.get('/:id', authenticateToken, memberController.getMemberProfile);

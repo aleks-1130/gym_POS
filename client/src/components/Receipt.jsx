@@ -1,5 +1,4 @@
 import React from 'react';
-import { useCurrency } from '../context/CurrencyContext';
 
 // This component can be used in a modal or hidden iframe for printing
 export const Receipt = React.forwardRef(({ transaction, items, member, cashierName, discount = 0, paymentDetails, receiptSettings }, ref) => {
@@ -51,13 +50,14 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
 
     const subtotal = receiptItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
     const total = Math.max(0, subtotal - discount);
-    const hasVat = settings.vatType === 'VAT';
     const vatRate = Number.isFinite(settings.vatRate) && settings.vatRate >= 0 ? settings.vatRate : 12;
-    const vatAmount = hasVat ? (total - (total / (1 + (vatRate / 100)))) : 0;
 
-    const customerName = member
-        ? `${member.firstName} ${member.lastName}`
-        : (transaction?.customerName || 'WALK-IN CUSTOMER');
+    const memberFullName = [member?.firstName, member?.lastName].filter(Boolean).join(' ').trim();
+    const customerName = memberFullName
+        || member?.name
+        || member?.fullName
+        || transaction?.customerName
+        || 'WALK-IN CUSTOMER';
     const customerTin = member?.tin || transaction?.customerTin || 'N/A';
     
     // Dynamic Invoice Logic

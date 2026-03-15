@@ -55,15 +55,15 @@ export default function Profile() {
                 let profileData = null;
 
                 try {
-                    const meRes = await axios.get('/api/members/me', { headers });
+                    const meRes = await axios.get('/api/members/me');
                     profileData = meRes.data?.member || meRes.data || null;
                 } catch {
-                    const fallbackRes = await axios.get(`/api/members/${user.id}`, { headers });
+                    const fallbackRes = await axios.get(`/api/members/${user.id}`);
                     profileData = fallbackRes.data?.member || fallbackRes.data || null;
                 }
 
                 try {
-                    const statsRes = await axios.get('/api/dashboard/stats', { headers });
+                    const statsRes = await axios.get('/api/dashboard/stats');
                     setDashboardStats(statsRes.data || null);
                 } catch {
                     setDashboardStats(null);

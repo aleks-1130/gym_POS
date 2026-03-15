@@ -15,7 +15,7 @@ export default function MemberShop() {
     const [loading, setLoading] = useState(true);
     const [cart, setCart] = useState([]);
     const [sessionId, setSessionId] = useState(null);
-    const [addingToCart, setAddingToCart] = useState();
+    const [addingToCart, setAddingToCart] = useState({});
     const [showCartModal, setShowCartModal] = useState(false);
     const [cartPopup, setCartPopup] = useState({ show: false, itemName: '' });
     const cartPopupTimerRef = useRef(null);
@@ -90,7 +90,7 @@ export default function MemberShop() {
             setPaymentMethods(res.data);
             if (res.data.length > 0) setSelectedMethodId(res.data[0].id);
         } catch (error) {
-            console.error("Failed to fetch payment methods");
+            console.error("Failed to fetch payment methods", error);
         }
     };
 
@@ -99,7 +99,7 @@ export default function MemberShop() {
             const res = await axios.get('/api/products');
             setProducts(res.data);
         } catch (error) {
-            console.error("Failed to fetch products");
+            console.error("Failed to fetch products", error);
         } finally {
             setLoading(false);
         }
@@ -460,7 +460,7 @@ export default function MemberShop() {
                     visibleProducts.map(p => {
                         const isSoldOut = !p.stock || p.stock === 0;
                         const cartQuantity = getCartItemQuantity(p.id);
-                        const isAdding = addingToCart[p.id];
+                        const isAdding = Boolean(addingToCart?.[p.id]);
 
                         return (
                             <div

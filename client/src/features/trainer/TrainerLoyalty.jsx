@@ -18,9 +18,9 @@ export default function TrainerLoyalty() {
                 
 
                 const [rewardsRes, ordersRes, trainerRes] = await Promise.all([
-                    axios.get('/api/loyalty/rewards', { headers }),
-                    axios.get('/api/members/orders', { headers }),
-                    axios.get('/api/trainer/me', { headers })
+                    axios.get('/api/loyalty/rewards'),
+                    axios.get('/api/members/orders'),
+                    axios.get('/api/trainer/me')
                 ]);
 
                 setRewards(rewardsRes.data || []);

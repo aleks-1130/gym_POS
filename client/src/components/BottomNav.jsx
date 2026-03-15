@@ -49,6 +49,7 @@ export default function BottomNav() {
         { to: "/trainer/profile", icon: User, label: "Profile" },
     ];
     const trainerSecondaryNav = [
+        { to: "/announcements", icon: Megaphone, label: "Announcements" },
         { to: "/trainer/loyalty", icon: Gift, label: "Rewards" },
         { to: "/trainer/commission-history", icon: Gift, label: "Commissions" },
         { to: "/trainer/payment-methods", icon: CreditCard, label: "Payment Methods" },

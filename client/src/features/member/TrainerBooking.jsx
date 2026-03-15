@@ -116,6 +116,7 @@ export default function TrainerBooking() {
     const [showBookingFilters, setShowBookingFilters] = useState(false);
     const [historyFilter, setHistoryFilter] = useState('all');
     const [historySearch, setHistorySearch] = useState('');
+    const [showHistoryFilters, setShowHistoryFilters] = useState(false);
     const [paymentMethods, setPaymentMethods] = useState([]);
     const [selectedMethodId, setSelectedMethodId] = useState('');
     const [paymentSelection, setPaymentSelection] = useState('CASH'); // CASH | E_WALLET | CARD
@@ -352,7 +353,7 @@ export default function TrainerBooking() {
                 })),
                 ...(bookingData.paymentMethod !== 'CASH' ? { paymentMethodId: Number(selectedMethodId) } : {})
             };
-            const response = await axios.post(endpoint, payload, { headers });
+            const response = await axios.post(endpoint, payload);
             const bookedCount = Number(response?.data?.bookedCount || selectedDates.length);
             setBookingResult({
                 count: bookedCount,
@@ -1438,36 +1439,63 @@ export default function TrainerBooking() {
                     </div>
 
                     <div className="space-y-2 rounded-xl border border-white/10 bg-surface p-3">
-                        <label className="relative block">
-                            <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 material-icons-round text-sm text-text-muted">search</span>
-                            <input
-                                type="text"
-                                value={historySearch}
-                                onChange={(event) => setHistorySearch(event.target.value)}
-                                placeholder="Search trainer, status, date..."
-                                className="h-8 w-full rounded-lg border border-white/10 bg-background/40 pl-8 pr-2 text-xs text-white placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-primary/40"
-                            />
-                        </label>
-                        <div className="grid grid-cols-4 gap-2">
-                            {[
-                                { value: 'all', label: 'All' },
-                                { value: 'completed', label: 'Done' },
-                                { value: 'missed', label: 'Missed' },
-                                { value: 'cancelled', label: 'Cancelled' }
-                            ].map((item) => (
-                                <button
-                                    key={item.value}
-                                    type="button"
-                                    onClick={() => setHistoryFilter(item.value)}
-                                    className={`px-2 py-2 rounded-lg text-[11px] font-semibold border transition-all ${historyFilter === item.value
-                                        ? 'bg-white text-black border-white shadow-sm'
-                                        : 'bg-surface border-white/10 text-text-muted hover:text-white'
-                                        }`}
-                                >
-                                    {item.label}
-                                </button>
-                            ))}
+                        <div className="flex items-center gap-2">
+                            <label className="relative flex-1">
+                                <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 material-icons-round text-sm text-text-muted">search</span>
+                                <input
+                                    type="text"
+                                    value={historySearch}
+                                    onChange={(event) => setHistorySearch(event.target.value)}
+                                    placeholder="Search trainer, status, date..."
+                                    className="h-8 w-full rounded-lg border border-white/10 bg-background/40 pl-8 pr-2 text-xs text-white placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-primary/40"
+                                />
+                            </label>
+                            <button
+                                type="button"
+                                onClick={() => setShowHistoryFilters((prev) => !prev)}
+                                className={`h-8 px-2.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 ${showHistoryFilters || historyFilter !== 'all'
+                                    ? 'bg-white text-black border-white'
+                                    : 'bg-surface border-white/10 text-text-muted hover:text-white'
+                                    }`}
+                            >
+                                <span className="material-icons-round text-sm">tune</span>
+                                Filters
+                            </button>
                         </div>
+                        <p className="text-[11px] text-text-muted">
+                            {historyFilter === 'all'
+                                ? 'Showing all history statuses.'
+                                : `Filter: ${historyFilter === 'completed'
+                                    ? 'Done'
+                                    : historyFilter === 'missed'
+                                        ? 'Missed'
+                                        : 'Cancelled'}`}
+                        </p>
+                        {showHistoryFilters && (
+                            <div className="grid grid-cols-4 gap-2">
+                                {[
+                                    { value: 'all', label: 'All' },
+                                    { value: 'completed', label: 'Done' },
+                                    { value: 'missed', label: 'Missed' },
+                                    { value: 'cancelled', label: 'Cancelled' }
+                                ].map((item) => (
+                                    <button
+                                        key={item.value}
+                                        type="button"
+                                        onClick={() => {
+                                            setHistoryFilter(item.value);
+                                            setShowHistoryFilters(false);
+                                        }}
+                                        className={`px-2 py-2 rounded-lg text-[11px] font-semibold border transition-all ${historyFilter === item.value
+                                            ? 'bg-white text-black border-white shadow-sm'
+                                            : 'bg-surface border-white/10 text-text-muted hover:text-white'
+                                            }`}
+                                    >
+                                        {item.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                     <div className="bg-surface border border-white/10 rounded-2xl p-4 space-y-4">

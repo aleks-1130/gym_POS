@@ -107,6 +107,8 @@ app.use('/api/staff', require('./src/features/admin/staffRoutes'));
 app.use('/api/members', require('./src/features/members/memberRoutes'));
 // Shop Routes (checkout, orders - mounted at /api/members for compatibility)
 app.use('/api/members', require('./src/features/pos/shopRoutes'));
+// Canonical shop routes to avoid /api/members/:id route collisions (e.g. /api/members/orders)
+app.use('/api/shop', require('./src/features/pos/shopRoutes'));
 app.use('/api/payments', require('./src/features/pos/paymentRoutes'));
 app.use('/api/pos/reserve', require('./src/features/pos/reserveRoutes')); // Stock Reservation via Redis
 app.use('/api/pos/promo-codes', require('./src/features/pos/promoRoutes'));

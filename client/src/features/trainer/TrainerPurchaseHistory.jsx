@@ -1,12 +1,18 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
+import { useAuth } from '../../context/AuthContext';
+import Receipt from '../../components/Receipt';
 
 export default function TrainerPurchaseHistory() {
+    const { user } = useAuth();
     const { formatPrice } = useCurrency();
     const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState('all');
+    const [activeTab, setActiveTab] = useState('counter');
+    const [selectedDate, setSelectedDate] = useState('');
+    const [selectedReceipt, setSelectedReceipt] = useState(null);
+    const dateInputRef = useRef(null);
 
     useEffect(() => {
         const fetchOrders = async () => {
@@ -23,16 +29,38 @@ export default function TrainerPurchaseHistory() {
         fetchOrders();
     }, []);
 
+    const toDateInputValue = (value) => {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '';
+        const localDate = new Date(date.getTime() - (date.getTimezoneOffset() * 60000));
+        return localDate.toISOString().slice(0, 10);
+    };
+
+    const openDatePicker = () => {
+        const input = dateInputRef.current;
+        if (!input) return;
+        if (typeof input.showPicker === 'function') input.showPicker();
+        else input.click();
+    };
+
+    const formatSelectedDateLabel = (value) => {
+        if (!value) return 'Select date';
+        const date = new Date(`${value}T00:00:00`);
+        if (Number.isNaN(date.getTime())) return 'Select date';
+        return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    };
+
     const filteredOrders = useMemo(() => {
-        if (activeTab === 'all') return orders;
-        if (activeTab === 'MATERIAL') {
-            return orders.filter((o) =>
-                String(o.method || '').toUpperCase() === 'COMMISSION_DEDUCTION' ||
-                (Array.isArray(o.items) && o.items.some((i) => i.intendedForSessionMaterial))
-            );
-        }
-        return orders.filter((o) => String(o.status || '').toUpperCase() === activeTab);
-    }, [orders, activeTab]);
+        return orders.filter((order) => {
+            const type = String(order?.type || '').toUpperCase();
+            const channel = type === 'IN_APP_PURCHASE' ? 'IN_APP_PURCHASE' : 'COUNTER';
+            if (activeTab === 'counter' && channel !== 'COUNTER') return false;
+            if (activeTab === 'in_app' && channel !== 'IN_APP_PURCHASE') return false;
+            const orderDate = toDateInputValue(order.date);
+            if (selectedDate && orderDate !== selectedDate) return false;
+            return true;
+        });
+    }, [orders, activeTab, selectedDate]);
 
     const totalSpent = useMemo(() => orders.reduce((sum, o) => sum + Number(o.amount || 0), 0), [orders]);
 
@@ -52,6 +80,9 @@ export default function TrainerPurchaseHistory() {
         if (normalized === 'VOIDED' || normalized === 'CANCELLED') return 'bg-red-500/20 text-red-300';
         return 'bg-emerald-500/20 text-emerald-300';
     };
+
+    const isActionDisabled = () => false;
+    const getActionLabel = (_item, mobile = false) => mobile ? 'View Receipt' : 'View';
 
     if (loading) return <div className="text-white p-6 text-center">Loading purchase history...</div>;
 
@@ -75,21 +106,65 @@ export default function TrainerPurchaseHistory() {
                 </div>
             </div>
 
-            <div className="flex gap-2 overflow-x-auto pb-1">
-                {[
-                    { key: 'all', label: 'All' },
-                    { key: 'MATERIAL', label: 'Session Material' },
-                    { key: 'COMPLETED', label: 'Completed' },
-                    { key: 'PENDING', label: 'Pending' }
-                ].map((tab) => (
-                    <button
-                        key={tab.key}
-                        onClick={() => setActiveTab(tab.key)}
-                        className={`px-4 py-2 rounded-lg font-medium text-xs sm:text-sm whitespace-nowrap transition-all ${activeTab === tab.key ? 'bg-primary text-background' : 'bg-surface text-text-muted hover:text-white border border-white/5'}`}
-                    >
-                        {tab.label}
-                    </button>
-                ))}
+            <div className="rounded-xl border border-white/10 bg-surface p-3 sm:p-4">
+                <div className="space-y-3 sm:grid sm:grid-cols-[minmax(0,1fr)_280px] sm:gap-4 sm:space-y-0 sm:items-end">
+                    <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">Category</p>
+                        <div className="mt-1.5 grid grid-cols-2 gap-2">
+                            {[
+                                { key: 'counter', label: 'Counter Purchases' },
+                                { key: 'in_app', label: 'In-App Purchases' }
+                            ].map((tab) => (
+                                <button
+                                    key={tab.key}
+                                    onClick={() => setActiveTab(tab.key)}
+                                    className={`h-9 rounded-lg font-semibold text-[11px] sm:text-xs transition-all border ${activeTab === tab.key
+                                        ? 'bg-primary text-background border-primary'
+                                        : 'bg-background/40 text-text-muted hover:text-white border-white/10'
+                                        }`}
+                                >
+                                    {tab.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">Calendar</p>
+                        <div className="mt-1.5 flex items-center gap-2">
+                            <input
+                                ref={dateInputRef}
+                                type="date"
+                                value={selectedDate}
+                                onChange={(event) => setSelectedDate(event.target.value)}
+                                className="sr-only"
+                                tabIndex={-1}
+                                aria-hidden="true"
+                            />
+                            <button
+                                type="button"
+                                onClick={openDatePicker}
+                                className="h-9 flex-1 bg-background/40 border border-white/10 rounded-lg px-2.5 text-xs outline-none focus:border-primary text-left flex items-center gap-2"
+                                title="Filter date"
+                            >
+                                <span className="material-icons-round text-sm text-text-muted">event</span>
+                                <span className={selectedDate ? 'text-white' : 'text-text-muted'}>
+                                    {formatSelectedDateLabel(selectedDate)}
+                                </span>
+                            </button>
+                            {selectedDate && (
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedDate('')}
+                                    className="h-9 w-9 rounded-lg border border-white/10 bg-background/40 text-text-secondary hover:text-white hover:bg-white/5 flex items-center justify-center"
+                                    title="Clear date filter"
+                                >
+                                    <span className="material-icons-round text-sm">close</span>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
             </div>
 
             {filteredOrders.length === 0 ? (
@@ -108,6 +183,7 @@ export default function TrainerPurchaseHistory() {
                                     <th className="px-4 sm:px-6 py-3 text-text-muted text-xs font-bold uppercase">Method</th>
                                     <th className="px-4 sm:px-6 py-3 text-text-muted text-xs font-bold uppercase">Status</th>
                                     <th className="px-4 sm:px-6 py-3 text-text-muted text-xs font-bold uppercase text-right">Amount</th>
+                                    <th className="px-4 sm:px-6 py-3 text-text-muted text-xs font-bold uppercase text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-white/5">
@@ -137,6 +213,16 @@ export default function TrainerPurchaseHistory() {
                                         <td className="px-4 sm:px-6 py-4"><span className="text-white text-sm">{getMethodLabel(item.method)}</span></td>
                                         <td className="px-4 sm:px-6 py-4"><span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-bold ${getStatusBadge(item.status)}`}>{item.status || 'COMPLETED'}</span></td>
                                         <td className="px-4 sm:px-6 py-4 text-right"><span className="text-primary font-bold text-sm">{formatPrice(item.amount)}</span></td>
+                                        <td className="px-4 sm:px-6 py-4 text-right">
+                                            <button
+                                                onClick={() => setSelectedReceipt(item)}
+                                                disabled={isActionDisabled(item)}
+                                                className="text-primary hover:text-orange-400 disabled:text-text-muted disabled:cursor-not-allowed font-medium text-xs flex items-center gap-1 ml-auto transition-colors"
+                                            >
+                                                <span className="material-icons-round text-sm">receipt</span>
+                                                {getActionLabel(item)}
+                                            </button>
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -161,7 +247,7 @@ export default function TrainerPurchaseHistory() {
                                 {Array.isArray(item.items) && item.items.length > 0 && (
                                     <div className="pt-2 border-t border-white/5">
                                         {item.items.slice(0, 3).map((i) => (
-                                            <div key={i.id} className="text-white text-xs">{i.quantity}x {i.name}</div>
+                                            <div key={i.id || `${item.id}-${i.name}-${i.quantity}`} className="text-white text-xs">{i.quantity}x {i.name}</div>
                                         ))}
                                         {item.items.some((i) => i.intendedForSessionMaterial) && (
                                             <div className="mt-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300">
@@ -170,11 +256,69 @@ export default function TrainerPurchaseHistory() {
                                         )}
                                     </div>
                                 )}
+                                <div className="pt-2 border-t border-white/5">
+                                    <button
+                                        onClick={() => setSelectedReceipt(item)}
+                                        disabled={isActionDisabled(item)}
+                                        className="text-primary hover:text-orange-400 disabled:text-text-muted disabled:cursor-not-allowed font-medium text-xs flex items-center gap-1 transition-colors"
+                                    >
+                                        <span className="material-icons-round text-sm">receipt</span>
+                                        {getActionLabel(item, true)}
+                                    </button>
+                                </div>
                             </div>
                         ))}
                     </div>
                 </div>
             )}
+
+            {selectedReceipt && (() => {
+                let receiptItems = selectedReceipt.items || [];
+
+                receiptItems = receiptItems.map((item) => ({
+                    ...item,
+                    price: item.unitPrice || item.price || 0
+                }));
+
+                if (receiptItems.length === 0 && selectedReceipt.amount) {
+                    const itemName = selectedReceipt.type === 'IN_APP_PURCHASE'
+                        ? 'In-App Purchase'
+                        : selectedReceipt.type === 'STORE_SALE'
+                            ? 'Counter Purchase'
+                            : 'Purchase';
+
+                    receiptItems = [{
+                        name: itemName,
+                        quantity: 1,
+                        price: selectedReceipt.amount
+                    }];
+                }
+
+                return (
+                    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in overflow-y-auto">
+                        <div className="relative my-8">
+                            <button
+                                onClick={() => setSelectedReceipt(null)}
+                                className="absolute -top-4 -right-4 z-10 w-10 h-10 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg transition-colors"
+                            >
+                                <span className="material-icons-round">close</span>
+                            </button>
+
+                            <Receipt
+                                transaction={selectedReceipt}
+                                items={receiptItems}
+                                member={user || null}
+                                cashierName={selectedReceipt.cashier?.name}
+                                paymentDetails={{
+                                    method: selectedReceipt.method,
+                                    tendered: selectedReceipt.cashTendered,
+                                    change: selectedReceipt.changeDue
+                                }}
+                            />
+                        </div>
+                    </div>
+                );
+            })()}
         </div>
     );
 }

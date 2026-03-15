@@ -65,10 +65,10 @@ export default function Attendance() {
             
             
             const [logsResult, sessionsResult, classesResult, dashboardResult] = await Promise.allSettled([
-                axios.get('/api/access/logs', { headers }),
-                axios.get('/api/members/me/training-sessions', { headers }),
-                axios.get('/api/members/me/class-bookings', { headers }),
-                axios.get('/api/dashboard/stats', { headers })
+                axios.get('/api/access/logs'),
+                axios.get('/api/members/me/training-sessions'),
+                axios.get('/api/members/me/class-bookings'),
+                axios.get('/api/dashboard/stats')
             ]);
 
             const issues = [];

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useCurrency } from '../../context/CurrencyContext';
@@ -11,9 +11,10 @@ export default function PurchaseHistory() {
     const [payments, setPayments] = useState([]);
     const [trainingSessions, setTrainingSessions] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState('all'); // all, membership, training
+    const [activeTab, setActiveTab] = useState('counter'); // counter, in_app
     const [selectedDate, setSelectedDate] = useState('');
     const [selectedReceipt, setSelectedReceipt] = useState(null);
+    const dateInputRef = useRef(null);
 
     useEffect(() => {
         fetchPaymentHistory();
@@ -25,8 +26,8 @@ export default function PurchaseHistory() {
             
 
             const [transactionsRes, sessionsRes] = await Promise.all([
-                axios.get(withApiBase('/api/members/me/transactions'), { headers }),
-                axios.get(withApiBase('/api/members/me/training-sessions'), { headers })
+                axios.get(withApiBase('/api/members/me/transactions')),
+                axios.get(withApiBase('/api/members/me/training-sessions'))
             ]);
 
             setPayments(transactionsRes.data || []);
@@ -48,6 +49,8 @@ export default function PurchaseHistory() {
             type: 'TRAINING_BOOKING',
             method: session.paymentMethod || 'CASH',
             status: 'CANCELLED',
+            cashierId: null,
+            __purchaseChannel: 'IN_APP_PURCHASE',
             amount: session.price || 0,
             items: [{
                 name: `Trainer Booking - ${session?.trainer?.name || 'Trainer'}`,
@@ -66,12 +69,35 @@ export default function PurchaseHistory() {
         return localDate.toISOString().slice(0, 10);
     };
 
+    const openDatePicker = () => {
+        const input = dateInputRef.current;
+        if (!input) return;
+        if (typeof input.showPicker === 'function') input.showPicker();
+        else input.click();
+    };
+
+    const formatSelectedDateLabel = (value) => {
+        if (!value) return 'Select date';
+        const date = new Date(`${value}T00:00:00`);
+        if (Number.isNaN(date.getTime())) return 'Select date';
+        return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    };
+
+    const getPurchaseChannel = (transaction) => {
+        const normalizedType = String(transaction?.type || '').toUpperCase();
+        if (normalizedType === 'IN_APP_PURCHASE') return 'IN_APP_PURCHASE';
+        if (Number(transaction?.cashierId || 0) > 0) return 'COUNTER';
+        return 'IN_APP_PURCHASE';
+    };
+
     const filteredTransactions = allTransactions.filter((transaction) => {
         const isRemovedStatus = ['VOIDED', 'RETURNED', 'CANCELLED'].includes(transaction.status);
         if (isRemovedStatus) return false;
 
-        if (activeTab === 'membership' && transaction.type !== 'MEMBERSHIP') return false;
-        if (activeTab === 'training' && !['TRAINING', 'TRAINING_BOOKING'].includes(transaction.type)) return false;
+        const purchaseChannel = transaction.__purchaseChannel || getPurchaseChannel(transaction);
+        if (activeTab === 'counter' && purchaseChannel !== 'COUNTER') return false;
+        if (activeTab === 'in_app' && purchaseChannel !== 'IN_APP_PURCHASE') return false;
+
         const transactionDate = toDateInputValue(transaction.date);
         if (selectedDate && transactionDate !== selectedDate) return false;
         return true;
@@ -79,7 +105,7 @@ export default function PurchaseHistory() {
 
     const totalSpent = payments.reduce((sum, item) => sum + (item.amount || 0), 0);
 
-    const isActionDisabled = (item) => false;
+    const isActionDisabled = () => false;
 
     const getActionLabel = (item, mobile = false) => mobile ? 'View Receipt' : 'View';
 
@@ -132,42 +158,66 @@ export default function PurchaseHistory() {
                 </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                <div className="flex gap-2 overflow-x-auto pb-1 items-center">
-                    {['all', 'membership', 'training'].map((tab) => (
-                        <button
-                            key={tab}
-                            onClick={() => setActiveTab(tab)}
-                            className={`px-4 py-2 rounded-lg font-medium text-xs sm:text-sm whitespace-nowrap transition-all ${activeTab === tab
-                                ? 'bg-primary text-background'
-                                : 'bg-surface text-text-muted hover:text-white border border-white/5'
-                                }`}
-                        >
-                            {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                        </button>
-                    ))}
-                </div>
-                <div className="flex items-center gap-2 sm:justify-end">
-                    <span className="material-icons-round text-text-muted text-base">event</span>
-                    <input
-                        type="date"
-                        value={selectedDate}
-                        onChange={(event) => setSelectedDate(event.target.value)}
-                        className="bg-surface border border-white/10 rounded-lg px-2.5 py-2 text-xs text-white outline-none focus:border-primary"
-                        title="Filter date"
-                    />
-                    {selectedDate && (
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setSelectedDate('');
-                            }}
-                            className="h-8 w-8 rounded-lg border border-white/10 bg-surface text-text-secondary hover:text-white hover:bg-white/5 flex items-center justify-center"
-                            title="Clear date filter"
-                        >
-                            <span className="material-icons-round text-sm">close</span>
-                        </button>
-                    )}
+            <div className="rounded-xl border border-white/10 bg-surface p-3 sm:p-4">
+                <div className="space-y-3 sm:grid sm:grid-cols-[minmax(0,1fr)_280px] sm:gap-4 sm:space-y-0 sm:items-end">
+                    <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">Category</p>
+                        <div className="mt-1.5 grid grid-cols-2 gap-2">
+                            {[
+                                { value: 'counter', label: 'Counter Purchases' },
+                                { value: 'in_app', label: 'In-App Purchases' }
+                            ].map((tab) => (
+                                <button
+                                    key={tab.value}
+                                    onClick={() => setActiveTab(tab.value)}
+                                    className={`h-9 rounded-lg font-semibold text-[11px] sm:text-xs transition-all border ${activeTab === tab.value
+                                        ? 'bg-primary text-background border-primary'
+                                        : 'bg-background/40 text-text-muted hover:text-white border-white/10'
+                                        }`}
+                                >
+                                    {tab.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">Calendar</p>
+                        <div className="mt-1.5 flex items-center gap-2">
+                            <input
+                                ref={dateInputRef}
+                                type="date"
+                                value={selectedDate}
+                                onChange={(event) => setSelectedDate(event.target.value)}
+                                className="sr-only"
+                                tabIndex={-1}
+                                aria-hidden="true"
+                            />
+                            <button
+                                type="button"
+                                onClick={openDatePicker}
+                                className="h-9 flex-1 bg-background/40 border border-white/10 rounded-lg px-2.5 text-xs outline-none focus:border-primary text-left flex items-center gap-2"
+                                title="Filter date"
+                            >
+                                <span className="material-icons-round text-sm text-text-muted">event</span>
+                                <span className={selectedDate ? 'text-white' : 'text-text-muted'}>
+                                    {formatSelectedDateLabel(selectedDate)}
+                                </span>
+                            </button>
+                            {selectedDate && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSelectedDate('');
+                                    }}
+                                    className="h-9 w-9 rounded-lg border border-white/10 bg-background/40 text-text-secondary hover:text-white hover:bg-white/5 flex items-center justify-center"
+                                    title="Clear date filter"
+                                >
+                                    <span className="material-icons-round text-sm">close</span>
+                                </button>
+                            )}
+                        </div>
+                    </div>
                 </div>
             </div>
 

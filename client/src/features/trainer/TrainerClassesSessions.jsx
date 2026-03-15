@@ -5,7 +5,6 @@ import { useConfirm } from '../../context/ConfirmContext';
 const FINALIZED_SESSION_STATUSES = ['COMPLETED', 'CANCELLED', 'NO_SHOW', 'DECLINED'];
 const HISTORY_STATUS_FILTERS = ['ALL', 'UPCOMING', 'COMPLETED', 'CANCELLED'];
 const HISTORY_TABS = ['BOOKINGS', 'CLASSES'];
-const HISTORY_VISIBLE_LIMIT = 8;
 
 const toDateKey = (v) => {
   const d = new Date(v);
@@ -116,6 +115,9 @@ export default function TrainerClassesSessions() {
   const [initializedSelection, setInitializedSelection] = useState(false);
   const [historyViewScope, setHistoryViewScope] = useState('BOOKINGS');
   const [historyStatusFilter, setHistoryStatusFilter] = useState('ALL');
+  const [historySearch, setHistorySearch] = useState('');
+  const [showHistoryFilters, setShowHistoryFilters] = useState(false);
+  const [selectedHistoryParticipantsEntry, setSelectedHistoryParticipantsEntry] = useState(null);
 
   const refreshData = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
@@ -233,22 +235,46 @@ export default function TrainerClassesSessions() {
     return activeHistoryTab === 'CLASSES' ? filteredClassHistoryWithCategory : filteredBookingHistoryWithCategory;
   }, [activeHistoryTab, filteredBookingHistoryWithCategory, filteredClassHistoryWithCategory]);
 
-  const statusChipCounts = useMemo(() => {
-    const counts = { ALL: activeTabBaseHistory.length, UPCOMING: 0, COMPLETED: 0, CANCELLED: 0 };
-    activeTabBaseHistory.forEach((entry) => {
-      const key = entry.__historyCategory;
-      if (counts[key] !== undefined) counts[key] += 1;
+  const searchedHistoryItems = useMemo(() => {
+    const query = historySearch.trim().toLowerCase();
+    if (!query) return activeTabBaseHistory;
+
+    return activeTabBaseHistory.filter((entry) => {
+      if (activeHistoryTab === 'CLASSES') {
+        const searchable = [
+          entry.class?.name,
+          entry.classId,
+          formatDate(entry.date),
+          formatTime(entry.date),
+          entry.status,
+          getHistoryStatusLabel(entry.__historyCategory),
+          Number(entry.attendeeCount || 0),
+          Number(entry.class?.capacity || 0),
+          Number(entry.class?.duration || 0),
+          formatMoney(entry.commissionAmount)
+        ].join(' ').toLowerCase();
+        return searchable.includes(query);
+      }
+
+      const memberName = `${entry.member?.firstName || ''} ${entry.member?.lastName || ''}`.trim();
+      const searchable = [
+        memberName,
+        entry.memberId,
+        formatDate(entry.date),
+        formatTime(entry.date),
+        entry.status,
+        getHistoryStatusLabel(entry.__historyCategory),
+        Number(entry.duration || 0),
+        formatMoney(entry.price)
+      ].join(' ').toLowerCase();
+      return searchable.includes(query);
     });
-    return counts;
-  }, [activeTabBaseHistory]);
+  }, [activeHistoryTab, activeTabBaseHistory, historySearch]);
 
   const visibleHistoryItems = useMemo(() => {
-    if (historyStatusFilter === 'ALL') return activeTabBaseHistory;
-    return activeTabBaseHistory.filter((entry) => entry.__historyCategory === historyStatusFilter);
-  }, [activeTabBaseHistory, historyStatusFilter]);
-
-  const displayedHistoryItems = useMemo(() => visibleHistoryItems.slice(0, HISTORY_VISIBLE_LIMIT), [visibleHistoryItems]);
-  const hiddenHistoryCount = Math.max(0, visibleHistoryItems.length - displayedHistoryItems.length);
+    if (historyStatusFilter === 'ALL') return searchedHistoryItems;
+    return searchedHistoryItems.filter((entry) => entry.__historyCategory === historyStatusFilter);
+  }, [searchedHistoryItems, historyStatusFilter]);
 
   const historyTabCounts = useMemo(() => ({
     BOOKINGS: filteredBookingHistoryWithCategory.length,
@@ -258,13 +284,13 @@ export default function TrainerClassesSessions() {
   const historySummary = useMemo(() => {
     const total = activeTabBaseHistory.length;
     const upcoming = activeTabBaseHistory.filter((entry) => entry.__historyCategory === 'UPCOMING').length;
-    const spent = activeHistoryTab === 'BOOKINGS'
-      ? activeTabBaseHistory.reduce((sum, entry) => sum + Number(entry.price || 0), 0)
+    const commission = activeHistoryTab === 'BOOKINGS'
+      ? activeTabBaseHistory.reduce((sum, entry) => sum + Number(entry.commissionAmount ?? entry.price ?? 0), 0)
       : activeTabBaseHistory.reduce((sum, entry) => sum + Number(entry.commissionAmount || 0), 0);
-    return { total, upcoming, spent };
+    const completed = activeTabBaseHistory.filter((entry) => entry.__historyCategory === 'COMPLETED').length;
+    const cancelled = activeTabBaseHistory.filter((entry) => entry.__historyCategory === 'CANCELLED').length;
+    return { total, upcoming, completed, cancelled, commission };
   }, [activeHistoryTab, activeTabBaseHistory]);
-
-  const activeFilterCount = Number(historyStatusFilter !== 'ALL');
 
   const monthYearLabel = monthCursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
   const startOfMonth = new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1);
@@ -363,56 +389,65 @@ export default function TrainerClassesSessions() {
     return 'bg-white/10 text-text-muted border-white/20';
   };
 
+  const getParticipantStatusBadgeClasses = (status) => {
+    const normalized = String(status || '').toUpperCase();
+    if (normalized === 'ATTENDED') return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/35';
+    if (normalized === 'NO_SHOW') return 'bg-amber-500/15 text-amber-300 border-amber-500/35';
+    if (normalized === 'CANCELLED') return 'bg-rose-500/15 text-rose-300 border-rose-500/35';
+    return 'bg-white/10 text-text-muted border-white/20';
+  };
+
   const renderBookingHistoryCard = (session) => {
     const memberName = `${session.member?.firstName || ''} ${session.member?.lastName || ''}`.trim() || `Member #${session.memberId}`;
     const status = session.__historyCategory;
     const rawStatus = String(session.status || 'SCHEDULED').replace(/_/g, ' ');
-    const costAmount = Number(session.price || 0);
+    const commissionAmount = Number(session.commissionAmount ?? session.price ?? 0);
     const normalizedStatus = String(session.status || '').toUpperCase();
     const hasRating = session.memberRating !== null && session.memberRating !== undefined && Number(session.memberRating) > 0;
     const ratingNode = hasRating ? renderRatingStars(session.memberRating) : null;
 
-    let ratingLabel = 'Rating: N/A';
+    let ratingLabel = 'No rating recorded';
     if (normalizedStatus === 'COMPLETED') {
-      ratingLabel = hasRating ? 'Member Rating' : 'Rating: Pending';
+      ratingLabel = hasRating ? `Member rated ${Number(session.memberRating).toFixed(1)}/5` : 'Rating pending';
     } else if (status === 'UPCOMING') {
-      ratingLabel = 'Rating: Not yet';
+      ratingLabel = 'Rating unavailable until completed';
     }
 
     return (
-      <article key={`history-session-${session.id}`} className="rounded-2xl border border-white/10 bg-surface overflow-hidden transition-all hover:border-white/20 hover:shadow-md hover:shadow-black/20">
-        <div className="p-3 sm:p-4">
-          <div className="flex items-start justify-between gap-2">
-            <p className="text-sm font-semibold text-white truncate">{memberName}</p>
-            <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${getHistoryBadgeClasses(status)}`}>{getHistoryStatusLabel(status)}</span>
+      <article key={`history-session-${session.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3.5">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="text-sm font-semibold text-white">{memberName}</p>
+            <p className="text-[11px] text-text-muted mt-0.5">
+              {formatDate(session.date)} at {formatTime(session.date)}
+            </p>
           </div>
+          <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${getHistoryBadgeClasses(status)}`}>
+            {getHistoryStatusLabel(status)}
+          </span>
         </div>
-        <div className="h-px bg-white/10" />
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 sm:p-4">
-          <div>
-            <p className="text-[10px] uppercase tracking-wide text-text-muted">Date</p>
-            <p className="text-xs text-white mt-0.5">{formatDate(session.date)}</p>
-          </div>
-          <div>
-            <p className="text-[10px] uppercase tracking-wide text-text-muted">Time</p>
-            <p className="text-xs text-white mt-0.5">{formatTime(session.date)}</p>
-          </div>
-          <div>
-            <p className="text-[10px] uppercase tracking-wide text-text-muted">Duration</p>
-            <p className="text-xs text-white mt-0.5">{Number(session.duration || 0)} min</p>
-          </div>
-          <div>
-            <p className="text-[10px] uppercase tracking-wide text-text-muted">Status</p>
-            <p className="text-xs text-white mt-0.5">{rawStatus}</p>
-          </div>
-        </div>
-        <div className="h-px bg-white/10" />
-        <div className="px-3 sm:px-4 py-2.5 flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[11px] text-text-muted">{ratingLabel}</p>
-            {ratingNode}
-          </div>
-          <p className="text-sm font-semibold text-white">{formatMoney(costAmount)}</p>
+        <div className="mt-2.5 grid grid-cols-2 gap-2 text-[11px] text-text-muted">
+          <span className="inline-flex items-center gap-1">
+            <span className="material-icons-round text-sm">schedule</span>
+            {Number(session.duration || 0)} min
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="material-icons-round text-sm">payments</span>
+            {formatMoney(commissionAmount)}
+          </span>
+          <span className="inline-flex items-center gap-1 col-span-2">
+            <span className="material-icons-round text-sm">event</span>
+            {rawStatus || 'N/A'}
+          </span>
+          <span className="inline-flex items-center gap-1 col-span-2">
+            <span className="material-icons-round text-sm">star</span>
+            {ratingLabel}
+          </span>
+          {ratingNode && (
+            <div className="col-span-2">
+              {ratingNode}
+            </div>
+          )}
         </div>
       </article>
     );
@@ -420,39 +455,49 @@ export default function TrainerClassesSessions() {
 
   const renderClassHistoryCard = (entry) => {
     const status = entry.__historyCategory;
-    const costAmount = Number(entry.commissionAmount || 0);
+    const rawStatus = String(entry.status || '').replace(/_/g, ' ');
+    const commissionAmount = Number(entry.commissionAmount || 0);
 
     return (
-      <article key={`history-class-${entry.id}`} className="rounded-2xl border border-white/10 bg-surface overflow-hidden transition-all hover:border-white/20 hover:shadow-md hover:shadow-black/20">
-        <div className="p-3 sm:p-4">
-          <div className="flex items-start justify-between gap-2">
-            <p className="text-sm font-semibold text-white truncate">{entry.class?.name || `Class #${entry.classId}`}</p>
-            <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${getHistoryBadgeClasses(status)}`}>{getHistoryStatusLabel(status)}</span>
+      <article key={`history-class-${entry.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3.5">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="text-sm font-semibold text-white">{entry.class?.name || `Class #${entry.classId}`}</p>
+            <p className="text-[11px] text-text-muted mt-0.5">
+              {formatDate(entry.date)} at {formatTime(entry.date)}
+            </p>
           </div>
+          <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${getHistoryBadgeClasses(status)}`}>
+            {getHistoryStatusLabel(status)}
+          </span>
         </div>
-        <div className="h-px bg-white/10" />
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 sm:p-4">
-          <div>
-            <p className="text-[10px] uppercase tracking-wide text-text-muted">Date</p>
-            <p className="text-xs text-white mt-0.5">{formatDate(entry.date)}</p>
-          </div>
-          <div>
-            <p className="text-[10px] uppercase tracking-wide text-text-muted">Time</p>
-            <p className="text-xs text-white mt-0.5">{formatTime(entry.date)}</p>
-          </div>
-          <div>
-            <p className="text-[10px] uppercase tracking-wide text-text-muted">Duration</p>
-            <p className="text-xs text-white mt-0.5">{Number(entry.class?.duration || 0)} min</p>
-          </div>
-          <div>
-            <p className="text-[10px] uppercase tracking-wide text-text-muted">Attendees</p>
-            <p className="text-xs text-white mt-0.5">{Number(entry.attendeeCount || 0)} / {Number(entry.class?.capacity || 0)}</p>
-          </div>
+        <div className="mt-2.5 grid grid-cols-2 gap-2 text-[11px] text-text-muted">
+          <span className="inline-flex items-center gap-1">
+            <span className="material-icons-round text-sm">schedule</span>
+            {Number(entry.class?.duration || 0)} min
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="material-icons-round text-sm">groups</span>
+            {Number(entry.attendeeCount || 0)} / {Number(entry.class?.capacity || 0)}
+          </span>
+          <span className="inline-flex items-center gap-1 col-span-2">
+            <span className="material-icons-round text-sm">payments</span>
+            {formatMoney(commissionAmount)}
+          </span>
+          <span className="inline-flex items-center gap-1 col-span-2">
+            <span className="material-icons-round text-sm">event</span>
+            {rawStatus || 'N/A'}
+          </span>
         </div>
-        <div className="h-px bg-white/10" />
-        <div className="px-3 sm:px-4 py-2.5 flex items-center justify-between gap-3">
-          <p className="text-[11px] text-text-muted">Rating: N/A</p>
-          <p className="text-sm font-semibold text-white">{formatMoney(costAmount)}</p>
+        <div className="mt-3 pt-3 border-t border-white/10">
+          <button
+            type="button"
+            onClick={() => setSelectedHistoryParticipantsEntry(entry)}
+            className="w-full py-2 rounded-lg bg-primary/10 text-primary border border-primary/25 font-semibold text-xs hover:bg-primary/20 transition-colors flex items-center justify-center gap-1.5"
+          >
+            <span className="material-icons-round text-sm">groups</span>
+            View Participants ({Number(entry.participantsCount ?? entry.attendeeCount ?? 0)})
+          </button>
         </div>
       </article>
     );
@@ -464,14 +509,38 @@ export default function TrainerClassesSessions() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+      <header className="space-y-3">
         <div>
           <h1 className="text-3xl font-bold text-white">Classes & Sessions</h1>
-          <p className="text-text-muted mt-1">Calendar controls for today plus full booking/class history</p>
+          <p className="text-text-muted mt-1">
+            {activeView === 'history'
+              ? 'Review your 1-on-1 and class history with commission details'
+              : 'Calendar controls for today plus class/session action panels'}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setActiveView('calendar')} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'calendar' ? 'bg-primary text-black shadow-lg shadow-primary/30' : 'bg-white/5 text-text-muted hover:text-white hover:bg-white/10'}`}>Calendar</button>
-          <button type="button" onClick={() => setActiveView('history')} className={`px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === 'history' ? 'bg-primary text-black shadow-lg shadow-primary/30' : 'bg-white/5 text-text-muted hover:text-white hover:bg-white/10'}`}>History</button>
+        <div className="grid grid-cols-2 gap-2 rounded-2xl p-1 bg-surface/80 border border-white/10 shadow-inner">
+          <button
+            type="button"
+            onClick={() => setActiveView('calendar')}
+            className={`py-2 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${activeView === 'calendar'
+              ? 'bg-primary text-background shadow-md'
+              : 'text-text-muted hover:text-white hover:bg-white/5'
+              }`}
+          >
+            <span className="material-icons-round text-base">calendar_month</span>
+            <span>Calendar</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveView('history')}
+            className={`py-2 rounded-lg font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${activeView === 'history'
+              ? 'bg-primary text-background shadow-md'
+              : 'text-text-muted hover:text-white hover:bg-white/5'
+              }`}
+          >
+            <span className="material-icons-round text-base">history</span>
+            <span>History</span>
+          </button>
         </div>
       </header>
 
@@ -482,11 +551,6 @@ export default function TrainerClassesSessions() {
               <button onClick={() => setMonthCursor(new Date(monthCursor.getFullYear(), monthCursor.getMonth() - 1, 1))} className="px-3 py-2 rounded-lg bg-white/5 text-white text-xs font-bold hover:bg-white/10">Prev</button>
               <p className="text-white font-semibold">{monthYearLabel}</p>
               <button onClick={() => setMonthCursor(new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 1))} className="px-3 py-2 rounded-lg bg-white/5 text-white text-xs font-bold hover:bg-white/10">Next</button>
-            </div>
-
-            <div className="flex items-center gap-3 text-[11px] text-text-muted">
-              <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-primary"></span><span>1-on-1 Session</span></div>
-              <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-400"></span><span>Class</span></div>
             </div>
 
             <div className="grid grid-cols-7 gap-2 text-xs text-text-muted font-bold uppercase tracking-wider px-1">{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => <div key={d} className="text-center">{d}</div>)}</div>
@@ -509,6 +573,11 @@ export default function TrainerClassesSessions() {
                   </button>
                 );
               })}
+            </div>
+
+            <div className="flex items-center justify-center gap-4 text-[11px] text-text-muted">
+              <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-primary"></span><span>1-on-1 Session</span></div>
+              <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-400"></span><span>Class</span></div>
             </div>
           </section>
 
@@ -618,74 +687,169 @@ export default function TrainerClassesSessions() {
           </section>
         </>
       ) : (
-        <section className="space-y-3">
-          <div className="rounded-2xl border border-white/10 bg-surface p-3 sm:p-4 space-y-3">
-            <div>
-              <h2 className="text-base font-semibold text-white">History</h2>
-              <p className="text-xs text-text-muted mt-1">
-                Showing {displayedHistoryItems.length} of {visibleHistoryItems.length} records ({activeFilterCount} active filters).
-              </p>
+        <section className="space-y-4">
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5">
+              <p className="text-[10px] uppercase tracking-wide text-text-muted">Completed</p>
+              <p className="text-base font-bold text-emerald-300 mt-1">{historySummary.completed}</p>
             </div>
-
-            <div className="grid grid-cols-3 gap-2">
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-2.5">
-                <p className="text-[10px] uppercase tracking-wide text-text-muted">Total</p>
-                <p className="text-base font-bold text-white mt-0.5">{historySummary.total}</p>
-              </div>
-              <div className="rounded-xl border border-primary/20 bg-primary/10 p-2.5">
-                <p className="text-[10px] uppercase tracking-wide text-primary">Upcoming</p>
-                <p className="text-base font-bold text-white mt-0.5">{historySummary.upcoming}</p>
-              </div>
-              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-2.5">
-                <p className="text-[10px] uppercase tracking-wide text-emerald-300">Spent</p>
-                <p className="text-sm font-bold text-white mt-0.5">{formatMoney(historySummary.spent)}</p>
-              </div>
+            <div className="rounded-xl border border-primary/30 bg-primary/10 px-3 py-2.5">
+              <p className="text-[10px] uppercase tracking-wide text-text-muted">Upcoming</p>
+              <p className="text-base font-bold text-primary mt-1">{historySummary.upcoming}</p>
             </div>
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
+              <p className="text-[10px] uppercase tracking-wide text-text-muted">Commission</p>
+              <p className="text-sm font-bold text-amber-300 mt-1">{formatMoney(historySummary.commission)}</p>
+            </div>
+          </div>
 
+          <div className="space-y-2 rounded-xl border border-white/10 bg-surface p-3">
             <div className="grid grid-cols-2 gap-2">
               {HISTORY_TABS.map((tab) => (
                 <button
                   key={tab}
                   type="button"
                   onClick={() => setHistoryViewScope(tab)}
-                  className={`rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${activeHistoryTab === tab ? 'border-primary/40 bg-primary/15 text-white' : 'border-white/10 bg-white/5 text-text-muted hover:text-white hover:bg-white/10'}`}
+                  className={`h-9 px-2 rounded-lg text-[11px] font-semibold border transition-all ${activeHistoryTab === tab
+                    ? 'bg-white text-black border-white shadow-sm'
+                    : 'bg-surface border-white/10 text-text-muted hover:text-white'
+                    }`}
                 >
                   {tab === 'BOOKINGS' ? '1-on-1' : 'Classes'} ({historyTabCounts[tab]})
                 </button>
               ))}
             </div>
 
-            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-              {HISTORY_STATUS_FILTERS.map((status) => (
-                <button
-                  key={status}
-                  type="button"
-                  onClick={() => setHistoryStatusFilter(status)}
-                  className={`shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors ${historyStatusFilter === status ? 'bg-white text-background border-white' : 'bg-white/5 border-white/10 text-text-muted hover:text-white hover:bg-white/10'}`}
-                >
-                  {status === 'ALL' ? 'All' : getHistoryStatusLabel(status)} - {statusChipCounts[status]}
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              <label className="relative flex-1">
+                <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 material-icons-round text-sm text-text-muted">search</span>
+                <input
+                  type="text"
+                  value={historySearch}
+                  onChange={(event) => setHistorySearch(event.target.value)}
+                  placeholder={activeHistoryTab === 'CLASSES' ? 'Search class, status, date...' : 'Search member, status, date...'}
+                  className="h-8 w-full rounded-lg border border-white/10 bg-background/40 pl-8 pr-2 text-xs text-white placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-primary/40"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowHistoryFilters((prev) => !prev)}
+                className={`h-8 px-2.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 ${showHistoryFilters || historyStatusFilter !== 'ALL'
+                  ? 'bg-white text-black border-white'
+                  : 'bg-surface border-white/10 text-text-muted hover:text-white'
+                  }`}
+              >
+                <span className="material-icons-round text-sm">tune</span>
+                Filters
+              </button>
             </div>
+            <p className="text-[11px] text-text-muted">
+              {historyStatusFilter === 'ALL'
+                ? 'Showing all history statuses.'
+                : `Filter: ${historyStatusFilter === 'COMPLETED' ? 'Done' : getHistoryStatusLabel(historyStatusFilter)}`}
+            </p>
+
+            {showHistoryFilters && (
+              <div className="grid grid-cols-4 gap-2">
+                {HISTORY_STATUS_FILTERS.map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    onClick={() => {
+                      setHistoryStatusFilter(status);
+                      setShowHistoryFilters(false);
+                    }}
+                    className={`h-7 px-2 rounded-lg text-[11px] font-semibold border transition-all ${historyStatusFilter === status
+                      ? 'bg-white text-black border-white shadow-sm'
+                      : 'bg-surface border-white/10 text-text-muted hover:text-white'
+                      }`}
+                  >
+                    {(status === 'ALL' ? 'All' : status === 'COMPLETED' ? 'Done' : getHistoryStatusLabel(status))}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          {!displayedHistoryItems.length ? (
-            <div className="rounded-2xl border border-white/10 bg-surface p-8 text-center">
-              <p className="text-base font-semibold text-white">No records found</p>
-              <p className="mt-1 text-sm text-text-muted">Try a different status filter.</p>
+          <div className="bg-surface border border-white/10 rounded-2xl p-4 space-y-4">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h2 className="text-white font-bold text-base">Classes & Sessions History</h2>
+                <p className="text-text-muted text-xs mt-0.5">Review your 1-on-1 and class records with commission details</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => refreshData()}
+                className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-xs font-semibold text-text-muted hover:text-white"
+              >
+                Refresh
+              </button>
             </div>
-          ) : (
-            <div className="space-y-2.5">
-              {displayedHistoryItems.map((entry) => (activeHistoryTab === 'CLASSES' ? renderClassHistoryCard(entry) : renderBookingHistoryCard(entry)))}
-            </div>
-          )}
 
-          {hiddenHistoryCount > 0 && (
-            <p className="text-xs text-text-muted px-1">
-              Showing latest {displayedHistoryItems.length}. {hiddenHistoryCount} more records are hidden to keep this view clean.
-            </p>
-          )}
+            {!visibleHistoryItems.length ? (
+              <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-4 text-sm text-text-muted">No records found for this filter.</div>
+            ) : (
+              <div className="space-y-2.5">
+                {visibleHistoryItems.map((entry) => (activeHistoryTab === 'CLASSES' ? renderClassHistoryCard(entry) : renderBookingHistoryCard(entry)))}
+              </div>
+            )}
+          </div>
         </section>
+      )}
+
+      {selectedHistoryParticipantsEntry && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center p-0 sm:p-4">
+          <button
+            type="button"
+            onClick={() => setSelectedHistoryParticipantsEntry(null)}
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            aria-label="Close participants modal"
+          />
+          <div className="relative w-full sm:max-w-lg bg-surface rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-white/10">
+              <div>
+                <h3 className="text-base font-bold text-white">Class Participants</h3>
+                <p className="text-[11px] text-text-muted mt-0.5">
+                  {selectedHistoryParticipantsEntry.class?.name || `Class #${selectedHistoryParticipantsEntry.classId}`} - {formatDate(selectedHistoryParticipantsEntry.date)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedHistoryParticipantsEntry(null)}
+                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-white"
+                aria-label="Close participants modal"
+              >
+                <span className="material-icons-round text-base">close</span>
+              </button>
+            </div>
+
+            <div className="p-4 max-h-[65vh] overflow-y-auto space-y-2.5">
+              {(Array.isArray(selectedHistoryParticipantsEntry.participants) && selectedHistoryParticipantsEntry.participants.length > 0) ? (
+                selectedHistoryParticipantsEntry.participants.map((participant) => {
+                  const fullName = `${participant.member?.firstName || ''} ${participant.member?.lastName || ''}`.trim() || `Member #${participant.memberId}`;
+                  const rawStatus = String(participant.status || 'N/A').replace(/_/g, ' ');
+                  return (
+                    <article key={`history-participant-${participant.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-semibold text-white">{fullName}</p>
+                          <p className="text-[11px] text-text-muted mt-0.5">Member #{participant.memberId}</p>
+                        </div>
+                        <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${getParticipantStatusBadgeClasses(participant.status)}`}>
+                          {rawStatus}
+                        </span>
+                      </div>
+                    </article>
+                  );
+                })
+              ) : (
+                <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-4 text-sm text-text-muted">
+                  No participants found for this class session.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
