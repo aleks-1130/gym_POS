@@ -62,7 +62,7 @@ import TrainerPaymentMethods from '../features/trainer/TrainerPaymentMethods';
 import TrainerPurchaseHistory from '../features/trainer/TrainerPurchaseHistory';
 import TrainerGymTraffic from '../features/trainer/TrainerGymTraffic';
 import TrainerCommissionHistory from '../features/trainer/TrainerCommissionHistory';
-import TrainerLoyalty from '../features/trainer/TrainerLoyalty';
+import TrainerRewards from '../features/trainer/TrainerRewards';
 
 // Member Pages
 import Schedule from '../features/member/Schedule';
@@ -429,7 +429,7 @@ export default function AppRoutes() {
                     path="/trainer/loyalty"
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.TRAINER]}>
-                            <TrainerLoyalty />
+                            <TrainerRewards />
                         </ProtectedRoute>
                     }
                 />
