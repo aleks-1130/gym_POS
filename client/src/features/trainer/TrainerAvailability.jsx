@@ -41,7 +41,7 @@ const normalizeByDay = (trainer = {}) => {
                 end: trainer.availabilityEnd || '18:00'
             };
             return acc;
-        });
+        }, {});
     }
     return {};
 };
@@ -93,7 +93,7 @@ const cloneAvailabilityByDay = (source = {}) => {
             end: value?.end || '18:00'
         };
         return acc;
-    });
+    }, {});
 };
 
 const cloneSpecificDateAvailability = (source = {}) => {
@@ -108,7 +108,7 @@ const cloneSpecificDateAvailability = (source = {}) => {
             end: value?.end || '18:00'
         };
         return acc;
-    });
+    }, {});
 };
 
 const getAuthHeaders = () => {
@@ -131,9 +131,9 @@ export default function TrainerAvailability({ embedded = false, allowBookingStat
     const [sessions, setSessions] = useState([]);
     const [sessionsLoading, setSessionsLoading] = useState(false);
 
-    const [availabilityByDay, setAvailabilityByDay] = useState();
+    const [availabilityByDay, setAvailabilityByDay] = useState({});
     const [availabilityIntervalMinutes, setAvailabilityIntervalMinutes] = useState(30);
-    const [specificDateAvailability, setSpecificDateAvailability] = useState();
+    const [specificDateAvailability, setSpecificDateAvailability] = useState({});
     const [bookingStatus, setBookingStatus] = useState('OPEN');
     const [isBookingStatusModalOpen, setIsBookingStatusModalOpen] = useState(false);
     const [pendingBookingStatus, setPendingBookingStatus] = useState(null);
@@ -207,7 +207,7 @@ export default function TrainerAvailability({ embedded = false, allowBookingStat
     }, [fetchMySessions]);
 
     const selectedDayKeys = useMemo(() => {
-        return Object.keys(availabilityByDay)
+        return Object.keys(availabilityByDay || {})
             .map(Number)
             .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
             .sort((a, b) => a - b);
@@ -223,7 +223,7 @@ export default function TrainerAvailability({ embedded = false, allowBookingStat
             ? 'CLOSED'
             : 'CUSTOM';
 
-    const overrideCount = Object.keys(specificDateAvailability).length;
+    const overrideCount = Object.keys(specificDateAvailability || {}).length;
     const bookingsByDate = useMemo(() => {
         const grouped = {};
         (Array.isArray(sessions) ? sessions : []).forEach((session) => {
@@ -249,7 +249,7 @@ export default function TrainerAvailability({ embedded = false, allowBookingStat
         });
         return grouped;
     }, [sessions]);
-    const bookedDayCount = Object.keys(bookingsByDate).length;
+    const bookedDayCount = Object.keys(bookingsByDate || {}).length;
     const upcomingBookingCount = useMemo(() => {
         return Object.values(bookingsByDate).reduce((sum, items) => sum + items.length, 0);
     }, [bookingsByDate]);
@@ -323,7 +323,7 @@ export default function TrainerAvailability({ embedded = false, allowBookingStat
     };
 
     const clearAllOverrides = () => {
-        setSpecificDateAvailability();
+        setSpecificDateAvailability({});
     };
 
     const startWeeklyEdit = () => {

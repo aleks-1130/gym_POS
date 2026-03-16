@@ -102,7 +102,7 @@ export default function TrainerBooking() {
         paymentMethod: 'CASH'
     });
     const [selectedDates, setSelectedDates] = useState([]);
-    const [selectedTimesByDate, setSelectedTimesByDate] = useState();
+    const [selectedTimesByDate, setSelectedTimesByDate] = useState({});
     const [bookingLoading, setBookingLoading] = useState(false);
     const [memberSessions, setMemberSessions] = useState([]);
     const [sessionsLoading, setSessionsLoading] = useState(false);
@@ -2113,7 +2113,7 @@ export default function TrainerBooking() {
                                         </div>
                                         <div className="bg-white/5 border border-white/10 rounded-lg p-2">
                                             <p className="text-[10px] uppercase tracking-wide text-text-muted">Times</p>
-                                            <p className="text-xs font-semibold text-white truncate">{Object.keys(selectedTimesByDate).length}/{selectedDates.length}</p>
+                                            <p className="text-xs font-semibold text-white truncate">{Object.keys(selectedTimesByDate || {}).length}/{selectedDates.length}</p>
                                         </div>
                                         <div className="bg-white/5 border border-white/10 rounded-lg p-2">
                                             <p className="text-[10px] uppercase tracking-wide text-text-muted">Duration</p>
@@ -2326,7 +2326,7 @@ export default function TrainerBooking() {
                                             </div>
                                             <div className="flex items-center justify-between">
                                                 <span className="text-text-muted">Times Selected</span>
-                                                <span className="text-white font-medium">{Object.keys(selectedTimesByDate).length}/{selectedDates.length}</span>
+                                                <span className="text-white font-medium">{Object.keys(selectedTimesByDate || {}).length}/{selectedDates.length}</span>
                                             </div>
                                             <div className="flex items-center justify-between">
                                                 <span className="text-text-muted">Duration</span>
