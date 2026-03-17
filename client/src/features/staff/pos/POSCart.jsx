@@ -19,7 +19,7 @@ import { authHeaders } from './POSUtils';
  * POSCart Component - Manages the cart items, member selection, and training details.
  */
 export default function POSCart({ members, trainers, discountOptions, initiateCheckout, openReceiptTemplatePreview }) {
-    const { formatPrice: globalFormatPrice, currency: globalCurrency } = useCurrency();
+    const { currency: globalCurrency } = useCurrency();
     
     // Local currency formatting for flexibility (SGD/PHP)
     const formatPrice = (amount, currencyCode = globalCurrency) => {
@@ -57,10 +57,11 @@ export default function POSCart({ members, trainers, discountOptions, initiateCh
     // Local UI State
     const [openCalendarLineId, setOpenCalendarLineId] = useState(null);
     const [calendarMonthByLine, setCalendarMonthByLine] = useState({});
-    const [selectedDiscountPresetId, setSelectedDiscountPresetId] = useState('');
     const [couponInput, setCouponInput] = useState('');
     const [couponLoading, setCouponLoading] = useState(false);
     const [couponError, setCouponError] = useState('');
+
+    const selectedDiscountPresetId = (discountOptions.find((option) => Number(option.rate) === Number(discount)) || {}).id || '';
 
     // Helpers
     const getCalendarMonthForLine = (lineId) => {
@@ -78,17 +79,18 @@ export default function POSCart({ members, trainers, discountOptions, initiateCh
 
     const applyDiscountPreset = (presetId) => {
         if (!presetId) {
-            setSelectedDiscountPresetId('');
+            setDiscount(0);
+            return;
+        }
+        if (selectedDiscountPresetId === presetId) {
             setDiscount(0);
             return;
         }
         const preset = discountOptions.find((item) => item.id === presetId);
         if (!preset) {
-            setSelectedDiscountPresetId('');
             setDiscount(0);
             return;
         }
-        setSelectedDiscountPresetId(preset.id);
         setDiscount(Number(preset.rate));
     };
 

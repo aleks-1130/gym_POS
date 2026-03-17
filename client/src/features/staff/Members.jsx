@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useReactToPrint } from 'react-to-print';
@@ -59,6 +59,7 @@ export default function Members() {
     const [currentPage, setCurrentPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
     const [totalMembers, setTotalMembers] = useState(0);
+    const [statusTotals, setStatusTotals] = useState(null);
     const LIMIT = 12; // Items per page
 
     // Standard State
@@ -128,10 +129,18 @@ export default function Members() {
                 setMembers(res.data.data);
                 setTotalPages(res.data.meta.totalPages);
                 setTotalMembers(Number(res.data.meta.total || res.data.data?.length || 0));
+                const totals = res.data.meta.statusTotals;
+                setStatusTotals(totals && typeof totals === 'object' ? {
+                    total: Number(totals.total || 0),
+                    active: Number(totals.active || 0),
+                    freezed: Number(totals.freezed || 0),
+                    expired: Number(totals.expired || 0)
+                } : null);
             } else {
                 // Fallback for non-paginated API (shouldn't happen with updated backend)
                 setMembers(res.data);
                 setTotalMembers(Array.isArray(res.data) ? res.data.length : 0);
+                setStatusTotals(null);
             }
         } catch (e) {
             console.error("Failed to fetch members", e);
@@ -265,19 +274,42 @@ export default function Members() {
 
     // Server-side filtered members are directly in 'members' state
     const filteredMembers = useMemo(() => (Array.isArray(members) ? members : []), [members]);
+    const isMembershipExpired = useCallback((member) => {
+        const normalizedStatus = String(member?.status || '').toUpperCase();
+        if (normalizedStatus === 'EXPIRED') return true;
+        if (!member?.expiryDate) return false;
+
+        const expiryDate = new Date(member.expiryDate);
+        if (Number.isNaN(expiryDate.getTime())) return false;
+        expiryDate.setHours(23, 59, 59, 999);
+        return expiryDate < new Date();
+    }, []);
+    const getResolvedStatus = useCallback((member) => {
+        if (isMembershipExpired(member)) return 'EXPIRED';
+        return String(member?.status || 'UNKNOWN').toUpperCase();
+    }, [isMembershipExpired]);
     const getStatusLabel = (status) => String(status || 'UNKNOWN').replace(/_/g, ' ');
     const memberStats = useMemo(() => {
-        const active = filteredMembers.filter((member) => String(member?.status || '').toUpperCase() === 'ACTIVE').length;
-        const freezed = filteredMembers.filter((member) => String(member?.status || '').toUpperCase() === 'FREEZED').length;
-        const expired = filteredMembers.filter((member) => String(member?.status || '').toUpperCase() === 'EXPIRED').length;
-        const total = Number(totalMembers || filteredMembers.length || 0);
+        const hasGlobalTotals = statusTotals && Number.isFinite(statusTotals.total);
+        const active = hasGlobalTotals
+            ? Number(statusTotals.active || 0)
+            : filteredMembers.filter((member) => getResolvedStatus(member) === 'ACTIVE').length;
+        const freezed = hasGlobalTotals
+            ? Number(statusTotals.freezed || 0)
+            : filteredMembers.filter((member) => getResolvedStatus(member) === 'FREEZED').length;
+        const expired = hasGlobalTotals
+            ? Number(statusTotals.expired || 0)
+            : filteredMembers.filter((member) => getResolvedStatus(member) === 'EXPIRED').length;
+        const total = hasGlobalTotals
+            ? Number(statusTotals.total || 0)
+            : Number(totalMembers || filteredMembers.length || 0);
         return [
             { label: 'Total Members', value: total, icon: 'groups', tone: 'text-primary' },
             { label: 'Active', value: active, icon: 'verified', tone: 'text-emerald-400' },
             { label: 'On Freeze', value: freezed, icon: 'pause_circle', tone: 'text-blue-400' },
             { label: 'Expired', value: expired, icon: 'event_busy', tone: 'text-red-400' }
         ];
-    }, [filteredMembers, totalMembers]);
+    }, [filteredMembers, getResolvedStatus, statusTotals, totalMembers]);
 
     const selectedPlan = plans.find(plan => plan.id === Number(formData.planId));
     const getMemberPlan = (member) => member?.plan || plans.find(plan => plan.id === Number(member?.planId));
@@ -420,8 +452,8 @@ export default function Members() {
                             {
                                 header: 'Status',
                                 accessor: (member) => (
-                                    <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(member.status)}`}>
-                                        {getStatusLabel(member.status)}
+                                    <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(getResolvedStatus(member))}`}>
+                                        {getStatusLabel(getResolvedStatus(member))}
                                     </span>
                                 )
                             },
@@ -462,12 +494,25 @@ export default function Members() {
                 ) : (
                     // GRID VIEW
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 animate-fade-in">
-                        {filteredMembers.map(member => (
-                            <div
-                                key={member.id}
-                                onClick={() => navigate(`/members/${member.id}`)}
-                                className="rounded-xl border border-white/10 bg-surface p-4 transition-all cursor-pointer group flex flex-col gap-3 hover:border-primary/30 hover:bg-surfaceHighlight/40"
-                            >
+                        {filteredMembers.map(member => {
+                            const resolvedStatus = getResolvedStatus(member);
+                            const ribbonConfig = resolvedStatus === 'EXPIRED'
+                                ? { label: 'Expired', ribbonClass: 'bg-red-600/90', borderClass: 'border-red-500/30' }
+                                : resolvedStatus === 'FREEZED'
+                                    ? { label: 'Frozen', ribbonClass: 'bg-blue-600/90', borderClass: 'border-blue-500/30' }
+                                    : null;
+                            const showStatusBadge = !ribbonConfig;
+                            return (
+                                <div
+                                    key={member.id}
+                                    onClick={() => navigate(`/members/${member.id}`)}
+                                    className={`relative overflow-hidden rounded-xl border bg-surface p-4 transition-all cursor-pointer group flex flex-col gap-3 hover:border-primary/30 hover:bg-surfaceHighlight/40 ${ribbonConfig ? ribbonConfig.borderClass : 'border-white/10'}`}
+                                >
+                                    {ribbonConfig && (
+                                        <div className={`pointer-events-none absolute right-[-50px] top-[14px] z-10 w-44 rotate-45 py-1 text-center text-[10px] font-black uppercase tracking-[0.2em] text-white shadow-lg ${ribbonConfig.ribbonClass}`}>
+                                            {ribbonConfig.label}
+                                        </div>
+                                    )}
                                 <div className="flex justify-between items-start">
                                     <div className="flex items-center gap-3 min-w-0">
                                         {member.imageUrl ? (
@@ -504,9 +549,15 @@ export default function Members() {
                                         >
                                             <span className="material-icons-round text-[16px]">delete</span>
                                         </button>
-                                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-medium border ${getStatusColor(member.status)}`}>
-                                            {getStatusLabel(member.status)}
-                                        </span>
+                                        <div className="min-w-[82px] flex justify-end">
+                                            {showStatusBadge ? (
+                                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-medium border ${getStatusColor(resolvedStatus)}`}>
+                                                    {getStatusLabel(resolvedStatus)}
+                                                </span>
+                                            ) : (
+                                                <span className="inline-block h-6 w-[82px]" aria-hidden="true" />
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
 
@@ -522,13 +573,14 @@ export default function Members() {
                                     </div>
                                     <div className="text-right">
                                         <p className="text-text-muted text-xs">Expires</p>
-                                        <p className={`font-medium ${new Date(member.expiryDate) < new Date() ? 'text-red-400' : 'text-emerald-400'}`}>
+                                        <p className={`font-medium ${resolvedStatus === 'EXPIRED' ? 'text-red-400' : resolvedStatus === 'FREEZED' ? 'text-blue-400' : 'text-emerald-400'}`}>
                                             {member.expiryDate ? new Date(member.expiryDate).toLocaleDateString() : 'N/A'}
                                         </p>
                                     </div>
                                 </div>
                             </div>
-                        ))}
+                            );
+                        })}
                         {filteredMembers.length === 0 && !loading && (
                             <div className="col-span-full p-12 text-center text-text-muted bg-surface rounded-3xl border border-white/5">
                                 No members found.

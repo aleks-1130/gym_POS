@@ -21,7 +21,8 @@ import POSPaymentModal from './pos/POSPaymentModal';
 import {
     authHeaders, normalizeList, extractBookingBatchId,
     getAvailableTimeSlotsForTrainer,
-    getBuyerLabel, getMethodLabel, renderStatusBadge
+    getBuyerLabel, getMethodLabel, getTransactionTypeLabel,
+    renderStatusBadge, renderTransactionTypeBadge
 } from './pos/POSUtils';
 
 export default function POS() {
@@ -36,7 +37,7 @@ export default function POS() {
         openModal, closeModal, setCollectField, clearCart
     } = usePOSStore();
 
-    const { discountAmount, couponDiscount, total: cartTotal } = usePOSStore(useShallow(state => state.getTotals()));
+    const { discountAmount, total: cartTotal } = usePOSStore(useShallow(state => state.getTotals()));
     const appliedCoupon = usePOSStore(state => state.appliedCoupon);
     // effectiveCartTotal is now identical to cartTotal from getTotals()
     const effectiveCartTotal = cartTotal;
@@ -51,7 +52,10 @@ export default function POS() {
     const [historySearch, setHistorySearch] = useState('');
     const [historyStatusFilter, setHistoryStatusFilter] = useState('ALL');
     const [historyMethodFilter, setHistoryMethodFilter] = useState('ALL');
+    const [historyTypeFilter, setHistoryTypeFilter] = useState('ALL');
+    const [historyPage, setHistoryPage] = useState(1);
     const [collectSearch, setCollectSearch] = useState('');
+    const [collectViewMode, setCollectViewMode] = useState('LIST');
     const [history, setHistory] = useState([]);
     const [trainingBookings, setTrainingBookings] = useState([]);
     const [pendingInAppPurchases, setPendingInAppPurchases] = useState([]);
@@ -473,13 +477,15 @@ export default function POS() {
     const historyQuery = String(historySearch || '').trim().toLowerCase();
     const historyStatusOptions = ['ALL', ...Array.from(new Set(history.map((payment) => String(payment?.status || 'COMPLETED').toUpperCase())))];
     const historyMethodOptions = ['ALL', ...Array.from(new Set(history.map((payment) => String(payment?.method || '').toUpperCase()).filter(Boolean)))];
+    const historyTypeOptions = ['ALL', ...Array.from(new Set(history.map((payment) => String(payment?.type || '').toUpperCase()).filter(Boolean)))];
+    const historyPageSize = 15;
     const filteredHistory = history.filter((payment) => {
         if (!historyQuery) return true;
 
         const buyer = getBuyerLabel(payment);
         const cashier = payment?.cashier?.name || '';
         const method = getMethodLabel(payment?.method);
-        const type = payment?.type || '';
+        const type = getTransactionTypeLabel(payment?.type);
         const status = payment?.status || '';
         const amount = payment?.amount ?? '';
 
@@ -488,10 +494,18 @@ export default function POS() {
     }).filter((payment) => {
         const normalizedStatus = String(payment?.status || 'COMPLETED').toUpperCase();
         const normalizedMethod = String(payment?.method || '').toUpperCase();
+        const normalizedType = String(payment?.type || '').toUpperCase();
         const statusMatches = historyStatusFilter === 'ALL' || normalizedStatus === historyStatusFilter;
         const methodMatches = historyMethodFilter === 'ALL' || normalizedMethod === historyMethodFilter;
-        return statusMatches && methodMatches;
+        const typeMatches = historyTypeFilter === 'ALL' || normalizedType === historyTypeFilter;
+        return statusMatches && methodMatches && typeMatches;
     });
+    const totalHistoryPages = Math.max(1, Math.ceil(filteredHistory.length / historyPageSize));
+    const currentHistoryPage = Math.min(historyPage, totalHistoryPages);
+    const paginatedHistory = filteredHistory.slice(
+        (currentHistoryPage - 1) * historyPageSize,
+        currentHistoryPage * historyPageSize
+    );
 
     const collectQuery = String(collectSearch || '').trim().toLowerCase();
     const filteredBookingGroups = groupedTrainingBookings.filter((bookingGroup) => {
@@ -512,16 +526,46 @@ export default function POS() {
     const collectNotificationLabel = collectNotificationCount > 99 ? '99+' : String(collectNotificationCount);
     const commonInputClass = "w-full rounded-xl border border-white/10 bg-surface px-10 py-2.5 text-sm text-white outline-none transition-colors focus:border-primary";
     const commonSelectClass = "w-full rounded-xl border border-white/10 bg-surface px-3 py-2.5 text-sm text-white outline-none transition-colors focus:border-primary";
+    const renderCollectEmptyState = (title, message) => (
+        <div className="flex h-full min-h-[240px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/15 bg-black/10 p-6 text-center">
+            <svg
+                viewBox="0 0 120 120"
+                className="mb-4 h-20 w-20 text-text-muted/70"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
+            >
+                <rect x="18" y="24" width="84" height="62" rx="10" stroke="currentColor" strokeWidth="4" />
+                <path d="M18 44H102" stroke="currentColor" strokeWidth="4" />
+                <circle cx="42" cy="65" r="8" stroke="currentColor" strokeWidth="4" />
+                <path d="M60 66H84" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+                <path d="M36 95H84" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+            </svg>
+            <p className="text-sm font-semibold text-white">{title}</p>
+            <p className="mt-1 text-xs text-text-muted">{message}</p>
+        </div>
+    );
 
 
     const openHistoryView = () => {
         fetchHistory();
+        setHistoryPage(1);
         setViewMode('HISTORY');
     };
 
     const openCollectCashView = () => {
         setViewMode('TRAINING_BOOKINGS');
     };
+
+    useEffect(() => {
+        setHistoryPage(1);
+    }, [historySearch, historyStatusFilter, historyMethodFilter, historyTypeFilter]);
+
+    useEffect(() => {
+        if (historyPage > totalHistoryPages) {
+            setHistoryPage(totalHistoryPages);
+        }
+    }, [historyPage, totalHistoryPages]);
 
     const renderModeTabs = () => (
         <div className="ml-auto inline-flex rounded-2xl border border-white/10 bg-surface p-1 shadow-sm">
@@ -569,14 +613,14 @@ export default function POS() {
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-surface p-4">
-                    <div className="grid gap-3 lg:grid-cols-[1fr,220px,220px]">
+                    <div className="grid gap-3 xl:grid-cols-[1fr,220px,220px,220px]">
                         <label className="relative block">
                             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 material-icons-round text-base text-text-muted">search</span>
                             <input
                                 type="text"
                                 value={historySearch}
                                 onChange={(event) => setHistorySearch(event.target.value)}
-                                placeholder="Search receipt, buyer, cashier, method, or amount"
+                                placeholder="Search receipt, buyer, cashier, type, method, or amount"
                                 className={commonInputClass}
                             />
                         </label>
@@ -598,53 +642,101 @@ export default function POS() {
                                 <option key={method} value={method}>{method === 'ALL' ? 'All Methods' : getMethodLabel(method)}</option>
                             ))}
                         </select>
+                        <select
+                            value={historyTypeFilter}
+                            onChange={(event) => setHistoryTypeFilter(event.target.value)}
+                            className={commonSelectClass}
+                        >
+                            {historyTypeOptions.map((type) => (
+                                <option key={type} value={type}>{type === 'ALL' ? 'All Categories' : getTransactionTypeLabel(type)}</option>
+                            ))}
+                        </select>
                     </div>
                 </div>
 
-                <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
-                    <table className="w-full text-left text-sm text-text-secondary">
-                        <thead className="bg-white/5 text-text-muted uppercase text-xs font-bold tracking-wider">
-                            <tr>
-                                <th className="px-6 py-4">Date</th>
-                                <th className="px-6 py-4">Type</th>
-                                <th className="px-6 py-4">Amount</th>
-                                <th className="px-6 py-4">Method</th>
-                                <th className="px-6 py-4">Member</th>
-                                <th className="px-6 py-4">Cashier</th>
-                                <th className="px-6 py-4">Change</th>
-                                <th className="px-6 py-4">Status</th>
-                                <th className="px-6 py-4">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-white/5">
-                            {filteredHistory.length === 0 && (
-                                <tr><td colSpan="9" className="p-6 text-center text-text-muted">No transactions found.</td></tr>
-                            )}
-                            {filteredHistory.map((pay) => (
-                                <tr key={pay.id} className="hover:bg-white/5 transition-colors">
-                                    <td className="px-6 py-4 text-white font-medium">{new Date(pay.date).toLocaleDateString()} <span className="text-text-muted font-normal text-xs">{new Date(pay.date).toLocaleTimeString()}</span></td>
-                                    <td className="px-6 py-4"><span className="bg-white/10 text-text-secondary px-2 py-1 rounded text-xs font-bold">{pay.type}</span></td>
-                                    <td className="px-6 py-4 text-white font-bold">{formatPrice(pay.amount)}</td>
-                                    <td className="px-6 py-4 text-text-secondary">{getMethodLabel(pay.method)}</td>
-                                    <td className="px-6 py-4 text-white">{getBuyerLabel(pay)}</td>
-                                    <td className="px-6 py-4 text-white">{pay.cashier?.name || 'N/A'}</td>
-                                    <td className="px-6 py-4 text-white">
-                                        {pay.method === 'CASH' ? formatPrice(pay.changeDue || 0) : '-'}
-                                    </td>
-                                    <td className="px-6 py-4">{renderStatusBadge(pay.status)}</td>
-                                    <td className="px-6 py-4">
-                                        <a
-                                            href={`/pos/transactions/${pay.id}`}
-                                            className="text-primary hover:text-orange-400 font-medium text-xs flex items-center gap-1 transition-colors"
-                                        >
-                                            <span className="material-icons-round text-sm">receipt</span>
-                                            View
-                                        </a>
-                                    </td>
+                <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm min-h-[560px] xl:min-h-[680px] flex flex-col">
+                    <div className="flex-1 overflow-auto">
+                        <table className="w-full table-fixed text-left text-xs text-text-secondary">
+                            <thead className="bg-white/5 text-text-muted uppercase text-[10px] font-bold tracking-wider">
+                                <tr>
+                                    <th className="px-4 py-3">Date</th>
+                                    <th className="px-4 py-3">Type</th>
+                                    <th className="px-4 py-3">Amount</th>
+                                    <th className="px-4 py-3">Method</th>
+                                    <th className="px-4 py-3">Member</th>
+                                    <th className="px-4 py-3">Cashier</th>
+                                    <th className="px-4 py-3">Change</th>
+                                    <th className="px-4 py-3">Status</th>
+                                    <th className="px-4 py-3">Actions</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                                {filteredHistory.length === 0 && (
+                                    <tr><td colSpan="9" className="p-6 text-center text-text-muted">No transactions found.</td></tr>
+                                )}
+                                {paginatedHistory.map((pay) => {
+                                    const methodLabel = getMethodLabel(pay.method);
+                                    return (
+                                        <tr key={pay.id} className="hover:bg-white/5 transition-colors">
+                                            <td className="px-4 py-2.5 text-white font-medium whitespace-nowrap">
+                                                {new Date(pay.date).toLocaleDateString()} <span className="text-text-muted font-normal text-[10px]">{new Date(pay.date).toLocaleTimeString()}</span>
+                                            </td>
+                                            <td className="px-4 py-2.5">{renderTransactionTypeBadge(pay.type)}</td>
+                                            <td className="px-4 py-2.5 text-white font-bold whitespace-nowrap">{formatPrice(pay.amount)}</td>
+                                            <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">
+                                                <span className="inline-block max-w-[108px] truncate align-middle" title={methodLabel}>{methodLabel}</span>
+                                            </td>
+                                            <td className="px-4 py-2.5 text-white whitespace-nowrap">
+                                                <span className="inline-block max-w-[128px] truncate align-middle" title={getBuyerLabel(pay)}>{getBuyerLabel(pay)}</span>
+                                            </td>
+                                            <td className="px-4 py-2.5 text-white whitespace-nowrap">
+                                                <span className="inline-block max-w-[108px] truncate align-middle" title={pay.cashier?.name || 'N/A'}>{pay.cashier?.name || 'N/A'}</span>
+                                            </td>
+                                            <td className="px-4 py-2.5 text-white whitespace-nowrap">
+                                                {pay.method === 'CASH' ? formatPrice(pay.changeDue || 0) : '-'}
+                                            </td>
+                                            <td className="px-4 py-2.5">{renderStatusBadge(pay.status)}</td>
+                                            <td className="px-4 py-2.5">
+                                            <a
+                                                href={`/pos/transactions/${pay.id}`}
+                                                className="text-primary hover:text-orange-400 font-medium text-[11px] inline-flex items-center gap-1 transition-colors whitespace-nowrap"
+                                            >
+                                                <span className="material-icons-round text-sm">receipt</span>
+                                                View
+                                            </a>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                    {filteredHistory.length > 0 && (
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-white/[0.02] px-6 py-3">
+                            <p className="text-xs text-text-muted">
+                                Showing {((currentHistoryPage - 1) * historyPageSize) + 1}-{Math.min(currentHistoryPage * historyPageSize, filteredHistory.length)} of {filteredHistory.length}
+                            </p>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setHistoryPage((prev) => Math.max(1, prev - 1))}
+                                    disabled={currentHistoryPage <= 1}
+                                    className="rounded-lg border border-white/15 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                    Previous
+                                </button>
+                                <span className="text-xs font-semibold text-text-secondary">Page {currentHistoryPage} of {totalHistoryPages}</span>
+                                <button
+                                    type="button"
+                                    onClick={() => setHistoryPage((prev) => Math.min(totalHistoryPages, prev + 1))}
+                                    disabled={currentHistoryPage >= totalHistoryPages}
+                                    className="rounded-lg border border-white/15 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         );
@@ -662,20 +754,38 @@ export default function POS() {
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-surface p-4">
-                    <label className="relative block">
-                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 material-icons-round text-base text-text-muted">search</span>
-                        <input
-                            type="text"
-                            value={collectSearch}
-                            onChange={(event) => setCollectSearch(event.target.value)}
-                            placeholder="Search buyer, member, trainer, type, status, or amount"
-                            className={commonInputClass}
-                        />
-                    </label>
+                    <div className="grid gap-3 lg:grid-cols-[1fr,220px]">
+                        <label className="relative block">
+                            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 material-icons-round text-base text-text-muted">search</span>
+                            <input
+                                type="text"
+                                value={collectSearch}
+                                onChange={(event) => setCollectSearch(event.target.value)}
+                                placeholder="Search buyer, member, trainer, type, status, or amount"
+                                className={commonInputClass}
+                            />
+                        </label>
+                        <div className="inline-flex items-center rounded-xl border border-white/10 bg-black/20 p-1">
+                            <button
+                                type="button"
+                                onClick={() => setCollectViewMode('LIST')}
+                                className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${collectViewMode === 'LIST' ? 'bg-primary text-background' : 'text-text-secondary hover:text-white'}`}
+                            >
+                                List View
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setCollectViewMode('GRID')}
+                                className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${collectViewMode === 'GRID' ? 'bg-primary text-background' : 'text-text-secondary hover:text-white'}`}
+                            >
+                                Grid View
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
-                <div className="grid gap-4 xl:grid-cols-2">
-                    <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
+                <div className="grid items-stretch gap-4 xl:grid-cols-2">
+                    <section className="bg-surface rounded-3xl border border-white/10 shadow-sm flex min-h-[680px] xl:min-h-[830px] flex-col">
                         <div className="flex items-center justify-between border-b border-white/10 px-5 py-3 bg-white/5">
                             <div>
                                 <h2 className="text-sm font-bold text-white uppercase tracking-wide">In-App Purchases</h2>
@@ -687,35 +797,38 @@ export default function POS() {
                                 <span className="rounded-full bg-amber-500/20 px-1.5 py-[1px] text-[10px]">{filteredPendingPurchases.length}</span>
                             </span>
                         </div>
-                        <table className="w-full table-fixed text-left text-xs text-text-secondary">
-                            <thead className="bg-white/5 text-text-muted uppercase text-[10px] font-bold tracking-wider">
-                                <tr>
-                                    <th className="px-3 py-2.5">Date</th>
-                                    <th className="px-3 py-2.5">Member</th>
-                                    <th className="px-3 py-2.5">Amount</th>
-                                    <th className="px-3 py-2.5">Status</th>
-                                    <th className="w-[132px] px-3 py-2.5">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-white/5">
-                                {filteredPendingPurchases.length === 0 && (
-                                    <tr><td colSpan="5" className="p-4 text-center text-text-muted">No pending in-app cash purchases found.</td></tr>
-                                )}
-                                {filteredPendingPurchases.map((payment) => (
-                                    <tr key={payment.id} className="hover:bg-white/5 transition-colors">
-                                        <td className="px-3 py-2.5 text-white font-medium align-top">
-                                            {new Date(payment.date).toLocaleDateString()} <span className="block text-text-muted font-normal text-[10px]">{new Date(payment.date).toLocaleTimeString()}</span>
-                                        </td>
-                                        <td className="px-3 py-2.5 text-white truncate align-top">{getBuyerLabel(payment)}</td>
-                                        <td className="px-3 py-2.5 text-white font-bold align-top">{formatPrice(payment.amount)}</td>
-                                        <td className="px-3 py-2.5 align-top">{renderStatusBadge(payment.status)}</td>
-                                        <td className="px-3 py-2.5 align-top">
-                                            <div className="flex items-center gap-1 whitespace-nowrap">
+                        <div className="flex-1 p-4">
+                            {filteredPendingPurchases.length === 0 ? (
+                                renderCollectEmptyState('No Pending Purchases', 'Pending in-app cash purchases will appear here.')
+                            ) : collectViewMode === 'GRID' ? (
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    {filteredPendingPurchases.map((payment) => (
+                                        <article key={payment.id} className="h-full min-h-[300px] rounded-2xl border border-white/10 bg-black/15 p-4 flex flex-col">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <p className="text-sm font-bold text-white leading-tight truncate">{getBuyerLabel(payment)}</p>
+                                                {renderStatusBadge(payment.status)}
+                                            </div>
+                                            <div className="mt-2">{renderTransactionTypeBadge(payment.type)}</div>
+                                            <div className="mt-3 grid grid-cols-2 gap-3 text-[11px]">
+                                                <div>
+                                                    <p className="text-text-muted uppercase tracking-wider">Date</p>
+                                                    <p className="mt-1 text-white">{new Date(payment.date).toLocaleDateString()}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-text-muted uppercase tracking-wider">Time</p>
+                                                    <p className="mt-1 text-white">{new Date(payment.date).toLocaleTimeString()}</p>
+                                                </div>
+                                                <div className="col-span-2">
+                                                    <p className="text-text-muted uppercase tracking-wider">Amount Due</p>
+                                                    <p className="mt-1 text-base font-bold text-white">{formatPrice(payment.amount)}</p>
+                                                </div>
+                                            </div>
+                                            <div className="mt-auto pt-4 flex items-center gap-2">
                                                 <button
                                                     onClick={() => {
                                                         openModal('collectPurchase', payment);
                                                     }}
-                                                    className="text-[10px] font-bold px-2 py-1 rounded-md border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
+                                                    className="flex-1 text-[11px] font-bold px-2.5 py-2 rounded-lg border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
                                                 >
                                                     Accept
                                                 </button>
@@ -735,19 +848,81 @@ export default function POS() {
                                                             await showAlert({ title: 'Decline Failed', message: e.response?.data?.error || 'Failed to decline payment', type: 'danger' });
                                                         }
                                                     }}
-                                                    className="text-[10px] font-bold px-2 py-1 rounded-md border border-red-500/30 text-red-300 hover:bg-red-500/10"
+                                                    className="flex-1 text-[11px] font-bold px-2.5 py-2 rounded-lg border border-red-500/30 text-red-300 hover:bg-red-500/10"
                                                 >
                                                     Decline
                                                 </button>
                                             </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                                        </article>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="overflow-hidden rounded-2xl border border-white/10">
+                                    <table className="w-full table-fixed text-left text-xs text-text-secondary">
+                                        <thead className="bg-white/5 text-text-muted uppercase text-[10px] font-bold tracking-wider">
+                                            <tr>
+                                                <th className="px-3 py-2.5">Date</th>
+                                                <th className="px-3 py-2.5">Buyer</th>
+                                                <th className="px-3 py-2.5">Type</th>
+                                                <th className="px-3 py-2.5">Amount</th>
+                                                <th className="px-3 py-2.5">Status</th>
+                                                <th className="w-[140px] px-3 py-2.5">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-white/5">
+                                            {filteredPendingPurchases.map((payment) => (
+                                                <tr key={payment.id} className="hover:bg-white/5 transition-colors">
+                                                    <td className="px-3 py-2.5 text-white font-medium whitespace-nowrap">
+                                                        {new Date(payment.date).toLocaleDateString()} <span className="text-text-muted font-normal text-[10px]">{new Date(payment.date).toLocaleTimeString()}</span>
+                                                    </td>
+                                                    <td className="px-3 py-2.5 text-white whitespace-nowrap">
+                                                        <span className="inline-block max-w-[150px] truncate align-middle" title={getBuyerLabel(payment)}>{getBuyerLabel(payment)}</span>
+                                                    </td>
+                                                    <td className="px-3 py-2.5">{renderTransactionTypeBadge(payment.type)}</td>
+                                                    <td className="px-3 py-2.5 text-white font-bold whitespace-nowrap">{formatPrice(payment.amount)}</td>
+                                                    <td className="px-3 py-2.5">{renderStatusBadge(payment.status)}</td>
+                                                    <td className="px-3 py-2.5">
+                                                        <div className="flex items-center gap-1.5 whitespace-nowrap">
+                                                            <button
+                                                                onClick={() => {
+                                                                    openModal('collectPurchase', payment);
+                                                                }}
+                                                                className="text-[10px] font-bold px-2 py-1 rounded-md border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
+                                                            >
+                                                                Accept
+                                                            </button>
+                                                            <button
+                                                                onClick={async () => {
+                                                                    const confirmed = await showConfirm({
+                                                                        title: 'Decline Purchase?',
+                                                                        message: 'Decline this pending cash purchase?',
+                                                                        confirmLabel: 'Decline',
+                                                                        type: 'danger'
+                                                                    });
+                                                                    if (!confirmed) return;
+                                                                    try {
+                                                                        await axios.post(withApiBase(`/api/payments/${payment.id}/decline-cash`), {}, { headers: authHeaders() });
+                                                                        await Promise.all([fetchPendingInAppPurchases(), fetchHistory()]);
+                                                                    } catch (e) {
+                                                                        await showAlert({ title: 'Decline Failed', message: e.response?.data?.error || 'Failed to decline payment', type: 'danger' });
+                                                                    }
+                                                                }}
+                                                                className="text-[10px] font-bold px-2 py-1 rounded-md border border-red-500/30 text-red-300 hover:bg-red-500/10"
+                                                            >
+                                                                Decline
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    </section>
 
-                    <div className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
+                    <section className="bg-surface rounded-3xl border border-white/10 shadow-sm flex min-h-[680px] xl:min-h-[760px] flex-col">
                         <div className="flex items-center justify-between border-b border-white/10 px-5 py-3 bg-white/5">
                             <div>
                                 <h2 className="text-sm font-bold text-white uppercase tracking-wide">Trainer Bookings</h2>
@@ -759,43 +934,48 @@ export default function POS() {
                                 <span className="rounded-full bg-blue-500/20 px-1.5 py-[1px] text-[10px]">{filteredBookingGroups.length}</span>
                             </span>
                         </div>
-                        <table className="w-full table-fixed text-left text-xs text-text-secondary">
-                            <thead className="bg-white/5 text-text-muted uppercase text-[10px] font-bold tracking-wider">
-                                <tr>
-                                    <th className="px-3 py-2.5">Date</th>
-                                    <th className="px-3 py-2.5">Buyer</th>
-                                    <th className="px-3 py-2.5">Trainer</th>
-                                    <th className="px-3 py-2.5">Duration</th>
-                                    <th className="px-3 py-2.5">Amount</th>
-                                    <th className="px-3 py-2.5">Status</th>
-                                    <th className="w-[132px] px-3 py-2.5">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-white/5">
-                                {filteredBookingGroups.length === 0 && (
-                                    <tr><td colSpan="7" className="p-4 text-center text-text-muted">No unpaid bookings found.</td></tr>
-                                )}
-                                {filteredBookingGroups.map((bookingGroup) => (
-                                    <tr key={bookingGroup.key} className="hover:bg-white/5 transition-colors">
-                                        <td className="px-3 py-2.5 text-white font-medium align-top">
-                                            {bookingGroup.firstDate.toLocaleDateString()} <span className="block text-text-muted font-normal text-[10px]">{bookingGroup.firstDate.toLocaleTimeString()}</span>
-                                        </td>
-                                        <td className="px-3 py-2.5 text-white truncate align-top">
-                                            {bookingGroup.member ? `${bookingGroup.member.firstName} ${bookingGroup.member.lastName}` : 'N/A'}
-                                        </td>
-                                        <td className="px-3 py-2.5 text-white truncate align-top">{bookingGroup.trainer?.name || 'N/A'}</td>
-                                        <td className="px-3 py-2.5 text-white align-top">{bookingGroup.count} session(s) - {bookingGroup.totalDuration} min</td>
-                                        <td className="px-3 py-2.5 text-white font-bold align-top">{formatPrice(bookingGroup.totalAmount)}</td>
-                                        <td className="px-3 py-2.5 align-top">
-                                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">UNPAID</span>
-                                        </td>
-                                        <td className="px-3 py-2.5 align-top">
-                                            <div className="flex items-center gap-1 whitespace-nowrap">
+                        <div className="flex-1 p-4">
+                            {filteredBookingGroups.length === 0 ? (
+                                renderCollectEmptyState('No Unpaid Bookings', 'Unpaid trainer sessions will show here for cash collection.')
+                            ) : collectViewMode === 'GRID' ? (
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    {filteredBookingGroups.map((bookingGroup) => (
+                                        <article key={bookingGroup.key} className="h-full min-h-[300px] rounded-2xl border border-white/10 bg-black/15 p-4 flex flex-col">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <p className="text-sm font-bold text-white leading-tight truncate">
+                                                    {bookingGroup.member ? `${bookingGroup.member.firstName} ${bookingGroup.member.lastName}` : 'N/A'}
+                                                </p>
+                                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">UNPAID</span>
+                                            </div>
+                                            <p className="mt-1 text-xs text-text-muted truncate">{bookingGroup.trainer?.name || 'N/A'}</p>
+                                            <div className="mt-3 grid grid-cols-2 gap-3 text-[11px]">
+                                                <div>
+                                                    <p className="text-text-muted uppercase tracking-wider">Date</p>
+                                                    <p className="mt-1 text-white">{bookingGroup.firstDate.toLocaleDateString()}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-text-muted uppercase tracking-wider">Time</p>
+                                                    <p className="mt-1 text-white">{bookingGroup.firstDate.toLocaleTimeString()}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-text-muted uppercase tracking-wider">Sessions</p>
+                                                    <p className="mt-1 text-white">{bookingGroup.count} session(s)</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-text-muted uppercase tracking-wider">Duration</p>
+                                                    <p className="mt-1 text-white">{bookingGroup.totalDuration} min</p>
+                                                </div>
+                                                <div className="col-span-2">
+                                                    <p className="text-text-muted uppercase tracking-wider">Amount Due</p>
+                                                    <p className="mt-1 text-base font-bold text-white">{formatPrice(bookingGroup.totalAmount)}</p>
+                                                </div>
+                                            </div>
+                                            <div className="mt-auto pt-4 flex items-center gap-2">
                                                 <button
                                                     onClick={() => {
                                                         openModal('collectCash', bookingGroup);
                                                     }}
-                                                    className="text-[10px] font-bold px-2 py-1 rounded-md border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
+                                                    className="flex-1 text-[11px] font-bold px-2.5 py-2 rounded-lg border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
                                                 >
                                                     Accept
                                                 </button>
@@ -821,17 +1001,95 @@ export default function POS() {
                                                             await showAlert({ title: 'Decline Failed', message: detail ? `${message}\n\nDetails: ${detail}` : message, type: 'danger' });
                                                         }
                                                     }}
-                                                    className="text-[10px] font-bold px-2 py-1 rounded-md border border-red-500/30 text-red-300 hover:bg-red-500/10"
+                                                    className="flex-1 text-[11px] font-bold px-2.5 py-2 rounded-lg border border-red-500/30 text-red-300 hover:bg-red-500/10"
                                                 >
                                                     Decline
                                                 </button>
                                             </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                                        </article>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="overflow-hidden rounded-2xl border border-white/10">
+                                    <table className="w-full table-fixed text-left text-xs text-text-secondary">
+                                        <thead className="bg-white/5 text-text-muted uppercase text-[10px] font-bold tracking-wider">
+                                            <tr>
+                                                <th className="px-3 py-2.5">Date</th>
+                                                <th className="px-3 py-2.5">Buyer</th>
+                                                <th className="px-3 py-2.5">Trainer</th>
+                                                <th className="px-3 py-2.5">Sessions</th>
+                                                <th className="px-3 py-2.5">Amount</th>
+                                                <th className="px-3 py-2.5">Status</th>
+                                                <th className="w-[140px] px-3 py-2.5">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-white/5">
+                                            {filteredBookingGroups.map((bookingGroup) => (
+                                                <tr key={bookingGroup.key} className="hover:bg-white/5 transition-colors">
+                                                    <td className="px-3 py-2.5 text-white font-medium whitespace-nowrap">
+                                                        {bookingGroup.firstDate.toLocaleDateString()} <span className="text-text-muted font-normal text-[10px]">{bookingGroup.firstDate.toLocaleTimeString()}</span>
+                                                    </td>
+                                                    <td className="px-3 py-2.5 text-white whitespace-nowrap">
+                                                        <span className="inline-block max-w-[140px] truncate align-middle" title={bookingGroup.member ? `${bookingGroup.member.firstName} ${bookingGroup.member.lastName}` : 'N/A'}>
+                                                            {bookingGroup.member ? `${bookingGroup.member.firstName} ${bookingGroup.member.lastName}` : 'N/A'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-3 py-2.5 text-white whitespace-nowrap">
+                                                        <span className="inline-block max-w-[120px] truncate align-middle" title={bookingGroup.trainer?.name || 'N/A'}>
+                                                            {bookingGroup.trainer?.name || 'N/A'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-3 py-2.5 text-white whitespace-nowrap">{bookingGroup.count} / {bookingGroup.totalDuration}m</td>
+                                                    <td className="px-3 py-2.5 text-white font-bold whitespace-nowrap">{formatPrice(bookingGroup.totalAmount)}</td>
+                                                    <td className="px-3 py-2.5">
+                                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">UNPAID</span>
+                                                    </td>
+                                                    <td className="px-3 py-2.5">
+                                                        <div className="flex items-center gap-1.5 whitespace-nowrap">
+                                                            <button
+                                                                onClick={() => {
+                                                                    openModal('collectCash', bookingGroup);
+                                                                }}
+                                                                className="text-[10px] font-bold px-2 py-1 rounded-md border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10"
+                                                            >
+                                                                Accept
+                                                            </button>
+                                                            <button
+                                                                onClick={async () => {
+                                                                    const confirmed = await showConfirm({
+                                                                        title: 'Decline Booking?',
+                                                                        message: `Decline ${bookingGroup.count} booking(s)?`,
+                                                                        confirmLabel: 'Decline',
+                                                                        type: 'danger'
+                                                                    });
+                                                                    if (!confirmed) return;
+                                                                    try {
+                                                                        await Promise.all(
+                                                                            bookingGroup.sessionIds.map((sessionId) =>
+                                                                                axios.post(withApiBase(`/api/training-sessions/${sessionId}/decline`), {}, { headers: authHeaders() })
+                                                                            )
+                                                                        );
+                                                                        await fetchTrainingBookings();
+                                                                    } catch (e) {
+                                                                        const message = e.response?.data?.error || "Failed to decline booking";
+                                                                        const detail = e.response?.data?.detail;
+                                                                        await showAlert({ title: 'Decline Failed', message: detail ? `${message}\n\nDetails: ${detail}` : message, type: 'danger' });
+                                                                    }
+                                                                }}
+                                                                className="text-[10px] font-bold px-2 py-1 rounded-md border border-red-500/30 text-red-300 hover:bg-red-500/10"
+                                                            >
+                                                                Decline
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    </section>
                 </div>
 
                 {

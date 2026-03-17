@@ -205,6 +205,47 @@ export const getMethodLabel = (method) => {
 };
 
 /**
+ * Formats transaction type values (e.g. POS_SALE -> Pos Sale).
+ */
+export const getTransactionTypeLabel = (type) => {
+    const normalized = String(type || '').trim().toUpperCase().replace(/\s+/g, '_');
+    const knownLabels = {
+        POS_SALE: 'POS Sale',
+        MEMBERSHIP: 'Membership',
+        CLASS_PACKAGE: 'Class Package',
+        TRAINING: 'Training',
+        MIXED: 'Mixed',
+        POS_PREVIEW: 'Preview'
+    };
+    if (knownLabels[normalized]) return knownLabels[normalized];
+
+    return String(type || 'Unknown')
+        .trim()
+        .replace(/_/g, ' ')
+        .toLowerCase()
+        .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+/**
+ * Renders a stylized badge for payment transaction types.
+ */
+export const renderTransactionTypeBadge = (type) => {
+    const normalized = String(type || '').trim().toUpperCase().replace(/\s+/g, '_');
+    const label = getTransactionTypeLabel(type);
+    const base = "inline-flex items-center rounded-md border px-2 py-1 text-[11px] font-bold";
+    const colorByType = {
+        POS_SALE: 'border-blue-500/30 bg-blue-500/10 text-blue-200',
+        MEMBERSHIP: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+        CLASS_PACKAGE: 'border-cyan-500/30 bg-cyan-500/10 text-cyan-200',
+        TRAINING: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
+        MIXED: 'border-fuchsia-500/30 bg-fuchsia-500/10 text-fuchsia-200',
+        POS_PREVIEW: 'border-slate-400/30 bg-slate-500/10 text-slate-200'
+    };
+
+    return <span className={`${base} ${colorByType[normalized] || 'border-white/20 bg-white/10 text-white'}`}>{label}</span>;
+};
+
+/**
  * Renders a stylized status badge for payments.
  */
 export const renderStatusBadge = (status) => {

@@ -116,7 +116,8 @@ const getMembers = async (req, res) => {
         const limit = parseInt(req.query.limit);
         const search = req.query.search;
 
-        const where = { status: { not: 'DELETED' } };
+        const baseWhere = { status: { not: 'DELETED' } };
+        const where = { ...baseWhere };
 
         if (search) {
             where.OR = [
@@ -134,6 +135,9 @@ const getMembers = async (req, res) => {
 
         if (page && limit) {
             const skip = (page - 1) * limit;
+            const todayStart = new Date();
+            todayStart.setHours(0, 0, 0, 0);
+
             const [members, total] = await Promise.all([
                 prisma.member.findMany({
                     ...queryOptions,
@@ -143,13 +147,46 @@ const getMembers = async (req, res) => {
                 prisma.member.count({ where: queryOptions.where })
             ]);
 
+            const [globalTotal, expiredByStatus, expiredByDateOnly, active, freezed] = await Promise.all([
+                prisma.member.count({ where: baseWhere }),
+                prisma.member.count({ where: { ...baseWhere, status: 'EXPIRED' } }),
+                prisma.member.count({
+                    where: {
+                        ...baseWhere,
+                        status: { not: 'EXPIRED' },
+                        expiryDate: { lt: todayStart }
+                    }
+                }),
+                prisma.member.count({
+                    where: {
+                        ...baseWhere,
+                        status: 'ACTIVE',
+                        OR: [{ expiryDate: null }, { expiryDate: { gte: todayStart } }]
+                    }
+                }),
+                prisma.member.count({
+                    where: {
+                        ...baseWhere,
+                        status: 'FREEZED',
+                        OR: [{ expiryDate: null }, { expiryDate: { gte: todayStart } }]
+                    }
+                })
+            ]);
+            const expired = expiredByStatus + expiredByDateOnly;
+
             return res.json({
                 data: members,
                 meta: {
                     total,
                     page,
                     limit,
-                    totalPages: Math.ceil(total / limit)
+                    totalPages: Math.ceil(total / limit),
+                    statusTotals: {
+                        total: globalTotal,
+                        active,
+                        freezed,
+                        expired
+                    }
                 }
             });
         }
@@ -564,16 +601,8 @@ const cancelBooking = async (req, res) => {
                 data: { status: 'CANCELLED' }
             });
 
-            // Refund session count if they were confirmed
-            if (oldStatus === 'CONFIRMED' || oldStatus === 'ATTENDED') {
-                await tx.member.update({
-                    where: { id: memberId },
-                    data: {
-                        classSessionsRemaining: { increment: 1 },
-                        classSessionsUsed: { decrement: 1 }
-                    }
-                });
-            }
+            // Business rule: once a class booking is joined/confirmed, the session stays consumed
+            // even when member cancels/leaves later. Do not restore class session counters here.
 
             // If a confirmed spot was cancelled, promote someone from waitlist
             if (oldStatus === 'CONFIRMED') {
