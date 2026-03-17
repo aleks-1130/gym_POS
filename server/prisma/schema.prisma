@@ -11,6 +11,7 @@ model User {
   id                                 Int                    @id @default(autoincrement())
   email                              String                 @unique
   password                           String
+  sessionVersion                     Int                    @default(0)
   name                               String?
   role                               String                 @default("STAFF")
   trainerId                          Int?                   @unique
@@ -48,6 +49,7 @@ model Member {
   lastName               String
   email                  String?              @unique
   password               String?
+  sessionVersion         Int                  @default(0)
   phone                  String?
   status                 String               @default("ACTIVE")
   planId                 Int?

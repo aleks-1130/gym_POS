@@ -3,6 +3,32 @@ import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import QRCode from 'react-qr-code';
 import { Link } from 'react-router-dom';
+import TrainerPageHeader from './components/TrainerPageHeader';
+
+const getInitials = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return 'TR';
+    const parts = raw.split(/\s+/).filter(Boolean);
+    return parts.slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('');
+};
+
+const announcementTypeStyles = {
+    INFO: {
+        icon: 'info',
+        unreadCard: 'border-blue-500/35 bg-blue-500/10',
+        readCard: 'border-blue-500/20 bg-blue-500/5'
+    },
+    ALERT: {
+        icon: 'warning',
+        unreadCard: 'border-red-500/35 bg-red-500/10',
+        readCard: 'border-red-500/20 bg-red-500/5'
+    },
+    PROMO: {
+        icon: 'local_offer',
+        unreadCard: 'border-emerald-500/35 bg-emerald-500/10',
+        readCard: 'border-emerald-500/20 bg-emerald-500/5'
+    }
+};
 
 export default function TrainerDashboard() {
     const { user } = useAuth();
@@ -12,7 +38,15 @@ export default function TrainerDashboard() {
     const [commissions, setCommissions] = useState(null);
     const [notifications, setNotifications] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [dynamicQr, setDynamicQr] = useState({ qrValue: '', expiresAt: null, loading: false });
+    const [profileImageError, setProfileImageError] = useState(false);
+    const [dynamicQr, setDynamicQr] = useState({
+        qrValue: '',
+        expiresAt: null,
+        cycleStartMs: Date.now(),
+        cycleEndMs: Date.now() + 1,
+        loading: false
+    });
+    const [qrNowTick, setQrNowTick] = useState(Date.now());
 
     const formatMoney = (amount) =>
         `PHP ${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -43,25 +77,72 @@ export default function TrainerDashboard() {
     }, []);
 
     useEffect(() => {
+        const timer = setInterval(() => {
+            setQrNowTick(Date.now());
+        }, 250);
+
+        return () => clearInterval(timer);
+    }, []);
+
+    useEffect(() => {
+        let active = true;
+        let refreshTimer = null;
+
+        const scheduleNext = (delayMs) => {
+            if (!active) return;
+            if (refreshTimer) clearTimeout(refreshTimer);
+            refreshTimer = setTimeout(fetchDynamicQr, Math.max(1000, Number(delayMs) || 20000));
+        };
+
         const fetchDynamicQr = async () => {
+            const nowMs = Date.now();
             try {
-                setDynamicQr((prev) => ({ ...prev, loading: true }));
-                
+                if (active) setDynamicQr((prev) => ({ ...prev, loading: true }));
+
                 const res = await axios.get('/api/access/qr-token');
+                const expiresAt = res.data?.expiresAt || null;
+                const expiresAtMs = expiresAt ? new Date(expiresAt).getTime() : null;
+                const refreshAfterSeconds = Number(res.data?.refreshAfterSeconds);
+                const refreshMs = Number.isFinite(refreshAfterSeconds) && refreshAfterSeconds > 0
+                    ? refreshAfterSeconds * 1000
+                    : 20000;
+                const plannedCycleEndMs = nowMs + refreshMs;
+                const cycleEndMs = (Number.isFinite(expiresAtMs) && expiresAtMs > nowMs)
+                    ? Math.min(plannedCycleEndMs, expiresAtMs)
+                    : plannedCycleEndMs;
+
+                if (!active) return;
                 setDynamicQr({
                     qrValue: res.data?.qrValue || '',
-                    expiresAt: res.data?.expiresAt || null,
+                    expiresAt,
+                    cycleStartMs: nowMs,
+                    cycleEndMs: Math.max(cycleEndMs, nowMs + 1),
                     loading: false
                 });
+                scheduleNext(refreshMs);
             } catch (e) {
-                setDynamicQr((prev) => ({ ...prev, loading: false }));
+                if (active) {
+                    setDynamicQr((prev) => ({
+                        ...prev,
+                        loading: false,
+                        cycleStartMs: nowMs,
+                        cycleEndMs: nowMs + 10000
+                    }));
+                }
+                scheduleNext(10000);
             }
         };
 
         fetchDynamicQr();
-        const interval = setInterval(fetchDynamicQr, 20000);
-        return () => clearInterval(interval);
+        return () => {
+            active = false;
+            if (refreshTimer) clearTimeout(refreshTimer);
+        };
     }, []);
+
+    useEffect(() => {
+        setProfileImageError(false);
+    }, [trainer?.imageUrl]);
 
     if (loading) {
         return (
@@ -84,15 +165,47 @@ export default function TrainerDashboard() {
     const commissionSummary = commissions?.summary || {};
     const loyaltyPoints = Number(trainer?.loyaltyPoints || 0);
     const checkIns = Number(trainer?.checkIns || 0);
+    const latestNotification = notifications.length > 0 ? notifications[0] : null;
+    const latestType = String(latestNotification?.type || 'INFO').toUpperCase();
+    const latestStyle = announcementTypeStyles[latestType] || announcementTypeStyles.INFO;
+    const latestCardTone = latestNotification
+        ? (latestNotification?.isRead ? latestStyle.readCard : latestStyle.unreadCard)
+        : 'border-white/10 bg-surface';
     const quickActions = [
         { to: '/trainer/classes-sessions', icon: 'event_note', label: 'Class & Session' },
         { to: '/trainer/gym-traffic', icon: 'timeline', label: 'Traffic' },
         { to: '/trainer/shop', icon: 'shopping_bag', label: 'Shop' },
         { to: '/trainer/profile', icon: 'person', label: 'Profile' }
     ];
-
+    const cycleStartMs = Number(dynamicQr.cycleStartMs) || Date.now();
+    const cycleEndMs = Number(dynamicQr.cycleEndMs) || (cycleStartMs + 1);
+    const totalCycleMs = Math.max(1, cycleEndMs - cycleStartMs);
+    const qrRemainingMs = Math.max(0, cycleEndMs - qrNowTick);
+    const qrProgressPercent = dynamicQr.qrValue
+        ? Math.max(0, Math.min(100, (qrRemainingMs / totalCycleMs) * 100))
+        : 0;
+    const isQrTimerLow = qrProgressPercent <= 30;
+    const headerName = trainer?.name || user?.name || 'Trainer';
+    const trainerDisplayName = trainer?.name || user?.name || 'Trainer';
+    const trainerInitials = getInitials(trainerDisplayName);
+    const trainerSpecialty = trainer?.specialty || trainer?.specialization || 'Personal Training';
+    const trainerRating = Number(trainer?.rating || 0);
+    const trainerRatingLabel = Number.isFinite(trainerRating) ? trainerRating.toFixed(1) : '0.0';
+    const trainerSessionRate = Number(trainer?.sessionPrice || 0);
+    const trainerSessionRateLabel = trainerSessionRate > 0 ? formatMoney(trainerSessionRate) : 'Not set';
+    const trainerType = String(trainer?.type || 'FULLTIME').toUpperCase();
+    const trainerTypeLabel = trainerType === 'FREELANCER' ? 'Freelancer' : 'Full-time';
+    const trainerTypeBadgeClass = trainerType === 'FREELANCER'
+        ? 'bg-orange-500/15 text-orange-200 border-orange-500/35'
+        : 'bg-blue-500/15 text-blue-200 border-blue-500/35';
     return (
-        <div className="space-y-4 pb-20 px-4 max-w-2xl mx-auto">
+        <div className="space-y-4 max-w-2xl mx-auto">
+            <TrainerPageHeader
+                title="Dashboard"
+                subtitle={`Welcome back, ${headerName}`}
+                icon="dashboard"
+            />
+
             <div className="bg-gradient-to-br from-primary/20 to-primary/5 p-5 rounded-2xl border border-primary/30 shadow-lg">
                 <div className="text-center">
                     <div className="flex items-center justify-center gap-2 mb-3">
@@ -111,33 +224,76 @@ export default function TrainerDashboard() {
                     <p className="text-text-muted text-xs">Scan at front desk to check in (auto-refreshing secure QR)</p>
                     <div className="mt-3 pt-3 border-t border-white/10">
                         <p className="text-xs text-text-muted">Trainer ID: <span className="text-white font-mono">{trainer?.id || 'N/A'}</span></p>
-                        {dynamicQr.expiresAt && (
-                            <p className="text-xs text-text-muted mt-1">
-                                Expires: <span className="text-white">{new Date(dynamicQr.expiresAt).toLocaleTimeString()}</span>
-                            </p>
-                        )}
+                        <div className="mt-2">
+                            <div className="flex items-center justify-between text-[10px] uppercase tracking-wide">
+                                <span className="text-text-muted">QR Timer</span>
+                                <span className={`${isQrTimerLow ? 'text-orange-300' : 'text-orange-400'} font-semibold`}>
+                                    {dynamicQr.qrValue ? 'Refreshing soon' : 'Waiting for QR'}
+                                </span>
+                            </div>
+                            <div className="mt-1.5 h-2 w-full rounded-full bg-white/10 overflow-hidden border border-white/10">
+                                <div
+                                    className={`h-full rounded-full transition-[width] duration-200 ease-linear bg-gradient-to-r from-orange-500 via-orange-400 to-amber-300 ${isQrTimerLow ? 'animate-pulse' : ''}`}
+                                    style={{ width: `${qrProgressPercent}%` }}
+                                />
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                        <p className="text-text-muted text-xs font-medium mb-1">Trainer Profile</p>
-                        <h3 className="text-lg font-bold text-white mb-2 truncate">{trainer?.name || user?.name || 'Trainer'}</h3>
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                                Active
-                            </span>
-                            <span className="text-xs text-text-muted">
-                                Specialty: <span className="text-white font-medium">{trainer?.specialty || 'Personal Training'}</span>
-                            </span>
+            <div className="relative overflow-hidden bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
+                <div className="absolute -top-10 -right-8 w-28 h-28 bg-primary/10 rounded-full blur-2xl pointer-events-none" />
+                <div className="relative space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <div className="w-12 h-12 rounded-xl overflow-hidden border border-white/10 bg-white/5 shrink-0 flex items-center justify-center">
+                                {trainer?.imageUrl && !profileImageError ? (
+                                    <img
+                                        src={trainer.imageUrl}
+                                        alt={trainerDisplayName}
+                                        className="w-full h-full object-cover"
+                                        onError={() => setProfileImageError(true)}
+                                    />
+                                ) : (
+                                    <span className="text-sm font-bold text-white/90">{trainerInitials}</span>
+                                )}
+                            </div>
+                            <div className="min-w-0">
+                                <p className="text-text-muted text-[11px] font-medium uppercase tracking-wide mb-1">Trainer Profile</p>
+                                <h3 className="text-lg font-bold text-white leading-tight truncate">{trainerDisplayName}</h3>
+                                <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-300 border border-emerald-500/25">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                        Active
+                                    </span>
+                                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium border ${trainerTypeBadgeClass}`}>
+                                        {trainerTypeLabel}
+                                    </span>
+                                </div>
+                            </div>
                         </div>
+                        <Link
+                            to="/trainer/profile"
+                            className="shrink-0 w-10 h-10 rounded-xl border border-primary/30 bg-primary/10 text-primary flex items-center justify-center hover:bg-primary/15 transition-colors"
+                            title="Open profile"
+                        >
+                            <span className="material-icons-round text-lg">edit</span>
+                        </Link>
                     </div>
-                    <div className="flex-shrink-0">
-                        <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
-                            <span className="material-icons-round text-primary text-xl">fitness_center</span>
+
+                    <div className="grid grid-cols-2 gap-2">
+                        <div className="col-span-2 bg-white/5 rounded-lg border border-white/10 px-3 py-2.5">
+                            <p className="text-[10px] uppercase tracking-wide text-text-muted mb-1">Specialty</p>
+                            <p className="text-sm font-semibold text-white truncate">{trainerSpecialty}</p>
+                        </div>
+                        <div className="bg-white/5 rounded-lg border border-white/10 px-3 py-2.5">
+                            <p className="text-[10px] uppercase tracking-wide text-text-muted mb-1">Ratings</p>
+                            <p className="text-sm font-semibold text-white">{trainerRatingLabel}</p>
+                        </div>
+                        <div className="bg-white/5 rounded-lg border border-white/10 px-3 py-2.5">
+                            <p className="text-[10px] uppercase tracking-wide text-text-muted mb-1">Session Rate</p>
+                            <p className="text-sm font-semibold text-white truncate">{trainerSessionRateLabel}</p>
                         </div>
                     </div>
                 </div>
@@ -145,65 +301,136 @@ export default function TrainerDashboard() {
 
             <div className="grid grid-cols-2 gap-3">
                 <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
-                    <div className="flex flex-col h-full">
-                        <span className="material-icons-round text-yellow-500 text-2xl mb-2">stars</span>
-                        <p className="text-text-muted text-xs font-medium mb-1">Loyalty Points</p>
-                        <h3 className="text-2xl font-bold text-white">{loyaltyPoints}</h3>
+                    <div className="flex items-center gap-3 h-full">
+                        <div className="h-10 w-10 rounded-xl border border-yellow-500/30 bg-yellow-500/10 flex items-center justify-center shrink-0">
+                            <span className="material-icons-round text-yellow-500 text-xl">stars</span>
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-text-muted text-[11px] font-medium leading-tight">Loyalty Points</p>
+                            <h3 className="text-xl font-bold text-white leading-tight mt-1">{loyaltyPoints}</h3>
+                        </div>
                     </div>
                 </div>
                 <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
-                    <div className="flex flex-col h-full">
-                        <span className="material-icons-round text-primary text-2xl mb-2">how_to_reg</span>
-                        <p className="text-text-muted text-xs font-medium mb-1">Check-ins</p>
-                        <h3 className="text-2xl font-bold text-white">{checkIns}</h3>
+                    <div className="flex items-center gap-3 h-full">
+                        <div className="h-10 w-10 rounded-xl border border-primary/30 bg-primary/10 flex items-center justify-center shrink-0">
+                            <span className="material-icons-round text-primary text-xl">how_to_reg</span>
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-text-muted text-[11px] font-medium leading-tight">Check-ins</p>
+                            <h3 className="text-xl font-bold text-white leading-tight mt-1">{checkIns}</h3>
+                        </div>
                     </div>
                 </div>
                 <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
-                    <div className="flex flex-col h-full">
-                        <span className="material-icons-round text-primary text-2xl mb-2">event_available</span>
-                        <p className="text-text-muted text-xs font-medium mb-1">Upcoming Sessions</p>
-                        <h3 className="text-2xl font-bold text-white">{upcomingCount}</h3>
+                    <div className="flex items-center gap-3 h-full">
+                        <div className="h-10 w-10 rounded-xl border border-primary/30 bg-primary/10 flex items-center justify-center shrink-0">
+                            <span className="material-icons-round text-primary text-xl">event_available</span>
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-text-muted text-[11px] font-medium leading-tight">Upcoming Sessions</p>
+                            <h3 className="text-xl font-bold text-white leading-tight mt-1">{upcomingCount}</h3>
+                        </div>
                     </div>
                 </div>
                 <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
-                    <div className="flex flex-col h-full">
-                        <span className="material-icons-round text-emerald-400 text-2xl mb-2">task_alt</span>
-                        <p className="text-text-muted text-xs font-medium mb-1">Completed Sessions</p>
-                        <h3 className="text-2xl font-bold text-white">{completedCount}</h3>
+                    <div className="flex items-center gap-3 h-full">
+                        <div className="h-10 w-10 rounded-xl border border-emerald-500/30 bg-emerald-500/10 flex items-center justify-center shrink-0">
+                            <span className="material-icons-round text-emerald-400 text-xl">task_alt</span>
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-text-muted text-[11px] font-medium leading-tight">Completed Sessions</p>
+                            <h3 className="text-xl font-bold text-white leading-tight mt-1">{completedCount}</h3>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
-                    <div className="flex flex-col h-full">
-                        <span className="material-icons-round text-emerald-400 text-2xl mb-2">payments</span>
-                        <p className="text-text-muted text-xs font-medium mb-1">Total Earned</p>
-                        <p className="text-lg font-bold text-emerald-400">{formatMoney(commissionSummary.totalEarned)}</p>
+                    <div className="flex items-center gap-3 h-full">
+                        <div className="h-10 w-10 rounded-xl border border-emerald-500/30 bg-emerald-500/10 flex items-center justify-center shrink-0">
+                            <span className="material-icons-round text-emerald-400 text-xl">payments</span>
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-text-muted text-[11px] font-medium leading-tight">Total Earned</p>
+                            <p className="text-base font-bold text-emerald-400 leading-tight mt-1">{formatMoney(commissionSummary.totalEarned)}</p>
+                        </div>
                     </div>
                 </div>
                 <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
-                    <div className="flex flex-col h-full">
-                        <span className="material-icons-round text-amber-400 text-2xl mb-2">hourglass_top</span>
-                        <p className="text-text-muted text-xs font-medium mb-1">Pending</p>
-                        <p className="text-lg font-bold text-amber-400">{formatMoney(commissionSummary.totalUnpaid)}</p>
+                    <div className="flex items-center gap-3 h-full">
+                        <div className="h-10 w-10 rounded-xl border border-amber-500/30 bg-amber-500/10 flex items-center justify-center shrink-0">
+                            <span className="material-icons-round text-amber-400 text-xl">hourglass_top</span>
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-text-muted text-[11px] font-medium leading-tight">Pending</p>
+                            <p className="text-base font-bold text-amber-400 leading-tight mt-1">{formatMoney(commissionSummary.totalUnpaid)}</p>
+                        </div>
                     </div>
                 </div>
                 <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
-                    <div className="flex flex-col h-full">
-                        <span className="material-icons-round text-blue-300 text-2xl mb-2">account_balance_wallet</span>
-                        <p className="text-text-muted text-xs font-medium mb-1">Paid Out</p>
-                        <p className="text-lg font-bold text-blue-300">{formatMoney(commissionSummary.totalPayoutRecorded)}</p>
+                    <div className="flex items-center gap-3 h-full">
+                        <div className="h-10 w-10 rounded-xl border border-blue-500/30 bg-blue-500/10 flex items-center justify-center shrink-0">
+                            <span className="material-icons-round text-blue-300 text-xl">account_balance_wallet</span>
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-text-muted text-[11px] font-medium leading-tight">Paid Out</p>
+                            <p className="text-base font-bold text-blue-300 leading-tight mt-1">{formatMoney(commissionSummary.totalPayoutRecorded)}</p>
+                        </div>
                     </div>
                 </div>
                 <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
-                    <div className="flex flex-col h-full">
-                        <span className="material-icons-round text-rose-300 text-2xl mb-2">inventory_2</span>
-                        <p className="text-text-muted text-xs font-medium mb-1">Item Deductions</p>
-                        <p className="text-lg font-bold text-rose-300">-{formatMoney(commissionSummary.materialPendingDeduction)}</p>
+                    <div className="flex items-center gap-3 h-full">
+                        <div className="h-10 w-10 rounded-xl border border-rose-500/30 bg-rose-500/10 flex items-center justify-center shrink-0">
+                            <span className="material-icons-round text-rose-300 text-xl">inventory_2</span>
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-text-muted text-[11px] font-medium leading-tight">Total Deduction</p>
+                            <p className="text-base font-bold text-rose-300 leading-tight mt-1">-{formatMoney(commissionSummary.materialPendingDeduction)}</p>
+                        </div>
                     </div>
                 </div>
             </div>
+
+            {/* Latest Update */}
+            <Link to="/announcements" className="block active:scale-[0.98] transition-all">
+                <div className={`rounded-xl border p-4 sm:p-5 transition-colors ${latestCardTone}`}>
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                                <span className="material-icons-round text-base text-white/80">{latestStyle.icon}</span>
+                                <h3 className="text-xs font-semibold text-white">Latest Update</h3>
+                                {latestNotification && !latestNotification.isRead && (
+                                    <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                                )}
+                            </div>
+                            {latestNotification ? (
+                                <>
+                                    <p className={`text-sm sm:text-base font-bold leading-tight ${latestNotification.isRead ? 'text-white/80' : 'text-white'}`}>
+                                        {latestNotification.title}
+                                    </p>
+                                    <p className="text-xs sm:text-sm text-text-muted mt-1.5 line-clamp-2">
+                                        {latestNotification.message}
+                                    </p>
+                                    <p className="text-[11px] text-text-muted mt-2">
+                                        {new Date(latestNotification.createdAt || latestNotification.date).toLocaleString(undefined, {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            year: 'numeric',
+                                            hour: 'numeric',
+                                            minute: '2-digit'
+                                        })}
+                                    </p>
+                                </>
+                            ) : (
+                                <p className="text-xs sm:text-sm text-text-muted">No recent announcements right now.</p>
+                            )}
+                        </div>
+                        <span className="material-icons-round text-text-muted">chevron_right</span>
+                    </div>
+                </div>
+            </Link>
 
             <div>
                 <h3 className="text-sm font-bold text-white mb-3 px-1">Quick Actions</h3>
@@ -220,43 +447,6 @@ export default function TrainerDashboard() {
                     ))}
                 </div>
             </div>
-
-            {/* Latest Update */}
-            <Link to="/announcements" className="block active:scale-[0.98] transition-all">
-                <div className="bg-surface p-5 rounded-[2rem] border border-white/5 shadow-xl relative overflow-hidden group">
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-[10px] font-black text-white uppercase tracking-[0.2em] italic flex items-center gap-2">
-                             <span className="material-icons-round text-primary text-base">campaign</span>
-                             Latest Update
-                        </h3>
-                        {notifications.length > 0 && !notifications[0].isRead && (
-                             <span className="px-2 py-0.5 rounded-full bg-primary/20 text-primary text-[8px] font-black uppercase tracking-widest border border-primary/30">New</span>
-                        )}
-                    </div>
-                    {notifications.length > 0 ? (
-                        <div className="flex gap-4">
-                            <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0 group-hover:border-primary/30 transition-colors">
-                                <span className="material-icons-round text-primary text-xl">info</span>
-                            </div>
-                            <div className="min-w-0 flex-1">
-                                <h4 className="font-black text-white uppercase italic tracking-tighter text-sm mb-1 truncate group-hover:text-primary transition-colors">
-                                    {notifications[0].title}
-                                </h4>
-                                <p className="text-[11px] text-text-secondary leading-relaxed line-clamp-2 font-medium">
-                                    {notifications[0].message}
-                                </p>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="py-4 text-center">
-                            <p className="text-[10px] text-text-muted font-black uppercase tracking-widest italic">No recent broadcasts</p>
-                        </div>
-                    )}
-                    <div className="absolute right-6 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
-                         <span className="material-icons-round text-primary">chevron_right</span>
-                    </div>
-                </div>
-            </Link>
         </div>
     );
 }

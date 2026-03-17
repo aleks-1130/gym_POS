@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
+import MemberPageHeader from './components/MemberPageHeader';
 
 const UPCOMING_SESSION_STATUSES = ['SCHEDULED', 'RESCHEDULED'];
 const UPCOMING_CLASS_STATUSES = ['CONFIRMED'];
@@ -50,6 +51,7 @@ export default function Attendance() {
     const [trainingSessions, setTrainingSessions] = useState([]);
     const [classBookings, setClassBookings] = useState([]);
     const [registrationDate, setRegistrationDate] = useState(null);
+    const [membershipEndDate, setMembershipEndDate] = useState(null);
     const [loading, setLoading] = useState(true);
     const [loadIssues, setLoadIssues] = useState([]);
     const [monthCursor, setMonthCursor] = useState(() => {
@@ -93,14 +95,29 @@ export default function Attendance() {
             if (dashboardResult.status === 'fulfilled') {
                 const memberData = dashboardResult.value?.data?.memberData;
                 const rawRegistration = memberData?.startDate || memberData?.createdAt || null;
+                const now = new Date();
+                const membershipPeriods = Array.isArray(memberData?.membershipPeriods) ? memberData.membershipPeriods : [];
+                const activePeriod = membershipPeriods.find((period) => {
+                    const end = new Date(period?.endDate);
+                    return !Number.isNaN(end.getTime()) && end >= now;
+                }) || null;
+                const latestPeriod = membershipPeriods[0] || null;
+                const rawMembershipEnd = memberData?.expiryDate || activePeriod?.endDate || latestPeriod?.endDate || null;
                 if (rawRegistration) {
                     const parsed = new Date(rawRegistration);
                     setRegistrationDate(Number.isNaN(parsed.getTime()) ? null : startOfDay(parsed));
                 } else {
                     setRegistrationDate(null);
                 }
+                if (rawMembershipEnd) {
+                    const parsedEnd = new Date(rawMembershipEnd);
+                    setMembershipEndDate(Number.isNaN(parsedEnd.getTime()) ? null : startOfDay(parsedEnd));
+                } else {
+                    setMembershipEndDate(null);
+                }
             } else {
                 setRegistrationDate(null);
+                setMembershipEndDate(null);
                 issues.push(describeError(dashboardResult, 'Could not load registration date'));
             }
 
@@ -220,6 +237,7 @@ export default function Attendance() {
     }, [attendedByDate, registrationDate]);
 
     const registrationDayKey = useMemo(() => (registrationDate ? toDateKey(registrationDate) : ''), [registrationDate]);
+    const membershipEndDayKey = useMemo(() => (membershipEndDate ? toDateKey(membershipEndDate) : ''), [membershipEndDate]);
 
     const monthYearLabel = monthCursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
     const startOfMonth = new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1);
@@ -237,14 +255,13 @@ export default function Attendance() {
         );
     }
 
-        return (
-            <div className="space-y-6">
-            <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                    <h1 className="text-3xl font-bold text-white">Attendance</h1>
-                    <p className="text-text-muted mt-1">Check your check-ins and upcoming classes or bookings</p>
-                </div>
-            </header>
+    return (
+        <div className="space-y-6 max-w-5xl mx-auto">
+            <MemberPageHeader
+                title="Attendance"
+                subtitle="Check your check-ins and upcoming classes or bookings"
+                icon="fact_check"
+            />
 
             {loadIssues.length > 0 && (
                 <div className="rounded-2xl border border-amber-500/25 bg-amber-500/10 p-3">
@@ -297,6 +314,7 @@ export default function Attendance() {
                         const hasCheckIn = attendedByDate.has(dayKey);
                         const isFuture = day > startOfDay(new Date());
                         const isRegistrationDay = Boolean(registrationDayKey) && dayKey === registrationDayKey;
+                        const isMembershipEndDay = Boolean(membershipEndDayKey) && dayKey === membershipEndDayKey;
                         const beforeRegistration = Boolean(registrationDate) && day < registrationDate;
                         const isMissed = isCurrentMonth && !isFuture && !hasCheckIn && !beforeRegistration;
 
@@ -323,6 +341,13 @@ export default function Attendance() {
                                         });
                                         return;
                                     }
+                                    if (isMembershipEndDay) {
+                                        setCellModal({
+                                            title: 'Membership End Date',
+                                            message: `Your membership ends on ${formatDate(day)}.`
+                                        });
+                                        return;
+                                    }
                                     if (hasCheckIn) {
                                         const firstCheckIn = checkInInfoByDate.get(dayKey);
                                         setCellModal({
@@ -331,7 +356,7 @@ export default function Attendance() {
                                         });
                                     }
                                 }}
-                                className={`min-h-[74px] sm:min-h-[84px] rounded-xl border p-2 flex flex-col text-left transition-colors ${tone} ${isToday ? 'ring-1 ring-primary/40' : ''} ${isSelected ? 'border-primary/40' : ''}`}
+                                className={`min-h-[62px] sm:min-h-[72px] rounded-xl border p-2 flex flex-col text-left transition-colors ${tone} ${isToday ? 'ring-1 ring-primary/40' : ''} ${isSelected ? 'border-primary/40' : ''}`}
                             >
                                 <div className="flex items-center justify-between text-[10px] font-bold text-text-muted">
                                     <span>{day.getDate()}</span>
@@ -343,7 +368,7 @@ export default function Attendance() {
                                 </div>
                                 <div className="mt-auto flex items-center gap-1.5">
                                     {isRegistrationDay && <span className="w-2 h-2 rounded-full bg-amber-300"></span>}
-                                    {hasCheckIn && <span className="w-2 h-2 rounded-full bg-emerald-400"></span>}
+                                    {isMembershipEndDay && <span className="w-2 h-2 rounded-full bg-violet-400"></span>}
                                     {upcomingSessionsByDay.get(dayKey) ? <span className="w-2 h-2 rounded-full bg-primary"></span> : null}
                                     {upcomingClassesByDay.get(dayKey) ? <span className="w-2 h-2 rounded-full bg-cyan-400"></span> : null}
                                 </div>
@@ -351,6 +376,34 @@ export default function Attendance() {
                         );
                     })}
                 </div>
+
+                <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[11px] text-text-muted">
+                    <div className="flex items-center gap-1.5">
+                        <span className="h-2.5 w-2.5 rounded-sm border border-emerald-400/35 bg-emerald-500/15"></span>
+                        <span>Checked In</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <span className="h-2.5 w-2.5 rounded-sm border border-rose-400/35 bg-rose-500/15"></span>
+                        <span>No Check-in</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-amber-300"></span>
+                        <span>Registration Start</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-violet-400"></span>
+                        <span>Membership End</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-primary"></span>
+                        <span>Bookings</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
+                        <span>Classes</span>
+                    </div>
+                </div>
+
             </section>
 
             <section className="space-y-4">

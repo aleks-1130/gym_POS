@@ -2,7 +2,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
-import { withApiBase } from '../../config/api';
 import { useConfirm } from '../../context/ConfirmContext';
 
 import TabNavigation from '../../components/common/TabNavigation';
@@ -12,13 +11,26 @@ import { useMemberStats } from '../../hooks/useMemberStats';
 
 // Services
 import { memberService } from '../../services/memberService';
-import { planService } from '../../services/planService';
 
 // Utils
 import { getFilteredLogs } from '../../utils/memberUtils';
 
 // Constants
 import { TABS, ACTIVITY_FILTERS } from '../../constants/memberConstants';
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+const getInclusiveDayCount = (startDate, endDate) => {
+    if (!(startDate instanceof Date) || !(endDate instanceof Date)) return null;
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return null;
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+
+    return Math.max(1, Math.floor((end - start) / MS_PER_DAY) + 1);
+};
 
 export default function MemberDetail() {
     const { alert: showAlert } = useConfirm();
@@ -27,25 +39,16 @@ export default function MemberDetail() {
     const { formatPrice } = useCurrency();
     const [member, setMember] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [plans, setPlans] = useState([]);
-    const [classSessionPackages, setClassSessionPackages] = useState([]);
 
     // Modals
-    const [showRenewModal, setShowRenewModal] = useState(false);
     const [showFreezeModal, setShowFreezeModal] = useState(false);
     const [showPasswordModal, setShowPasswordModal] = useState(false);
     const [showPhotoModal, setShowPhotoModal] = useState(false);
     const [showNotesModal, setShowNotesModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
     const [showMoreActions, setShowMoreActions] = useState(false);
-    const [showClassSessionModal, setShowClassSessionModal] = useState(false);
 
     // Form Data
-    const [renewData, setRenewData] = useState({ planId: '', duration: 30, amount: 0, method: 'CASH' });
-    const [renewAmountTendered, setRenewAmountTendered] = useState('');
-    const [renewGcashReference, setRenewGcashReference] = useState('');
-    const [renewGcashDate, setRenewGcashDate] = useState('');
-    const [renewGcashTime, setRenewGcashTime] = useState('');
     const [freezeData, setFreezeData] = useState({
         startDate: new Date().toISOString().split('T')[0],
         endDate: new Date(new Date().setDate(new Date().getDate() + 30)).toISOString().split('T')[0]
@@ -56,14 +59,6 @@ export default function MemberDetail() {
     const [payments, setPayments] = useState([]);
     const [loadingPayments, setLoadingPayments] = useState(false);
     const [editFormData, setEditFormData] = useState();
-    const [classSessionPurchaseData, setClassSessionPurchaseData] = useState({
-        packageId: '',
-        method: 'CASH',
-        cashTendered: '',
-        gcashReference: '',
-        gcashDate: '',
-        gcashTime: ''
-    });
 
     // Photo Capture
     const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -80,8 +75,6 @@ export default function MemberDetail() {
 
     useEffect(() => {
         fetchMember();
-        fetchPlans();
-        fetchSessionPackages();
         fetchNotes();
         fetchPayments();
     }, [id]);
@@ -90,14 +83,6 @@ export default function MemberDetail() {
         try {
             const data = await memberService.getMemberById(id);
             setMember(data);
-            if (data.plan) {
-                setRenewData(prev => ({
-                    ...prev,
-                    planId: data.plan.id,
-                    amount: data.plan.price,
-                    duration: data.plan.duration
-                }));
-            }
         } catch {
             showAlert({ title: "Member Not Found", message: "Member not found", type: "danger" });
             navigate('/members');
@@ -105,24 +90,6 @@ export default function MemberDetail() {
             setLoading(false);
         }
     }, [id, navigate]);
-
-    const fetchPlans = useCallback(async () => {
-        try {
-            const data = await planService.getAllPlans();
-            setPlans(data);
-        } catch (e) {
-            console.error("Failed to fetch plans", e);
-        }
-    }, []);
-
-    const fetchSessionPackages = useCallback(async () => {
-        try {
-            const res = await axios.get(withApiBase('/api/plans/class-session-packages'));
-            setClassSessionPackages((res.data || []).filter(item => item.isActive));
-        } catch (e) {
-            console.error("Failed to fetch class session packages", e);
-        }
-    }, []);
 
     const fetchNotes = useCallback(async () => {
         try {
@@ -145,17 +112,18 @@ export default function MemberDetail() {
         }
     }, [id]);
 
-    const handlePlanChange = useCallback((planId) => {
-        const selectedPlan = plans.find(p => p.id === parseInt(planId));
-        if (selectedPlan) {
-            setRenewData({
-                ...renewData,
-                planId: selectedPlan.id,
-                duration: selectedPlan.duration,
-                amount: selectedPlan.price
-            });
-        }
-    }, [plans, renewData]);
+    const redirectToPosForMember = useCallback((category) => {
+        const memberId = Number(member?.id || id);
+        if (!Number.isFinite(memberId) || memberId <= 0) return;
+
+        const normalizedCategory = String(category || '').trim().toUpperCase();
+        navigate(`/payments?memberId=${memberId}&category=${encodeURIComponent(normalizedCategory)}`, {
+            state: {
+                memberId,
+                category: normalizedCategory
+            }
+        });
+    }, [member?.id, id, navigate]);
 
     const startCamera = async () => {
         setIsCameraOpen(true);
@@ -218,88 +186,6 @@ export default function MemberDetail() {
             showAlert({ title: "Status Error", message: "Failed to update status", type: "danger" });
         }
     };
-
-    const submitRenew = useCallback(async (paymentInfo = {}) => {
-        try {
-            await memberService.renewMembership(id, { ...renewData, ...paymentInfo });
-            setShowRenewModal(false);
-            showAlert({ title: "Renewed!", message: "Membership renewed successfully!", type: "success" });
-            fetchMember();
-        } catch {
-            showAlert({ title: "Renewal Failed", message: "Renewal failed. Please try again.", type: "danger" });
-        }
-    }, [id, renewData, fetchMember]);
-
-    const handleRenew = (e) => {
-        e.preventDefault();
-        if (renewData.method === 'CASH') {
-            const tenderedAmount = parseFloat(renewAmountTendered) || 0;
-            if (tenderedAmount < renewData.amount) return;
-            const changeDue = Math.max(0, (tenderedAmount - renewData.amount));
-            submitRenew({ cashTendered: tenderedAmount, changeDue });
-            return;
-        }
-
-        if (renewData.method === 'GCASH') {
-            if (!renewGcashReference || !renewGcashDate || !renewGcashTime) return;
-            submitRenew({
-                gcashReference: renewGcashReference,
-                gcashDate: renewGcashDate,
-                gcashTime: renewGcashTime
-            });
-            return;
-        }
-
-        submitRenew();
-    };
-
-    const handleClassSessionPurchase = async (e) => {
-        e.preventDefault();
-        if (!classSessionPurchaseData.packageId) return;
-
-        const payload = {
-            packageId: Number(classSessionPurchaseData.packageId),
-            method: classSessionPurchaseData.method
-        };
-
-        if (classSessionPurchaseData.method === 'CASH') {
-            const tendered = Number(classSessionPurchaseData.cashTendered || 0);
-            if (!Number.isFinite(tendered) || tendered <= 0) {
-                showAlert({ title: "Invalid Amount", message: "Enter a valid tendered amount", type: "warning" });
-                return;
-            }
-            payload.cashTendered = tendered;
-        }
-
-        if (classSessionPurchaseData.method === 'GCASH') {
-            if (!classSessionPurchaseData.gcashReference || !classSessionPurchaseData.gcashDate || !classSessionPurchaseData.gcashTime) {
-                showAlert({ title: "Missing Info", message: "GCash reference, date, and time are required", type: "warning" });
-                return;
-            }
-            payload.gcashReference = classSessionPurchaseData.gcashReference;
-            payload.gcashDate = classSessionPurchaseData.gcashDate;
-            payload.gcashTime = classSessionPurchaseData.gcashTime;
-        }
-
-        try {
-            await axios.post(withApiBase(`/api/members/${id}/class-session-packages`), payload);
-            setShowClassSessionModal(false);
-            setClassSessionPurchaseData({
-                packageId: '',
-                method: 'CASH',
-                cashTendered: '',
-                gcashReference: '',
-                gcashDate: '',
-                gcashTime: ''
-            });
-            showAlert({ title: "Sessions Added", message: "Class sessions added successfully", type: "success" });
-            fetchMember();
-            fetchPayments();
-        } catch (e) {
-            showAlert({ title: "Add Failed", message: e.response?.data?.error || "Failed to add class sessions", type: "danger" });
-        }
-    };
-
     const handleSetPassword = useCallback(async (e) => {
         e.preventDefault();
         try {
@@ -343,28 +229,21 @@ export default function MemberDetail() {
     );
 
     const currentPlan = useMemo(
-        () => member?.plan || plans.find((p) => p.id === Number(member?.planId)) || null,
-        [member, plans]
+        () => member?.plan || null,
+        [member]
     );
+    const isMembershipExpiredForClassPackages = useMemo(() => {
+        const statusExpired = String(member?.status || '').toUpperCase() === 'EXPIRED';
+        if (statusExpired) return true;
+        if (!member?.expiryDate) return false;
 
-    useEffect(() => {
-        if (!currentPlan) return;
-        setRenewData((prev) => {
-            if (
-                Number(prev.planId) === Number(currentPlan.id) &&
-                Number(prev.amount) === Number(currentPlan.price) &&
-                Number(prev.duration) === Number(currentPlan.duration)
-            ) {
-                return prev;
-            }
-            return {
-                ...prev,
-                planId: currentPlan.id,
-                amount: currentPlan.price,
-                duration: currentPlan.duration
-            };
-        });
-    }, [currentPlan]);
+        const expiryDate = new Date(member.expiryDate);
+        if (Number.isNaN(expiryDate.getTime())) return true;
+
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        return expiryDate < todayStart;
+    }, [member?.status, member?.expiryDate]);
 
 
     if (loading) return (
@@ -376,9 +255,10 @@ export default function MemberDetail() {
 
     const initials = `${member.firstName?.[0] || ''}${member.lastName?.[0] || ''}`;
     const totalSpent = payments.reduce((sum, pay) => sum + Number(pay.amount || 0), 0);
-    const statusTone = member.status === 'ACTIVE'
+    const normalizedStatus = String(member.status || '').toUpperCase();
+    const statusTone = normalizedStatus === 'ACTIVE'
         ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-        : member.status === 'FREEZED'
+        : normalizedStatus === 'FREEZED'
             ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
             : 'bg-red-500/10 text-red-400 border-red-500/20';
     const attendanceTone = stats.attendanceScore.color === 'emerald'
@@ -389,16 +269,38 @@ export default function MemberDetail() {
     const riskLevel = stats.isExpired ? 'High' : stats.isExpiringSoon ? 'Medium' : 'Low';
     const paymentRows = payments.length ? payments : (member.payments || []);
     const progressPct = Math.min(100, Math.max(0, Number(stats.progress || 0)));
+    const freezeStartDate = member.freezeStartDate ? new Date(member.freezeStartDate) : null;
+    const freezeEndDate = member.freezeEndDate ? new Date(member.freezeEndDate) : null;
+    const hasFreezeWindow = !!(
+        freezeStartDate &&
+        freezeEndDate &&
+        !Number.isNaN(freezeStartDate.getTime()) &&
+        !Number.isNaN(freezeEndDate.getTime())
+    );
+    const freezeDurationDays = hasFreezeWindow ? getInclusiveDayCount(freezeStartDate, freezeEndDate) : null;
+    const freezeDurationLabel = freezeDurationDays
+        ? `${freezeDurationDays} day${freezeDurationDays > 1 ? 's' : ''}`
+        : 'Not tracked';
+    const freezeWindowLabel = hasFreezeWindow
+        ? `${freezeStartDate.toLocaleDateString()} - ${freezeEndDate.toLocaleDateString()}`
+        : 'Not tracked';
 
 
     return (
         <div className="space-y-4 animate-fade-in pb-10">
-            <div className="flex items-center gap-2 text-sm">
-                <button onClick={() => navigate('/dashboard')} className="text-text-muted hover:text-primary transition-colors">Dashboard</button>
-                <span className="text-text-muted">/</span>
-                <button onClick={() => navigate('/members')} className="text-text-muted hover:text-primary transition-colors">Members</button>
-                <span className="text-text-muted">/</span>
-                <span className="text-white font-medium">{member.firstName} {member.lastName}</span>
+            <div className="flex items-center gap-3 min-w-0 px-1">
+                <button
+                    type="button"
+                    onClick={() => navigate('/members')}
+                    className="h-9 w-9 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-white flex items-center justify-center"
+                    aria-label="Back to members"
+                >
+                    <span className="material-icons-round text-base">arrow_back</span>
+                </button>
+                <div className="min-w-0">
+                    <h2 className="text-sm sm:text-base font-bold text-white truncate">Member Details</h2>
+                    <p className="text-[11px] text-text-muted truncate">{member.firstName} {member.lastName} • Member ID #{member.id}</p>
+                </div>
             </div>
 
             <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
@@ -420,12 +322,32 @@ export default function MemberDetail() {
                                     <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${statusTone}`}>{member.status}</span>
                                 </div>
                                 <p className="text-xs text-text-muted mt-1">Member ID #{member.id} • Last active {stats.lastActive}</p>
+                                {hasFreezeWindow && (
+                                    <p className="text-[11px] text-text-muted mt-1">
+                                        {normalizedStatus === 'FREEZED' ? 'Current freeze' : 'Last freeze'}: {freezeWindowLabel} ({freezeDurationLabel})
+                                    </p>
+                                )}
                             </div>
                         </div>
 
                         <div className="flex flex-wrap gap-2">
-                            <button onClick={() => setShowRenewModal(true)} className="px-3.5 py-2 rounded-lg bg-primary hover:bg-orange-600 text-white text-sm font-semibold transition-colors">Renew</button>
-                            <button onClick={() => setShowClassSessionModal(true)} className="px-3.5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold transition-colors">Add Sessions</button>
+                            <button onClick={() => redirectToPosForMember('MEMBERSHIP')} className="px-3.5 py-2 rounded-lg bg-primary hover:bg-orange-600 text-white text-sm font-semibold transition-colors">Renew</button>
+                            <button
+                                onClick={() => {
+                                    if (isMembershipExpiredForClassPackages) {
+                                        showAlert({
+                                            title: 'Membership Expired',
+                                            message: 'Cannot add class sessions for expired membership. Renew membership first.',
+                                            type: 'warning'
+                                        });
+                                        return;
+                                    }
+                                    redirectToPosForMember('PACKAGES');
+                                }}
+                                className="px-3.5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold transition-colors"
+                            >
+                                Add Sessions
+                            </button>
                             <div className="relative">
                                 <button
                                     onClick={() => setShowMoreActions((prev) => !prev)}
@@ -435,7 +357,21 @@ export default function MemberDetail() {
                                 </button>
                                 {showMoreActions && (
                                     <div className="absolute right-0 mt-2 w-44 rounded-lg border border-white/10 bg-surface shadow-2xl z-20">
-                                        <button onClick={() => { setShowFreezeModal(true); setShowMoreActions(false); }} className="w-full text-left px-3 py-2.5 text-sm text-text-secondary hover:bg-white/5">Freeze Member</button>
+                                        {normalizedStatus === 'FREEZED' ? (
+                                            <button
+                                                onClick={() => { handleStatusChange('ACTIVE'); setShowMoreActions(false); }}
+                                                className="w-full text-left px-3 py-2.5 text-sm text-emerald-300 hover:bg-white/5"
+                                            >
+                                                Unfreeze Member
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={() => { setShowFreezeModal(true); setShowMoreActions(false); }}
+                                                className="w-full text-left px-3 py-2.5 text-sm text-text-secondary hover:bg-white/5"
+                                            >
+                                                Freeze Member
+                                            </button>
+                                        )}
                                         <button onClick={() => { setShowPasswordModal(true); setShowMoreActions(false); }} className="w-full text-left px-3 py-2.5 text-sm text-text-secondary hover:bg-white/5">Reset Password</button>
                                         <button onClick={() => { handleEditClick(); setShowMoreActions(false); }} className="w-full text-left px-3 py-2.5 text-sm text-text-secondary hover:bg-white/5">Edit Profile</button>
                                     </div>
@@ -489,14 +425,16 @@ export default function MemberDetail() {
                             <h3 className="text-white font-semibold">Member Profile</h3>
                         </div>
                         <div className="px-5 py-1">
-                            {[
-                                { label: 'Email', value: member.email || 'Not provided' },
-                                { label: 'Phone', value: member.phone || 'Not provided' },
-                                { label: 'Birth Date', value: member.birthDate ? new Date(member.birthDate).toLocaleDateString() : 'Not provided' },
-                                { label: 'Gender', value: member.sex || 'Not specified' },
-                                { label: 'Member Since', value: member.startDate ? new Date(member.startDate).toLocaleDateString() : 'Not provided' },
-                                { label: 'Expiry Date', value: member.expiryDate ? new Date(member.expiryDate).toLocaleDateString() : 'Not provided' }
-                            ].map((row) => (
+                                {[
+                                    { label: 'Email', value: member.email || 'Not provided' },
+                                    { label: 'Phone', value: member.phone || 'Not provided' },
+                                    { label: 'Birth Date', value: member.birthDate ? new Date(member.birthDate).toLocaleDateString() : 'Not provided' },
+                                    { label: 'Gender', value: member.sex || 'Not specified' },
+                                    { label: 'Member Since', value: member.startDate ? new Date(member.startDate).toLocaleDateString() : 'Not provided' },
+                                    { label: 'Expiry Date', value: member.expiryDate ? new Date(member.expiryDate).toLocaleDateString() : 'Not provided' },
+                                    { label: 'Freeze Period', value: freezeWindowLabel },
+                                    { label: 'Freeze Duration', value: freezeDurationLabel }
+                                ].map((row) => (
                                 <div key={row.label} className="grid grid-cols-[150px_minmax(0,1fr)] gap-3 py-3 border-b border-white/5 last:border-b-0">
                                     <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">{row.label}</p>
                                     <p className="text-sm text-white break-words">{row.value}</p>
@@ -666,84 +604,6 @@ export default function MemberDetail() {
             </div>
 
             {/* Modals */}
-            {showClassSessionModal && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                    <div className="bg-surface p-8 rounded-[32px] w-full max-w-md border border-white/10 shadow-2xl">
-                        <h3 className="text-xl font-bold text-white mb-6">Add Class Sessions</h3>
-                        <form onSubmit={handleClassSessionPurchase} className="space-y-4">
-                            <select
-                                required
-                                className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white outline-none"
-                                value={classSessionPurchaseData.packageId}
-                                onChange={e => setClassSessionPurchaseData({ ...classSessionPurchaseData, packageId: e.target.value })}
-                            >
-                                <option value="">-- Choose Package --</option>
-                                {classSessionPackages.map(pkg => (
-                                    <option key={pkg.id} value={pkg.id}>
-                                        {pkg.name} - {pkg.sessions} sessions ({formatPrice(pkg.price)})
-                                    </option>
-                                ))}
-                            </select>
-
-                            <select
-                                className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white outline-none"
-                                value={classSessionPurchaseData.method}
-                                onChange={e => setClassSessionPurchaseData({ ...classSessionPurchaseData, method: e.target.value })}
-                            >
-                                <option value="CASH">Cash</option>
-                                <option value="GCASH">GCash</option>
-                                <option value="CARD">Card</option>
-                            </select>
-
-                            {classSessionPurchaseData.method === 'CASH' && (
-                                <input
-                                    required
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white"
-                                    placeholder="Amount Tendered"
-                                    value={classSessionPurchaseData.cashTendered}
-                                    onChange={e => setClassSessionPurchaseData({ ...classSessionPurchaseData, cashTendered: e.target.value })}
-                                />
-                            )}
-
-                            {classSessionPurchaseData.method === 'GCASH' && (
-                                <div className="space-y-3">
-                                    <input
-                                        required
-                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white"
-                                        placeholder="GCash Reference"
-                                        value={classSessionPurchaseData.gcashReference}
-                                        onChange={e => setClassSessionPurchaseData({ ...classSessionPurchaseData, gcashReference: e.target.value })}
-                                    />
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <input
-                                            required
-                                            type="date"
-                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white"
-                                            value={classSessionPurchaseData.gcashDate}
-                                            onChange={e => setClassSessionPurchaseData({ ...classSessionPurchaseData, gcashDate: e.target.value })}
-                                        />
-                                        <input
-                                            required
-                                            type="time"
-                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white"
-                                            value={classSessionPurchaseData.gcashTime}
-                                            onChange={e => setClassSessionPurchaseData({ ...classSessionPurchaseData, gcashTime: e.target.value })}
-                                        />
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className="flex justify-end gap-3">
-                                <button type="button" onClick={() => setShowClassSessionModal(false)} className="text-text-muted">Cancel</button>
-                                <button type="submit" className="bg-emerald-500 text-white font-bold px-8 py-2.5 rounded-2xl">Add Sessions</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
 
             {showPasswordModal && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -752,52 +612,6 @@ export default function MemberDetail() {
                         <form onSubmit={handleSetPassword} className="space-y-4">
                             <input required type="password" className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white outline-none" placeholder="New Password" value={passwordData} onChange={e => setPasswordData(e.target.value)} />
                             <div className="flex justify-end gap-3"><button type="button" onClick={() => setShowPasswordModal(false)} className="text-text-muted">Cancel</button><button type="submit" className="bg-primary text-white font-bold px-8 py-2.5 rounded-2xl">Save</button></div>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {showRenewModal && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                    <div className="bg-surface p-8 rounded-[32px] w-full max-w-sm border border-white/10 shadow-2xl">
-                        <h3 className="text-xl font-bold text-white mb-6">Renew Membership</h3>
-                        <form onSubmit={handleRenew} className="space-y-4">
-                            <select required className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white outline-none" value={renewData.planId} onChange={e => handlePlanChange(e.target.value)}>
-                                <option value="">-- Choose a Plan --</option>
-                                {plans.map(p => <option key={p.id} value={p.id}>{p.name} - {formatPrice(p.price)}</option>)}
-                            </select>
-                            <select className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white outline-none" value={renewData.method} onChange={e => setRenewData({ ...renewData, method: e.target.value })}>
-                                <option value="CASH">Cash</option><option value="GCASH">GCash</option>
-                            </select>
-                            {renewData.method === 'CASH' && <input required type="number" className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white" placeholder="Amount Tendered" value={renewAmountTendered} onChange={e => setRenewAmountTendered(e.target.value)} />}
-                            {renewData.method === 'GCASH' && (
-                                <div className="space-y-3">
-                                    <input
-                                        required
-                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white"
-                                        placeholder="GCash Reference"
-                                        value={renewGcashReference}
-                                        onChange={e => setRenewGcashReference(e.target.value)}
-                                    />
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <input
-                                            required
-                                            type="date"
-                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white"
-                                            value={renewGcashDate}
-                                            onChange={e => setRenewGcashDate(e.target.value)}
-                                        />
-                                        <input
-                                            required
-                                            type="time"
-                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white"
-                                            value={renewGcashTime}
-                                            onChange={e => setRenewGcashTime(e.target.value)}
-                                        />
-                                    </div>
-                                </div>
-                            )}
-                            <div className="flex justify-end gap-3"><button type="button" onClick={() => setShowRenewModal(false)} className="text-text-muted">Cancel</button><button type="submit" className="bg-primary text-white font-bold px-8 py-2.5 rounded-2xl">Renew</button></div>
                         </form>
                     </div>
                 </div>
@@ -852,7 +666,13 @@ export default function MemberDetail() {
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
                     <div className="bg-surface p-8 rounded-[32px] w-full max-w-sm border border-white/10 shadow-2xl">
                         <h3 className="text-xl font-bold text-white mb-6">Freeze Membership</h3>
-                        <form onSubmit={(e) => { e.preventDefault(); handleStatusChange('FREEZED', freezeData); }} className="space-y-4">
+                        <form onSubmit={(e) => {
+                            e.preventDefault();
+                            handleStatusChange('FREEZED', {
+                                freezeStartDate: freezeData.startDate,
+                                freezeEndDate: freezeData.endDate
+                            });
+                        }} className="space-y-4">
                             <div>
                                 <label className="text-text-muted text-sm mb-2 block">Start Date</label>
                                 <input required type="date" className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white outline-none" value={freezeData.startDate} onChange={e => setFreezeData({ ...freezeData, startDate: e.target.value })} />
@@ -869,4 +689,9 @@ export default function MemberDetail() {
         </div>
     );
 }
+
+
+
+
+
 

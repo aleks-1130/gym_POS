@@ -436,11 +436,28 @@ const getMyCommissions = async (req, res) => {
             return sum + (Number(item.unitPrice || 0) * Number(item.materialSettledQuantity || 0));
         }, 0);
         const materialPendingDeduction = materialItems.reduce((sum, item) => {
-            const unsettledQty = Math.max(
+            const unsettledUsedQty = Math.max(
                 0,
-                Number(item.quantity || 0) - Number(item.returnedQuantity || 0) - Number(item.materialSettledQuantity || 0)
+                Number(item.materialUsedQuantity || 0) - Number(item.materialSettledQuantity || 0)
             );
-            return sum + (Number(item.unitPrice || 0) * unsettledQty);
+            return sum + (Number(item.unitPrice || 0) * unsettledUsedQty);
+        }, 0);
+        const materialTaggedItemCount = materialItems.reduce((sum, item) => {
+            const taggedQty = Math.max(
+                0,
+                Number(item.quantity || 0) - Number(item.returnedQuantity || 0)
+            );
+            return sum + taggedQty;
+        }, 0);
+        const materialPendingItemCount = materialItems.reduce((sum, item) => {
+            const unsettledUsedQty = Math.max(
+                0,
+                Number(item.materialUsedQuantity || 0) - Number(item.materialSettledQuantity || 0)
+            );
+            return sum + unsettledUsedQty;
+        }, 0);
+        const materialUsedItemCount = materialItems.reduce((sum, item) => {
+            return sum + Math.max(0, Number(item.materialUsedQuantity || 0));
         }, 0);
 
         return res.json({
@@ -459,6 +476,9 @@ const getMyCommissions = async (req, res) => {
                 materialUsedAmount,
                 materialDeductedAmount,
                 materialPendingDeduction,
+                materialTaggedItemCount,
+                materialPendingItemCount,
+                materialUsedItemCount,
                 completedSessions: sessionHistory.length,
                 completedClasses: classHistoryItems.length
             },

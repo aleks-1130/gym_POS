@@ -17,7 +17,7 @@ async function getJose() {
             try {
                 _JWKS = _jose.createRemoteJWKSet(new URL(NEON_AUTH_JWKS_URL));
             } catch (error) {
-                console.error("[DEBUG] Invalid Neon JWKS URL, JWT verification disabled:", error.message);
+                console.error('[DEBUG] Invalid Neon JWKS URL, JWT verification disabled:', error.message);
             }
         }
     }
@@ -27,7 +27,7 @@ async function getJose() {
 // Middleware to verify Neon Auth Token
 const authenticateToken = async (req, res, next) => {
     // Check cookies first, then fallback to Authorization header
-    const token = req.cookies?.token || (req.headers['authorization'] && req.headers['authorization'].split(' ')[1]);
+    const token = req.cookies?.token || (req.headers.authorization && req.headers.authorization.split(' ')[1]);
 
     if (!token) return res.sendStatus(401);
 
@@ -40,16 +40,16 @@ const authenticateToken = async (req, res, next) => {
         // 1. Try Local JWT Verification first (most common for cookie-based auth)
         const jwt = require('jsonwebtoken'); // Lazy require
         const SECRET = process.env.JWT_SECRET;
-        
+
         try {
-            console.log("[DEBUG] Attempting Local JWT Verification...");
+            console.log('[DEBUG] Attempting Local JWT Verification...');
             const decoded = jwt.verify(token, SECRET);
-            console.log("[DEBUG] Local JWT Verification Successful for email:", decoded.email);
+            console.log('[DEBUG] Local JWT Verification Successful for email:', decoded.email);
             email = decoded.email;
             decodedPayload = decoded;
             // No neonUserId in local token, but that's okay as we use email for sync
         } catch (localErr) {
-            console.log("[DEBUG] Local JWT Verification Failed:", localErr.message);
+            console.log('[DEBUG] Local JWT Verification Failed:', localErr.message);
             lastError = `Local: ${localErr.message}`;
             // 2. Try Neon Remote JWT Verification
             const { jwtVerify, JWKS } = await getJose();
@@ -57,25 +57,25 @@ const authenticateToken = async (req, res, next) => {
             if (JWKS) {
                 try {
                     const { payload } = await jwtVerify(token, JWKS);
-                    console.log("[DEBUG] Neon JWT Verification Successful");
+                    console.log('[DEBUG] Neon JWT Verification Successful');
                     email = payload.email;
                     neonUserId = payload.sub;
                     decodedPayload = payload;
                 } catch (neonErr) {
-                    console.log("[DEBUG] Neon JWT Verification Failed:", neonErr.message);
+                    console.log('[DEBUG] Neon JWT Verification Failed:', neonErr.message);
                     lastError += ` | Neon: ${neonErr.message}`;
                 }
             } else {
-                lastError += " | Neon JWKS not configured";
+                lastError += ' | Neon JWKS not configured';
             }
         }
     } catch (jwtError) {
         // 2. Fallback to Database Session Verification
-        console.log("[DEBUG] JWT skipped/failed, trying DB Session lookup...");
+        console.log('[DEBUG] JWT skipped/failed, trying DB Session lookup...');
 
         try {
             const sessionResults = await prisma.$queryRaw`
-                SELECT s.*, u.email 
+                SELECT s.*, u.email
                 FROM neon_auth.session s
                 JOIN neon_auth.user u ON s."userId" = u.id
                 WHERE s.token = ${token} AND s."expiresAt" > NOW()
@@ -84,25 +84,25 @@ const authenticateToken = async (req, res, next) => {
 
             if (sessionResults.length > 0) {
                 const session = sessionResults[0];
-                console.log("[DEBUG] DB Session Found:", session.email);
+                console.log('[DEBUG] DB Session Found:', session.email);
                 email = session.email;
                 neonUserId = session.userId;
             } else {
-                console.log("[DEBUG] No valid session found in DB");
-                throw new Error("Invalid session token");
+                console.log('[DEBUG] No valid session found in DB');
+                throw new Error('Invalid session token');
             }
         } catch (dbError) {
-            console.error("[DEBUG] DB Session lookup failed (DB likely down):", dbError.message);
-            return res.status(503).json({ error: "Database unavailable during session verification", details: dbError.message });
+            console.error('[DEBUG] DB Session lookup failed (DB likely down):', dbError.message);
+            return res.status(503).json({ error: 'Database unavailable during session verification', details: dbError.message });
         }
     }
 
     if (!email) {
-        return res.status(403).json({ 
-            error: "Authentication failed: email missing in token payload", 
+        return res.status(403).json({
+            error: 'Authentication failed: email missing in token payload',
             tokenFound: !!token,
             lastVerificationError: lastError,
-            decodedPayload: decodedPayload || "None"
+            decodedPayload: decodedPayload || 'None'
         });
     }
 
@@ -111,55 +111,64 @@ const authenticateToken = async (req, res, next) => {
         let userId = null;
         let userName = null;
         let userTrainerId = null;
+        let userSessionVersion = 0;
 
         // 1. Check User (Admin/Staff/Owner/Trainer)
         const user = await prisma.user.findFirst({
             where: { email: { equals: email, mode: 'insensitive' } },
-            select: { id: true, role: true, name: true, trainerId: true }
+            select: { id: true, role: true, name: true, trainerId: true, sessionVersion: true }
         });
-        console.log("[DEBUG] User Search Result:", user);
+        console.log('[DEBUG] User Search Result:', user);
 
         if (user) {
             userId = user.id;
             userRole = user.role;
             userName = user.name;
             userTrainerId = user.trainerId;
+            userSessionVersion = Number(user.sessionVersion || 0);
         } else {
             // 2. Check Member
             const member = await prisma.member.findFirst({
                 where: { email: { equals: email, mode: 'insensitive' } },
-                select: { id: true, firstName: true }
+                select: { id: true, firstName: true, sessionVersion: true }
             });
-            console.log("[DEBUG] Member Search Result:", member);
+            console.log('[DEBUG] Member Search Result:', member);
 
             if (member) {
                 userId = member.id;
                 userRole = 'MEMBER';
                 userName = member.firstName;
+                userSessionVersion = Number(member.sessionVersion || 0);
             }
         }
 
         if (!userRole) {
-            console.log("[DEBUG] User not found in local DB. Email:", email);
-            return res.status(403).json({ error: "User not found in system records", debugEmail: email });
+            console.log('[DEBUG] User not found in local DB. Email:', email);
+            return res.status(403).json({ error: 'User not found in system records', debugEmail: email });
+        }
+
+        const tokenSessionVersion = Number(decodedPayload?.sessionVersion ?? 0);
+        if (!Number.isFinite(tokenSessionVersion) || tokenSessionVersion !== userSessionVersion) {
+            return res.status(401).json({ error: 'Session expired. Please log in again.' });
         }
 
         // Attach user info to request
         req.user = {
             id: userId,
-            email: email,
-            role: userRole, // ← Fixed: removed duplicate
+            email,
+            role: userRole,
             name: userName,
             trainerId: userTrainerId,
-            neonSub: neonUserId
+            neonSub: neonUserId,
+            sessionVersion: userSessionVersion
         };
 
         next();
     } catch (err) {
-        console.error("User sync failed:", err);
+        console.error('User sync failed:', err);
         const { isDatabaseUnreachableError } = require('../utils/prismaError');
         if (isDatabaseUnreachableError(err)) {
-            return res.status(503).json({ error: "Database unavailable during user details lookup" });
+            return res.status(503).json({ error: 'Database unavailable during user details lookup' });
         }
         return res.sendStatus(500);
     }
@@ -176,15 +185,15 @@ const authorize = (roles = []) => {
         const userRole = req.user.role;
 
         // Hierarchy Logic
-        if (roles.includes("OWNER") && userRole === "OWNER") return next();
-        if (roles.includes("ADMIN") && (userRole === "ADMIN" || userRole === "OWNER")) return next();
-        if (roles.includes("STAFF") && (userRole === "STAFF" || userRole === "ADMIN" || userRole === "OWNER")) return next();
+        if (roles.includes('OWNER') && userRole === 'OWNER') return next();
+        if (roles.includes('ADMIN') && (userRole === 'ADMIN' || userRole === 'OWNER')) return next();
+        if (roles.includes('STAFF') && (userRole === 'STAFF' || userRole === 'ADMIN' || userRole === 'OWNER')) return next();
 
         // Exact match
         if (roles.includes(userRole)) return next();
 
         console.log(`[DEBUG] Access denied for role: ${userRole}. Required roles: ${roles.join(',')}`);
-        return res.status(403).json({ error: "Access denied" });
+        return res.status(403).json({ error: 'Access denied' });
     };
 };
 
@@ -199,11 +208,11 @@ const authorizeTrainerLinkedAccount = (req, res, next) => {
     const allowedRoles = new Set(['TRAINER', 'STAFF', 'ADMIN', 'OWNER']);
 
     if (!isTrainerLinked) {
-        return res.status(403).json({ error: "Trainer account is not linked" });
+        return res.status(403).json({ error: 'Trainer account is not linked' });
     }
 
     if (!allowedRoles.has(role)) {
-        return res.status(403).json({ error: "Access denied" });
+        return res.status(403).json({ error: 'Access denied' });
     }
 
     return next();

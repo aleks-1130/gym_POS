@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useConfirm } from '../../context/ConfirmContext';
 import { REWARD_CATEGORIES } from '../../constants/categories';
 import DataTable from '../../components/common/DataTable';
+import TrainerPageHeader from './components/TrainerPageHeader';
 
 const mapMethodLabel = (method) => {
     const normalized = String(method || '').toUpperCase();
@@ -109,35 +110,13 @@ export default function TrainerRewards() {
     }
 
     return (
-        <div className="space-y-4 sm:space-y-6">
-            <div className="hidden sm:flex items-start justify-between gap-3">
-                <div>
-                    <h1 className="text-3xl font-bold text-white">Trainer Rewards Store</h1>
-                    <p className="text-text-muted text-sm mt-1">Earn points from trainer purchases and redeem rewards</p>
-                </div>
-                <div className="flex gap-1 p-1 bg-surfaceHighlight rounded-lg border border-white/5 ml-auto self-start">
-                    {[['SHOP', 'Shop'], ['COUPONS', 'Coupons'], ['HISTORY', 'History']].map(([tab, label]) => (
-                        <button
-                            key={tab}
-                            onClick={() => setActiveTab(tab)}
-                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
-                                tab === 'COUPONS' && activeTab === tab
-                                    ? 'bg-amber-500 text-black shadow shadow-amber-500/20'
-                                    : activeTab === tab
-                                        ? 'bg-primary text-black shadow shadow-primary/20'
-                                        : 'text-text-muted hover:text-white'
-                            }`}
-                        >
-                            {label}
-                        </button>
-                    ))}
-                </div>
-            </div>
-
-            <div className="sm:hidden">
-                <h1 className="text-2xl font-bold text-white">Trainer Rewards Store</h1>
-                <p className="text-text-muted text-xs mt-1">Earn points from trainer purchases and redeem rewards</p>
-            </div>
+        <div className="space-y-4 sm:space-y-6 max-w-5xl mx-auto">
+            <TrainerPageHeader
+                title="Trainer Rewards Store"
+                subtitle="Earn points from trainer purchases and redeem rewards"
+                icon="card_giftcard"
+                className="border-white/10"
+            />
 
             <div className="bg-gradient-to-br from-yellow-600 to-yellow-700 rounded-2xl sm:rounded-3xl p-6 sm:p-8 text-white shadow-lg overflow-hidden relative">
                 <div className="absolute -top-12 -right-12 w-40 h-40 bg-yellow-500/20 rounded-full blur-3xl"></div>
@@ -151,23 +130,27 @@ export default function TrainerRewards() {
                 </div>
             </div>
 
-            <div className="flex sm:hidden gap-2 p-1 bg-surfaceHighlight w-full rounded-xl border border-white/5">
-                {[['SHOP', 'Rewards Shop'], ['COUPONS', 'My Coupons'], ['HISTORY', 'Point History']].map(([tab, label]) => (
+            <section className="space-y-3">
+                <div className="grid grid-cols-3 gap-2 rounded-2xl p-1 bg-surface/80 border border-white/10 shadow-inner">
+                    {[['SHOP', 'Shop'], ['COUPONS', 'Coupons'], ['HISTORY', 'History']].map(([tab, label]) => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
-                        className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all ${
-                            tab === 'COUPONS' && activeTab === tab
-                                ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
-                                : activeTab === tab
-                                    ? 'bg-primary text-black shadow-lg shadow-primary/20'
-                                    : 'text-text-muted hover:text-white'
-                        }`}
+                        className={`relative py-2 rounded-lg text-[11px] sm:text-xs font-bold transition-all ${activeTab === tab
+                            ? tab === 'COUPONS'
+                                ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
+                                : 'bg-primary text-background shadow-md'
+                            : 'text-text-muted hover:text-white hover:bg-white/5'
+                            }`}
                     >
                         {label}
+                        {tab === 'COUPONS' && activeTab === tab && (
+                            <span className="absolute right-1 top-1 w-1.5 h-1.5 rounded-full bg-black/50" />
+                        )}
                     </button>
                 ))}
-            </div>
+                </div>
+            </section>
 
             {activeTab === 'SHOP' ? (
                 <>

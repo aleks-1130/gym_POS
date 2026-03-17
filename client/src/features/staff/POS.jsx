@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
+import { useLocation } from 'react-router-dom';
 import { POS_VIEWS } from '../../constants/categories'; // Added import
 import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
@@ -34,8 +35,10 @@ export default function POS() {
     const {
         cart, selectedMemberId, discount,
         modals, paymentDetails, lastTransaction, collectData,
-        openModal, closeModal, setCollectField, clearCart
+        openModal, closeModal, setCollectField, clearCart,
+        setSelectedMemberId, setCategory
     } = usePOSStore();
+    const location = useLocation();
 
     const { discountAmount, total: cartTotal } = usePOSStore(useShallow(state => state.getTotals()));
     const appliedCoupon = usePOSStore(state => state.appliedCoupon);
@@ -129,6 +132,24 @@ export default function POS() {
         fetchReceiptSettings();
         fetchPosDiscountOptions();
     }, []);
+
+    useEffect(() => {
+        const searchParams = new URLSearchParams(location.search || '');
+        const stateMemberId = location.state?.memberId;
+        const queryMemberId = searchParams.get('memberId');
+        const resolvedMemberId = Number(stateMemberId ?? queryMemberId);
+        if (Number.isInteger(resolvedMemberId) && resolvedMemberId > 0) {
+            setSelectedMemberId(String(resolvedMemberId));
+        }
+
+        const stateCategory = location.state?.category;
+        const queryCategory = searchParams.get('category');
+        const normalizedCategory = String(stateCategory ?? queryCategory ?? '').trim().toUpperCase();
+        const allowedCategories = [POS_VIEWS.MEMBERSHIP, POS_VIEWS.PACKAGES];
+        if (allowedCategories.includes(normalizedCategory)) {
+            setCategory(normalizedCategory);
+        }
+    }, [location.search, location.state, setSelectedMemberId, setCategory]);
 
     useEffect(() => {
         const fetchCollectCashData = async () => {
@@ -299,6 +320,23 @@ export default function POS() {
             if (hasClassPackages && !selectedMemberId) {
                 await showAlert({ title: 'Member Required', message: 'Select a member for class package purchase.', type: 'warning' });
                 return;
+            }
+            if (hasClassPackages && selectedMemberId) {
+                const selectedMember = members.find((m) => Number(m.id) === Number(selectedMemberId));
+                const memberStatus = String(selectedMember?.status || '').toUpperCase();
+                const expiryDate = selectedMember?.expiryDate ? new Date(selectedMember.expiryDate) : null;
+                const todayStart = new Date();
+                todayStart.setHours(0, 0, 0, 0);
+                const expiredByDate = expiryDate && !Number.isNaN(expiryDate.getTime()) && expiryDate < todayStart;
+
+                if (memberStatus === 'EXPIRED' || expiredByDate) {
+                    await showAlert({
+                        title: 'Membership Expired',
+                        message: 'Cannot add class sessions for expired membership. Renew membership first.',
+                        type: 'warning'
+                    });
+                    return;
+                }
             }
 
             if (hasTraining) {
@@ -989,11 +1027,11 @@ export default function POS() {
                                                         });
                                                         if (!confirmed) return;
                                                         try {
-                                                            await Promise.all(
-                                                                bookingGroup.sessionIds.map((sessionId) =>
-                                                                    axios.post(withApiBase(`/api/training-sessions/${sessionId}/decline`), {}, { headers: authHeaders() })
-                                                                )
-                                                            );
+                                                                    await Promise.all(
+                                                                        bookingGroup.sessionIds.map((sessionId) =>
+                                                                            axios.post(withApiBase(`/api/staff/training-sessions/${sessionId}/decline`), {}, { headers: authHeaders() })
+                                                                        )
+                                                                    );
                                                             await fetchTrainingBookings();
                                                         } catch (e) {
                                                             const message = e.response?.data?.error || "Failed to decline booking";
@@ -1066,7 +1104,7 @@ export default function POS() {
                                                                     try {
                                                                         await Promise.all(
                                                                             bookingGroup.sessionIds.map((sessionId) =>
-                                                                                axios.post(withApiBase(`/api/training-sessions/${sessionId}/decline`), {}, { headers: authHeaders() })
+                                                                                axios.post(withApiBase(`/api/staff/training-sessions/${sessionId}/decline`), {}, { headers: authHeaders() })
                                                                             )
                                                                         );
                                                                         await fetchTrainingBookings();

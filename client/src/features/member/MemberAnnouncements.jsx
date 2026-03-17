@@ -1,36 +1,74 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import ConfirmDialog from '../../components/common/ConfirmDialog';
 import { createPortal } from 'react-dom';
+import { useAuth } from '../../context/AuthContext';
+import { useConfirm } from '../../context/ConfirmContext';
+import { ROLES } from '../../constants/roles';
+import MemberPageHeader from './components/MemberPageHeader';
 
-const categoryClasses = {
-    INFO: 'bg-blue-500/10 text-blue-300 border-blue-500/30',
-    ALERT: 'bg-red-500/10 text-red-300 border-red-500/30',
-    PROMO: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+const categoryStyles = {
+    INFO: {
+        icon: 'info',
+        unreadCard: 'border-blue-500/35 bg-blue-500/10',
+        readCard: 'border-blue-500/20 bg-blue-500/5'
+    },
+    ALERT: {
+        icon: 'warning',
+        unreadCard: 'border-red-500/35 bg-red-500/10',
+        readCard: 'border-red-500/20 bg-red-500/5'
+    },
+    PROMO: {
+        icon: 'local_offer',
+        unreadCard: 'border-emerald-500/35 bg-emerald-500/10',
+        readCard: 'border-emerald-500/20 bg-emerald-500/5'
+    }
+};
+
+const filters = [
+    { key: 'ALL', label: 'All' },
+    { key: 'INFO', label: 'Info' },
+    { key: 'ALERT', label: 'Alerts' },
+    { key: 'PROMO', label: 'Promos' }
+];
+
+const defaultPreferences = {
+    emailAnnouncements: true,
+    emailReminders: true,
+    emailReceipts: true,
+    appAnnouncements: true,
+    appReminders: true,
+    appReceipts: true
+};
+
+const formatDateTime = (value) => {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Unknown date';
+    return date.toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+    });
 };
 
 export default function MemberAnnouncements() {
+    const { user } = useAuth();
+    const { alert: showAlert, confirm: showConfirm } = useConfirm();
+
     const [announcements, setAnnouncements] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [filter, setFilter] = useState('all');
-    const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+    const [filter, setFilter] = useState('ALL');
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-    const [preferences, setPreferences] = useState({
-        emailAnnouncements: true,
-        emailReminders: true,
-        emailReceipts: true,
-        appAnnouncements: true,
-        appReminders: true,
-        appReceipts: true
-    });
-    const [prefLoading, setPrefLoading] = useState(false);
+    const [preferences, setPreferences] = useState(defaultPreferences);
+    const [prefSavingKey, setPrefSavingKey] = useState('');
 
     const fetchAnnouncements = async () => {
         try {
             const res = await axios.get('/api/notifications');
             setAnnouncements(Array.isArray(res.data) ? res.data : []);
         } catch (error) {
-            console.error('Failed to fetch member announcements', error);
+            console.error('Failed to fetch announcements', error);
             setAnnouncements([]);
         } finally {
             setLoading(false);
@@ -40,9 +78,11 @@ export default function MemberAnnouncements() {
     const fetchPreferences = async () => {
         try {
             const res = await axios.get('/api/notifications/preferences');
-            setPreferences(res.data);
+            if (res?.data && typeof res.data === 'object') {
+                setPreferences((prev) => ({ ...prev, ...res.data }));
+            }
         } catch (error) {
-            console.error('Failed to fetch preferences', error);
+            console.error('Failed to fetch notification preferences', error);
         }
     };
 
@@ -51,207 +91,261 @@ export default function MemberAnnouncements() {
         fetchPreferences();
     }, []);
 
+    const unreadCount = useMemo(
+        () => announcements.filter((announcement) => !announcement?.isRead).length,
+        [announcements]
+    );
+
+    const filteredAnnouncements = useMemo(() => (
+        announcements
+            .filter((announcement) => filter === 'ALL' || String(announcement?.type || '').toUpperCase() === filter)
+            .sort((a, b) => new Date(b?.date || b?.createdAt || 0) - new Date(a?.date || a?.createdAt || 0))
+    ), [announcements, filter]);
+
     const handleMarkAsRead = async (id, isRead) => {
-        if (isRead) return;
+        if (!id || isRead) return;
         try {
-            console.log(`[DEBUG] Marking notification ${id} as read...`);
             await axios.patch(`/api/notifications/${id}/read`);
-            setAnnouncements(prev => 
-                prev.map(a => a.id === id ? { ...a, isRead: true } : a)
-            );
+            setAnnouncements((prev) => prev.map((item) => (item.id === id ? { ...item, isRead: true } : item)));
         } catch (error) {
-            console.error("Failed to mark notification as read:", error.response?.data || error.message);
+            console.error('Failed to mark announcement as read', error?.response?.data || error?.message);
         }
     };
 
     const handleMarkAllRead = async () => {
+        if (unreadCount === 0) {
+            await showAlert({
+                title: 'No Unread Announcements',
+                message: 'Everything is already marked as read.',
+                type: 'info'
+            });
+            return;
+        }
+
+        const confirmed = await showConfirm({
+            title: 'Mark All As Read',
+            message: 'This will mark all announcements as read.',
+            confirmLabel: 'Mark All Read',
+            cancelLabel: 'Cancel',
+            type: 'warning'
+        });
+        if (!confirmed) return;
+
         try {
             await axios.patch('/api/notifications/read-all');
-            setAnnouncements(prev => prev.map(a => ({ ...a, isRead: true })));
-            setIsConfirmOpen(false);
+            setAnnouncements((prev) => prev.map((item) => ({ ...item, isRead: true })));
         } catch (error) {
-            console.error("Failed to mark all as read:", error.response?.data || error.message);
+            console.error('Failed to mark all announcements as read', error?.response?.data || error?.message);
+            await showAlert({
+                title: 'Update Failed',
+                message: 'Unable to mark all announcements as read right now.',
+                type: 'danger'
+            });
         }
     };
 
     const handleTogglePreference = async (key) => {
-        const newValue = !preferences[key];
-        setPreferences(prev => ({ ...prev, [key]: newValue }));
+        if (!key || prefSavingKey) return;
+
+        const nextValue = !preferences[key];
+        setPreferences((prev) => ({ ...prev, [key]: nextValue }));
+        setPrefSavingKey(key);
+
         try {
-            await axios.patch('/api/notifications/preferences', { [key]: newValue });
+            await axios.patch('/api/notifications/preferences', { [key]: nextValue });
         } catch (error) {
-            console.error("Failed to update preference", error);
-            // Revert on failure
-            setPreferences(prev => ({ ...prev, [key]: !newValue }));
+            setPreferences((prev) => ({ ...prev, [key]: !nextValue }));
+            console.error('Failed to update preference', error);
+        } finally {
+            setPrefSavingKey('');
         }
     };
 
-    const filteredAnnouncements = useMemo(() => (
-        announcements
-            .filter((announcement) => filter === 'all' || announcement.type === filter)
-            .sort((a, b) => new Date(b.date || b.createdAt) - new Date(a.date || a.createdAt))
-    ), [announcements, filter]);
+    const isTrainerView = user?.role === ROLES.TRAINER;
+    const pageSubtitle = isTrainerView
+        ? 'Gym notices, schedule alerts, and member-facing updates for trainers.'
+        : 'Gym notices, reminders, and member updates in one place.';
 
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-[50vh]">
                 <div className="text-center">
                     <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                    <p className="text-text-muted text-sm italic font-medium uppercase tracking-widest">Loading announcements...</p>
+                    <p className="text-text-muted text-sm">Loading announcements...</p>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="pb-24 px-4 max-w-4xl mx-auto space-y-6">
-            <div className="sticky top-0 z-10 -mx-4 px-4 py-6 bg-background/95 backdrop-blur-xl border-b border-white/5">
-                <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center shadow-lg shadow-primary/5">
-                        <span className="material-icons-round text-primary text-2xl">campaign</span>
-                    </div>
-                    <div className="flex-1">
-                        <h1 className="text-2xl font-black text-white italic uppercase tracking-tighter leading-none">Highlights</h1>
-                        <p className="text-[10px] text-text-muted font-black uppercase tracking-[0.2em] mt-2 italic">Stay tuned to gym updates</p>
-                    </div>
-                    <div className="flex gap-2">
+        <div className="space-y-4 sm:space-y-6 max-w-5xl mx-auto">
+            <MemberPageHeader
+                title="Announcements"
+                subtitle={pageSubtitle}
+                icon="campaign"
+                rightSlot={(
+                    <div className="flex items-center gap-2 pt-1">
                         <button
-                            onClick={() => setIsSettingsOpen(true)}
-                            className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-text-muted hover:text-white transition-colors"
-                        >
-                            <span className="material-icons-round text-xl">settings</span>
-                        </button>
-                        <button
-                            onClick={() => setIsConfirmOpen(true)}
-                            className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-text-muted hover:text-white transition-colors"
-                            title="Mark all as read"
-                        >
-                            <span className="material-icons-round text-xl">done_all</span>
-                        </button>
-                    </div>
-                </div>
-                <div className="flex gap-2 overflow-x-auto no-scrollbar mt-6 pt-1">
-                    {['all', 'INFO', 'ALERT', 'PROMO'].map((tab) => (
-                        <button
-                            key={tab}
                             type="button"
-                            onClick={() => setFilter(tab)}
-                            className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all whitespace-nowrap ${
-                                filter === tab
-                                    ? 'bg-primary text-white border-primary shadow-xl shadow-primary/20'
-                                    : 'bg-surface text-text-muted border-white/10 hover:text-white hover:bg-white/5'
-                            }`}
+                            onClick={handleMarkAllRead}
+                            className="h-9 w-9 rounded-lg border border-primary/50 bg-primary/10 text-primary hover:bg-primary/20 flex items-center justify-center"
+                            title={unreadCount > 0 ? 'Mark all as read' : 'No unread announcements'}
                         >
-                            {tab === 'all' ? 'All Updates' : tab}
+                            <span className="material-icons-round text-[18px]">done_all</span>
                         </button>
-                    ))}
+                        <button
+                            type="button"
+                            onClick={() => setIsSettingsOpen((prev) => !prev)}
+                            className="h-9 w-9 rounded-lg border border-white/10 bg-background/40 text-text-muted hover:text-white hover:bg-white/5 flex items-center justify-center"
+                            title="Notification settings"
+                        >
+                            <span className="material-icons-round text-[18px]">settings</span>
+                        </button>
+                    </div>
+                )}
+            >
+                <div className="flex flex-wrap items-center gap-2">
+                    {filters.map((tab) => (
+                        <button
+                            key={tab.key}
+                            type="button"
+                            onClick={() => setFilter(tab.key)}
+                            className={`h-9 rounded-lg px-3 text-[11px] sm:text-xs font-semibold transition-all border ${filter === tab.key
+                                ? 'bg-primary text-background border-primary'
+                                : 'bg-background/40 text-text-muted hover:text-white border-white/10'
+                                }`}
+                        >
+                            {tab.label}
+                        </button>
+                        ))}
                 </div>
-            </div>
+            </MemberPageHeader>
 
             {filteredAnnouncements.length === 0 ? (
-                <div className="bg-surface rounded-[2.5rem] border border-white/5 p-12 text-center">
-                    <div className="w-20 h-20 rounded-3xl bg-white/5 border border-white/10 flex items-center justify-center mx-auto mb-6">
-                        <span className="material-icons-round text-text-muted text-3xl">inbox</span>
-                    </div>
-                    <p className="text-white font-black uppercase italic tracking-wider">All caught up!</p>
-                    <p className="text-text-muted text-[10px] font-medium uppercase tracking-widest mt-2 font-mono">No recent updates in this category</p>
+                <div className="bg-surface rounded-xl p-8 text-center border border-white/5">
+                    <span className="material-icons-round text-text-muted text-4xl mb-2">inbox</span>
+                    <p className="text-text-muted text-sm">No announcements found for this filter.</p>
                 </div>
             ) : (
-                <div className="space-y-4">
-                    {filteredAnnouncements.map((announcement) => (
-                        <article 
-                            key={announcement.id} 
-                            onClick={() => handleMarkAsRead(announcement.id, announcement.isRead)}
-                            className={`bg-surface rounded-[2rem] border transition-all p-6 group cursor-pointer active:scale-[0.98] ${
-                                announcement.isRead 
-                                    ? 'border-white/5 opacity-80' 
-                                    : 'border-primary/30 bg-gradient-to-br from-primary/5 to-transparent'
-                            }`}
-                        >
-                            <div className="flex items-center justify-between gap-2 mb-4">
-                                <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${categoryClasses[announcement.type] || categoryClasses.INFO}`}>
-                                    {announcement.type || 'INFO'}
-                                </span>
-                                {!announcement.isRead && (
-                                    <span className="flex h-2 w-2 rounded-full bg-primary animate-pulse" />
-                                )}
-                            </div>
-                            <h2 className={`font-black uppercase italic tracking-tighter text-lg leading-tight group-hover:text-primary transition-colors ${announcement.isRead ? 'text-white/70' : 'text-white'}`}>
-                                {announcement.title || 'Announcement'}
-                            </h2>
-                            <p className="text-text-secondary text-sm leading-relaxed mt-3 font-medium">
-                                {announcement.message || 'No message provided.'}
-                            </p>
-                            <div className="mt-5 pt-4 border-t border-white/5 flex items-center justify-between">
-                                <span className="text-[10px] text-text-muted font-black uppercase tracking-widest flex items-center gap-1.5 font-mono">
-                                    <span className="material-icons-round text-xs">event</span>
-                                    {new Date(announcement.date || announcement.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                                </span>
-                                {announcement.isRead ? (
-                                    <span className="text-[9px] text-emerald-500/50 font-black uppercase tracking-widest italic">Archived</span>
-                                ) : (
-                                    <span className="text-[9px] text-primary font-black uppercase tracking-widest italic animate-bounce">New Update</span>
-                                )}
-                            </div>
-                        </article>
-                    ))}
+                <div className="space-y-3">
+                    {filteredAnnouncements.map((announcement) => {
+                        const normalizedType = String(announcement?.type || 'INFO').toUpperCase();
+                        const style = categoryStyles[normalizedType] || categoryStyles.INFO;
+                        const timestamp = announcement?.date || announcement?.createdAt;
+                        const cardTone = announcement?.isRead ? style.readCard : style.unreadCard;
+
+                        return (
+                            <article
+                                key={announcement.id}
+                                className={`rounded-xl border p-4 sm:p-5 transition-colors ${cardTone}`}
+                            >
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2 mb-2.5">
+                                            <span className="material-icons-round text-base text-white/80">{style.icon}</span>
+                                            {!announcement?.isRead && <span className="h-2 w-2 rounded-full bg-primary/90 animate-pulse" />}
+                                        </div>
+
+                                        <h3 className={`text-sm sm:text-base font-bold leading-tight ${announcement?.isRead ? 'text-white/80' : 'text-white'}`}>
+                                            {announcement?.title || 'Announcement'}
+                                        </h3>
+                                        <p className="text-xs sm:text-sm text-text-muted mt-1.5 whitespace-pre-wrap">
+                                            {announcement?.message || 'No message provided.'}
+                                        </p>
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => handleMarkAsRead(announcement.id, announcement?.isRead)}
+                                        disabled={Boolean(announcement?.isRead)}
+                                        className="shrink-0 rounded-lg border border-white/10 bg-background/40 px-2.5 py-1.5 text-[11px] font-semibold text-text-muted hover:text-white hover:bg-white/5 disabled:opacity-60 disabled:cursor-not-allowed"
+                                    >
+                                        {announcement?.isRead ? 'Read' : 'Mark Read'}
+                                    </button>
+                                </div>
+
+                                <div className="mt-3 pt-3 border-t border-white/10 text-[11px] text-text-muted">
+                                    <span className="inline-flex items-center gap-1">
+                                        <span className="material-icons-round text-[13px]">schedule</span>
+                                        {formatDateTime(timestamp)}
+                                    </span>
+                                </div>
+                            </article>
+                        );
+                    })}
                 </div>
             )}
-            <style jsx>{`
-                .no-scrollbar::-webkit-scrollbar { display: none; }
-            `}</style>
 
-            <ConfirmDialog 
-                isOpen={isConfirmOpen}
-                title="Mark all as read?"
-                message="This will mark all current announcements and alerts as seen."
-                confirmLabel="Mark All Read"
-                cancelLabel="Cancel"
-                onConfirm={handleMarkAllRead}
-                onCancel={() => setIsConfirmOpen(false)}
-            />
-
-            {/* Preferences Modal */}
             {isSettingsOpen && createPortal(
-                <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
-                    <div className="fixed inset-0 bg-black/80 backdrop-blur-md" onClick={() => setIsSettingsOpen(false)} />
-                    <div className="relative bg-surface border border-white/10 rounded-[2.5rem] w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-300">
-                        <div className="p-8">
-                            <div className="flex items-center justify-between mb-8">
-                                <h3 className="text-xl font-black text-white italic uppercase tracking-tighter">Notifications</h3>
-                                <button onClick={() => setIsSettingsOpen(false)} className="text-text-muted hover:text-white">
-                                    <span className="material-icons-round">close</span>
-                                </button>
+                <div className="fixed inset-0 z-[10000] flex items-end sm:items-center justify-center p-0 sm:p-4">
+                    <button
+                        type="button"
+                        onClick={() => setIsSettingsOpen(false)}
+                        aria-label="Close notification settings"
+                        className="absolute inset-0 bg-black/75 backdrop-blur-sm"
+                    />
+
+                    <div className="relative w-full max-w-md max-h-[85vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl border border-white/10 bg-surface shadow-2xl p-4 sm:p-5 animate-in slide-in-from-bottom-8 sm:zoom-in-95 duration-200">
+                        <div className="mx-auto mb-3 h-1 w-12 rounded-full bg-white/20 sm:hidden" />
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                            <div>
+                                <h2 className="text-sm sm:text-base font-bold text-white">Notification Preferences</h2>
+                                <p className="text-xs text-text-muted mt-0.5">Control app and email alerts for your account.</p>
                             </div>
-
-                            <div className="space-y-6">
-                                <section>
-                                    <p className="text-[10px] text-primary font-black uppercase tracking-[0.2em] mb-4">In-App Alerts</p>
-                                    <div className="space-y-3">
-                                        <Toggle label="Announcements" active={preferences.appAnnouncements} onToggle={() => handleTogglePreference('appAnnouncements')} />
-                                        <Toggle label="Class Reminders" active={preferences.appReminders} onToggle={() => handleTogglePreference('appReminders')} />
-                                        <Toggle label="Payment Receipts" active={preferences.appReceipts} onToggle={() => handleTogglePreference('appReceipts')} />
-                                    </div>
-                                </section>
-
-                                <div className="h-px bg-white/5" />
-
-                                <section>
-                                    <p className="text-[10px] text-primary font-black uppercase tracking-[0.2em] mb-4">Email Notifications</p>
-                                    <div className="space-y-3">
-                                        <Toggle label="Announcements" active={preferences.emailAnnouncements} onToggle={() => handleTogglePreference('emailAnnouncements')} />
-                                        <Toggle label="Class Reminders" active={preferences.emailReminders} onToggle={() => handleTogglePreference('emailReminders')} />
-                                        <Toggle label="Payment Receipts" active={preferences.emailReceipts} onToggle={() => handleTogglePreference('emailReceipts')} />
-                                    </div>
-                                </section>
-                            </div>
-
                             <button
+                                type="button"
                                 onClick={() => setIsSettingsOpen(false)}
-                                className="w-full mt-8 py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white transition-all"
+                                className="h-8 w-8 rounded-lg border border-white/10 bg-background/40 text-text-muted hover:text-white hover:bg-white/5 flex items-center justify-center"
+                                aria-label="Close settings"
                             >
-                                Done
+                                <span className="material-icons-round text-[18px]">close</span>
                             </button>
+                        </div>
+
+                        <div className="space-y-3">
+                            <div className="rounded-lg border border-white/10 bg-background/30 p-3 space-y-2">
+                                <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">In-App Alerts</p>
+                                <PreferenceToggle
+                                    label="Announcements"
+                                    active={Boolean(preferences.appAnnouncements)}
+                                    disabled={prefSavingKey === 'appAnnouncements'}
+                                    onToggle={() => handleTogglePreference('appAnnouncements')}
+                                />
+                                <PreferenceToggle
+                                    label="Class Reminders"
+                                    active={Boolean(preferences.appReminders)}
+                                    disabled={prefSavingKey === 'appReminders'}
+                                    onToggle={() => handleTogglePreference('appReminders')}
+                                />
+                                <PreferenceToggle
+                                    label="Payment Receipts"
+                                    active={Boolean(preferences.appReceipts)}
+                                    disabled={prefSavingKey === 'appReceipts'}
+                                    onToggle={() => handleTogglePreference('appReceipts')}
+                                />
+                            </div>
+
+                            <div className="rounded-lg border border-white/10 bg-background/30 p-3 space-y-2">
+                                <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">Email Notifications</p>
+                                <PreferenceToggle
+                                    label="Announcements"
+                                    active={Boolean(preferences.emailAnnouncements)}
+                                    disabled={prefSavingKey === 'emailAnnouncements'}
+                                    onToggle={() => handleTogglePreference('emailAnnouncements')}
+                                />
+                                <PreferenceToggle
+                                    label="Class Reminders"
+                                    active={Boolean(preferences.emailReminders)}
+                                    disabled={prefSavingKey === 'emailReminders'}
+                                    onToggle={() => handleTogglePreference('emailReminders')}
+                                />
+                                <PreferenceToggle
+                                    label="Payment Receipts"
+                                    active={Boolean(preferences.emailReceipts)}
+                                    disabled={prefSavingKey === 'emailReceipts'}
+                                    onToggle={() => handleTogglePreference('emailReceipts')}
+                                />
+                            </div>
                         </div>
                     </div>
                 </div>,
@@ -261,16 +355,21 @@ export default function MemberAnnouncements() {
     );
 }
 
-function Toggle({ label, active, onToggle }) {
+function PreferenceToggle({ label, active, disabled, onToggle }) {
     return (
-        <label className="flex items-center justify-between cursor-pointer group">
-            <span className="text-xs font-bold text-white group-hover:text-primary transition-colors">{label}</span>
-            <div 
-                onClick={onToggle}
-                className={`w-10 h-5 rounded-full relative transition-all duration-300 ${active ? 'bg-primary' : 'bg-white/10'}`}
+        <button
+            type="button"
+            onClick={onToggle}
+            disabled={disabled}
+            className="w-full flex items-center justify-between gap-3 rounded-lg px-2 py-2 text-left hover:bg-white/5 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+            <span className="text-xs text-white font-medium">{label}</span>
+            <span
+                className={`inline-flex h-6 w-11 items-center rounded-full border px-1 transition-colors ${active ? 'border-primary/60 bg-primary/20 justify-end' : 'border-white/20 bg-white/5 justify-start'}`}
+                aria-hidden="true"
             >
-                <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all duration-300 ${active ? 'left-6' : 'left-1'}`} />
-            </div>
-        </label>
+                <span className={`h-4 w-4 rounded-full ${active ? 'bg-primary' : 'bg-white/60'}`} />
+            </span>
+        </button>
     );
 }

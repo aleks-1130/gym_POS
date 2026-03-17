@@ -1,9 +1,10 @@
-import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
+import { withApiBase } from '../config/api';
 import Sidebar from '../components/Sidebar';
-import { useUIStore } from '../stores/useUIStore';
 import BottomNav from '../components/BottomNav';
 import PWAInstallPrompt from '../components/PWAInstallPrompt';
 
@@ -75,6 +76,7 @@ import GymTraffic from '../features/member/GymTraffic';
 import PaymentMethods from '../features/member/PaymentMethods';
 import ShopCheckout from '../features/member/ShopCheckout';
 import MemberAnnouncements from '../features/member/MemberAnnouncements';
+import TermsConditions from '../features/member/TermsConditions';
 
 // Components
 import ProfileResult from '../components/ProfileResult';
@@ -125,6 +127,122 @@ const ProtectedRoute = ({ children, allowedRoles, fullScreen }) => {
             </main>
         </div>
     );
+};
+
+const getMembershipLockState = (member) => {
+    if (!member) return null;
+
+    const now = new Date();
+    const normalizedStatus = String(member.status || '').toUpperCase();
+    if (normalizedStatus === 'FREEZED' || normalizedStatus === 'FROZEN') return 'freezed';
+    if (normalizedStatus === 'EXPIRED') return 'expired';
+
+    const freezeStart = member.freezeStartDate ? new Date(member.freezeStartDate) : null;
+    const freezeEnd = member.freezeEndDate ? new Date(member.freezeEndDate) : null;
+    if (
+        freezeStart
+        && freezeEnd
+        && !Number.isNaN(freezeStart.getTime())
+        && !Number.isNaN(freezeEnd.getTime())
+        && now >= freezeStart
+        && now <= freezeEnd
+    ) {
+        return 'freezed';
+    }
+
+    if (!member.expiryDate) return null;
+    const expiryDate = new Date(member.expiryDate);
+    if (Number.isNaN(expiryDate.getTime())) return 'expired';
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    return expiryDate < todayStart ? 'expired' : null;
+};
+
+const MEMBERSHIP_FREEZE_REDIRECT_SECONDS = 5;
+
+const ActiveMembershipGate = ({ children }) => {
+    const { user } = useAuth();
+    const navigate = useNavigate();
+    const [checking, setChecking] = useState(Boolean(user?.role === ROLES.MEMBER));
+    const [lockState, setLockState] = useState(null);
+
+    useEffect(() => {
+        let isMounted = true;
+
+        const verifyMembership = async () => {
+            if (user?.role !== ROLES.MEMBER || !user?.id) {
+                if (!isMounted) return;
+                setChecking(false);
+                setLockState(null);
+                return;
+            }
+
+            if (isMounted) setChecking(true);
+            try {
+                const res = await axios.get(withApiBase(`/api/members/${user.id}`));
+                const member = res.data?.member || res.data || null;
+                if (!isMounted) return;
+                setLockState(getMembershipLockState(member));
+            } catch {
+                if (!isMounted) return;
+                // Fail safe: when membership cannot be verified, keep access to avoid accidental lockout.
+                setLockState(null);
+            } finally {
+                if (isMounted) setChecking(false);
+            }
+        };
+
+        verifyMembership();
+        return () => {
+            isMounted = false;
+        };
+    }, [user?.id, user?.role]);
+
+    useEffect(() => {
+        if (lockState !== 'freezed') return;
+
+        const redirectTimer = window.setTimeout(() => {
+            navigate('/profile?membership=freezed', { replace: true });
+        }, MEMBERSHIP_FREEZE_REDIRECT_SECONDS * 1000);
+
+        return () => {
+            window.clearTimeout(redirectTimer);
+        };
+    }, [lockState, navigate]);
+
+    if (user?.role !== ROLES.MEMBER) return children;
+    if (checking) {
+        return (
+            <div className="min-h-screen bg-background flex items-center justify-center">
+                <div className="text-text-muted text-sm">Checking membership status...</div>
+            </div>
+        );
+    }
+    if (lockState === 'expired') {
+        return <Navigate to="/profile?membership=expired" replace />;
+    }
+    if (lockState === 'freezed') {
+        return (
+            <div className="relative min-h-[60vh]">
+                <div className="pointer-events-none select-none opacity-30 blur-[1px]">
+                    {children}
+                </div>
+                <div className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm">
+                    <div className="w-full max-w-sm rounded-2xl border border-blue-400/35 bg-surface p-5 sm:p-6 text-center shadow-2xl">
+                        <div className="mx-auto mb-3 h-11 w-11 rounded-full bg-blue-500/15 border border-blue-400/35 flex items-center justify-center">
+                            <span className="material-icons-round text-blue-300">ac_unit</span>
+                        </div>
+                        <h3 className="text-white text-base sm:text-lg font-bold">Membership Freezed</h3>
+                        <p className="mt-2 text-xs sm:text-sm text-text-muted">
+                            This page is blocked while your membership is on freeze.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+    return children;
 };
 
 export default function AppRoutes() {
@@ -561,7 +679,9 @@ export default function AppRoutes() {
                     path="/schedule"
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.MEMBER, ROLES.STAFF]}>
-                            <Schedule />
+                            <ActiveMembershipGate>
+                                <Schedule />
+                            </ActiveMembershipGate>
                         </ProtectedRoute>
                     }
                 />
@@ -578,6 +698,14 @@ export default function AppRoutes() {
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.MEMBER, ROLES.ADMIN, ROLES.STAFF]}>
                             {user?.role === ROLES.STAFF ? <Navigate to="/staff/settings" replace /> : <Profile />}
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/terms-and-conditions"
+                    element={
+                        <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
+                            <TermsConditions />
                         </ProtectedRoute>
                     }
                 />
@@ -609,7 +737,9 @@ export default function AppRoutes() {
                     path="/trainer-booking"
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.MEMBER, ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
-                            <TrainerBooking />
+                            <ActiveMembershipGate>
+                                <TrainerBooking />
+                            </ActiveMembershipGate>
                         </ProtectedRoute>
                     }
                 />

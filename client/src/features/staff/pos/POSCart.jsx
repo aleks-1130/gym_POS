@@ -8,7 +8,8 @@ import {
     toIsoDate,
     getAvailableTimeSlotsForTrainer,
     isTrainerDateAvailable,
-    getCalendarCells
+    getCalendarCells,
+    getMembershipDurationLabel
 } from './POSUtils';
 import { useConfirm } from '../../../context/ConfirmContext';
 import axios from 'axios';
@@ -164,6 +165,11 @@ export default function POSCart({ members, trainers, discountOptions, initiateCh
                                 <div className="flex-1 min-w-0">
                                     <h4 className="text-white text-sm font-bold truncate leading-tight mb-1">{item.name}</h4>
                                     <p className="text-primary text-xs font-bold">{formatPrice(item.price)}</p>
+                                    {item.type === 'PLAN' && (
+                                        <p className="mt-1 text-[11px] text-text-muted">
+                                            Duration: {getMembershipDurationLabel(item)}
+                                        </p>
+                                    )}
                                 </div>
                                 <button onClick={async () => await removeFromCart(item.cartLineId)} className="text-text-muted hover:text-red-400 transition-colors">
                                     <span className="material-icons-round text-lg">close</span>

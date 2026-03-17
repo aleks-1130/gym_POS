@@ -2,6 +2,10 @@ import React, { useEffect, useState } from 'react';
 import QRCode from 'react-qr-code';
 import axios from 'axios';
 import { Link } from 'react-router-dom';
+import MemberPageHeader from './components/MemberPageHeader';
+
+const UPCOMING_SESSION_STATUSES = ['SCHEDULED', 'RESCHEDULED'];
+const UPCOMING_CLASS_STATUSES = ['CONFIRMED'];
 
 const formatPlanDate = (value) => {
     if (!value) return 'N/A';
@@ -28,8 +32,33 @@ const calculateDaysRemaining = (endDate, now = new Date()) => {
     return Math.ceil((end - now) / (1000 * 60 * 60 * 24));
 };
 
+const announcementTypeStyles = {
+    INFO: {
+        icon: 'info',
+        unreadCard: 'border-blue-500/35 bg-blue-500/10',
+        readCard: 'border-blue-500/20 bg-blue-500/5'
+    },
+    ALERT: {
+        icon: 'warning',
+        unreadCard: 'border-red-500/35 bg-red-500/10',
+        readCard: 'border-red-500/20 bg-red-500/5'
+    },
+    PROMO: {
+        icon: 'local_offer',
+        unreadCard: 'border-emerald-500/35 bg-emerald-500/10',
+        readCard: 'border-emerald-500/20 bg-emerald-500/5'
+    }
+};
+
 const MemberDashboard = ({ stats, user }) => {
     const member = stats?.memberData || {};
+    const headerName = (
+        user?.name
+        || [member?.firstName, member?.lastName].filter(Boolean).join(' ')
+        || 'Member'
+    )
+        .trim()
+        .split(' ')[0] || 'Member';
     const now = new Date();
     const activePeriod = (member.membershipPeriods || [])
         .filter((period) => new Date(period.endDate) >= now)
@@ -67,10 +96,26 @@ const MemberDashboard = ({ stats, user }) => {
         ? 'border-red-500/25 bg-gradient-to-br from-red-500/15 via-red-500/5 to-transparent'
         : 'border-primary/15 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent';
     const memberId = member.id || user?.id;
-    const [dynamicQr, setDynamicQr] = useState({ qrValue: '', expiresAt: null, loading: false });
+    const [dynamicQr, setDynamicQr] = useState({
+        qrValue: '',
+        expiresAt: null,
+        cycleStartMs: Date.now(),
+        cycleEndMs: Date.now() + 1,
+        loading: false
+    });
+    const [qrNowTick, setQrNowTick] = useState(Date.now());
     const [latestNotification, setLatestNotification] = useState(null);
+    const [upcomingCounts, setUpcomingCounts] = useState({
+        sessions: 0,
+        classes: 0
+    });
     const loyaltyPoints = stats?.loyaltyPoints ?? member.points ?? 0;
     const checkIns = stats?.checkIns ?? (member.accessLogs?.filter((log) => log.status !== 'DENIED').length || 0);
+    const latestType = String(latestNotification?.type || 'INFO').toUpperCase();
+    const latestStyle = announcementTypeStyles[latestType] || announcementTypeStyles.INFO;
+    const latestCardTone = latestNotification
+        ? (latestNotification?.isRead ? latestStyle.readCard : latestStyle.unreadCard)
+        : 'border-white/10 bg-surface';
 
     useEffect(() => {
         const fetchLatestNotification = async () => {
@@ -88,29 +133,135 @@ const MemberDashboard = ({ stats, user }) => {
     }, []);
 
     useEffect(() => {
-        const fetchDynamicQr = async () => {
+        let active = true;
+
+        const fetchUpcomingCounts = async () => {
             try {
-                setDynamicQr((prev) => ({ ...prev, loading: true }));
-                
+                const [sessionsResult, classesResult] = await Promise.allSettled([
+                    axios.get('/api/members/me/training-sessions'),
+                    axios.get('/api/members/me/class-bookings')
+                ]);
+
+                if (!active) return;
+
+                const nowDate = new Date();
+                const sessions = sessionsResult.status === 'fulfilled' && Array.isArray(sessionsResult.value?.data)
+                    ? sessionsResult.value.data
+                    : [];
+                const classes = classesResult.status === 'fulfilled' && Array.isArray(classesResult.value?.data)
+                    ? classesResult.value.data
+                    : [];
+
+                const upcomingSessionCount = sessions.filter((session) => {
+                    const sessionDate = new Date(session?.date);
+                    if (Number.isNaN(sessionDate.getTime())) return false;
+                    const sessionStatus = String(session?.status || '').toUpperCase();
+                    return UPCOMING_SESSION_STATUSES.includes(sessionStatus) && sessionDate >= nowDate;
+                }).length;
+
+                const upcomingClassCount = classes.filter((booking) => {
+                    const classDate = new Date(booking?.sessionDate || booking?.class?.oneTimeDate);
+                    if (Number.isNaN(classDate.getTime())) return false;
+                    const bookingStatus = String(booking?.status || '').toUpperCase();
+                    return UPCOMING_CLASS_STATUSES.includes(bookingStatus) && classDate >= nowDate;
+                }).length;
+
+                setUpcomingCounts({
+                    sessions: upcomingSessionCount,
+                    classes: upcomingClassCount
+                });
+            } catch {
+                if (!active) return;
+                setUpcomingCounts({ sessions: 0, classes: 0 });
+            }
+        };
+
+        fetchUpcomingCounts();
+        return () => {
+            active = false;
+        };
+    }, []);
+
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setQrNowTick(Date.now());
+        }, 250);
+
+        return () => clearInterval(timer);
+    }, []);
+
+    useEffect(() => {
+        let active = true;
+        let refreshTimer = null;
+
+        const scheduleNext = (delayMs) => {
+            if (!active) return;
+            if (refreshTimer) clearTimeout(refreshTimer);
+            refreshTimer = setTimeout(fetchDynamicQr, Math.max(1000, Number(delayMs) || 20000));
+        };
+
+        const fetchDynamicQr = async () => {
+            const nowMs = Date.now();
+            try {
+                if (active) setDynamicQr((prev) => ({ ...prev, loading: true }));
+
                 const res = await axios.get('/api/access/qr-token');
+                const expiresAt = res.data?.expiresAt || null;
+                const expiresAtMs = expiresAt ? new Date(expiresAt).getTime() : null;
+                const refreshAfterSeconds = Number(res.data?.refreshAfterSeconds);
+                const refreshMs = Number.isFinite(refreshAfterSeconds) && refreshAfterSeconds > 0
+                    ? refreshAfterSeconds * 1000
+                    : 20000;
+                const plannedCycleEndMs = nowMs + refreshMs;
+                const cycleEndMs = (Number.isFinite(expiresAtMs) && expiresAtMs > nowMs)
+                    ? Math.min(plannedCycleEndMs, expiresAtMs)
+                    : plannedCycleEndMs;
+
+                if (!active) return;
                 setDynamicQr({
                     qrValue: res.data?.qrValue || '',
-                    expiresAt: res.data?.expiresAt || null,
+                    expiresAt,
+                    cycleStartMs: nowMs,
+                    cycleEndMs: Math.max(cycleEndMs, nowMs + 1),
                     loading: false
                 });
+                scheduleNext(refreshMs);
             } catch (e) {
-                setDynamicQr((prev) => ({ ...prev, loading: false }));
+                if (active) {
+                    setDynamicQr((prev) => ({
+                        ...prev,
+                        loading: false,
+                        cycleStartMs: nowMs,
+                        cycleEndMs: nowMs + 10000
+                    }));
+                }
+                scheduleNext(10000);
             }
         };
 
         fetchDynamicQr();
-        const interval = setInterval(fetchDynamicQr, 20000);
-        return () => clearInterval(interval);
+        return () => {
+            active = false;
+            if (refreshTimer) clearTimeout(refreshTimer);
+        };
     }, []);
 
+    const cycleStartMs = Number(dynamicQr.cycleStartMs) || Date.now();
+    const cycleEndMs = Number(dynamicQr.cycleEndMs) || (cycleStartMs + 1);
+    const totalCycleMs = Math.max(1, cycleEndMs - cycleStartMs);
+    const qrRemainingMs = Math.max(0, cycleEndMs - qrNowTick);
+    const qrProgressPercent = dynamicQr.qrValue
+        ? Math.max(0, Math.min(100, (qrRemainingMs / totalCycleMs) * 100))
+        : 0;
+    const isQrTimerLow = qrProgressPercent <= 30;
+
     return (
-        <div className="space-y-4 pb-20 px-4 max-w-2xl mx-auto">
-          
+        <div className="space-y-4 max-w-2xl mx-auto">
+            <MemberPageHeader
+                title="Dashboard"
+                subtitle={`Welcome back, ${headerName}`}
+                icon="dashboard"
+            />
 
             {/* Digital Member Pass - Priority Position */}
             <div className="bg-gradient-to-br from-primary/20 to-primary/5 p-5 rounded-2xl border border-primary/30 shadow-lg">
@@ -131,11 +282,20 @@ const MemberDashboard = ({ stats, user }) => {
                     <p className="text-text-muted text-xs">Scan at front desk to check in (auto-refreshing secure QR)</p>
                     <div className="mt-3 pt-3 border-t border-white/10">
                         <p className="text-xs text-text-muted">Member ID: <span className="text-white font-mono">{memberId || 'N/A'}</span></p>
-                        {dynamicQr.expiresAt && (
-                            <p className="text-xs text-text-muted mt-1">
-                                Expires: <span className="text-white">{new Date(dynamicQr.expiresAt).toLocaleTimeString()}</span>
-                            </p>
-                        )}
+                        <div className="mt-2">
+                            <div className="flex items-center justify-between text-[10px] uppercase tracking-wide">
+                                <span className="text-text-muted">QR Timer</span>
+                                <span className={`${isQrTimerLow ? 'text-orange-300' : 'text-orange-400'} font-semibold`}>
+                                    {dynamicQr.qrValue ? 'Refreshing soon' : 'Waiting for QR'}
+                                </span>
+                            </div>
+                            <div className="mt-1.5 h-2 w-full rounded-full bg-white/10 overflow-hidden border border-white/10">
+                                <div
+                                    className={`h-full rounded-full transition-[width] duration-200 ease-linear bg-gradient-to-r from-orange-500 via-orange-400 to-amber-300 ${isQrTimerLow ? 'animate-pulse' : ''}`}
+                                    style={{ width: `${qrProgressPercent}%` }}
+                                />
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -210,63 +370,90 @@ const MemberDashboard = ({ stats, user }) => {
             <div className="grid grid-cols-2 gap-3">
                 {/* Loyalty Points */}
                 <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
-                    <div className="flex flex-col h-full">
-                        <span className="material-icons-round text-yellow-500 text-2xl mb-2">stars</span>
-                        <p className="text-text-muted text-xs font-medium mb-1">Loyalty Points</p>
-                        <h3 className="text-2xl font-bold text-white">{loyaltyPoints}</h3>
+                    <div className="flex items-center gap-3 h-full">
+                        <div className="h-10 w-10 rounded-xl border border-yellow-500/30 bg-yellow-500/10 flex items-center justify-center shrink-0">
+                            <span className="material-icons-round text-yellow-500 text-xl">stars</span>
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-text-muted text-[11px] font-medium leading-tight">Loyalty Points</p>
+                            <h3 className="text-xl font-bold text-white leading-tight mt-1">{loyaltyPoints}</h3>
+                        </div>
                     </div>
                 </div>
 
                 {/* Check-ins or another stat */}
                 <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
-                    <div className="flex flex-col h-full">
-                        <span className="material-icons-round text-primary text-2xl mb-2">how_to_reg</span>
-                        <p className="text-text-muted text-xs font-medium mb-1">Check-ins</p>
-                        <h3 className="text-2xl font-bold text-white">{checkIns}</h3>
+                    <div className="flex items-center gap-3 h-full">
+                        <div className="h-10 w-10 rounded-xl border border-primary/30 bg-primary/10 flex items-center justify-center shrink-0">
+                            <span className="material-icons-round text-primary text-xl">how_to_reg</span>
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-text-muted text-[11px] font-medium leading-tight">Check-ins</p>
+                            <h3 className="text-xl font-bold text-white leading-tight mt-1">{checkIns}</h3>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
+                    <div className="flex items-center gap-3 h-full">
+                        <div className="h-10 w-10 rounded-xl border border-amber-500/30 bg-amber-500/10 flex items-center justify-center shrink-0">
+                            <span className="material-icons-round text-amber-400 text-xl">event_available</span>
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-text-muted text-[11px] font-medium leading-tight">Upcoming 1-on-1</p>
+                            <h3 className="text-xl font-bold text-white leading-tight mt-1">{upcomingCounts.sessions}</h3>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-surface p-4 rounded-xl border border-white/5 shadow-sm">
+                    <div className="flex items-center gap-3 h-full">
+                        <div className="h-10 w-10 rounded-xl border border-cyan-500/30 bg-cyan-500/10 flex items-center justify-center shrink-0">
+                            <span className="material-icons-round text-cyan-300 text-xl">groups</span>
+                        </div>
+                        <div className="min-w-0">
+                            <p className="text-text-muted text-[11px] font-medium leading-tight">Upcoming Classes</p>
+                            <h3 className="text-xl font-bold text-white leading-tight mt-1">{upcomingCounts.classes}</h3>
+                        </div>
                     </div>
                 </div>
             </div>
 
             {/* Latest Update/Notification */}
             <Link to="/announcements" className="block outline-none active:scale-[0.98] transition-all">
-                <div className="bg-surface p-5 rounded-[2rem] border border-white/5 shadow-xl shadow-black/20 group relative overflow-hidden">
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-[10px] font-black text-white uppercase tracking-[0.2em] italic flex items-center gap-2">
-                            <span className="material-icons-round text-primary text-base animate-pulse">notifications_active</span>
-                            Latest Update
-                        </h3>
-                        {latestNotification && !latestNotification.isRead && (
-                            <span className="px-2 py-0.5 rounded-full bg-primary/20 text-primary text-[8px] font-black uppercase tracking-widest border border-primary/30">New</span>
-                        )}
-                    </div>
-                    {latestNotification ? (
-                        <div className="flex gap-4">
-                            <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center flex-shrink-0 group-hover:border-primary/30 transition-colors">
-                                <span className="material-icons-round text-primary text-xl">
-                                    {latestNotification.isAnnouncement ? 'campaign' : 'info'}
-                                </span>
+                <div className={`rounded-xl border p-4 sm:p-5 transition-colors ${latestCardTone}`}>
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                                <span className="material-icons-round text-base text-white/80">{latestStyle.icon}</span>
+                                <h3 className="text-xs font-semibold text-white">Latest Update</h3>
+                                {latestNotification && !latestNotification.isRead && (
+                                    <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                                )}
                             </div>
-                            <div className="min-w-0 flex-1">
-                                <h4 className="font-black text-white uppercase italic tracking-tighter text-sm mb-1 line-clamp-1 group-hover:text-primary transition-colors">
-                                    {latestNotification.title}
-                                </h4>
-                                <p className="text-[11px] text-text-secondary leading-relaxed line-clamp-2 font-medium">
-                                    {latestNotification.message}
-                                </p>
-                                <p className="text-[9px] text-text-muted mt-2 font-mono uppercase tracking-widest font-black">
-                                    {new Date(latestNotification.createdAt).toLocaleDateString()}
-                                </p>
-                            </div>
+                            {latestNotification ? (
+                                <>
+                                    <p className={`text-sm sm:text-base font-bold leading-tight ${latestNotification.isRead ? 'text-white/80' : 'text-white'}`}>
+                                        {latestNotification.title}
+                                    </p>
+                                    <p className="text-xs sm:text-sm text-text-muted mt-1.5 line-clamp-2">
+                                        {latestNotification.message}
+                                    </p>
+                                    <p className="text-[11px] text-text-muted mt-2">
+                                        {new Date(latestNotification.createdAt || latestNotification.date).toLocaleString(undefined, {
+                                            month: 'short',
+                                            day: 'numeric',
+                                            year: 'numeric',
+                                            hour: 'numeric',
+                                            minute: '2-digit'
+                                        })}
+                                    </p>
+                                </>
+                            ) : (
+                                <p className="text-xs sm:text-sm text-text-muted">No recent announcements right now.</p>
+                            )}
                         </div>
-                    ) : (
-                        <div className="py-4 text-center">
-                            <p className="text-[10px] text-text-muted font-black uppercase tracking-widest italic">All caught up!</p>
-                        </div>
-                    )}
-                    
-                    {/* Subtle arrow indicator */}
-                    <div className="absolute right-6 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
-                        <span className="material-icons-round text-primary">chevron_right</span>
+                        <span className="material-icons-round text-text-muted">chevron_right</span>
                     </div>
                 </div>
             </Link>

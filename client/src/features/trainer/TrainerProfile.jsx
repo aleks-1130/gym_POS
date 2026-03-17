@@ -54,6 +54,18 @@ const formatRating = (value) => {
     return Number.isFinite(numeric) ? numeric.toFixed(1) : '0.0';
 };
 
+const getTrainerTypeLabel = (type) => {
+    const normalized = String(type || 'FULLTIME').toUpperCase();
+    return normalized === 'FREELANCER' ? 'Freelancer' : 'Full-time';
+};
+
+const getTrainerTypeBadgeClass = (type) => {
+    const normalized = String(type || 'FULLTIME').toUpperCase();
+    return normalized === 'FREELANCER'
+        ? 'border border-orange-500/40 bg-orange-500/20 text-orange-200'
+        : 'border border-blue-500/40 bg-blue-500/20 text-blue-200';
+};
+
 const toRequestedFieldsLabel = (payload) => {
     const keys = Object.keys(payload || {});
     if (keys.length === 0) return 'N/A';
@@ -293,6 +305,8 @@ export default function TrainerProfile() {
     const bookingStatusLabel = String(previewTrainer?.bookingStatus || 'OPEN').toUpperCase();
     const bookingStatusOpen = bookingStatusLabel === 'OPEN';
     const trainerRatingLabel = formatRating(previewTrainer?.rating);
+    const trainerTypeLabel = getTrainerTypeLabel(previewTrainer?.type);
+    const trainerTypeBadgeClass = getTrainerTypeBadgeClass(previewTrainer?.type);
     const isCredentialsEditPage = location.pathname.endsWith('/edit');
     const isAvailabilityPage = location.pathname.endsWith('/availability');
     const isMemberCardPage = location.pathname.endsWith('/member-card');
@@ -301,8 +315,8 @@ export default function TrainerProfile() {
 
     if (isCredentialsEditPage) {
         return (
-            <div className="space-y-4 pb-28 px-4 max-w-2xl mx-auto">
-                <header className="sticky top-0 z-40 -mx-4 px-4 py-3 bg-background/90 backdrop-blur border-b border-white/5">
+            <div className="space-y-4 max-w-2xl mx-auto">
+                <header className="sticky top-0 z-40 -mx-4 px-4 py-3 bg-background/90 backdrop-blur border-b border-white/10">
                     <div className="flex items-center gap-3">
                         <button
                             type="button"
@@ -382,8 +396,8 @@ export default function TrainerProfile() {
     }
 
     return (
-        <div className="space-y-4 pb-28 px-4 max-w-4xl mx-auto">
-            <header className="sticky top-0 z-40 -mx-4 px-4 py-3 bg-background/90 backdrop-blur border-b border-white/5">
+        <div className="space-y-4 max-w-4xl mx-auto">
+            <header className="sticky top-0 z-40 -mx-4 px-4 py-3 bg-background/90 backdrop-blur border-b border-white/10">
                 <div className="flex items-center gap-3">
                     {isSettingSubPage ? (
                         <button
@@ -532,6 +546,14 @@ export default function TrainerProfile() {
                                 <p className="text-sm text-white font-semibold mt-1">{previewTrainer?.specialization || 'Personal Trainer'}</p>
                             </div>
                             <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5">
+                                <p className="text-[10px] uppercase tracking-wider text-text-muted">Trainer Type</p>
+                                <div className="mt-1">
+                                    <span className={`inline-flex rounded-md px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${trainerTypeBadgeClass}`}>
+                                        {trainerTypeLabel}
+                                    </span>
+                                </div>
+                            </div>
+                            <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5">
                                 <p className="text-[10px] uppercase tracking-wider text-text-muted">Specialties</p>
                                 <p className="text-xs text-white/80 mt-1">{previewSpecialties.length > 0 ? previewSpecialties.join(', ') : 'No specialties listed'}</p>
                             </div>
@@ -559,6 +581,9 @@ export default function TrainerProfile() {
                                     <div className="absolute top-3 right-3 bg-black/70 backdrop-blur rounded-full px-2.5 py-1 flex items-center gap-1">
                                         <span className="material-icons-round text-sm text-yellow-400">star</span>
                                         <span className="text-white text-xs font-bold">{trainerRatingLabel}</span>
+                                    </div>
+                                    <div className={`absolute top-3 left-3 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${trainerTypeBadgeClass}`}>
+                                        {trainerTypeLabel}
                                     </div>
                                 </div>
 

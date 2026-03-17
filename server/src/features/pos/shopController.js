@@ -92,6 +92,7 @@ const checkout = async (req, res) => {
                     select: {
                         quantity: true,
                         returnedQuantity: true,
+                        materialUsedQuantity: true,
                         materialSettledQuantity: true,
                         unitPrice: true
                     }
@@ -105,11 +106,11 @@ const checkout = async (req, res) => {
                 return sum + Number(c.commissionAmount || 0);
             }, 0);
             const outstandingMaterialDeductions = unsettledMaterialItems.reduce((sum, item) => {
-                const unsettledQty = Math.max(
+                const unsettledUsedQty = Math.max(
                     0,
-                    Number(item.quantity || 0) - Number(item.returnedQuantity || 0) - Number(item.materialSettledQuantity || 0)
+                    Number(item.materialUsedQuantity || 0) - Number(item.materialSettledQuantity || 0)
                 );
-                return sum + (unsettledQty * Number(item.unitPrice || 0));
+                return sum + (unsettledUsedQty * Number(item.unitPrice || 0));
             }, 0);
 
             const availableCommission = Number((sessionCommissions + classCommissions - outstandingMaterialDeductions).toFixed(2));

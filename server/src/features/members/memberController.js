@@ -99,6 +99,60 @@ const getPlanClassSessions = (plan) => {
     return Number.isInteger(included) && included > 0 ? included : 0;
 };
 
+const isMemberMembershipExpired = (member) => {
+    if (!member) return true;
+    if (String(member.status || '').toUpperCase() === 'EXPIRED') return true;
+    if (!member.expiryDate) return false;
+
+    const expiryDate = new Date(member.expiryDate);
+    if (Number.isNaN(expiryDate.getTime())) return true;
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    return expiryDate < todayStart;
+};
+
+const isMemberMembershipFreezed = (member) => {
+    if (!member) return false;
+    const normalizedStatus = String(member.status || '').toUpperCase();
+    return normalizedStatus === 'FREEZED' || normalizedStatus === 'FROZEN';
+};
+
+const requireActiveMembership = async (req, res, next) => {
+    try {
+        if (String(req.user?.role || '').toUpperCase() !== 'MEMBER') {
+            return next();
+        }
+
+        const memberId = Number(req.user.id);
+        const member = await prisma.member.findUnique({
+            where: { id: memberId },
+            select: {
+                id: true,
+                status: true,
+                expiryDate: true,
+                freezeStartDate: true,
+                freezeEndDate: true
+            }
+        });
+
+        if (!member) {
+            return res.status(404).json({ error: "Member profile not found" });
+        }
+        if (isMemberMembershipExpired(member)) {
+            return res.status(403).json({ error: "Membership expired. Renew first to access this feature." });
+        }
+        if (isMemberMembershipFreezed(member)) {
+            return res.status(403).json({ error: "Membership is freezed. Booking and class access are disabled while freeze is active." });
+        }
+
+        req.member = member;
+        return next();
+    } catch (e) {
+        return res.status(500).json({ error: "Failed to validate membership status" });
+    }
+};
+
 const applyPlanClassSessions = async ({ tx, memberId, plan }) => {
     const grantedSessions = getPlanClassSessions(plan);
     if (grantedSessions <= 0) return;
@@ -1826,6 +1880,9 @@ const purchaseClassSessionPackage = async (req, res) => {
         if (!member) {
             return res.status(404).json({ error: "Member not found" });
         }
+        if (isMemberMembershipExpired(member)) {
+            return res.status(400).json({ error: "Cannot add class sessions for expired membership. Renew membership first." });
+        }
 
         const normalizedCashTendered = normalizedMethod === 'CASH'
             ? Number(cashTendered)
@@ -1915,9 +1972,12 @@ const getMemberNotes = async (req, res) => {
         const notes = await prisma.memberNote.findMany({
             where: { memberId: Number(id) },
             orderBy: { createdAt: 'desc' },
-            include: { author: { select: { id: true, name: true, email: true } } }
+            include: { user: { select: { id: true, name: true, email: true } } }
         });
-        res.json(notes);
+        res.json(notes.map((note) => ({
+            ...note,
+            author: note.user || null
+        })));
     } catch (e) {
         res.status(500).json({ error: "Failed to fetch notes" });
     }
@@ -1936,9 +1996,12 @@ const addMemberNote = async (req, res) => {
                 content: String(content).trim(),
                 createdBy: req.user.id
             },
-            include: { author: { select: { id: true, name: true, email: true } } }
+            include: { user: { select: { id: true, name: true, email: true } } }
         });
-        res.json(note);
+        res.json({
+            ...note,
+            author: note.user || null
+        });
     } catch (e) {
         res.status(500).json({ error: "Failed to create note" });
     }
@@ -1946,21 +2009,71 @@ const addMemberNote = async (req, res) => {
 
 const updateMemberStatus = async (req, res) => {
     const { id } = req.params;
-    const { status, freezeStartDate, freezeEndDate } = req.body;
+    const {
+        status,
+        freezeStartDate,
+        freezeEndDate,
+        startDate,
+        endDate
+    } = req.body;
     try {
-        const updateData = { status };
+        const normalizedStatus = String(status || '').toUpperCase();
+        if (!normalizedStatus) {
+            return res.status(400).json({ error: "Status is required" });
+        }
+        const memberId = Number(id);
+        if (!Number.isInteger(memberId) || memberId <= 0) {
+            return res.status(400).json({ error: "Invalid member id" });
+        }
 
-        if (status === 'FREEZED') {
-            updateData.freezeStartDate = freezeStartDate ? new Date(freezeStartDate) : null;
-            updateData.freezeEndDate = freezeEndDate ? new Date(freezeEndDate) : null;
-        } else if (status === 'ACTIVE') {
-            // Clear freeze dates when reactivating
-            updateData.freezeStartDate = null;
-            updateData.freezeEndDate = null;
+        const existingMember = await prisma.member.findUnique({
+            where: { id: memberId },
+            select: {
+                id: true,
+                status: true,
+                freezeStartDate: true,
+                freezeEndDate: true
+            }
+        });
+        if (!existingMember) {
+            return res.status(404).json({ error: "Member not found" });
+        }
+
+        const updateData = { status: normalizedStatus };
+
+        if (normalizedStatus === 'FREEZED') {
+            const resolvedStart = freezeStartDate || startDate;
+            const resolvedEnd = freezeEndDate || endDate;
+            const parsedStart = resolvedStart ? new Date(resolvedStart) : null;
+            const parsedEnd = resolvedEnd ? new Date(resolvedEnd) : null;
+
+            if (!parsedStart || Number.isNaN(parsedStart.getTime()) || !parsedEnd || Number.isNaN(parsedEnd.getTime())) {
+                return res.status(400).json({ error: "Valid freeze start and end dates are required" });
+            }
+            if (parsedEnd < parsedStart) {
+                return res.status(400).json({ error: "Freeze end date must be on or after start date" });
+            }
+
+            updateData.freezeStartDate = parsedStart;
+            updateData.freezeEndDate = parsedEnd;
+        } else if (normalizedStatus === 'ACTIVE') {
+            // Keep freeze window for tracking and end it at the unfreeze time.
+            const previousStatus = String(existingMember.status || '').toUpperCase();
+            const wasFrozen = previousStatus === 'FREEZED' || previousStatus === 'FROZEN';
+            const start = existingMember.freezeStartDate ? new Date(existingMember.freezeStartDate) : null;
+
+            if (wasFrozen && start && !Number.isNaN(start.getTime())) {
+                const now = new Date();
+                updateData.freezeStartDate = start;
+                updateData.freezeEndDate = now < start ? start : now;
+            } else if (!existingMember.freezeStartDate && !existingMember.freezeEndDate) {
+                updateData.freezeStartDate = null;
+                updateData.freezeEndDate = null;
+            }
         }
 
         const member = await prisma.member.update({
-            where: { id: Number(id) },
+            where: { id: memberId },
             data: updateData
         });
         res.json(member);
@@ -2023,6 +2136,7 @@ const changePassword = async (req, res) => {
 };
 
 module.exports = {
+    requireActiveMembership,
     getMembers,
     getAvailableClasses,
     bookClass,

@@ -71,11 +71,11 @@ const executeCommissionPayout = async (tx, { trainerId, sessionIds = [], classHi
         : [];
 
     const outstandingMaterialDeduction = materialDeductionItems.reduce((sum, item) => {
-        const unsettledQty = Math.max(
+        const unsettledUsedQty = Math.max(
             0,
-            Number(item.quantity || 0) - Number(item.returnedQuantity || 0) - Number(item.materialSettledQuantity || 0)
+            Number(item.materialUsedQuantity || 0) - Number(item.materialSettledQuantity || 0)
         );
-        return sum + (unsettledQty * Number(item.unitPrice || 0));
+        return sum + (unsettledUsedQty * Number(item.unitPrice || 0));
     }, 0);
 
     const netPayout = Number((totalCommission - outstandingMaterialDeduction).toFixed(2));
@@ -99,14 +99,14 @@ const executeCommissionPayout = async (tx, { trainerId, sessionIds = [], classHi
     }
 
     for (const item of materialDeductionItems) {
-        const unsettledQty = Math.max(
+        const unsettledUsedQty = Math.max(
             0,
-            Number(item.quantity || 0) - Number(item.returnedQuantity || 0) - Number(item.materialSettledQuantity || 0)
+            Number(item.materialUsedQuantity || 0) - Number(item.materialSettledQuantity || 0)
         );
-        if (unsettledQty <= 0) continue;
+        if (unsettledUsedQty <= 0) continue;
         await tx.paymentItem.update({
             where: { id: item.id },
-            data: { materialSettledQuantity: { increment: unsettledQty } }
+            data: { materialSettledQuantity: { increment: unsettledUsedQty } }
         });
     }
 
@@ -185,16 +185,17 @@ const getStats = async (req, res) => { console.log('GET STATS REQ.QUERY:', req.q
                 quantity: true,
                 returnedQuantity: true,
                 unitPrice: true,
+                materialUsedQuantity: true,
                 materialSettledQuantity: true
             }
         });
 
         const pendingMaterialDeductions = pendingMaterialItems.reduce((sum, item) => {
-            const qty = Math.max(
+            const unsettledUsedQty = Math.max(
                 0,
-                Number(item.quantity || 0) - Number(item.returnedQuantity || 0) - Number(item.materialSettledQuantity || 0)
+                Number(item.materialUsedQuantity || 0) - Number(item.materialSettledQuantity || 0)
             );
-            return sum + (qty * Number(item.unitPrice || 0));
+            return sum + (unsettledUsedQty * Number(item.unitPrice || 0));
         }, 0);
 
         res.json({
@@ -274,17 +275,17 @@ const getTrainers = async (req, res) => {
 
                 materialDeductionItems = deductionItems
                     .map((item) => {
-                        const unsettledQty = Math.max(
+                        const unsettledUsedQty = Math.max(
                             0,
-                            Number(item.quantity || 0) - Number(item.returnedQuantity || 0) - Number(item.materialSettledQuantity || 0)
+                            Number(item.materialUsedQuantity || 0) - Number(item.materialSettledQuantity || 0)
                         );
-                        const total = unsettledQty * Number(item.unitPrice || 0);
+                        const total = unsettledUsedQty * Number(item.unitPrice || 0);
                         return {
                             paymentItemId: item.id,
                             paymentId: item.paymentId,
                             name: item.name,
                             unitPrice: Number(item.unitPrice || 0),
-                            unsettledQty,
+                            unsettledQty: unsettledUsedQty,
                             unsettledTotal: total,
                             purchasedAt: item.payment?.date || null
                         };

@@ -154,7 +154,11 @@ export default function Access() {
                 }
             } catch (err) {
                 console.error('Token scan failed', err);
-                setScanError(err?.response?.data?.error || 'Access denied. QR is invalid or expired.');
+                setScanError(
+                    err?.response?.data?.error
+                    || err?.response?.data?.reason
+                    || 'Access denied. QR is invalid or expired.'
+                );
                 setLatestLogId(null);
             } finally {
                 setScanning(false);
@@ -190,7 +194,11 @@ export default function Access() {
             }
         } catch (err) {
             console.error('Scan failed', err);
-            setScanError(err?.response?.data?.error || 'Access denied.');
+            setScanError(
+                err?.response?.data?.error
+                || err?.response?.data?.reason
+                || 'Access denied.'
+            );
             setLatestLogId(null);
         } finally {
             setScanning(false);

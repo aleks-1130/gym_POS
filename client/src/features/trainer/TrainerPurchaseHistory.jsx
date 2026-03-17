@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useAuth } from '../../context/AuthContext';
 import Receipt from '../../components/Receipt';
+import TrainerPageHeader from './components/TrainerPageHeader';
 
 export default function TrainerPurchaseHistory() {
     const { user } = useAuth();
@@ -87,12 +88,13 @@ export default function TrainerPurchaseHistory() {
     if (loading) return <div className="text-white p-6 text-center">Loading purchase history...</div>;
 
     return (
-        <div className="space-y-4 sm:space-y-6 px-4 pb-24 max-w-5xl mx-auto">
+        <div className="space-y-4 sm:space-y-6 max-w-5xl mx-auto">
             <div className="space-y-3">
-                <div>
-                    <h1 className="text-2xl sm:text-3xl font-bold text-white">Trainer Purchase History</h1>
-                    <p className="text-text-muted text-xs sm:text-sm mt-1">All your Trainer Shop transactions</p>
-                </div>
+                <TrainerPageHeader
+                    title="Purchase History"
+                    subtitle="All your trainer shop transactions"
+                    icon="receipt_long"
+                />
 
                 <div className="grid grid-cols-2 gap-3">
                     <div className="bg-surface rounded-xl p-3 sm:p-4 border border-white/5">

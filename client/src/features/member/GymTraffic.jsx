@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import MemberPageHeader from './components/MemberPageHeader';
 
 const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const mondayFirstDayIndexes = [1, 2, 3, 4, 5, 6, 0];
@@ -121,13 +122,12 @@ export default function GymTraffic() {
     }
 
     return (
-        <div className="space-y-6">
-            <div>
-                <h1 className="text-2xl sm:text-3xl font-bold text-white">Gym Traffic</h1>
-                <p className="text-text-muted text-xs sm:text-sm mt-1">
-                    Check-in activity for {formatDateShort(rangeStart)} — {formatDateShort(rangeEnd)}
-                </p>
-            </div>
+        <div className="space-y-6 max-w-5xl mx-auto">
+            <MemberPageHeader
+                title="Gym Traffic"
+                subtitle={`Check-in activity for ${formatDateShort(rangeStart)} - ${formatDateShort(rangeEnd)}`}
+                icon="timeline"
+            />
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div className="bg-surface rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-white/5">
@@ -231,3 +231,4 @@ export default function GymTraffic() {
         </div>
     );
 }
+

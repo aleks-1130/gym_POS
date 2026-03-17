@@ -4,7 +4,7 @@ const { isTimeAllowedForTrainer } = require('../../services/trainerAvailabilityS
 const MEMBER_RESCHEDULE_NOTICE_HOURS = 24;
 const MEMBER_RESCHEDULE_WINDOW_DAYS = 7;
 const COMPLETE_GRACE_MINUTES = 5;
-const NO_SHOW_GRACE_MINUTES = 10;
+const NO_SHOW_GRACE_MINUTES = COMPLETE_GRACE_MINUTES;
 const FINALIZED_SESSION_STATUSES = ['CANCELLED', 'COMPLETED', 'NO_SHOW', 'DECLINED'];
 
 const toLocalIsoDate = (value) => {
@@ -737,10 +737,12 @@ const markNoShow = async (req, res) => {
         if (Number.isNaN(sessionStart.getTime())) {
             return res.status(400).json({ error: "Invalid session date" });
         }
-        const noShowEligibleAt = new Date(sessionStart.getTime() + (NO_SHOW_GRACE_MINUTES * 60 * 1000));
+        const noShowEligibleAt = new Date(
+            sessionStart.getTime() + ((Number(session.duration) || 0) + NO_SHOW_GRACE_MINUTES) * 60 * 1000
+        );
         if (new Date() < noShowEligibleAt) {
             return res.status(400).json({
-                error: `No-show can only be marked ${NO_SHOW_GRACE_MINUTES} minutes after session start`
+                error: `No-show can be marked only after session ends (+${NO_SHOW_GRACE_MINUTES} min grace period)`
             });
         }
 

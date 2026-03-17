@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import MemberPageHeader from './components/MemberPageHeader';
 
 const CardIcon = ({ className = 'w-5 h-5' }) => (
     <svg viewBox="0 0 24 24" fill="none" className={className}>
@@ -167,11 +168,12 @@ export default function PaymentMethods() {
     );
 
     return (
-        <div className="space-y-6 pb-24 max-w-3xl mx-auto">
-            <header className="pt-4">
-                <h1 className="text-xl font-bold text-white">Payment Methods</h1>
-                <p className="text-text-muted text-xs mt-0.5">Manage your E-Wallets and Cards for faster checkout</p>
-            </header>
+        <div className="space-y-6 max-w-3xl mx-auto">
+            <MemberPageHeader
+                title="Payment Methods"
+                subtitle="Manage your e-wallets and cards for faster checkout"
+                icon="wallet"
+            />
 
             <section className="bg-surface rounded-2xl p-5 border border-white/5">
                 <div className="flex items-center justify-between mb-4">

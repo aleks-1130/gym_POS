@@ -4,6 +4,7 @@ import { useCurrency } from '../../context/CurrencyContext';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import MemberPageHeader from './components/MemberPageHeader';
 
 export default function MemberShop() {
     const { user } = useAuth();
@@ -354,18 +355,14 @@ export default function MemberShop() {
     }
 
     return (
-        <div className="pb-20 px-4 max-w-6xl mx-auto">
-            {/* Header */}
-            <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 -mx-4 px-4 py-4 mb-4">
-                <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                        <h1 className="text-xl font-bold text-white">Products</h1>
-                        <p className="text-text-muted text-xs mt-0.5">Gym inventory & available items</p>
-                    </div>
-                </div>
-            </div>
+        <div className="max-w-6xl mx-auto">
+            <MemberPageHeader
+                title="Products"
+                subtitle="Gym inventory and available items"
+                icon="storefront"
+            />
 
-            <div className="mb-3 space-y-2.5">
+            <div className="mt-4 mb-3 space-y-2.5">
                 <div className="flex gap-2">
                     <div className="relative flex-1">
                         <span className="material-icons-round text-base text-text-muted absolute left-2.5 top-1/2 -translate-y-1/2">search</span>

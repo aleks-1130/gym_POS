@@ -63,6 +63,19 @@ const getPlanClassSessions = (plan) => {
     return Number.isInteger(included) && included > 0 ? included : 0;
 };
 
+const isMemberMembershipExpired = (member) => {
+    if (!member) return true;
+    if (String(member.status || '').toUpperCase() === 'EXPIRED') return true;
+    if (!member.expiryDate) return false;
+
+    const expiryDate = new Date(member.expiryDate);
+    if (Number.isNaN(expiryDate.getTime())) return true;
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    return expiryDate < todayStart;
+};
+
 const getTrainerBuyerIdFromPayment = (payment) => {
     if (!payment) return null;
     if (payment.memberId) return null;
@@ -190,6 +203,19 @@ const createPayment = async (req, res) => {
                 quantity: Number(item.quantity)
             }))
             : [];
+
+        const hasClassPackageItems = normalizedItems.some((item) => item.type === 'CLASS_PACKAGE');
+        if (hasClassPackageItems) {
+            if (!resolvedMemberId) badRequest("Member ID required for class package purchase");
+            const member = await prisma.member.findUnique({
+                where: { id: Number(resolvedMemberId) },
+                select: { id: true, status: true, expiryDate: true }
+            });
+            if (!member) badRequest("Member not found");
+            if (isMemberMembershipExpired(member)) {
+                badRequest("Cannot add class sessions for expired membership. Renew membership first.");
+            }
+        }
 
         let authoritativeAmount = Number(amount);
         if (normalizedItems.length > 0) {

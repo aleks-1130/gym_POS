@@ -284,3 +284,43 @@ export const getItemImageSrc = (item) => {
     if (path.startsWith('http') || path.startsWith('data:')) return path;
     return path.startsWith('/') ? path : `/${path}`;
 };
+
+/**
+ * Resolves membership duration in days from plan-like objects.
+ * Supports numeric and string values (for example: "30", "30 days").
+ */
+export const getMembershipDurationDays = (planLike) => {
+    const candidates = [
+        planLike?.duration,
+        planLike?.durationDays,
+        planLike?.membershipDuration,
+        planLike?.membershipDays,
+        planLike?.validityDays,
+        planLike?.days
+    ];
+
+    for (const value of candidates) {
+        if (value === undefined || value === null || value === '') continue;
+        const numeric = Number(value);
+        if (Number.isFinite(numeric) && numeric > 0) {
+            return Math.trunc(numeric);
+        }
+        if (typeof value === 'string') {
+            const match = value.match(/\d+/);
+            if (match) {
+                const parsed = Number(match[0]);
+                if (Number.isFinite(parsed) && parsed > 0) return Math.trunc(parsed);
+            }
+        }
+    }
+    return null;
+};
+
+/**
+ * Returns a human-readable membership duration label.
+ */
+export const getMembershipDurationLabel = (planLike, fallback = 'Duration not set') => {
+    const days = getMembershipDurationDays(planLike);
+    if (!days) return fallback;
+    return `${days} day${days === 1 ? '' : 's'}`;
+};

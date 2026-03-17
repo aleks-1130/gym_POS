@@ -4,7 +4,7 @@ import { useConfirm } from '../../context/ConfirmContext';
 
 export default function TrainerSessions() {
     const COMPLETE_GRACE_MINUTES = 5;
-    const NO_SHOW_GRACE_MINUTES = 10;
+    const NO_SHOW_GRACE_MINUTES = COMPLETE_GRACE_MINUTES;
     const { alert: showAlert } = useConfirm();
     const [sessions, setSessions] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -257,7 +257,8 @@ export default function TrainerSessions() {
     const canMarkNoShow = (session) => {
         const start = new Date(session?.date);
         if (Number.isNaN(start.getTime())) return false;
-        const eligibleAt = new Date(start.getTime() + (NO_SHOW_GRACE_MINUTES * 60 * 1000));
+        const durationMinutes = Math.max(0, Number(session?.duration) || 0);
+        const eligibleAt = new Date(start.getTime() + ((durationMinutes + NO_SHOW_GRACE_MINUTES) * 60 * 1000));
         return new Date() >= eligibleAt;
     };
 
@@ -409,6 +410,11 @@ export default function TrainerSessions() {
                         ) : (
                             currentSessions.map((session) => (
                                 <div key={session.id} className="bg-surface rounded-2xl border border-white/5 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                                    {(() => {
+                                        const canTakeAction = canTakeAttendanceAction(session);
+                                        const canFinalizeNow = canTakeAction && canMarkCompleted(session) && canMarkNoShow(session);
+                                        return (
+                                            <>
                                     <div>
                                         <p className="text-white font-semibold">
                                             {session.member?.firstName} {session.member?.lastName}
@@ -437,25 +443,29 @@ export default function TrainerSessions() {
                                             </span>
                                         </div>
                                     </div>
-                                    {canTakeAttendanceAction(session) && (
+                                    {canTakeAction && canFinalizeNow && (
                                         <button
                                             onClick={() => handleMarkCompleted(session.id)}
-                                            disabled={completingId === session.id || !canMarkCompleted(session)}
-                                            title={canMarkCompleted(session) ? 'Mark this session as completed' : 'Completion is available only after session duration ends'}
+                                            disabled={completingId === session.id}
+                                            title="Mark this session as completed"
                                             className="px-4 py-2 rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold uppercase tracking-widest hover:bg-emerald-500/30 transition-all disabled:opacity-50"
                                         >
                                             {completingId === session.id ? 'Updating...' : 'Mark As Complete'}
                                         </button>
                                     )}
-                                    {canTakeAttendanceAction(session) && (
+                                    {canTakeAction && canFinalizeNow && (
                                         <button
                                             onClick={() => handleOpenNoShowModal(session)}
-                                            disabled={!canMarkNoShow(session)}
-                                            title={canMarkNoShow(session) ? 'Mark this session as no-show' : 'No-show can be marked only after grace period'}
+                                            title="Mark this session as no-show"
                                             className="px-4 py-2 rounded-xl bg-rose-500/10 text-rose-300 border border-rose-500/30 text-xs font-bold uppercase tracking-widest hover:bg-rose-500/20 transition-all disabled:opacity-50"
                                         >
                                             Mark No Show
                                         </button>
+                                    )}
+                                    {canTakeAction && !canFinalizeNow && (
+                                        <div className="px-4 py-2 rounded-xl bg-amber-500/10 text-amber-200 border border-amber-500/25 text-[10px] font-bold uppercase tracking-widest">
+                                            Waiting For Session To Complete (+5m)
+                                        </div>
                                     )}
                                     {session.paymentStatus === 'PAID' && session.status !== 'COMPLETED' && (
                                         <button
@@ -479,6 +489,9 @@ export default function TrainerSessions() {
                                     >
                                         Notes
                                     </button>
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                             ))
                         )}
@@ -499,6 +512,11 @@ export default function TrainerSessions() {
                             <div className="space-y-2">
                                 {needsActionSessions.map((session) => (
                                     <div key={`needs-action-${session.id}`} className="bg-surface rounded-xl border border-white/5 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                                        {(() => {
+                                            const canTakeAction = canTakeAttendanceAction(session);
+                                            const canFinalizeNow = canTakeAction && canMarkCompleted(session) && canMarkNoShow(session);
+                                            return (
+                                                <>
                                         <div>
                                             <p className="text-white font-semibold">
                                                 {session.member?.firstName} {session.member?.lastName}
@@ -520,22 +538,30 @@ export default function TrainerSessions() {
                                             </div>
                                         </div>
                                         <div className="flex flex-wrap items-center gap-2">
-                                            <button
-                                                onClick={() => handleMarkCompleted(session.id)}
-                                                disabled={completingId === session.id || !canMarkCompleted(session)}
-                                                title={canMarkCompleted(session) ? 'Mark this session as completed' : 'Completion is available only after session duration ends'}
-                                                className="px-3 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-500/30 transition-all disabled:opacity-50"
-                                            >
-                                                {completingId === session.id ? 'Updating...' : 'Mark As Complete'}
-                                            </button>
-                                            <button
-                                                onClick={() => handleOpenNoShowModal(session)}
-                                                disabled={!canMarkNoShow(session)}
-                                                title={canMarkNoShow(session) ? 'Mark this session as no-show' : 'No-show can be marked only after grace period'}
-                                                className="px-3 py-1 rounded-lg bg-rose-500/10 text-rose-300 border border-rose-500/30 text-[10px] font-bold uppercase tracking-widest hover:bg-rose-500/20 transition-all disabled:opacity-50"
-                                            >
-                                                Mark No Show
-                                            </button>
+                                            {canTakeAction && canFinalizeNow && (
+                                                <button
+                                                    onClick={() => handleMarkCompleted(session.id)}
+                                                    disabled={completingId === session.id}
+                                                    title="Mark this session as completed"
+                                                    className="px-3 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-500/30 transition-all disabled:opacity-50"
+                                                >
+                                                    {completingId === session.id ? 'Updating...' : 'Mark As Complete'}
+                                                </button>
+                                            )}
+                                            {canTakeAction && canFinalizeNow && (
+                                                <button
+                                                    onClick={() => handleOpenNoShowModal(session)}
+                                                    title="Mark this session as no-show"
+                                                    className="px-3 py-1 rounded-lg bg-rose-500/10 text-rose-300 border border-rose-500/30 text-[10px] font-bold uppercase tracking-widest hover:bg-rose-500/20 transition-all disabled:opacity-50"
+                                                >
+                                                    Mark No Show
+                                                </button>
+                                            )}
+                                            {canTakeAction && !canFinalizeNow && (
+                                                <div className="px-3 py-1 rounded-lg bg-amber-500/10 text-amber-200 border border-amber-500/25 text-[10px] font-bold uppercase tracking-widest">
+                                                    Waiting For Session To Complete (+5m)
+                                                </div>
+                                            )}
                                             {session.paymentStatus === 'PAID' && (
                                                 <button
                                                     onClick={() => handleOpenRefundExceptionModal(session)}
@@ -547,10 +573,13 @@ export default function TrainerSessions() {
                                             <button
                                                 onClick={() => handleOpenNotes(session)}
                                                 className="px-3 py-1 rounded-lg bg-white/5 text-white border border-white/10 text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-all"
-                                            >
-                                                Notes
-                                            </button>
+                                                >
+                                                    Notes
+                                                </button>
                                         </div>
+                                                </>
+                                            );
+                                        })()}
                                     </div>
                                 ))}
                             </div>

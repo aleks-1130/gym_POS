@@ -4,7 +4,7 @@ import { POS_VIEWS } from '../../../constants/categories';
 import { usePOSStore } from '../../../stores/usePOSStore';
 import { useCurrency } from '../../../context/CurrencyContext';
 import { useConfirm } from '../../../context/ConfirmContext';
-import { getItemImageSrc } from './POSUtils';
+import { getItemImageSrc, getMembershipDurationLabel } from './POSUtils';
 
 /**
  * POSGrid Component - Handles catalog browsing, search, and adding items to cart.
@@ -140,8 +140,10 @@ export default function POSGrid({ products, plans, trainers, classPackages }) {
                 {searchedDisplayItems.map((item) => {
                     const isTrainer = selectedCategory === 'TRAINERS';
                     const isPackage = selectedCategory === 'PACKAGES';
+                    const isMembership = selectedCategory === POS_VIEWS.MEMBERSHIP;
                     const isSoldOut = !isTrainer && !isPackage && selectedCategory !== 'MEMBERSHIP' && item.stock <= 0;
                     const addLabel = isSoldOut ? 'Sold Out' : 'Add';
+                    const membershipDurationLabel = getMembershipDurationLabel(item);
 
                     if (catalogView === 'LIST') {
                         return (
@@ -158,7 +160,9 @@ export default function POSGrid({ products, plans, trainers, classPackages }) {
                                     </div>
                                     <div className="min-w-0">
                                         <p className="truncate text-sm font-semibold text-white">{item.name}</p>
-                                        <p className="truncate text-xs text-text-muted">{item.category || 'Item'}</p>
+                                        <p className="truncate text-xs text-text-muted">
+                                            {isMembership ? `Membership - ${membershipDurationLabel}` : (item.category || 'Item')}
+                                        </p>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-3">
@@ -197,6 +201,9 @@ export default function POSGrid({ products, plans, trainers, classPackages }) {
                             </div>
                             <div className="px-1 pt-1 flex-1">
                                 <h3 className="text-sm font-bold leading-tight text-white min-h-[2.25rem]">{item.name}</h3>
+                                {isMembership && (
+                                    <p className="mt-1 text-[11px] text-text-muted font-medium">{membershipDurationLabel}</p>
+                                )}
                                 <div className="mt-2 flex items-center justify-between">
                                     <p className="text-primary font-bold">{formatPrice(isTrainer ? item.sessionPrice : item.price)}</p>
                                 </div>

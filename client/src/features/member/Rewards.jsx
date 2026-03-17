@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { REWARD_CATEGORIES } from '../../constants/categories';
 import { useConfirm } from '../../context/ConfirmContext';
 import DataTable from '../../components/common/DataTable';
+import MemberPageHeader from './components/MemberPageHeader';
 
 export default function Rewards() {
     const { user } = useAuth();
@@ -86,7 +87,7 @@ export default function Rewards() {
             fetchRewards();
             fetchMyCoupons();
             setShowRedeemModal(false);
-        } catch (e) {
+        } catch {
             await showAlert({ title: 'Redemption Failed', message: 'Failed to redeem reward', type: 'danger' });
         }
     };
@@ -114,44 +115,14 @@ export default function Rewards() {
     }
 
     return (
-        <div className="space-y-4 sm:space-y-6">
-            {/* Header with Points Balance */}
-            {/* ── Desktop: title left + compact tabs right ── */}
-            <div className="hidden sm:flex items-start justify-between gap-3">
-                <div>
-                    <h1 className="text-3xl font-bold text-white">Rewards Store</h1>
-                    <p className="text-text-muted text-sm mt-1">Earn &amp; redeem points for amazing rewards</p>
-                </div>
-                <div className="flex gap-1 p-1 bg-surfaceHighlight rounded-lg border border-white/5 ml-auto self-start">
-                    {[['SHOP','Shop'],['COUPONS','Coupons'],['HISTORY','History']].map(([tab, label]) => (
-                        <button
-                            key={tab}
-                            onClick={() => setActiveTab(tab)}
-                            className={`relative px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
-                                tab === 'COUPONS' && activeTab === tab ? 'bg-amber-500 text-black shadow shadow-amber-500/20'
-                                : activeTab === tab ? 'bg-primary text-black shadow shadow-primary/20'
-                                : 'text-text-muted hover:text-white'
-                            }`}
-                        >
-                            {label}
-                            {tab === 'COUPONS' && coupons.length > 0 && (
-                                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-amber-400 text-black text-[8px] font-black flex items-center justify-center">
-                                    {coupons.length}
-                                </span>
-                            )}
-                        </button>
-                    ))}
-                </div>
-            </div>
+        <div className="space-y-4 sm:space-y-6 max-w-5xl mx-auto">
+            <MemberPageHeader
+                title="Rewards Store"
+                subtitle="Earn and redeem points"
+                icon="card_giftcard"
+                className="border-white/10"
+            />
 
-            {/* ── Mobile: title only (tabs shown below) ── */}
-            <div className="sm:hidden">
-                <h1 className="text-2xl font-bold text-white">Rewards Store</h1>
-                <p className="text-text-muted text-xs mt-1">Earn &amp; redeem points for amazing rewards</p>
-            </div>
-
-
-            {/* Points Card */}
             <div className="bg-gradient-to-br from-yellow-600 to-yellow-700 rounded-2xl sm:rounded-3xl p-6 sm:p-8 text-white shadow-lg overflow-hidden relative">
                 <div className="absolute -top-12 -right-12 w-40 h-40 bg-yellow-500/20 rounded-full blur-3xl"></div>
                 <div className="relative flex justify-between items-center">
@@ -164,28 +135,29 @@ export default function Rewards() {
                 </div>
             </div>
 
-            {/* ── Mobile-only chunky tab bar ── */}
-            <div className="flex sm:hidden gap-2 p-1 bg-surfaceHighlight w-full rounded-xl border border-white/5">
-                {[['SHOP','Rewards Shop'],['COUPONS','My Coupons'],['HISTORY','Point History']].map(([tab, label]) => (
-                    <button
-                        key={tab}
-                        onClick={() => setActiveTab(tab)}
-                        className={`relative flex-1 py-2.5 rounded-lg text-sm font-bold transition-all ${
-                            tab === 'COUPONS' && activeTab === tab ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/20'
-                            : activeTab === tab ? 'bg-primary text-black shadow-lg shadow-primary/20'
-                            : 'text-text-muted hover:text-white'
-                        }`}
-                    >
-                        {label}
-                        {tab === 'COUPONS' && coupons.length > 0 && (
-                            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-400 text-black text-[9px] font-black flex items-center justify-center">
-                                {coupons.length}
-                            </span>
-                        )}
-                    </button>
-                ))}
-            </div>
-
+            <section className="space-y-3">
+                <div className="grid grid-cols-3 gap-2 rounded-2xl p-1 bg-surface/80 border border-white/10 shadow-inner">
+                    {[['SHOP', 'Shop'], ['COUPONS', 'Coupons'], ['HISTORY', 'History']].map(([tab, label]) => (
+                        <button
+                            key={tab}
+                            onClick={() => setActiveTab(tab)}
+                            className={`relative py-2 rounded-lg text-[11px] sm:text-xs font-bold transition-all ${activeTab === tab
+                                ? tab === 'COUPONS'
+                                    ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
+                                    : 'bg-primary text-background shadow-md'
+                                : 'text-text-muted hover:text-white hover:bg-white/5'
+                                }`}
+                        >
+                            {label}
+                            {tab === 'COUPONS' && coupons.length > 0 && (
+                                <span className={`absolute right-1 top-1 min-w-[16px] h-4 px-1 rounded-md text-[9px] font-bold leading-none inline-flex items-center justify-center ${activeTab === tab ? 'bg-black/20 text-black' : 'bg-amber-500/90 text-black'}`}>
+                                    {coupons.length > 9 ? '9+' : coupons.length}
+                                </span>
+                            )}
+                        </button>
+                    ))}
+                </div>
+            </section>
             {activeTab === 'SHOP' ? (
                 <>
                     {/* Category Filter */}
@@ -477,3 +449,6 @@ export default function Rewards() {
         </div>
     );
 }
+
+
+

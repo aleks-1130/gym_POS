@@ -32,6 +32,25 @@ const setLatestAccessEvent = ({ status = 'DENIED', reason = null, log = null }) 
     };
 };
 
+const isMemberExpired = (member, now = new Date()) => {
+    if (!member) return true;
+    if (String(member.status || '').toUpperCase() === 'EXPIRED') return true;
+    if (!member.expiryDate) return false;
+
+    const expiryDate = new Date(member.expiryDate);
+    if (Number.isNaN(expiryDate.getTime())) return true;
+
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    return expiryDate < todayStart;
+};
+
+const isMemberFreezed = (member) => {
+    if (!member) return false;
+    const normalizedStatus = String(member.status || '').toUpperCase();
+    return normalizedStatus === 'FREEZED' || normalizedStatus === 'FROZEN';
+};
+
 const issueDynamicQrToken = ({ entity, id }) => {
     const jti = randomUUID();
     const token = jwt.sign(
@@ -91,13 +110,10 @@ const createMemberAccessLog = async (parsedMemberId) => {
     }
 
     const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const expiry = member.expiryDate ? new Date(member.expiryDate) : null;
-    const isExpired = expiry ? expiry < today : false;
-    const isFrozen = member.freezeStartDate && member.freezeEndDate
-        ? (now >= new Date(member.freezeStartDate) && now <= new Date(member.freezeEndDate))
-        : false;
-    const isAllowed = member.status === 'ACTIVE' && !isExpired && !isFrozen;
+    const isExpired = isMemberExpired(member, now);
+    const isFrozen = isMemberFreezed(member, now);
+    const isActive = String(member.status || '').toUpperCase() === 'ACTIVE';
+    const isAllowed = isActive && !isExpired && !isFrozen;
 
     const log = await prisma.accessLog.create({
         data: {
@@ -109,7 +125,25 @@ const createMemberAccessLog = async (parsedMemberId) => {
     });
 
     if (!isAllowed) {
-        return { error: { status: 403, payload: { ...log, reason: "Membership is not eligible for access" } } };
+        let reason = "Membership is not eligible for access";
+        if (isExpired) {
+            reason = "Membership is expired. Renew first before scanning for entry.";
+        } else if (isFrozen) {
+            reason = "Membership is freezed. Access is disabled while freeze is active.";
+        } else if (!isActive) {
+            reason = "Membership is not active for entry.";
+        }
+
+        return {
+            error: {
+                status: 403,
+                payload: {
+                    ...log,
+                    reason,
+                    error: reason
+                }
+            }
+        };
     }
     return { log };
 };
@@ -257,6 +291,12 @@ const getAccessLogs = async (req, res) => {
 
         if (req.user?.role === 'MEMBER') {
             where.memberId = Number(req.user.id);
+        } else if (req.user?.role === 'TRAINER') {
+            const trainerId = Number(req.user?.trainerId);
+            if (!Number.isInteger(trainerId) || trainerId <= 0) {
+                return res.status(400).json({ error: "Trainer account is not linked" });
+            }
+            where.trainerId = trainerId;
         }
 
         if (date) {
@@ -298,7 +338,7 @@ const getAccessLogs = async (req, res) => {
             where,
             include: accessLogInclude,
             orderBy: { checkIn: 'desc' },
-            take: req.user?.role === 'MEMBER' ? 1000 : 100
+            take: (req.user?.role === 'MEMBER' || req.user?.role === 'TRAINER') ? 1000 : 100
         });
         res.json(logs);
     } catch (e) {

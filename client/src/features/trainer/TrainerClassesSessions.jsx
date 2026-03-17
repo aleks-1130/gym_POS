@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { useConfirm } from '../../context/ConfirmContext';
+import TrainerPageHeader from './components/TrainerPageHeader';
 
-const FINALIZED_SESSION_STATUSES = ['COMPLETED', 'CANCELLED', 'NO_SHOW', 'DECLINED'];
 const HISTORY_STATUS_FILTERS = ['ALL', 'UPCOMING', 'COMPLETED', 'CANCELLED'];
 const HISTORY_TABS = ['BOOKINGS', 'CLASSES'];
+const SESSION_ACTION_GRACE_MINUTES = 5;
 
 const toDateKey = (v) => {
   const d = new Date(v);
@@ -28,6 +29,11 @@ const formatSelectedDay = (v) => {
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return 'Selected Date';
   return d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+};
+
+const startOfDay = (value) => {
+  const date = new Date(value);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 };
 
 const formatMoney = (value) =>
@@ -57,6 +63,14 @@ const renderRatingStars = (rating) => {
 const canTakeSessionAttendanceAction = (status) => {
   const s = String(status || '').toUpperCase();
   return s === 'SCHEDULED' || s === 'RESCHEDULED';
+};
+
+const canMarkSessionAttendanceNow = (session, now = new Date()) => {
+  const start = new Date(session?.date);
+  if (Number.isNaN(start.getTime())) return false;
+  const durationMinutes = Math.max(0, Number(session?.duration) || 0);
+  const eligibleAt = new Date(start.getTime() + ((durationMinutes + SESSION_ACTION_GRACE_MINUTES) * 60 * 1000));
+  return now >= eligibleAt;
 };
 
 const getSessionHistoryCategory = (session) => {
@@ -102,6 +116,8 @@ export default function TrainerClassesSessions() {
   const [sessions, setSessions] = useState([]);
   const [classes, setClasses] = useState([]);
   const [classHistory, setClassHistory] = useState([]);
+  const [accessLogs, setAccessLogs] = useState([]);
+  const [trainerProfile, setTrainerProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [updatingSessionId, setUpdatingSessionId] = useState(null);
   const [updatingClassBookingId, setUpdatingClassBookingId] = useState(null);
@@ -118,18 +134,38 @@ export default function TrainerClassesSessions() {
   const [historySearch, setHistorySearch] = useState('');
   const [showHistoryFilters, setShowHistoryFilters] = useState(false);
   const [selectedHistoryParticipantsEntry, setSelectedHistoryParticipantsEntry] = useState(null);
+  const [registrationDayModal, setRegistrationDayModal] = useState(null);
+  const calendarWindowStart = useMemo(() => {
+    const windowStart = startOfDay(new Date());
+    windowStart.setDate(windowStart.getDate() - 1);
+    return windowStart;
+  }, []);
 
   const refreshData = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
     try {
-      const [sessionsRes, classesRes, classHistoryRes] = await Promise.all([
+      const trainerProfilePromise = axios.get('/api/trainer/me')
+        .catch(async (primaryError) => {
+          const status = Number(primaryError?.response?.status || 0);
+          if (status === 404 || status === 405) {
+            const fallback = await axios.get('/api/trainers/me');
+            return fallback;
+          }
+          return { data: null };
+        });
+
+      const [sessionsRes, classesRes, classHistoryRes, accessLogsRes, trainerProfileRes] = await Promise.all([
         axios.get('/api/trainer/me/sessions'),
         axios.get('/api/trainer/me/classes'),
-        axios.get('/api/trainer/me/classes/history')
+        axios.get('/api/trainer/me/classes/history'),
+        axios.get('/api/access/logs'),
+        trainerProfilePromise
       ]);
       setSessions(sessionsRes.data || []);
       setClasses(classesRes.data || []);
       setClassHistory(classHistoryRes.data || []);
+      setAccessLogs(Array.isArray(accessLogsRes.data) ? accessLogsRes.data : []);
+      setTrainerProfile(trainerProfileRes?.data || null);
     } catch (e) {
       console.error('Failed to load trainer classes/sessions', e);
       if (!silent) await showAlert({ title: 'Error', message: 'Failed to load trainer schedule data.', type: 'danger' });
@@ -147,35 +183,111 @@ export default function TrainerClassesSessions() {
       .filter((s) => {
         const d = new Date(s.date);
         if (Number.isNaN(d.getTime())) return false;
-        return !FINALIZED_SESSION_STATUSES.includes(String(s.status || '').toUpperCase());
+        return d >= calendarWindowStart;
       })
       .sort((a, b) => new Date(a.date) - new Date(b.date));
-  }, [sessions]);
+  }, [sessions, calendarWindowStart]);
 
   const classEvents = useMemo(() => {
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
     return [...classes]
       .filter((c) => {
         const d = new Date(c.sessionDate);
-        return !Number.isNaN(d.getTime()) && d >= startOfToday;
+        return !Number.isNaN(d.getTime()) && d >= calendarWindowStart;
       })
       .sort((a, b) => new Date(a.sessionDate) - new Date(b.sessionDate));
+  }, [classes, calendarWindowStart]);
+
+  const trainerCheckInInfoByDate = useMemo(() => {
+    const map = new Map();
+    accessLogs.forEach((log) => {
+      if (String(log?.status || '').toUpperCase() !== 'ALLOWED') return;
+      const parsed = new Date(log?.checkIn);
+      if (Number.isNaN(parsed.getTime())) return;
+      const key = toDateKey(parsed);
+      if (!key) return;
+      if (!map.has(key) || parsed < map.get(key)) {
+        map.set(key, parsed);
+      }
+    });
+    return map;
+  }, [accessLogs]);
+
+  const trainerAttendedByDate = useMemo(() => new Set(trainerCheckInInfoByDate.keys()), [trainerCheckInInfoByDate]);
+
+  const trainerStartDate = useMemo(() => {
+    const profileStart = trainerProfile?.createdAt ? new Date(trainerProfile.createdAt) : null;
+    if (profileStart && !Number.isNaN(profileStart.getTime())) return startOfDay(profileStart);
+    return startOfDay(new Date());
+  }, [trainerProfile]);
+  const hasTrainerRegistrationDate = useMemo(() => {
+    const profileStart = trainerProfile?.createdAt ? new Date(trainerProfile.createdAt) : null;
+    return Boolean(profileStart && !Number.isNaN(profileStart.getTime()));
+  }, [trainerProfile]);
+
+  const upcomingBookingCount = useMemo(() => {
+    const now = new Date();
+    return sessions.filter((entry) => {
+      const status = String(entry?.status || '').toUpperCase();
+      const date = new Date(entry?.date);
+      return !Number.isNaN(date.getTime()) && date >= now && (status === 'SCHEDULED' || status === 'RESCHEDULED');
+    }).length;
+  }, [sessions]);
+
+  const upcomingClassCount = useMemo(() => {
+    const now = new Date();
+    return classes.filter((entry) => {
+      const date = new Date(entry?.sessionDate);
+      const status = String(entry?.sessionStatus || entry?.status || '').toUpperCase();
+      return !Number.isNaN(date.getTime()) && date >= now && status !== 'COMPLETED';
+    }).length;
   }, [classes]);
+
+  const trainerCheckInStats = useMemo(() => {
+    const today = startOfDay(new Date());
+    if (trainerStartDate > today) {
+      return { checkIns: 0, missed: 0 };
+    }
+
+    let checkIns = 0;
+    let missed = 0;
+    const cursor = new Date(trainerStartDate);
+    while (cursor <= today) {
+      const key = toDateKey(cursor);
+      if (trainerAttendedByDate.has(key)) checkIns += 1;
+      else missed += 1;
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    return { checkIns, missed };
+  }, [trainerAttendedByDate, trainerStartDate]);
+  const trainerStartDayKey = useMemo(() => toDateKey(trainerStartDate), [trainerStartDate]);
 
   const eventsByDay = useMemo(() => {
     const map = {};
+    const ensureDayBucket = (key) => {
+      if (!map[key]) {
+        map[key] = {
+          total: 0,
+          sessionCount: 0,
+          classCount: 0
+        };
+      }
+      return map[key];
+    };
+
     calendarSessions.forEach((s) => {
       const key = toDateKey(s.date);
       if (!key) return;
-      map[key] = map[key] || [];
-      map[key].push({ type: 'SESSION' });
+      const bucket = ensureDayBucket(key);
+      bucket.total += 1;
+      bucket.sessionCount += 1;
     });
     classEvents.forEach((c) => {
       const key = toDateKey(c.sessionDate);
       if (!key) return;
-      map[key] = map[key] || [];
-      map[key].push({ type: 'CLASS' });
+      const bucket = ensureDayBucket(key);
+      bucket.total += 1;
+      bucket.classCount += 1;
     });
     return map;
   }, [calendarSessions, classEvents]);
@@ -299,6 +411,7 @@ export default function TrainerClassesSessions() {
   const rows = Math.ceil((leadingDays + endOfMonth.getDate()) / 7);
   const firstCellDate = new Date(startOfMonth);
   firstCellDate.setDate(firstCellDate.getDate() - leadingDays);
+  const todayStart = startOfDay(new Date());
 
   const handleCompleteSession = async (sessionId) => {
     setUpdatingSessionId(sessionId);
@@ -336,34 +449,11 @@ export default function TrainerClassesSessions() {
     }
   };
 
-  const handleStartClass = async (cls) => {
-    if (!cls?.sessionCanStart) {
-      await showAlert({
-        title: 'Cannot start class',
-        message: cls?.sessionControlReason || 'Class can only be started near its scheduled time.',
-        type: 'warning'
-      });
-      return;
-    }
-
-    setUpdatingClassLifecycleId(cls.id);
-    try {
-      await axios.post(`/api/trainer/me/classes/${cls.id}/start`, {
-        sessionDate: cls.sessionDate || undefined
-      });
-      await refreshData({ silent: true });
-    } catch (e) {
-      await showAlert({ title: 'Unable to start class', message: e.response?.data?.error || 'Failed to start class session.', type: 'danger' });
-    } finally {
-      setUpdatingClassLifecycleId(null);
-    }
-  };
-
   const handleCompleteClass = async (cls) => {
     if (!cls?.sessionCanComplete) {
       await showAlert({
         title: 'Cannot complete class',
-        message: cls?.sessionControlReason || 'Class must be started first, then completed on the session day.',
+        message: cls?.sessionControlReason || 'Class can be completed only after class end (+5 min grace) on the same day.',
         type: 'warning'
       });
       return;
@@ -508,16 +598,16 @@ export default function TrainerClassesSessions() {
   }
 
   return (
-    <div className="space-y-6">
-      <header className="space-y-3">
-        <div>
-          <h1 className="text-3xl font-bold text-white">Classes & Sessions</h1>
-          <p className="text-text-muted mt-1">
-            {activeView === 'history'
-              ? 'Review your 1-on-1 and class history with commission details'
-              : 'Calendar controls for today plus class/session action panels'}
-          </p>
-        </div>
+    <div className="space-y-6 max-w-5xl mx-auto">
+      <TrainerPageHeader
+        title="Classes & Sessions"
+        subtitle={activeView === 'history'
+          ? 'Review your 1-on-1 and class history with commission details'
+          : 'Calendar controls for today plus class and session action panels'}
+        icon="calendar_month"
+        className="border-white/10"
+      />
+      <section className="space-y-3">
         <div className="grid grid-cols-2 gap-2 rounded-2xl p-1 bg-surface/80 border border-white/10 shadow-inner">
           <button
             type="button"
@@ -542,10 +632,33 @@ export default function TrainerClassesSessions() {
             <span>History</span>
           </button>
         </div>
-      </header>
+      </section>
 
       {activeView === 'calendar' ? (
         <>
+          <section className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="rounded-xl border border-primary/20 bg-primary/10 p-3 text-center">
+              <p className="text-[11px] uppercase tracking-wide text-primary font-bold">Upcoming Bookings</p>
+              <p className="text-[10px] text-text-muted mt-0.5">1-on-1 sessions</p>
+              <p className="text-xl font-bold text-white mt-1">{upcomingBookingCount}</p>
+            </div>
+            <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 p-3 text-center">
+              <p className="text-[11px] uppercase tracking-wide text-cyan-300 font-bold">Upcoming Classes</p>
+              <p className="text-[10px] text-text-muted mt-0.5">Assigned classes</p>
+              <p className="text-xl font-bold text-white mt-1">{upcomingClassCount}</p>
+            </div>
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-center">
+              <p className="text-[11px] uppercase tracking-wide text-emerald-300 font-bold">Checked-in Days</p>
+              <p className="text-[10px] text-text-muted mt-0.5">Since trainer start</p>
+              <p className="text-xl font-bold text-white mt-1">{trainerCheckInStats.checkIns}</p>
+            </div>
+            <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-center">
+              <p className="text-[11px] uppercase tracking-wide text-rose-300 font-bold">No Check-in Days</p>
+              <p className="text-[10px] text-text-muted mt-0.5">Since trainer start</p>
+              <p className="text-xl font-bold text-white mt-1">{trainerCheckInStats.missed}</p>
+            </div>
+          </section>
+
           <section className="space-y-4">
             <div className="flex items-center justify-between bg-surface rounded-2xl border border-white/5 p-4">
               <button onClick={() => setMonthCursor(new Date(monthCursor.getFullYear(), monthCursor.getMonth() - 1, 1))} className="px-3 py-2 rounded-lg bg-white/5 text-white text-xs font-bold hover:bg-white/10">Prev</button>
@@ -560,24 +673,47 @@ export default function TrainerClassesSessions() {
                 const day = new Date(firstCellDate);
                 day.setDate(firstCellDate.getDate() + idx);
                 const dayKey = day.toDateString();
-                const dayEvents = eventsByDay[dayKey] || [];
+                const dayEvents = eventsByDay[dayKey] || { total: 0, sessionCount: 0, classCount: 0 };
                 const isCurrentMonth = day.getMonth() === monthCursor.getMonth();
                 const isToday = new Date().toDateString() === dayKey;
                 const isSelected = selectedDay === dayKey;
-                const sessionCount = dayEvents.filter((e) => e.type === 'SESSION').length;
-                const classCount = dayEvents.filter((e) => e.type === 'CLASS').length;
+                const hasCheckIn = trainerAttendedByDate.has(dayKey);
+                const isFuture = day > todayStart;
+                const isTrainerStartDay = hasTrainerRegistrationDate && Boolean(trainerStartDayKey) && dayKey === trainerStartDayKey;
+                const beforeTrainerStart = day < trainerStartDate;
+                const isMissedCheckIn = isCurrentMonth && !isFuture && !hasCheckIn && !beforeTrainerStart;
+                const tone = isCurrentMonth
+                  ? (isTrainerStartDay
+                    ? 'bg-amber-500/15 border-amber-500/35'
+                    : hasCheckIn
+                    ? 'bg-emerald-500/12 border-emerald-500/35'
+                    : (isMissedCheckIn ? 'bg-rose-500/12 border-rose-500/35' : 'bg-surface border-white/5'))
+                  : 'bg-white/5 border-white/5 opacity-50';
                 return (
-                  <button key={`${dayKey}-${idx}`} type="button" onClick={() => setSelectedDay(dayKey)} className={`min-h-[62px] sm:min-h-[72px] rounded-lg border p-1.5 sm:p-2 flex flex-col text-left transition-colors ${isCurrentMonth ? 'bg-surface border-white/5' : 'bg-white/5 border-white/5 opacity-50'} ${isToday ? 'ring-1 ring-primary/30' : ''} ${isSelected ? 'border-primary/30 bg-primary/5' : ''}`}>
-                    <div className="flex items-center justify-between text-[10px] font-bold text-text-muted"><span>{day.getDate()}</span>{dayEvents.length > 0 && <span className="px-1 py-0.5 rounded-full bg-white/10 text-[9px] text-white/80">{dayEvents.length}</span>}</div>
-                    <div className="mt-auto flex items-center gap-1.5">{sessionCount > 0 && <span className="w-2 h-2 rounded-full bg-primary"></span>}{classCount > 0 && <span className="w-2 h-2 rounded-full bg-emerald-400"></span>}</div>
+                  <button key={`${dayKey}-${idx}`} type="button" onClick={() => {
+                    setSelectedDay(dayKey);
+                    if (isTrainerStartDay) {
+                      setRegistrationDayModal({
+                        title: 'Trainer Registration Date',
+                        message: `You were registered as trainer on ${formatDate(day)}.`
+                      });
+                    }
+                  }} className={`min-h-[62px] sm:min-h-[72px] rounded-lg border p-1.5 sm:p-2 flex flex-col text-left transition-colors ${tone} ${isToday ? 'ring-1 ring-primary/30' : ''} ${isSelected ? 'border-primary/30' : ''}`}>
+                    <div className="flex items-center justify-between text-[10px] font-bold text-text-muted"><span>{day.getDate()}</span>{dayEvents.total > 0 && <span className="px-1 py-0.5 rounded-full bg-white/10 text-[9px] text-white/80">{dayEvents.total}</span>}</div>
+                    <div className="mt-auto flex items-center gap-1.5">
+                      {dayEvents.sessionCount > 0 && <span className="w-2 h-2 rounded-full bg-primary"></span>}
+                      {dayEvents.classCount > 0 && <span className="w-2 h-2 rounded-full bg-cyan-400"></span>}
+                    </div>
                   </button>
                 );
               })}
             </div>
 
-            <div className="flex items-center justify-center gap-4 text-[11px] text-text-muted">
-              <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-primary"></span><span>1-on-1 Session</span></div>
-              <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-400"></span><span>Class</span></div>
+            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[11px] text-text-muted">
+              <div className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm border border-emerald-400/35 bg-emerald-500/15"></span><span>Checked In</span></div>
+              <div className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm border border-rose-400/35 bg-rose-500/15"></span><span>No Check-in</span></div>
+              <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-primary"></span><span>Bookings</span></div>
+              <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-cyan-400"></span><span>Classes</span></div>
             </div>
           </section>
 
@@ -587,7 +723,7 @@ export default function TrainerClassesSessions() {
                 <div><p className="text-xs text-text-muted uppercase tracking-wide">Action Panel</p><h2 className="text-sm sm:text-base font-bold text-white">{formatSelectedDay(selectedDay)}</h2></div>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="rounded-xl border border-primary/20 bg-primary/10 px-3 py-2 text-center"><p className="text-[10px] uppercase tracking-wide text-primary font-bold">Bookings</p><p className="text-sm text-white font-semibold">{selectedSessions.length}</p></div>
-                  <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-center"><p className="text-[10px] uppercase tracking-wide text-emerald-300 font-bold">Classes</p><p className="text-sm text-white font-semibold">{selectedClasses.length}</p></div>
+                  <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-center"><p className="text-[10px] uppercase tracking-wide text-cyan-300 font-bold">Classes</p><p className="text-sm text-white font-semibold">{selectedClasses.length}</p></div>
                 </div>
               </div>
             </div>
@@ -602,15 +738,39 @@ export default function TrainerClassesSessions() {
                     <div className="space-y-2">
                       {selectedSessions.map((s) => {
                         const canTakeAction = canTakeSessionAttendanceAction(s.status);
+                        const canFinalizeNow = canMarkSessionAttendanceNow(s);
                         return (
                           <div key={s.id} className="rounded-xl border border-primary/20 bg-primary/10 p-3">
                             <p className="text-sm font-semibold text-primary">{formatTime(s.date)}</p>
                             <p className="text-sm text-white mt-1">{`${s.member?.firstName || ''} ${s.member?.lastName || ''}`.trim() || `Member #${s.memberId}`}</p>
                             <p className="text-[11px] text-text-muted mt-1 uppercase tracking-wide">{Number(s.duration || 0)} min - {s.status || 'SCHEDULED'}</p>
-                            <div className="mt-2 flex items-center gap-2">
-                              <button type="button" onClick={() => handleCompleteSession(s.id)} disabled={!canTakeAction || updatingSessionId === s.id} className="px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border border-emerald-500/30 text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 disabled:opacity-50">Complete</button>
-                              <button type="button" onClick={() => handleNoShowSession(s.id)} disabled={!canTakeAction || updatingSessionId === s.id} className="px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border border-amber-500/30 text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 disabled:opacity-50">No Show</button>
-                            </div>
+                            {canTakeAction && canFinalizeNow && (
+                              <div className="mt-2 flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleCompleteSession(s.id)}
+                                  disabled={updatingSessionId === s.id}
+                                  title="Mark this session as completed"
+                                  className="px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border border-emerald-500/30 text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 disabled:opacity-50"
+                                >
+                                  Complete
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleNoShowSession(s.id)}
+                                  disabled={updatingSessionId === s.id}
+                                  title="Mark this session as no-show"
+                                  className="px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest border border-amber-500/30 text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 disabled:opacity-50"
+                                >
+                                  No Show
+                                </button>
+                              </div>
+                            )}
+                            {canTakeAction && !canFinalizeNow && (
+                              <div className="mt-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-2.5 py-1.5 text-[10px] font-semibold text-amber-200">
+                                Waiting for session to complete (+5 min grace).
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -618,19 +778,25 @@ export default function TrainerClassesSessions() {
                   ) : <p className="text-xs text-text-muted">No 1-on-1 sessions.</p>}
                 </div>
 
-                <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 space-y-3">
+                <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4 space-y-3">
                   <div className="flex items-center justify-between"><h3 className="text-sm font-semibold text-white">Classes</h3><span className="text-xs text-text-muted">{selectedClasses.length}</span></div>
                   {selectedClasses.length > 0 ? (
                     <div className="space-y-3">
                       {selectedClasses.map((cls) => {
-                        const classBookings = Array.isArray(cls.bookings) ? cls.bookings : [];
+                        const classBookings = (Array.isArray(cls.bookings) ? cls.bookings : [])
+                          .filter((booking) => {
+                            const status = String(booking?.status || '').toUpperCase();
+                            return status === 'CONFIRMED' || status === 'ATTENDED';
+                          });
+                        const attendedBookings = classBookings.filter((booking) => String(booking?.status || '').toUpperCase() === 'ATTENDED');
+                        const pendingBookings = classBookings.filter((booking) => String(booking?.status || '').toUpperCase() !== 'ATTENDED');
                         const sessionStatus = String(cls.sessionStatus || 'SCHEDULED').toUpperCase();
                         const lifecycleBusy = updatingClassLifecycleId === cls.id;
                         return (
-                          <div key={cls.id} className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3">
+                          <div key={cls.id} className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 p-3">
                             <div className="flex items-start justify-between gap-2">
                               <div>
-                                <p className="text-sm font-semibold text-emerald-300">{formatTime(cls.sessionDate)}</p>
+                                <p className="text-sm font-semibold text-cyan-300">{formatTime(cls.sessionDate)}</p>
                                 <p className="text-sm text-white mt-1">{cls.name}</p>
                               </div>
                               <span className={`rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${getClassSessionStatusClasses(sessionStatus)}`}>
@@ -638,41 +804,61 @@ export default function TrainerClassesSessions() {
                               </span>
                             </div>
                             <p className="text-[11px] text-text-muted mt-1">{Number(cls.enrolled || 0)} / {Number(cls.capacity || 0)} enrolled</p>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                onClick={() => handleStartClass(cls)}
-                                disabled={sessionStatus !== 'SCHEDULED' || !cls.sessionCanStart || lifecycleBusy}
-                                className="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest border border-sky-500/30 text-sky-300 bg-sky-500/10 hover:bg-sky-500/20 disabled:opacity-40"
-                              >
-                                Start Class
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleCompleteClass(cls)}
-                                disabled={sessionStatus === 'COMPLETED' || !cls.sessionCanComplete || lifecycleBusy}
-                                className="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest border border-emerald-500/30 text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 disabled:opacity-40"
-                              >
-                                Complete Class
-                              </button>
-                            </div>
+                            {sessionStatus !== 'COMPLETED' && cls.sessionCanComplete && (
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleCompleteClass(cls)}
+                                  disabled={lifecycleBusy}
+                                  className="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest border border-cyan-500/30 text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 disabled:opacity-40"
+                                >
+                                  Complete Class
+                                </button>
+                              </div>
+                            )}
+                            {sessionStatus !== 'COMPLETED' && !cls.sessionCanComplete && (
+                              <div className="mt-2 rounded-md border border-amber-500/25 bg-amber-500/10 px-2.5 py-1.5 text-[10px] font-semibold text-amber-200">
+                                Waiting for class to complete (+5 min grace).
+                              </div>
+                            )}
                             {cls.sessionControlReason && sessionStatus !== 'COMPLETED' && (
                               <p className="mt-2 text-[10px] text-text-muted">{cls.sessionControlReason}</p>
                             )}
                             <div className="mt-3 border-t border-white/10 pt-2 space-y-2">
                               <p className="text-[11px] text-text-muted uppercase tracking-wide">Participants ({classBookings.length})</p>
                               {classBookings.length > 0 ? (
-                                <div className="space-y-2">
-                                  {classBookings.map((b) => (
-                                    <div key={b.id} className="rounded-lg border border-white/10 bg-black/15 p-2">
-                                      <p className="text-xs text-white font-semibold">{b.member?.firstName || ''} {b.member?.lastName || ''}</p>
-                                      <p className="text-[10px] text-text-muted mt-0.5">Member #{b.memberId} - {b.status}</p>
-                                      <div className="mt-2 flex flex-wrap gap-1.5">
-                                        <button type="button" onClick={() => handleClassBookingStatusUpdate(cls.id, b.id, 'ATTENDED')} disabled={updatingClassBookingId === b.id} className="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest border border-emerald-500/30 text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 disabled:opacity-50">Attended</button>
-                                        <button type="button" onClick={() => handleClassBookingStatusUpdate(cls.id, b.id, 'NO_SHOW')} disabled={updatingClassBookingId === b.id} className="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest border border-amber-500/30 text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 disabled:opacity-50">No Show</button>
-                                      </div>
-                                    </div>
-                                  ))}
+                                <div className="space-y-3">
+                                  <div className="space-y-2">
+                                    <p className="text-[10px] font-bold uppercase tracking-wide text-text-muted">To Mark ({pendingBookings.length})</p>
+                                    {pendingBookings.length > 0 ? (
+                                      pendingBookings.map((b) => (
+                                        <div key={b.id} className="rounded-lg border border-white/10 bg-black/15 p-2">
+                                          <p className="text-xs text-white font-semibold">{b.member?.firstName || ''} {b.member?.lastName || ''}</p>
+                                          <p className="text-[10px] text-text-muted mt-0.5">Member #{b.memberId} - {b.status}</p>
+                                          <div className="mt-2 flex flex-wrap gap-1.5">
+                                            <button type="button" onClick={() => handleClassBookingStatusUpdate(cls.id, b.id, 'ATTENDED')} disabled={updatingClassBookingId === b.id} className="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest border border-emerald-500/30 text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 disabled:opacity-50">Attended</button>
+                                            <button type="button" onClick={() => handleClassBookingStatusUpdate(cls.id, b.id, 'NO_SHOW')} disabled={updatingClassBookingId === b.id} className="px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest border border-amber-500/30 text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 disabled:opacity-50">No Show</button>
+                                          </div>
+                                        </div>
+                                      ))
+                                    ) : (
+                                      <p className="text-[11px] text-text-muted">No attendees waiting for marking.</p>
+                                    )}
+                                  </div>
+
+                                  <div className="space-y-2 border-t border-white/10 pt-2">
+                                    <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-300">Marked Attended ({attendedBookings.length})</p>
+                                    {attendedBookings.length > 0 ? (
+                                      attendedBookings.map((b) => (
+                                        <div key={b.id} className="rounded-lg border border-emerald-500/25 bg-emerald-500/10 p-2">
+                                          <p className="text-xs text-white font-semibold">{b.member?.firstName || ''} {b.member?.lastName || ''}</p>
+                                          <p className="text-[10px] text-emerald-200 mt-0.5">Member #{b.memberId} - ATTENDED</p>
+                                        </div>
+                                      ))
+                                    ) : (
+                                      <p className="text-[11px] text-text-muted">No attended entries yet.</p>
+                                    )}
+                                  </div>
                                 </div>
                               ) : <p className="text-[11px] text-text-muted">No participants yet.</p>}
                             </div>
@@ -795,6 +981,34 @@ export default function TrainerClassesSessions() {
             )}
           </div>
         </section>
+      )}
+
+      {registrationDayModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-surface p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-white font-bold text-base">{registrationDayModal.title}</h3>
+                <p className="text-text-muted text-sm mt-1">{registrationDayModal.message}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRegistrationDayModal(null)}
+                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-white"
+                aria-label="Close registration date modal"
+              >
+                <span className="material-icons-round text-base">close</span>
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setRegistrationDayModal(null)}
+              className="mt-4 w-full px-3 py-2 rounded-lg text-xs font-semibold bg-primary text-black hover:brightness-110"
+            >
+              OK
+            </button>
+          </div>
+        </div>
       )}
 
       {selectedHistoryParticipantsEntry && (

@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useCurrency } from '../../context/CurrencyContext';
 import Receipt from '../../components/Receipt';
 import { withApiBase } from '../../config/api';
+import MemberPageHeader from './components/MemberPageHeader';
 
 export default function PurchaseHistory() {
     const { user } = useAuth();
@@ -139,12 +140,13 @@ export default function PurchaseHistory() {
     };
 
     return (
-        <div className="space-y-4 sm:space-y-6">
+        <div className="space-y-4 sm:space-y-6 max-w-5xl mx-auto">
             <div className="space-y-3">
-                <div>
-                    <h1 className="text-2xl sm:text-3xl font-bold text-white">Payment History</h1>
-                    <p className="text-text-muted text-xs sm:text-sm mt-1">View all your transactions and cancelled trainer bookings</p>
-                </div>
+                <MemberPageHeader
+                    title="Payment History"
+                    subtitle="View all your transactions and cancelled trainer bookings"
+                    icon="receipt_long"
+                />
 
                 <div className="grid grid-cols-2 gap-3">
                     <div className="bg-surface rounded-xl p-3 sm:p-4 border border-white/5">

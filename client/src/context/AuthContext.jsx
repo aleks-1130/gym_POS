@@ -28,6 +28,12 @@ export const AuthProvider = ({ children }) => {
 
     const isAuthClientReady = Boolean(authClient);
 
+    const clearLocalSession = () => {
+        setUser(null);
+        localStorage.removeItem('user');
+        sessionStorage.removeItem('user');
+    };
+
     const syncUserWithBackend = async () => {
         try {
             // We need an endpoint that returns the user's role and details from our local DB
@@ -158,9 +164,21 @@ export const AuthProvider = ({ children }) => {
         } catch (serverErr) {
             console.warn("Server logout failed", serverErr);
         }
-        setUser(null);
-        localStorage.removeItem('user');
-        sessionStorage.removeItem('user');
+        clearLocalSession();
+    };
+
+    const logoutAllSessions = async () => {
+        await axios.post(withApiBase('/api/auth/logout-all'));
+
+        try {
+            if (isAuthClientReady) {
+                await authClient.signOut();
+            }
+        } catch (e) {
+            console.warn("Neon signOut failed", e);
+        }
+
+        clearLocalSession();
     };
 
     // Initialize session check
@@ -193,7 +211,7 @@ export const AuthProvider = ({ children }) => {
     }, [isAuthClientReady]);
 
     return (
-        <AuthContext.Provider value={{ user, login, register, logout, loading }}>
+        <AuthContext.Provider value={{ user, login, register, logout, logoutAllSessions, loading }}>
             {!loading && children}
         </AuthContext.Provider>
     );

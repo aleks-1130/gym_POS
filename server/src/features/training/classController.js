@@ -17,6 +17,7 @@ const CLASS_SESSION_STATUS = {
 };
 const START_LEAD_MINUTES = 60;
 const AUTO_OPEN_GRACE_MINUTES = 180;
+const CLASS_COMPLETE_GRACE_MINUTES = 5;
 
 const toSessionKey = (classId, sessionDate) => {
     const date = new Date(sessionDate);
@@ -60,6 +61,14 @@ const isWithinAutoOpenWindow = (cls, sessionDate, now = new Date()) => {
     return now >= timeline.autoOpenWindow.start && now <= timeline.autoOpenWindow.end;
 };
 
+const canCompleteSessionNow = (cls, sessionDate, now = new Date()) => {
+    const timeline = resolveSessionTimeline(cls, sessionDate);
+    if (!timeline) return false;
+    if (!isSameDay(now, sessionDate)) return false;
+    const completionReadyAt = new Date(timeline.end.getTime() + (CLASS_COMPLETE_GRACE_MINUTES * 60000));
+    return now >= completionReadyAt;
+};
+
 const summarizeSessionState = ({ cls, sessionDate, sessionRuntime, completionRecord, now = new Date() }) => {
     if (!sessionDate) {
         return {
@@ -85,11 +94,14 @@ const summarizeSessionState = ({ cls, sessionDate, sessionRuntime, completionRec
 
     if (String(sessionRuntime?.status || '').toUpperCase() === CLASS_SESSION_STATUS.IN_PROGRESS) {
         const sameDay = isSameDay(now, sessionDate);
+        const canComplete = canCompleteSessionNow(cls, sessionDate, now);
         return {
             status: CLASS_SESSION_STATUS.IN_PROGRESS,
             canStart: false,
-            canComplete: sameDay,
-            reason: sameDay ? '' : 'Class can only be completed on the scheduled session day.',
+            canComplete,
+            reason: !sameDay
+                ? 'Class can only be completed on the scheduled session day.'
+                : (canComplete ? '' : `Complete class is available after class end + ${CLASS_COMPLETE_GRACE_MINUTES} minutes.`),
             startedAt: sessionRuntime?.startedAt || null,
             completedAt: null
         };
@@ -97,14 +109,15 @@ const summarizeSessionState = ({ cls, sessionDate, sessionRuntime, completionRec
 
     const autoOpen = isWithinAutoOpenWindow(cls, sessionDate, now);
     const canStart = canStartSessionNow(cls, sessionDate, now);
+    const canComplete = canCompleteSessionNow(cls, sessionDate, now);
     return {
         status: autoOpen ? CLASS_SESSION_STATUS.IN_PROGRESS : CLASS_SESSION_STATUS.SCHEDULED,
         canStart,
-        canComplete: autoOpen,
+        canComplete,
         reason: autoOpen
-            ? ''
+            ? (canComplete ? '' : `Complete class is available after class end + ${CLASS_COMPLETE_GRACE_MINUTES} minutes.`)
             : (canStart
-                ? 'Start class to begin attendance tracking.'
+                ? 'Class will automatically start near the scheduled time window.'
                 : 'Class start is available near the scheduled time window.'),
         startedAt: null,
         completedAt: null
@@ -735,6 +748,17 @@ const completeClass = async (req, res) => {
             });
         }
 
+        const timeline = resolveSessionTimeline(cls, sessionDate);
+        if (!timeline) {
+            return res.status(400).json({ error: 'Invalid class session timeline.' });
+        }
+        const completionReadyAt = new Date(timeline.end.getTime() + (CLASS_COMPLETE_GRACE_MINUTES * 60000));
+        if (now < completionReadyAt) {
+            return res.status(409).json({
+                error: `Class can be completed only after class end (+${CLASS_COMPLETE_GRACE_MINUTES} min grace period).`
+            });
+        }
+
         const sessionBounds = getDayBounds(sessionDate);
         if (!sessionBounds) {
             return res.status(400).json({ error: 'Invalid session date' });
@@ -766,12 +790,6 @@ const completeClass = async (req, res) => {
         }
 
         if (normalizedRuntimeStatus === CLASS_SESSION_STATUS.SCHEDULED || !existingSessionRuntime) {
-            if (!isWithinAutoOpenWindow(cls, sessionDate, now)) {
-                return res.status(409).json({
-                    error: 'Class must be started first before completion.'
-                });
-            }
-
             existingSessionRuntime = await prisma.classSession.upsert({
                 where: {
                     classId_sessionDate: {

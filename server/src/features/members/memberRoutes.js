@@ -11,14 +11,14 @@ const { authenticateToken, authorize } = require('../../middleware/authMiddlewar
 router.get('/', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.getMembers);
 
 // Member Self-Service APIs
-router.get('/classes', authenticateToken, memberController.getAvailableClasses);
-router.post('/book', authenticateToken, memberController.bookClass); // Member type check inside controller
+router.get('/classes', authenticateToken, memberController.requireActiveMembership, memberController.getAvailableClasses);
+router.post('/book', authenticateToken, memberController.requireActiveMembership, memberController.bookClass); // Member type check inside controller
 router.post('/cancel-booking', authenticateToken, memberController.cancelBooking);
-router.post('/book-training', authenticateToken, authorize(['MEMBER']), memberController.bookTraining);
-router.post('/book-training-cash', authenticateToken, authorize(['MEMBER']), memberController.bookTrainingCash);
+router.post('/book-training', authenticateToken, authorize(['MEMBER']), memberController.requireActiveMembership, memberController.bookTraining);
+router.post('/book-training-cash', authenticateToken, authorize(['MEMBER']), memberController.requireActiveMembership, memberController.bookTrainingCash);
 router.get('/me/transactions', authenticateToken, authorize(['MEMBER']), paymentController.getMyTransactions);
 router.post('/me/training-sessions/:id/cancel', authenticateToken, authorize(['MEMBER']), trainingSessionController.cancelSession);
-router.post('/me/training-sessions/:id/reschedule', authenticateToken, authorize(['MEMBER']), trainingSessionController.memberRescheduleSession);
+router.post('/me/training-sessions/:id/reschedule', authenticateToken, authorize(['MEMBER']), memberController.requireActiveMembership, trainingSessionController.memberRescheduleSession);
 router.post('/me/training-sessions/:id/rate', authenticateToken, authorize(['MEMBER']), memberController.rateTrainingSession);
 router.post('/me/training-sessions/:id/rate/void', authenticateToken, authorize(['MEMBER']), memberController.voidTrainingSessionRating);
 router.get('/me/training-sessions', authenticateToken, authorize(['MEMBER']), memberController.getMyTrainingSessions);
@@ -39,7 +39,7 @@ router.post('/:id/class-session-packages', authenticateToken, authorize(['OWNER'
 router.get('/:id/payments', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.getMemberPayments);
 router.get('/:id/notes', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.getMemberNotes);
 router.post('/:id/notes', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.addMemberNote);
-router.post('/:id/status', authenticateToken, authorize(['OWNER', 'ADMIN']), memberController.updateMemberStatus);
+router.post('/:id/status', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.updateMemberStatus);
 router.put('/:id', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBER']), memberController.updateMember);
 router.delete('/:id', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.deleteMember);
 router.post('/:id/change-password', authenticateToken, authorize(['MEMBER']), memberController.changePassword);

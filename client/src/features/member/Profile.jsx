@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useConfirm } from '../../context/ConfirmContext';
 import { ROLES } from '../../constants/roles';
 
 const formatPlanDate = (value) => {
@@ -21,30 +23,31 @@ const calculatePlanProgress = (startDate, endDate, now = new Date()) => {
     return Math.min(100, Math.max(0, (elapsed / total) * 100));
 };
 
-const calculateDaysRemaining = (endDate, now = new Date()) => {
-    if (!endDate) return null;
-    const end = new Date(endDate);
-    if (Number.isNaN(end.getTime())) return null;
-    return Math.ceil((end - now) / (1000 * 60 * 60 * 24));
-};
-
 export default function Profile() {
-    const { user, logout } = useAuth();
+    const { user, logout, logoutAllSessions } = useAuth();
+    const { alert: showAlert, confirm: showConfirm } = useConfirm();
+    const navigate = useNavigate();
+    const location = useLocation();
     const [member, setMember] = useState(null);
     const [dashboardStats, setDashboardStats] = useState(null);
-    const [showEditModal, setShowEditModal] = useState(false);
+    const [gymProfile, setGymProfile] = useState(null);
     const [showPasswordModal, setShowPasswordModal] = useState(false);
-    const [editForm, setEditForm] = useState({
-        firstName: '',
-        lastName: '',
-        email: '',
-        phone: ''
+    const [notificationPrefs, setNotificationPrefs] = useState({
+        emailAnnouncements: true,
+        emailReminders: true,
+        emailReceipts: true,
+        appAnnouncements: true,
+        appReminders: true,
+        appReceipts: true
     });
+    const [prefSavingKey, setPrefSavingKey] = useState('');
     const [passwordForm, setPasswordForm] = useState({
         currentPassword: '',
         newPassword: ''
     });
     const isMember = user?.role === ROLES.MEMBER;
+    const membershipLockState = String(new URLSearchParams(location.search).get('membership') || '').toLowerCase();
+    const showMembershipLockNotice = membershipLockState === 'expired' || membershipLockState === 'freezed' || membershipLockState === 'frozen';
 
     useEffect(() => {
         const fetchMember = async () => {
@@ -68,15 +71,23 @@ export default function Profile() {
                 } catch {
                     setDashboardStats(null);
                 }
+                try {
+                    const prefRes = await axios.get('/api/notifications/preferences');
+                    if (prefRes?.data && typeof prefRes.data === 'object') {
+                        setNotificationPrefs((prev) => ({ ...prev, ...prefRes.data }));
+                    }
+                } catch {
+                    // Keep defaults if preferences endpoint is not available
+                }
+                try {
+                    const gymRes = await axios.get('/api/settings');
+                    setGymProfile(gymRes.data || null);
+                } catch {
+                    setGymProfile(null);
+                }
 
                 if (!profileData) return;
                 setMember(profileData);
-                setEditForm({
-                    firstName: profileData?.firstName || profileData?.user?.firstName || '',
-                    lastName: profileData?.lastName || profileData?.user?.lastName || '',
-                    email: profileData?.email || profileData?.user?.email || '',
-                    phone: profileData?.phone || profileData?.user?.phone || ''
-                });
             } catch (error) {
                 console.error('Failed to fetch member profile', error);
             }
@@ -138,29 +149,19 @@ export default function Profile() {
         || null;
     const progressPercent = Math.round(calculatePlanProgress(planStartDate, planEndDate));
     const planStartLabel = formatPlanDate(planStartDate);
-    const daysRemaining = calculateDaysRemaining(planEndDate);
-    const remainingLabel = daysRemaining === null
-        ? 'No end date'
-        : daysRemaining < 0
-            ? `${Math.abs(daysRemaining)} days overdue`
-            : `${daysRemaining} days remaining`;
     const profileDisplayName = user?.name
         || [member?.firstName, member?.lastName].filter(Boolean).join(' ')
         || member?.user?.name
         || 'Member';
-
-    const handleSaveProfile = async (e) => {
-        e.preventDefault();
-        if (!user?.id || !isMember) return;
-        try {
-            
-            const res = await axios.put(`/api/members/${user.id}`, editForm);
-            setMember(res.data);
-            setShowEditModal(false);
-        } catch (error) {
-            console.error('Failed to update profile', error);
-        }
-    };
+    const avatarUrl = member?.imageUrl || member?.avatarUrl || member?.photo || user?.imageUrl || '';
+    const avatarFallback = String(profileDisplayName || 'M')
+        .split(' ')
+        .map((part) => part[0] || '')
+        .join('')
+        .slice(0, 2)
+        .toUpperCase();
+    const supportEmail = String(gymProfile?.email || 'contact@fitos.com').trim();
+    const supportPhone = String(gymProfile?.phone || '').trim();
 
     const handleChangePassword = async (e) => {
         e.preventDefault();
@@ -174,283 +175,284 @@ export default function Profile() {
             console.error('Failed to update password', error);
         }
     };
+    const handleTogglePreference = async (key) => {
+        if (!key || prefSavingKey) return;
+        const nextValue = !notificationPrefs[key];
+        setNotificationPrefs((prev) => ({ ...prev, [key]: nextValue }));
+        setPrefSavingKey(key);
+        try {
+            await axios.patch('/api/notifications/preferences', { [key]: nextValue });
+        } catch (error) {
+            setNotificationPrefs((prev) => ({ ...prev, [key]: !nextValue }));
+            console.error('Failed to update notification preference', error);
+        } finally {
+            setPrefSavingKey('');
+        }
+    };
+
+    const settingsItems = [
+        { key: 'password', label: 'Change Password', description: 'Update your account password', icon: 'lock', onClick: () => setShowPasswordModal(true) }
+    ];
+
+    const handleLogout = async () => {
+        const confirmed = await showConfirm({
+            title: 'Log Out',
+            message: 'Log out from this device only?',
+            confirmLabel: 'Log Out',
+            cancelLabel: 'Cancel',
+            type: 'danger'
+        });
+        if (!confirmed) return;
+
+        await logout();
+        navigate('/login');
+    };
+
+    const handleLogoutAllSessions = async () => {
+        const confirmed = await showConfirm({
+            title: 'Sign Out All Sessions',
+            message: 'This will sign out your account on all devices. Continue?',
+            confirmLabel: 'Sign Out All',
+            cancelLabel: 'Cancel',
+            type: 'warning'
+        });
+        if (!confirmed) return;
+
+        try {
+            await logoutAllSessions();
+            navigate('/login');
+        } catch (error) {
+            await showAlert({
+                title: 'Sign Out Failed',
+                message: error?.response?.data?.error || 'Unable to sign out all sessions right now.',
+                type: 'danger'
+            });
+        }
+    };
 
     return (
-        <div className="space-y-4 pb-20 px-4 max-w-2xl mx-auto">
-
-            {/* Header with Sign Out */}
-            <div className="flex justify-between items-start gap-3 pt-4">
-                <div>
-                    <h1 className="text-xl font-bold text-white">My Profile</h1>
-                    <p className="text-text-muted text-xs mt-0.5">Manage your account</p>
-                </div>
-                <button
-                    onClick={logout}
-                    className="px-3 py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 active:scale-95 transition-all text-xs font-bold flex-shrink-0 border border-red-500/20"
-                >
-                    Sign Out
-                </button>
-            </div>
-
-            {/* Digital Member Card - Prominent */}
-            {isMember && (
-                <div className="bg-gradient-to-br from-primary via-primary to-orange-600 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
-                    {/* Decorative elements */}
-                    <div className="absolute -bottom-8 -right-8 w-32 h-32 bg-white/20 rounded-full blur-2xl"></div>
-                    <div className="absolute -top-4 -left-4 w-20 h-20 bg-white/10 rounded-full blur-xl"></div>
-                    <div className="absolute top-1/2 right-1/4 w-16 h-16 bg-white/5 rounded-full blur-lg"></div>
-
-                    <div className="relative z-10">
-                        <div className="flex items-start justify-between mb-6">
-                            <div className="flex-1">
-                                <div className="text-xs font-bold opacity-80 mb-1 tracking-wide">MEMBER CARD</div>
-                                <h2 className="text-xl font-black uppercase tracking-wide line-clamp-2 mb-1">{profileDisplayName}</h2>
-                                <div className="font-mono opacity-90 text-xs">ID: {user?.id?.toString().padStart(6, '0')}</div>
-                            </div>
-                            <div className="bg-white/10 backdrop-blur-sm p-2 rounded-lg">
-                                <span className="material-icons-round text-2xl">verified</span>
-                            </div>
+        <div className="space-y-4 max-w-4xl mx-auto">
+            <header className="sticky top-0 z-40 -mx-4 px-4 py-3 bg-background/90 backdrop-blur border-b border-white/5">
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-9 h-9 rounded-xl border border-white/10 bg-white/5 flex items-center justify-center shrink-0">
+                            <span className="material-icons-round text-base text-white/80">manage_accounts</span>
                         </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                            <div className="bg-white/10 rounded-xl p-3 backdrop-blur-sm">
-                                <p className="text-[10px] uppercase tracking-wide opacity-80">Current Plan</p>
-                                <p className="text-sm font-bold mt-1 line-clamp-2">{planName}</p>
-                            </div>
-                            <div className="bg-white/10 rounded-xl p-3 backdrop-blur-sm">
-                                <p className="text-[10px] uppercase tracking-wide opacity-80">Plan Status</p>
-                                <p className="text-sm font-bold mt-1">{planStatus}</p>
-                            </div>
-                            <div className="bg-white/10 rounded-xl p-3 backdrop-blur-sm col-span-2">
-                                <p className="text-[10px] uppercase tracking-wide opacity-80">Plan Renewal / End Date</p>
-                                <p className="text-sm font-bold mt-1">{planEndDateLabel}</p>
-                            </div>
-                        </div>
-
-                        <div className="mt-3 bg-white/10 rounded-xl p-3 backdrop-blur-sm">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="text-[10px] uppercase tracking-wide opacity-80">Plan Progress</span>
-                                <span className="text-xs font-bold">{progressPercent}%</span>
-                            </div>
-                            <div className="h-2 bg-white/20 rounded-full overflow-hidden">
-                                <div
-                                    className="h-full rounded-full bg-gradient-to-r from-emerald-300 via-yellow-300 to-orange-200 transition-all duration-500"
-                                    style={{ width: `${progressPercent}%` }}
-                                />
-                            </div>
-                            <div className="flex items-center justify-between mt-2 text-[11px] opacity-85">
-                                <span>Start {planStartLabel}</span>
-                                <span>{remainingLabel}</span>
-                            </div>
+                        <div className="min-w-0">
+                            <h1 className="text-base font-bold text-white truncate">Profile Settings</h1>
+                            <p className="text-[11px] text-text-muted">Member Account</p>
                         </div>
                     </div>
+                </div>
+            </header>
+
+            {showMembershipLockNotice && (
+                <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2.5">
+                    <p className="text-sm font-semibold text-red-300">
+                        {membershipLockState === 'expired' ? 'Membership expired' : 'Membership freezed'}
+                    </p>
+                    <p className="text-[11px] text-red-200/90 mt-0.5">
+                        {membershipLockState === 'expired'
+                            ? 'Renew your membership at the front desk to access class schedule and trainer booking again.'
+                            : 'Class schedule and trainer booking are disabled while your membership is on freeze.'}
+                    </p>
                 </div>
             )}
 
-            {/* Account Details Grid */}
-            <div>
-                <h3 className="text-sm font-bold text-white mb-3 px-1">Account Details</h3>
-                <div className="grid grid-cols-2 gap-3">
-                    <div className="col-span-2 bg-surface rounded-xl p-4 border border-white/5">
-                        <div className="flex items-start gap-3">
-                            <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                                <span className="material-icons-round text-primary text-lg">email</span>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="text-text-muted text-xs font-medium mb-0.5">Email Address</p>
-                                <p className="text-white font-medium truncate text-sm">{member?.email || user?.email || 'N/A'}</p>
-                            </div>
-                        </div>
+            <section className="rounded-2xl border border-white/10 bg-surface p-3 sm:p-4">
+                <div className="flex items-center gap-3 sm:gap-4">
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden border border-primary/40 bg-white/5 flex items-center justify-center shrink-0">
+                        {avatarUrl ? (
+                            <img src={avatarUrl} alt="Member profile" className="w-full h-full object-cover" />
+                        ) : (
+                            <span className="text-base sm:text-lg font-bold text-primary">{avatarFallback}</span>
+                        )}
                     </div>
-
-                    <div className="bg-surface rounded-xl p-4 border border-white/5">
-                        <div className="flex flex-col h-full">
-                            <span className="material-icons-round text-primary text-xl mb-2">badge</span>
-                            <p className="text-text-muted text-xs font-medium mb-1">Member ID</p>
-                            <p className="text-white font-bold text-sm">{user?.id?.toString().padStart(6, '0') || 'N/A'}</p>
-                        </div>
-                    </div>
-
-                    <div className="bg-surface rounded-xl p-4 border border-white/5">
-                        <div className="flex flex-col h-full">
-                            <span className="material-icons-round text-emerald-400 text-xl mb-2">check_circle</span>
-                            <p className="text-text-muted text-xs font-medium mb-1">Membership Status</p>
-                            <p className={`font-bold text-sm ${planStatus === 'EXPIRED' ? 'text-red-400' : 'text-emerald-400'}`}>{planStatus}</p>
-                        </div>
-                    </div>
-
-                    <div className="bg-surface rounded-xl p-4 border border-white/5">
-                        <div className="flex flex-col h-full">
-                            <span className="material-icons-round text-primary text-xl mb-2">workspace_premium</span>
-                            <p className="text-text-muted text-xs font-medium mb-1">Current Plan</p>
-                            <p className="text-white font-bold text-sm line-clamp-2">{planName}</p>
-                        </div>
-                    </div>
-
-                    <div className="bg-surface rounded-xl p-4 border border-white/5">
-                        <div className="flex flex-col h-full">
-                            <span className="material-icons-round text-primary text-xl mb-2">event_repeat</span>
-                            <p className="text-text-muted text-xs font-medium mb-1">Plan Renewal</p>
-                            <p className="text-white font-bold text-sm">{planEndDateLabel}</p>
-                        </div>
-                    </div>
-
-                    <div className="col-span-2 bg-surface rounded-xl p-4 border border-white/5">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                                <span className="material-icons-round text-primary text-lg">event</span>
-                            </div>
-                            <div>
-                                <p className="text-text-muted text-xs font-medium mb-0.5">Member Since</p>
-                                <p className="text-white font-medium text-sm">{memberSinceLabel}</p>
-                            </div>
-                        </div>
+                    <div className="min-w-0 flex-1">
+                        <h2 className="text-base sm:text-lg font-bold text-white truncate">{profileDisplayName}</h2>
+                        <p className="text-[11px] text-text-muted mt-0.5">Member ID: {user?.id?.toString().padStart(6, '0') || 'N/A'}</p>
+                        <p className="text-[11px] text-text-muted truncate mt-0.5">{member?.email || user?.email || 'No email set'}</p>
+                        <p className="text-[11px] text-text-muted truncate mt-0.5">{member?.phone || 'No phone set'}</p>
                     </div>
                 </div>
-            </div>
 
-            {/* Quick Actions */}
-            <div>
-                <h3 className="text-sm font-bold text-white mb-3 px-1">Quick Actions</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    <a href="/schedule" className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center">
-                        <span className="material-icons-round text-primary text-xl block mb-1">event</span>
-                        <span className="text-xs font-medium text-white block">Classes</span>
-                    </a>
-                    <a href="/trainer-booking" className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center">
-                        <span className="material-icons-round text-primary text-xl block mb-1">sports_gymnastics</span>
-                        <span className="text-xs font-medium text-white block">Trainers</span>
-                    </a>
-                    <a href="/attendance" className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center">
-                        <span className="material-icons-round text-primary text-xl block mb-1">fact_check</span>
-                        <span className="text-xs font-medium text-white block">Attendance</span>
-                    </a>
-                    <a href="/shop" className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center">
-                        <span className="material-icons-round text-primary text-xl block mb-1">shopping_bag</span>
-                        <span className="text-xs font-medium text-white block">Shop</span>
-                    </a>
-                    <a href="/purchase-history" className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center">
-                        <span className="material-icons-round text-primary text-xl block mb-1">receipt_long</span>
-                        <span className="text-xs font-medium text-white block">History</span>
-                    </a>
-                    <a href="/loyalty" className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center">
-                        <span className="material-icons-round text-primary text-xl block mb-1">stars</span>
-                        <span className="text-xs font-medium text-white block">Rewards</span>
-                    </a>
-                    <a href="/payment-methods" className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center">
-                        <span className="material-icons-round text-primary text-xl block mb-1">credit_card</span>
-                        <span className="text-xs font-medium text-white block">Payment</span>
-                    </a>
-                    <button
-                        onClick={() => setShowEditModal(true)}
-                        className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center"
+                <div className="grid grid-cols-2 gap-2 mt-3">
+                    <div className="rounded-xl border border-white/10 bg-white/5 px-2 py-2.5 text-center">
+                        <p className={`text-sm font-bold ${planStatus === 'EXPIRED' ? 'text-red-300' : 'text-emerald-300'}`}>{planStatus}</p>
+                        <p className="text-[10px] uppercase tracking-wider text-text-muted mt-1">Status</p>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-white/5 px-2 py-2.5 text-center">
+                        <p className="text-sm font-bold text-primary truncate">{planName}</p>
+                        <p className="text-[10px] uppercase tracking-wider text-text-muted mt-1">Current Plan</p>
+                    </div>
+                </div>
+
+                <div className="rounded-xl border border-white/10 bg-white/5 p-2.5 mt-2.5">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] uppercase tracking-wider text-text-muted">Plan Progress</span>
+                        <span className="text-[11px] font-bold text-white">{progressPercent}%</span>
+                    </div>
+                    <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                        <div
+                            className={`h-full rounded-full transition-all duration-500 ${planStatus === 'EXPIRED' ? 'bg-red-500' : 'bg-primary'}`}
+                            style={{ width: `${progressPercent}%` }}
+                        />
+                    </div>
+                    <div className="flex items-center justify-between mt-2 text-[10px] sm:text-[11px] text-text-muted">
+                        <span>Start {planStartLabel}</span>
+                        <span>Renews {planEndDateLabel}</span>
+                    </div>
+                </div>
+
+                <div className="mt-2.5 text-[11px] text-text-muted">
+                    Member since <span className="font-semibold text-white">{memberSinceLabel}</span>
+                </div>
+
+            </section>
+
+            <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
+                <div className="px-3 py-2.5 border-b border-white/10">
+                    <h3 className="text-sm font-bold text-white">Settings</h3>
+                    <p className="text-xs text-text-muted mt-0.5">Choose what you want to manage</p>
+                </div>
+                <div className="divide-y divide-white/5">
+                    {settingsItems.map((item) => (
+                        <button
+                            key={item.key}
+                            type="button"
+                            onClick={() => {
+                                if (typeof item.onClick === 'function') item.onClick();
+                            }}
+                            className="w-full px-3 py-2.5 text-left transition-colors hover:bg-white/5"
+                        >
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                    <p className="text-[13px] font-semibold text-white">{item.label}</p>
+                                    <p className="text-[11px] text-text-muted mt-0.5">{item.description}</p>
+                                </div>
+                                <span className="material-icons-round text-sm text-text-muted">chevron_right</span>
+                            </div>
+                        </button>
+                    ))}
+                </div>
+            </section>
+
+            <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
+                <div className="px-3 py-2.5 border-b border-white/10">
+                    <h3 className="text-sm font-bold text-white">Notification Preferences</h3>
+                    <p className="text-xs text-text-muted mt-0.5">Control app and email alerts</p>
+                </div>
+                <div className="divide-y divide-white/5">
+                    <PreferenceToggle
+                        label="App Announcements"
+                        description="Gym announcements and updates"
+                        active={Boolean(notificationPrefs.appAnnouncements)}
+                        disabled={prefSavingKey === 'appAnnouncements'}
+                        onToggle={() => handleTogglePreference('appAnnouncements')}
+                    />
+                    <PreferenceToggle
+                        label="App Class Reminders"
+                        description="Class and session reminders"
+                        active={Boolean(notificationPrefs.appReminders)}
+                        disabled={prefSavingKey === 'appReminders'}
+                        onToggle={() => handleTogglePreference('appReminders')}
+                    />
+                    <PreferenceToggle
+                        label="App Receipts"
+                        description="In-app payment receipt alerts"
+                        active={Boolean(notificationPrefs.appReceipts)}
+                        disabled={prefSavingKey === 'appReceipts'}
+                        onToggle={() => handleTogglePreference('appReceipts')}
+                    />
+                    <PreferenceToggle
+                        label="Email Announcements"
+                        description="Receive updates by email"
+                        active={Boolean(notificationPrefs.emailAnnouncements)}
+                        disabled={prefSavingKey === 'emailAnnouncements'}
+                        onToggle={() => handleTogglePreference('emailAnnouncements')}
+                    />
+                    <PreferenceToggle
+                        label="Email Class Reminders"
+                        description="Class reminders by email"
+                        active={Boolean(notificationPrefs.emailReminders)}
+                        disabled={prefSavingKey === 'emailReminders'}
+                        onToggle={() => handleTogglePreference('emailReminders')}
+                    />
+                    <PreferenceToggle
+                        label="Email Receipts"
+                        description="Payment receipts by email"
+                        active={Boolean(notificationPrefs.emailReceipts)}
+                        disabled={prefSavingKey === 'emailReceipts'}
+                        onToggle={() => handleTogglePreference('emailReceipts')}
+                    />
+                </div>
+            </section>
+
+            <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
+                <div className="px-3 py-2.5 border-b border-white/10">
+                    <h3 className="text-sm font-bold text-white">Support & Legal</h3>
+                    <p className="text-xs text-text-muted mt-0.5">Help, policy, and gym contact channels</p>
+                </div>
+                <div className="divide-y divide-white/5">
+                    <a
+                        href={`mailto:${supportEmail}?subject=Member%20Support%20Request`}
+                        className="flex items-center justify-between gap-2 px-3 py-2.5 hover:bg-white/5 transition-colors"
                     >
-                        <span className="material-icons-round text-primary text-xl block mb-1">edit</span>
-                        <span className="text-xs font-medium text-white block">Edit Profile</span>
+                        <div className="min-w-0">
+                            <p className="text-[13px] font-semibold text-white">Contact Support</p>
+                            <p className="text-[11px] text-text-muted mt-0.5 truncate">{supportEmail}</p>
+                        </div>
+                        <span className="material-icons-round text-sm text-text-muted">open_in_new</span>
+                    </a>
+                    <a
+                        href={supportPhone ? `tel:${supportPhone}` : '#'}
+                        onClick={(event) => {
+                            if (!supportPhone) event.preventDefault();
+                        }}
+                        className={`flex items-center justify-between gap-2 px-3 py-2.5 transition-colors ${supportPhone ? 'hover:bg-white/5' : 'opacity-60 cursor-not-allowed'}`}
+                    >
+                        <div className="min-w-0">
+                            <p className="text-[13px] font-semibold text-white">Call Gym</p>
+                            <p className="text-[11px] text-text-muted mt-0.5 truncate">{supportPhone || 'Phone unavailable'}</p>
+                        </div>
+                        <span className="material-icons-round text-sm text-text-muted">call</span>
+                    </a>
+                    <a
+                        href="/terms-and-conditions"
+                        className="flex items-center justify-between gap-2 px-3 py-2.5 hover:bg-white/5 transition-colors"
+                    >
+                        <div className="min-w-0">
+                            <p className="text-[13px] font-semibold text-white">Terms & Conditions</p>
+                            <p className="text-[11px] text-text-muted mt-0.5 truncate">Membership agreement and waiver details</p>
+                        </div>
+                        <span className="material-icons-round text-sm text-text-muted">chevron_right</span>
+                    </a>
+                </div>
+            </section>
+
+            <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
+                <div className="px-3 py-2.5 border-b border-white/10">
+                    <h3 className="text-sm font-bold text-white">Account Access</h3>
+                    <p className="text-xs text-text-muted mt-0.5">Manage active sign-in sessions</p>
+                </div>
+                <div className="p-3 space-y-2">
+                    <button
+                        type="button"
+                        onClick={handleLogout}
+                        className="w-full rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-xs font-bold text-red-300 hover:bg-red-500/20"
+                    >
+                        Log Out
                     </button>
                     <button
-                        onClick={() => setShowPasswordModal(true)}
-                        className="bg-surface hover:bg-white/5 active:scale-95 p-4 rounded-xl border border-white/5 transition-all text-center"
+                        type="button"
+                        onClick={handleLogoutAllSessions}
+                        className="w-full rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-xs font-bold text-amber-200 hover:bg-amber-400/20"
                     >
-                        <span className="material-icons-round text-primary text-xl block mb-1">lock</span>
-                        <span className="text-xs font-medium text-white block">Password</span>
+                        Sign Out All Sessions
                     </button>
                 </div>
-            </div>
+            </section>
 
-            {/* Support & Legal */}
-            <div>
-                <h3 className="text-sm font-bold text-white mb-3 px-1">Support & Legal</h3>
-                <div className="bg-surface rounded-xl border border-white/5 divide-y divide-white/5">
-                    <a href="#" className="flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 transition-colors first:rounded-t-xl">
-                        <div className="w-9 h-9 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <span className="material-icons-round text-primary text-lg">help</span>
-                        </div>
-                        <span className="text-sm text-white font-medium flex-1">Contact Support</span>
-                        <span className="material-icons-round text-text-muted text-lg">chevron_right</span>
-                    </a>
-                    <a href="#" className="flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 transition-colors">
-                        <div className="w-9 h-9 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <span className="material-icons-round text-primary text-lg">description</span>
-                        </div>
-                        <span className="text-sm text-white font-medium flex-1">Terms & Conditions</span>
-                        <span className="material-icons-round text-text-muted text-lg">chevron_right</span>
-                    </a>
-                    <a href="#" className="flex items-center gap-3 p-4 hover:bg-white/5 active:bg-white/10 transition-colors last:rounded-b-xl">
-                        <div className="w-9 h-9 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <span className="material-icons-round text-primary text-lg">privacy_tip</span>
-                        </div>
-                        <span className="text-sm text-white font-medium flex-1">Privacy Policy</span>
-                        <span className="material-icons-round text-text-muted text-lg">chevron_right</span>
-                    </a>
-                </div>
-            </div>
-
-            {/* App Version */}
-            <div className="text-center py-4">
-                <p className="text-text-muted text-xs">FitOS v1.0.0</p>
-            </div>
-
-
-            {showEditModal && isMember && (
-                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-surface border border-white/10 rounded-2xl w-full max-w-md p-5">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-bold text-white">Edit Profile</h3>
-                            <button
-                                onClick={() => setShowEditModal(false)}
-                                className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-all"
-                            >
-                                <span className="material-icons-round text-white/70">close</span>
-                            </button>
-                        </div>
-                        <form onSubmit={handleSaveProfile} className="space-y-3">
-                            <input
-                                className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white"
-                                placeholder="First Name"
-                                value={editForm.firstName}
-                                onChange={(e) => setEditForm((prev) => ({ ...prev, firstName: e.target.value }))}
-                                required
-                            />
-                            <input
-                                className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white"
-                                placeholder="Last Name"
-                                value={editForm.lastName}
-                                onChange={(e) => setEditForm((prev) => ({ ...prev, lastName: e.target.value }))}
-                                required
-                            />
-                            <input
-                                type="email"
-                                className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white"
-                                placeholder="Email"
-                                value={editForm.email}
-                                onChange={(e) => setEditForm((prev) => ({ ...prev, email: e.target.value }))}
-                            />
-                            <input
-                                className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white"
-                                placeholder="Phone"
-                                value={editForm.phone}
-                                onChange={(e) => setEditForm((prev) => ({ ...prev, phone: e.target.value }))}
-                            />
-                            <div className="flex gap-2 pt-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowEditModal(false)}
-                                    className="flex-1 py-2.5 rounded-xl bg-white/5 text-text-muted hover:text-white"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="flex-1 py-2.5 rounded-xl bg-primary text-background font-bold"
-                                >
-                                    Save
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
 
             {showPasswordModal && isMember && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -502,6 +504,30 @@ export default function Profile() {
                 </div>
             )}
         </div>
+    );
+}
+
+function PreferenceToggle({ label, description, active, disabled, onToggle }) {
+    return (
+        <button
+            type="button"
+            onClick={onToggle}
+            disabled={disabled}
+            className="w-full px-3 py-2.5 text-left transition-colors hover:bg-white/5 disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+            <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                    <p className="text-[13px] font-semibold text-white">{label}</p>
+                    <p className="text-[11px] text-text-muted mt-0.5">{description}</p>
+                </div>
+                <span
+                    className={`inline-flex h-6 w-11 items-center rounded-full border px-1 transition-colors ${active ? 'border-primary/60 bg-primary/20 justify-end' : 'border-white/20 bg-white/5 justify-start'}`}
+                    aria-hidden="true"
+                >
+                    <span className={`h-4 w-4 rounded-full ${active ? 'bg-primary' : 'bg-white/60'}`} />
+                </span>
+            </div>
+        </button>
     );
 }
 

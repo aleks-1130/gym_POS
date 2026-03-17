@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Calendar, ShoppingBag, User, Users, Dumbbell, CheckCircle, Menu, X, Gift, History, Megaphone, Activity, CreditCard, Bell } from 'lucide-react';
+import { Home, Calendar, User, Users, Dumbbell } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
 import axios from 'axios';
@@ -12,6 +12,21 @@ export default function BottomNav() {
     const [activeIndex, setActiveIndex] = useState(0);
     const [showMenu, setShowMenu] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
+
+    const renderNavIcon = (icon, { size = 22, className = '', strokeWidth = 2 } = {}) => {
+        if (typeof icon === 'string') {
+            return (
+                <span
+                    className={`material-icons-round leading-none ${className}`.trim()}
+                    style={{ fontSize: `${size}px` }}
+                >
+                    {icon}
+                </span>
+            );
+        }
+        const IconComponent = icon;
+        return <IconComponent size={size} className={className} strokeWidth={strokeWidth} />;
+    };
 
     useEffect(() => {
         if (!user) return;
@@ -33,35 +48,35 @@ export default function BottomNav() {
 
     // Primary navigation items (bottom bar)
     const memberPrimaryNav = [
-        { to: "/dashboard", icon: Home, label: "Home" },
-        { to: "/attendance", icon: CheckCircle, label: "Attendance" },
-        { to: "/trainer-booking", icon: Dumbbell, label: "Trainers" },
-        { to: "/gym-traffic", icon: Activity, label: "Traffic" },
-        { to: "/schedule", icon: Calendar, label: "Classes" },
-        { to: "/shop", icon: ShoppingBag, label: "Shop" },
-        { to: "/profile", icon: User, label: "Profile" },
+        { to: "/dashboard", icon: "dashboard", label: "Home" },
+        { to: "/attendance", icon: "fact_check", label: "Attendance" },
+        { to: "/trainer-booking", icon: "sports_gymnastics", label: "Trainers" },
+        { to: "/gym-traffic", icon: "timeline", label: "Traffic" },
+        { to: "/schedule", icon: "calendar_month", label: "Classes" },
+        { to: "/shop", icon: "storefront", label: "Shop" },
+        { to: "/profile", icon: "person", label: "Profile" },
     ];
     const trainerPrimaryNav = [
-        { to: "/dashboard", icon: Home, label: "Home" },
-        { to: "/trainer/classes-sessions", icon: Calendar, label: "Class&Session" },
-        { to: "/trainer/gym-traffic", icon: Activity, label: "Traffic" },
-        { to: "/trainer/shop", icon: ShoppingBag, label: "Shop" },
-        { to: "/trainer/profile", icon: User, label: "Profile" },
+        { to: "/dashboard", icon: "dashboard", label: "Home" },
+        { to: "/trainer/classes-sessions", icon: "calendar_month", label: "Class&Session" },
+        { to: "/trainer/gym-traffic", icon: "timeline", label: "Traffic" },
+        { to: "/trainer/shop", icon: "storefront", label: "Shop" },
+        { to: "/trainer/profile", icon: "person", label: "Profile" },
     ];
     const trainerSecondaryNav = [
-        { to: "/announcements", icon: Megaphone, label: "Announcements" },
-        { to: "/trainer/loyalty", icon: Gift, label: "Rewards" },
-        { to: "/trainer/commission-history", icon: Gift, label: "Commissions" },
-        { to: "/trainer/payment-methods", icon: CreditCard, label: "Payment Methods" },
-        { to: "/trainer/purchase-history", icon: History, label: "Purchase History" },
+        { to: "/announcements", icon: "campaign", label: "Announcements" },
+        { to: "/trainer/loyalty", icon: "card_giftcard", label: "Rewards" },
+        { to: "/trainer/commission-history", icon: "payments", label: "Commissions" },
+        { to: "/trainer/payment-methods", icon: "wallet", label: "Payment Methods" },
+        { to: "/trainer/purchase-history", icon: "receipt_long", label: "Purchase History" },
     ];
 
     // Secondary navigation items (hamburger menu)
     const memberSecondaryNav = [
-        { to: "/announcements", icon: Megaphone, label: "Announcements" },
-        { to: "/payment-methods", icon: CreditCard, label: "Payment Methods" },
-        { to: "/loyalty", icon: Gift, label: "Rewards & Loyalty" },
-        { to: "/purchase-history", icon: History, label: "Purchase History" },
+        { to: "/announcements", icon: "campaign", label: "Announcements" },
+        { to: "/payment-methods", icon: "wallet", label: "Payment Methods" },
+        { to: "/loyalty", icon: "card_giftcard", label: "Rewards & Loyalty" },
+        { to: "/purchase-history", icon: "receipt_long", label: "Purchase History" },
     ];
 
     const staffPrimaryNav = [
@@ -129,21 +144,20 @@ export default function BottomNav() {
                         {/* Menu Header */}
                         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
                             <div className="flex items-center gap-2">
-                                <Menu className="text-primary" size={20} />
+                                <span className="material-icons-round text-primary text-[20px] leading-none">menu</span>
                                 <h3 className="text-white font-semibold text-sm">More Options</h3>
                             </div>
                             <button
                                 onClick={() => setShowMenu(false)}
                                 className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-all"
                             >
-                                <X className="text-white/70" size={18} />
+                                <span className="material-icons-round text-white/70 text-[18px] leading-none">close</span>
                             </button>
                         </div>
 
                         {/* Menu Items */}
                         <div className="p-2">
                             {secondaryNavItems.map((item) => {
-                                const IconComponent = item.icon;
                                 const isActive = location.pathname === item.to;
 
                                 return (
@@ -158,11 +172,11 @@ export default function BottomNav() {
                                             }
                                         `}
                                     >
-                                        <IconComponent
-                                            size={20}
-                                            className={isActive ? 'text-primary' : 'text-text-muted'}
-                                            strokeWidth={2}
-                                        />
+                                        {renderNavIcon(item.icon, {
+                                            size: 20,
+                                            className: isActive ? 'text-primary' : 'text-text-muted',
+                                            strokeWidth: 2
+                                        })}
                                         <span className={`text-sm font-medium ${isActive ? 'text-primary' : 'text-white'}`}>
                                             {item.label}
                                         </span>
@@ -221,7 +235,6 @@ export default function BottomNav() {
                                         className="flex-1 h-full transition-all duration-200 relative group"
                                     >
                                         {({ isActive: navIsActive }) => {
-                                            const IconComponent = item.icon;
                                             return (
                                                 <div className="w-full h-full flex flex-col items-center justify-center gap-1 relative z-10">
                                                     {/* Icon Container with contained effects */}
@@ -236,17 +249,17 @@ export default function BottomNav() {
                                                         )}
 
                                                         {/* Icon */}
-                                                        <IconComponent
-                                                            size={22}
-                                                            className={`
+                                                        {renderNavIcon(item.icon, {
+                                                            size: 22,
+                                                            className: `
                                                                 transition-all duration-200 relative z-10
                                                                 ${isActive
                                                                     ? 'text-primary'
                                                                     : 'text-text-muted group-hover:text-white'
                                                                 }
-                                                            `}
-                                                            strokeWidth={isActive ? 2.5 : 2}
-                                                        />
+                                                            `,
+                                                            strokeWidth: isActive ? 2.5 : 2
+                                                        })}
                                                     </div>
 
                                                     {/* Label */}
@@ -284,17 +297,19 @@ export default function BottomNav() {
                                                 <div className="absolute inset-0 bg-primary/20 blur-[2px] rounded-full scale-75" />
                                             )}
 
-                                            <Menu
-                                                size={22}
+                                            <span
                                                 className={`
+                                                    material-icons-round leading-none
                                                     transition-all duration-200 relative z-10
                                                     ${showMenu
                                                         ? 'text-primary'
                                                         : 'text-text-muted group-hover:text-white'
                                                     }
                                                 `}
-                                                strokeWidth={showMenu ? 2.5 : 2}
-                                            />
+                                                style={{ fontSize: '22px' }}
+                                            >
+                                                menu
+                                            </span>
                                             {unreadCount > 0 && (
                                                 <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-primary border-2 border-surface rounded-full z-20 animate-pulse" />
                                             )}

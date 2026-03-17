@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import TrainerPageHeader from './components/TrainerPageHeader';
 
 const STORAGE_KEY = 'trainerPaymentMethods';
 
@@ -114,11 +115,12 @@ export default function TrainerPaymentMethods() {
     );
 
     return (
-        <div className="space-y-6 pb-24 max-w-3xl mx-auto px-4">
-            <header className="pt-4">
-                <h1 className="text-xl font-bold text-white">Trainer Payment Methods</h1>
-                <p className="text-text-muted text-xs mt-0.5">Saved locally on this device for Trainer Shop checkout</p>
-            </header>
+        <div className="space-y-6 max-w-3xl mx-auto">
+            <TrainerPageHeader
+                title="Payment Methods"
+                subtitle="Saved locally on this device for trainer shop checkout"
+                icon="wallet"
+            />
 
             <section className="bg-surface rounded-2xl p-5 border border-white/5">
                 <div className="flex items-center justify-between mb-4">

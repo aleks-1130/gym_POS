@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useCurrency } from '../../context/CurrencyContext';
+import MemberPageHeader from './components/MemberPageHeader';
 
 export default function ShopCheckout() {
     const { user } = useAuth();
@@ -76,11 +77,12 @@ export default function ShopCheckout() {
     };
 
     return (
-        <div className="pb-24 px-4 sm:px-6 max-w-3xl mx-auto space-y-6">
-            <div className="pt-4">
-                <h1 className="text-xl font-bold text-white">Order Details</h1>
-                <p className="text-text-muted text-xs mt-0.5">Review your items and choose payment method</p>
-            </div>
+        <div className="max-w-3xl mx-auto space-y-6">
+            <MemberPageHeader
+                title="Order Details"
+                subtitle="Review your items and choose payment method"
+                icon="shopping_cart_checkout"
+            />
 
             <section className="bg-surface rounded-2xl border border-white/5 p-4 space-y-3">
                 <div className="flex items-center justify-between">

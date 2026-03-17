@@ -32,7 +32,8 @@ const login = async (req, res) => {
                 password: true,
                 name: true,
                 role: true,
-                trainerId: true
+                trainerId: true,
+                sessionVersion: true
             }
         });
 
@@ -40,7 +41,14 @@ const login = async (req, res) => {
             const match = await bcrypt.compare(password, user.password);
             console.log("[DEBUG] Password Match:", match);
             if (match) {
-                const payload = { id: user.id, email: user.email, role: user.role, type: 'USER', trainerId: user.trainerId };
+                const payload = {
+                    id: user.id,
+                    email: user.email,
+                    role: user.role,
+                    type: 'USER',
+                    trainerId: user.trainerId,
+                    sessionVersion: Number(user.sessionVersion || 0)
+                };
                 console.log("[DEBUG] Signing JWT for user:", user.email, "with SECRET length:", SECRET ? SECRET.length : 0);
                 const token = jwt.sign(payload, SECRET);
                 res.cookie('token', token, cookieOptions);
@@ -51,7 +59,15 @@ const login = async (req, res) => {
 
         // 2. Try finding in MEMBER table
         const member = await prisma.member.findFirst({
-            where: { email: { equals: normalizedEmail, mode: 'insensitive' } }
+            where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
+            select: {
+                id: true,
+                email: true,
+                password: true,
+                status: true,
+                firstName: true,
+                sessionVersion: true
+            }
         });
 
         if (member && member.password) { // Only if password is set
@@ -61,7 +77,13 @@ const login = async (req, res) => {
             const match = await bcrypt.compare(password, member.password);
             console.log("[DEBUG] Member Password Match:", match);
             if (match) {
-                const payload = { id: member.id, email: member.email, role: 'MEMBER', type: 'MEMBER' };
+                const payload = {
+                    id: member.id,
+                    email: member.email,
+                    role: 'MEMBER',
+                    type: 'MEMBER',
+                    sessionVersion: Number(member.sessionVersion || 0)
+                };
                 console.log("[DEBUG] Signing JWT for member:", member.email, "with SECRET length:", SECRET ? SECRET.length : 0);
                 const token = jwt.sign(payload, SECRET);
                 res.cookie('token', token, cookieOptions);
@@ -354,9 +376,61 @@ const logout = (req, res) => {
     res.json({ message: "Logged out successfully" });
 };
 
+const logoutAllSessions = async (req, res) => {
+    if (!req.user?.id || !req.user?.role) {
+        return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const role = String(req.user.role || '').toUpperCase();
+
+    try {
+        if (role === 'MEMBER') {
+            await prisma.member.update({
+                where: { id: Number(req.user.id) },
+                data: { sessionVersion: { increment: 1 } }
+            });
+        } else {
+            await prisma.user.update({
+                where: { id: Number(req.user.id) },
+                data: { sessionVersion: { increment: 1 } }
+            });
+        }
+
+        // Best effort: clear Neon-auth sessions tied to this email as well.
+        if (req.user?.email) {
+            try {
+                await prisma.$executeRaw`
+                    DELETE FROM neon_auth.session
+                    WHERE "userId" IN (
+                        SELECT id
+                        FROM neon_auth.user
+                        WHERE LOWER(email) = LOWER(${String(req.user.email)})
+                    )
+                `;
+            } catch (sessionErr) {
+                console.warn("[logout-all] Failed to clear Neon sessions:", sessionErr.message);
+            }
+        }
+
+        res.clearCookie('token', {
+            httpOnly: true,
+            secure: IS_PROD,
+            sameSite: IS_PROD ? 'none' : 'lax'
+        });
+
+        return res.json({ message: "Signed out from all sessions" });
+    } catch (e) {
+        if (isDatabaseUnreachableError(e)) {
+            return res.status(503).json({ error: "Database unavailable. Please try again shortly." });
+        }
+        return res.status(500).json({ error: e.message || "Failed to sign out all sessions" });
+    }
+};
+
 module.exports = {
     login,
     logout,
+    logoutAllSessions,
     setupMemberPassword,
     getMe,
     verifyToken,

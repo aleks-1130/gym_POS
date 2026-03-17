@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { withApiBase } from '../../config/api';
 import { useConfirm } from '../../context/ConfirmContext';
+import MemberPageHeader from './components/MemberPageHeader';
 
 const parseTimeToMinutes = (timeValue) => {
     const raw = String(timeValue || '').trim().toUpperCase();
@@ -416,25 +417,19 @@ export default function Schedule() {
     }
 
     return (
-        <div className="pb-20 px-4 max-w-5xl mx-auto space-y-4 sm:space-y-5">
-            <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 -mx-4 px-4 py-4 space-y-3 border-b border-white/5">
-                <div className="flex items-start justify-between gap-3">
-                    <div>
-                        <h1 className="text-xl font-bold text-white">
-                            {activeTab === 'history'
-                                ? 'Class History'
-                                : activeTab === 'my-classes'
-                                    ? 'Joined Classes'
-                                    : 'Classes'}
-                        </h1>
-                        <p className="text-text-muted text-xs mt-0.5">
-                            {activeTab === 'history'
-                                ? 'Track your completed, missed, and cancelled past classes'
-                                : activeTab === 'my-classes'
-                                    ? 'View classes you joined and manage upcoming sessions'
-                                    : 'Browse and join available classes'}
-                        </p>
-                    </div>
+        <div className="max-w-5xl mx-auto space-y-4 sm:space-y-5">
+            <MemberPageHeader
+                title={activeTab === 'history' ? 'Class History' : activeTab === 'my-classes' ? 'Joined Classes' : 'Classes'}
+                subtitle={
+                    activeTab === 'history'
+                        ? 'Review completed, missed, and cancelled classes'
+                        : activeTab === 'my-classes'
+                            ? 'Manage your joined and upcoming classes'
+                            : 'Browse available classes'
+                }
+                icon="calendar_month"
+                className="border-white/10"
+                rightSlot={(
                     <button
                         type="button"
                         onClick={showSessionPolicy}
@@ -444,8 +439,10 @@ export default function Schedule() {
                     >
                         <span className="material-icons-round text-base">info</span>
                     </button>
-                </div>
+                )}
+            />
 
+            <section className="space-y-3">
                 <div className="grid grid-cols-3 gap-2 rounded-2xl p-1 bg-surface/80 border border-white/10 shadow-inner">
                     <button
                         type="button"
@@ -504,7 +501,7 @@ export default function Schedule() {
                         ))}
                     </div>
                 )}
-            </div>
+            </section>
 
             {activeTab !== 'history' ? (
                 <>

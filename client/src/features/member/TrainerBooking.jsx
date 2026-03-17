@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import MemberPageHeader from './components/MemberPageHeader';
 
 const normalizeTrainerHistoryStatus = (session) => {
     const rawStatus = String(session?.status || '').toUpperCase();
@@ -992,26 +993,19 @@ export default function TrainerBooking() {
     }
 
     return (
-        <div className="pb-20 px-4 max-w-5xl mx-auto space-y-4 sm:space-y-5">
-            {/* Header - PWA Sticky */}
-            <div className={`sticky top-0 bg-background/95 backdrop-blur-sm z-10 -mx-4 px-4 py-4 space-y-3 ${activeTab === 'history' ? 'border-b border-white/5' : ''}`}>
-                <div className="flex items-start justify-between gap-3 min-h-[60px]">
-                    <div className="flex-1 min-h-[60px] flex flex-col justify-center">
-                        <h1 className="text-xl font-bold text-white">
-                            {activeTab === 'bookings'
-                                ? 'My Bookings'
-                                : activeTab === 'history'
-                                    ? 'Session History'
-                                    : 'Personal Trainers'}
-                        </h1>
-                        <p className="text-text-muted text-xs mt-0.5 leading-4 min-h-[32px]">
-                            {activeTab === 'bookings'
-                                ? 'Manage upcoming trainer sessions and pending ratings'
-                                : activeTab === 'history'
-                                    ? 'Review completed, missed, and cancelled past trainer sessions'
-                                    : 'Find your trainer and book sessions quickly'}
-                        </p>
-                    </div>
+        <div className="max-w-5xl mx-auto space-y-4 sm:space-y-5">
+            <MemberPageHeader
+                title={activeTab === 'bookings' ? 'My Bookings' : activeTab === 'history' ? 'Session History' : 'Personal Trainers'}
+                subtitle={
+                    activeTab === 'bookings'
+                        ? 'Manage upcoming trainer sessions and pending ratings'
+                        : activeTab === 'history'
+                            ? 'Review completed, missed, and cancelled past trainer sessions'
+                            : 'Find your trainer and book sessions quickly'
+                }
+                icon="sports_gymnastics"
+                className="border-white/10"
+                rightSlot={(
                     <button
                         type="button"
                         onClick={showTabInfo}
@@ -1021,9 +1015,10 @@ export default function TrainerBooking() {
                     >
                         <span className="material-icons-round text-base">info</span>
                     </button>
-                </div>
+                )}
+            />
 
-                {/* Primary Tabs */}
+            <section className="space-y-3">
                 <div className="grid grid-cols-3 gap-2 rounded-2xl p-1 bg-surface/80 border border-white/10 shadow-inner">
                     <button
                         type="button"
@@ -1067,7 +1062,7 @@ export default function TrainerBooking() {
 
                 {/* Trainer Search + Filters */}
                 {activeTab === 'trainers' && (
-                    <div className="-mx-4 px-4 space-y-2 border-t border-white/5 pt-3">
+                    <div className="space-y-2">
                         <div className="flex items-center gap-2">
                             <label className="relative flex-1">
                                 <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 material-icons-round text-sm text-text-muted">search</span>
@@ -1126,8 +1121,7 @@ export default function TrainerBooking() {
                         )}
                     </div>
                 )}
-
-            </div>
+            </section>
 
             {activeTab === 'bookings' ? (
                 /* My Booked Sessions */
