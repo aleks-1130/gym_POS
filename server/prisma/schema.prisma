@@ -61,6 +61,7 @@ model Member {
   points                 Int                  @default(0)
   freezeStartDate        DateTime?
   freezeEndDate          DateTime?
+  freezeUsedCount        Int                  @default(0)
   birthDate              DateTime?
   sex                    String?
   imageUrl               String?
@@ -213,6 +214,7 @@ model Plan {
   duration              Int
   includedClassSessions Int                @default(0)
   includesClasses       Boolean            @default(false)
+  freezeLimitCount      Int                @default(0)
   members               Member[]
   membershipPeriods     MembershipPeriod[]
 }

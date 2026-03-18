@@ -2,14 +2,17 @@
 import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useSettings } from '../../context/SettingsContext';
+import { useAuth } from '../../context/AuthContext';
 import { withApiBase } from '../../config/api';
 import { useConfirm } from '../../context/ConfirmContext';
 
 export default function Settings() {
+    const { user } = useAuth();
     const { formatPrice } = useCurrency();
     const { settings, updateSettings } = useSettings();
     const { alert: showAlert, confirm: showConfirm } = useConfirm();
     const [activeTab, setActiveTab] = useState('plans');
+    const isOwner = String(user?.role || '').toUpperCase() === 'OWNER';
 
     const [gymProfile, setGymProfile] = useState({
         name: '',
@@ -24,6 +27,7 @@ export default function Settings() {
         name: '',
         price: '',
         duration: '',
+        freezeLimitCount: '',
         includesClasses: false,
         includedClassSessions: ''
     });
@@ -44,6 +48,7 @@ export default function Settings() {
         name: '',
         price: '',
         duration: '',
+        freezeLimitCount: '',
         includesClasses: false,
         includedClassSessions: ''
     });
@@ -64,6 +69,12 @@ export default function Settings() {
         fetchPlans();
         fetchSessionPackages();
     }, []);
+
+    useEffect(() => {
+        if (!isOwner && activeTab === 'branding') {
+            setActiveTab('plans');
+        }
+    }, [activeTab, isOwner]);
 
     const fetchPlans = async () => {
         try {
@@ -100,6 +111,7 @@ export default function Settings() {
             name: plan.name || '',
             price: plan.price ?? '',
             duration: plan.duration ?? '',
+            freezeLimitCount: plan.freezeLimitCount ?? 0,
             includesClasses: Boolean(plan.includesClasses),
             includedClassSessions: plan.includedClassSessions ?? ''
         });
@@ -112,6 +124,7 @@ export default function Settings() {
             name: '',
             price: '',
             duration: '',
+            freezeLimitCount: '',
             includesClasses: false,
             includedClassSessions: ''
         });
@@ -124,6 +137,7 @@ export default function Settings() {
                 name: editPlanData.name,
                 price: Number(editPlanData.price),
                 duration: Number(editPlanData.duration),
+                freezeLimitCount: Number(editPlanData.freezeLimitCount || 0),
                 includesClasses: editPlanData.includesClasses,
                 includedClassSessions: editPlanData.includesClasses ? Number(editPlanData.includedClassSessions || 0) : 0
             });
@@ -144,6 +158,7 @@ export default function Settings() {
                 name: planFormData.name,
                 price: Number(planFormData.price),
                 duration: Number(planFormData.duration),
+                freezeLimitCount: Number(planFormData.freezeLimitCount || 0),
                 includesClasses: planFormData.includesClasses,
                 includedClassSessions: planFormData.includesClasses ? Number(planFormData.includedClassSessions || 0) : 0
             });
@@ -151,6 +166,7 @@ export default function Settings() {
                 name: '',
                 price: '',
                 duration: '',
+                freezeLimitCount: '',
                 includesClasses: false,
                 includedClassSessions: ''
             });
@@ -220,7 +236,11 @@ export default function Settings() {
         <div className="space-y-8 max-w-6xl mx-auto">
             <header>
                 <h1 className="text-3xl font-bold text-white">System Settings</h1>
-                <p className="text-text-muted mt-1">Manage membership plans, class session packages, and branding</p>
+                <p className="text-text-muted mt-1">
+                    {isOwner
+                        ? 'Manage membership plans, class session packages, and branding'
+                        : 'Manage membership plans and class session packages'}
+                </p>
             </header>
 
             <div className="flex gap-4 border-b border-white/10">
@@ -238,13 +258,15 @@ export default function Settings() {
                     Class Session Packages
                     {activeTab === 'packages' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary rounded-t-full"></div>}
                 </button>
-                <button
-                    onClick={() => setActiveTab('branding')}
-                    className={`pb-4 px-2 font-bold text-sm transition-colors relative ${activeTab === 'branding' ? 'text-primary' : 'text-text-muted hover:text-white'}`}
-                >
-                    Gym Branding
-                    {activeTab === 'branding' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary rounded-t-full"></div>}
-                </button>
+                {isOwner && (
+                    <button
+                        onClick={() => setActiveTab('branding')}
+                        className={`pb-4 px-2 font-bold text-sm transition-colors relative ${activeTab === 'branding' ? 'text-primary' : 'text-text-muted hover:text-white'}`}
+                    >
+                        Gym Branding
+                        {activeTab === 'branding' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary rounded-t-full"></div>}
+                    </button>
+                )}
             </div>
 
             {activeTab === 'plans' && (
@@ -262,7 +284,7 @@ export default function Settings() {
                                                 onChange={e => setEditPlanData({ ...editPlanData, name: e.target.value })}
                                                 placeholder="Plan name"
                                             />
-                                            <div className="grid grid-cols-2 gap-3">
+                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                                 <input
                                                     type="number"
                                                     min="0"
@@ -279,6 +301,14 @@ export default function Settings() {
                                                     value={editPlanData.duration}
                                                     onChange={e => setEditPlanData({ ...editPlanData, duration: e.target.value })}
                                                     placeholder="Duration"
+                                                />
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    className="w-full bg-background/40 border border-white/10 rounded-xl px-3 py-2 text-white text-sm"
+                                                    value={editPlanData.freezeLimitCount}
+                                                    onChange={e => setEditPlanData({ ...editPlanData, freezeLimitCount: e.target.value })}
+                                                    placeholder="Freeze Count"
                                                 />
                                             </div>
                                             <label className="flex items-center gap-2 text-xs text-white">
@@ -332,6 +362,11 @@ export default function Settings() {
                                                         ? `Includes ${plan.includedClassSessions} class sessions`
                                                         : 'No class sessions included'}
                                                 </p>
+                                                <p className="text-xs mt-1 text-blue-300/90">
+                                                    {Number(plan.freezeLimitCount || 0) > 0
+                                                        ? `Freeze allowed: ${plan.freezeLimitCount} time${Number(plan.freezeLimitCount) > 1 ? 's' : ''}`
+                                                        : 'Freeze not included'}
+                                                </p>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <button onClick={() => handleStartEditPlan(plan)} className="text-text-muted hover:text-white p-2 transition-colors" title="Edit plan">
@@ -363,7 +398,7 @@ export default function Settings() {
                                 />
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                 <div>
                                     <label className="block text-xs text-text-secondary font-bold mb-1">Price</label>
                                     <input
@@ -387,6 +422,18 @@ export default function Settings() {
                                         placeholder="30"
                                         value={planFormData.duration}
                                         onChange={e => setPlanFormData({ ...planFormData, duration: e.target.value })}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-text-secondary font-bold mb-1">Freeze Count</label>
+                                    <input
+                                        required
+                                        type="number"
+                                        min="0"
+                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white"
+                                        placeholder="0"
+                                        value={planFormData.freezeLimitCount}
+                                        onChange={e => setPlanFormData({ ...planFormData, freezeLimitCount: e.target.value })}
                                     />
                                 </div>
                             </div>
@@ -511,7 +558,7 @@ export default function Settings() {
                 </div>
             )}
 
-            {activeTab === 'branding' && (
+            {isOwner && activeTab === 'branding' && (
                 <div className="bg-surface rounded-3xl border border-white/5 p-8 shadow-sm max-w-2xl">
                     <h3 className="text-xl font-bold text-white mb-6">Business Profile</h3>
                     <form onSubmit={handleProfileSave} className="space-y-6">

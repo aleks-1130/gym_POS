@@ -512,6 +512,7 @@ const createPayment = async (req, res) => {
                                 expiryDate: newExpiry,
                                 status: 'ACTIVE',
                                 planId,
+                                freezeUsedCount: 0,
                                 ...(getPlanClassSessions(plan) > 0
                                     ? { classSessionsRemaining: { increment: getPlanClassSessions(plan) } }
                                     : {})

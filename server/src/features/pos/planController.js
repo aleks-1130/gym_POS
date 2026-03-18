@@ -6,6 +6,7 @@ const normalizePlanInput = (body = {}) => {
     const duration = Number(body.duration);
     const includesClasses = body.includesClasses === true || String(body.includesClasses).toLowerCase() === 'true';
     const includedClassSessions = includesClasses ? Number(body.includedClassSessions || 0) : 0;
+    const freezeLimitCount = Number(body.freezeLimitCount ?? 0);
 
     if (!name) {
         return { error: "Plan name is required" };
@@ -19,6 +20,9 @@ const normalizePlanInput = (body = {}) => {
     if (!Number.isInteger(includedClassSessions) || includedClassSessions < 0) {
         return { error: "Included class sessions must be 0 or greater" };
     }
+    if (!Number.isInteger(freezeLimitCount) || freezeLimitCount < 0) {
+        return { error: "Freeze limit count must be 0 or greater" };
+    }
 
     return {
         data: {
@@ -26,7 +30,8 @@ const normalizePlanInput = (body = {}) => {
             price,
             duration,
             includesClasses,
-            includedClassSessions
+            includedClassSessions,
+            freezeLimitCount
         }
     };
 };

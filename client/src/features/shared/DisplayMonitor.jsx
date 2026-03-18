@@ -48,6 +48,7 @@ export default function DisplayMonitor() {
     const getStatusColor = (status) => {
         switch(status?.toLowerCase()) {
             case 'allowed': return 'text-green-400';
+            case 'freezed': return 'text-blue-300';
             case 'denied': return 'text-red-400';
             case 'expired': return 'text-orange-400';
             default: return 'text-gray-400';
@@ -57,6 +58,7 @@ export default function DisplayMonitor() {
     const getStatusBg = (status) => {
         switch(status?.toLowerCase()) {
             case 'allowed': return 'bg-green-500/10 border-green-500/30';
+            case 'freezed': return 'bg-blue-500/10 border-blue-500/30';
             case 'denied': return 'bg-red-500/10 border-red-500/30';
             case 'expired': return 'bg-orange-500/10 border-orange-500/30';
             default: return 'bg-gray-500/10 border-gray-500/30';
@@ -66,6 +68,7 @@ export default function DisplayMonitor() {
     const getStatusIcon = (status) => {
         switch(status?.toLowerCase()) {
             case 'allowed': return 'check_circle';
+            case 'freezed': return 'ac_unit';
             case 'denied': return 'cancel';
             case 'expired': return 'schedule';
             default: return 'help';
@@ -74,6 +77,12 @@ export default function DisplayMonitor() {
 
     const latestLog = latestEvent?.log || null;
     const isErrorEvent = latestEvent?.type === 'ERROR';
+    const freezeFromReason = /freez/i.test(String(latestEvent?.reason || ''));
+    const freezeFromMember = ['FREEZED', 'FROZEN'].includes(String(latestLog?.member?.status || '').toUpperCase());
+    const isFreezeEvent = freezeFromReason || freezeFromMember;
+    const monitorStatus = isFreezeEvent
+        ? 'FREEZED'
+        : (isErrorEvent ? 'DENIED' : (latestEvent?.status || latestLog?.status || 'UNKNOWN'));
     const joinedDate = latestLog?.member?.startDate || latestLog?.member?.createdAt || latestLog?.member?.joinDate || latestLog?.member?.joinedDate;
     const scannedEntity = latestLog?.member
         ? {
@@ -133,10 +142,10 @@ export default function DisplayMonitor() {
                     <div className="animate-pop">
                         {isErrorEvent ? (
                             <div className="bg-white/5 backdrop-blur-xl rounded-[4rem] p-16 border-2 border-red-500/30 shadow-[0_0_80px_rgba(80,0,0,0.5)] text-center">
-                                <div className="w-48 h-48 bg-red-500/15 rounded-[3rem] border-4 border-red-500/30 flex items-center justify-center mx-auto mb-10">
-                                    <span className="material-icons-round text-[120px] text-red-400">block</span>
+                                <div className={`w-48 h-48 rounded-[3rem] border-4 flex items-center justify-center mx-auto mb-10 ${isFreezeEvent ? 'bg-blue-500/15 border-blue-500/30' : 'bg-red-500/15 border-red-500/30'}`}>
+                                    <span className={`material-icons-round text-[120px] ${isFreezeEvent ? 'text-blue-300' : 'text-red-400'}`}>{isFreezeEvent ? 'ac_unit' : 'block'}</span>
                                 </div>
-                                <p className="text-red-300 text-lg font-black uppercase tracking-[0.4em] mb-4">Scan Denied</p>
+                                <p className={`text-lg font-black uppercase tracking-[0.4em] mb-4 ${isFreezeEvent ? 'text-blue-300' : 'text-red-300'}`}>{isFreezeEvent ? 'Membership Freezed' : 'Scan Denied'}</p>
                                 <h2 className="text-5xl font-black text-white italic tracking-tight leading-tight mb-6">
                                     {latestEvent?.reason || 'Invalid or expired QR'}
                                 </h2>
@@ -148,6 +157,12 @@ export default function DisplayMonitor() {
                         <>
                         {/* Giant Member Card */}
                         <div className="bg-white/5 backdrop-blur-xl rounded-[4rem] p-16 border-2 border-white/10 shadow-[0_0_80px_rgba(0,0,0,0.5)]">
+                            <div className="mb-8 flex justify-end">
+                                <span className={`inline-flex items-center gap-2 rounded-full border px-5 py-2 text-sm font-black uppercase tracking-[0.22em] ${getStatusBg(monitorStatus)} ${getStatusColor(monitorStatus)}`}>
+                                    <span className="material-icons-round text-base">{getStatusIcon(monitorStatus)}</span>
+                                    {monitorStatus}
+                                </span>
+                            </div>
                             {/* Massive Member Header */}
                             <div className="flex items-center gap-12 mb-14">
                                 {scannedEntity.imageUrl ? (

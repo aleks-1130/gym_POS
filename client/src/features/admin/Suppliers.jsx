@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -19,20 +19,21 @@ const Suppliers = () => {
     });
     const [editingId, setEditingId] = useState(null);
 
-    useEffect(() => {
-        fetchSuppliers();
-    }, []);
-
-    const fetchSuppliers = async () => {
+    const fetchSuppliers = useCallback(async () => {
         try {
-                        const res = await axios.get('/api/suppliers');
+            const res = await axios.get('/api/suppliers');
             setSuppliers(res.data);
             setLoading(false);
-        } catch (error) {
-            console.error("Failed to fetch suppliers", error);
+        } catch (e) {
+            console.error("Failed to fetch suppliers", e);
             setLoading(false);
         }
-    };
+    }, []);
+
+    useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        fetchSuppliers();
+    }, [fetchSuppliers]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -46,7 +47,7 @@ const Suppliers = () => {
             setFormData({ name: '', contact: '', email: '', address: '', notes: '' });
             setEditingId(null);
             fetchSuppliers();
-        } catch (error) {
+        } catch {
             await showAlert({ title: 'Save Failed', message: 'Operation failed. Please try again.', type: 'danger' });
         }
     };
@@ -69,7 +70,7 @@ const Suppliers = () => {
         try {
                         await axios.delete(`/api/suppliers/${id}`);
             fetchSuppliers();
-        } catch (error) {
+        } catch {
             await showAlert({ title: 'Delete Failed', message: 'Failed to delete supplier. It may have linked products.', type: 'danger' });
         }
     };
@@ -79,11 +80,11 @@ const Suppliers = () => {
             header: 'Supplier',
             accessor: (supplier) => (
                 <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-gradient-to-br from-white/10 to-white/5 rounded-xl flex items-center justify-center border border-white/10">
+                    <div className="w-10 h-10 bg-surface rounded-xl flex items-center justify-center border border-white/10">
                         <span className="material-icons-round text-primary text-xl">local_shipping</span>
                     </div>
                     <div>
-                        <p className="font-bold text-white group-hover:text-primary transition-colors">{supplier.name}</p>
+                        <p className="font-bold text-white">{supplier.name}</p>
                         <p className="text-xs text-text-muted">ID: #{supplier.id}</p>
                     </div>
                 </div>
@@ -138,47 +139,47 @@ const Suppliers = () => {
     ], [navigate]);
 
     return (
-        <div className="p-8 relative z-10 max-w-7xl mx-auto">
-            {/* Header */}
-            <div className="flex justify-between items-center mb-8">
-                <div>
-                    <h1 className="text-4xl font-extrabold tracking-tight text-white mb-2">
-                        Supplier Management
-                    </h1>
-                    <p className="text-text-muted text-lg">
-                        Manage vendor relationships and supply chains
-                    </p>
+        <div className="space-y-5">
+            <div className="rounded-2xl border border-white/10 bg-surface p-4 md:p-5">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                        <p className="text-white font-semibold">Supplier Directory</p>
+                        <p className="text-xs text-text-muted mt-1">
+                            Maintain vendor records and linked product sources.
+                        </p>
+                    </div>
+                    <button
+                        onClick={() => {
+                            setFormData({ name: '', contact: '', email: '', address: '', notes: '' });
+                            setEditingId(null);
+                            setShowModal(true);
+                        }}
+                        className="rounded-xl bg-primary px-4 py-2 text-sm font-bold text-background transition-colors hover:bg-orange-600"
+                    >
+                        + Add Supplier
+                    </button>
                 </div>
-                <button
-                    onClick={() => {
-                        setFormData({ name: '', contact: '', email: '', address: '', notes: '' });
-                        setEditingId(null);
-                        setShowModal(true);
-                    }}
-                    className="bg-primary hover:bg-orange-600 text-white px-6 py-3 rounded-2xl font-bold shadow-lg shadow-primary/25 transition-all transform hover:scale-105 flex items-center gap-2"
-                >
-                    <span className="material-icons-round">add_business</span>
-                    Add Supplier
-                </button>
             </div>
 
-            <DataTable
-                columns={columns}
-                data={suppliers}
-                isLoading={loading}
-                emptyMessage="No suppliers found."
-                onRowClick={(supplier) => handleEdit(supplier)}
-                actions={(supplier) => (
-                    <div className="flex items-center justify-end gap-2">
-                        <button onClick={(e) => { e.stopPropagation(); handleEdit(supplier); }} className="w-9 h-9 flex items-center justify-center bg-white/5 hover:bg-primary text-white rounded-lg border border-white/10 transition-colors" title="Edit Supplier">
-                            <span className="material-icons-round text-[18px]">edit</span>
-                        </button>
-                        <button onClick={(e) => { e.stopPropagation(); handleDelete(supplier.id); }} className="w-9 h-9 flex items-center justify-center bg-white/5 hover:bg-red-500 text-white rounded-lg border border-white/10 transition-colors" title="Delete Supplier">
-                            <span className="material-icons-round text-[18px]">delete</span>
-                        </button>
-                    </div>
-                )}
-            />
+            <div className="rounded-2xl border border-white/10 bg-surface shadow-sm overflow-hidden">
+                <DataTable
+                    columns={columns}
+                    data={suppliers}
+                    isLoading={loading}
+                    emptyMessage="No suppliers found."
+                    onRowClick={(supplier) => handleEdit(supplier)}
+                    actions={(supplier) => (
+                        <div className="flex items-center justify-end gap-2">
+                            <button onClick={(e) => { e.stopPropagation(); handleEdit(supplier); }} className="w-9 h-9 flex items-center justify-center bg-white/5 hover:bg-primary text-white rounded-lg border border-white/10 transition-colors" title="Edit Supplier">
+                                <span className="material-icons-round text-[18px]">edit</span>
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); handleDelete(supplier.id); }} className="w-9 h-9 flex items-center justify-center bg-white/5 hover:bg-red-500 text-white rounded-lg border border-white/10 transition-colors" title="Delete Supplier">
+                                <span className="material-icons-round text-[18px]">delete</span>
+                            </button>
+                        </div>
+                    )}
+                />
+            </div>
 
             {/* Modal */}
             {showModal && (

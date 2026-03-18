@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { ROLES } from '../../constants/roles';
 import Attendance from '../member/Attendance';
@@ -43,6 +43,28 @@ export default function Access() {
             initials: '?',
             imageUrl: null
         };
+    };
+
+    const isFreezeBlockedLog = (log) => {
+        const member = log?.member;
+        if (!member) return false;
+
+        const normalizedStatus = String(member.status || '').toUpperCase();
+        if (normalizedStatus === 'FREEZED' || normalizedStatus === 'FROZEN') return true;
+
+        const freezeStart = member.freezeStartDate ? new Date(member.freezeStartDate) : null;
+        const freezeEnd = member.freezeEndDate ? new Date(member.freezeEndDate) : null;
+        const checkInAt = log?.checkIn ? new Date(log.checkIn) : new Date();
+
+        return Boolean(
+            freezeStart &&
+            freezeEnd &&
+            !Number.isNaN(freezeStart.getTime()) &&
+            !Number.isNaN(freezeEnd.getTime()) &&
+            !Number.isNaN(checkInAt.getTime()) &&
+            checkInAt >= freezeStart &&
+            checkInAt <= freezeEnd
+        );
     };
 
     useEffect(() => {
@@ -212,6 +234,19 @@ export default function Access() {
         setScanInput('');
     };
 
+    const accessStats = useMemo(() => {
+        const total = history.length;
+        const allowed = history.filter((log) => String(log?.status || '').toUpperCase() === 'ALLOWED').length;
+        const denied = total - allowed;
+        const freezed = history.filter((log) => String(log?.status || '').toUpperCase() !== 'ALLOWED' && isFreezeBlockedLog(log)).length;
+        return { total, allowed, denied, freezed };
+    }, [history]);
+
+    const latestFreezedLog = useMemo(
+        () => history.find((log) => String(log?.status || '').toUpperCase() !== 'ALLOWED' && isFreezeBlockedLog(log)) || null,
+        [history]
+    );
+
     if (user?.role === ROLES.MEMBER) {
         return <Attendance />;
     }
@@ -238,6 +273,29 @@ export default function Access() {
                     </div>
                 </div>
             </header>
+
+            <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-xl border border-white/10 bg-surface px-3 py-2.5">
+                    <p className="text-[10px] uppercase tracking-widest text-text-muted">Scans (Recent)</p>
+                    <p className="mt-1 text-base font-bold text-white">{accessStats.total}</p>
+                    <p className="text-[10px] text-text-muted">Latest 10 logs</p>
+                </div>
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5">
+                    <p className="text-[10px] uppercase tracking-widest text-emerald-300">Allowed</p>
+                    <p className="mt-1 text-base font-bold text-emerald-300">{accessStats.allowed}</p>
+                    <p className="text-[10px] text-emerald-300/80">Successful access</p>
+                </div>
+                <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2.5">
+                    <p className="text-[10px] uppercase tracking-widest text-red-300">Denied</p>
+                    <p className="mt-1 text-base font-bold text-red-300">{accessStats.denied}</p>
+                    <p className="text-[10px] text-red-300/80">Blocked scans</p>
+                </div>
+                <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-3 py-2.5">
+                    <p className="text-[10px] uppercase tracking-widest text-blue-300">Freezed Monitor</p>
+                    <p className="mt-1 text-base font-bold text-blue-300">{accessStats.freezed}</p>
+                    <p className="text-[10px] text-blue-300/80">Denied while frozen</p>
+                </div>
+            </section>
 
             <div className="grid lg:grid-cols-[1.4fr_0.6fr] gap-6">
                 {/* Scanner + Result */}
@@ -325,68 +383,93 @@ export default function Access() {
                     </div>
                 </div>
 
-                {/* Live Feed */}
-                <div className="bg-surface rounded-3xl border border-white/5 overflow-hidden shadow-sm">
-                    <div className="p-5 border-b border-white/5 bg-white/5 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
-                                <span className="material-icons-round text-primary text-xl">sensors</span>
-                            </div>
-                            <div>
-                                <h2 className="text-lg font-bold text-white">Live Feed</h2>
-                                <p className="text-[10px] text-text-muted uppercase font-bold tracking-widest">Entry History</p>
-                            </div>
+                <div className="space-y-4">
+                    <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4">
+                        <div className="flex items-center gap-2">
+                            <span className="material-icons-round text-blue-300">ac_unit</span>
+                            <p className="text-xs font-bold uppercase tracking-widest text-blue-300">Freezed Membership Monitor</p>
                         </div>
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
-                            Active
-                        </span>
+                        {latestFreezedLog ? (
+                            <div className="mt-3 rounded-xl border border-blue-400/20 bg-background/40 p-3">
+                                <p className="text-sm font-semibold text-white truncate">
+                                    {latestFreezedLog.member?.firstName} {latestFreezedLog.member?.lastName}
+                                </p>
+                                <p className="mt-1 text-[11px] text-blue-200">
+                                    Last blocked at {new Date(latestFreezedLog.checkIn).toLocaleString()}
+                                </p>
+                            </div>
+                        ) : (
+                            <p className="mt-3 text-xs text-blue-200/80">No recent blocked scans due to freezed status.</p>
+                        )}
                     </div>
 
-                    <div className="max-h-[calc(100vh-260px)] overflow-y-auto p-4 space-y-3">
-                        {history.map((log) => {
-                            const entity = getEntity(log);
-                            return (
-                            <button
-                                key={log.id}
-                                onClick={() => setLatestLogId(log.id)}
-                                className={`w-full flex items-center gap-3 p-4 rounded-2xl border transition-all text-left ${latestLogId === log.id
-                                    ? 'bg-primary/10 border-primary/30 shadow-lg'
-                                    : 'bg-white/5 border-white/5 hover:bg-white/10'
-                                    }`}
-                            >
-                                <div className="relative flex-shrink-0">
-                                    {entity.imageUrl ? (
-                                        <div className="w-12 h-12 rounded-2xl overflow-hidden border border-white/10">
-                                            <img src={entity.imageUrl} className="w-full h-full object-cover" alt="" />
-                                        </div>
-                                    ) : (
-                                        <div className="w-12 h-12 rounded-2xl bg-surfaceHighlight flex items-center justify-center border border-white/10">
-                                            <span className="text-lg font-bold text-text-muted">
-                                                {entity.initials}
-                                            </span>
-                                        </div>
-                                    )}
-                                    <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center border-2 border-surface ${log.status === 'ALLOWED' ? 'bg-emerald-500' : 'bg-red-500'
-                                        }`}>
-                                        <span className="material-icons-round text-white text-[10px]">
-                                            {log.status === 'ALLOWED' ? 'check' : 'close'}
-                                        </span>
-                                    </div>
+                    {/* Live Feed */}
+                    <div className="bg-surface rounded-3xl border border-white/5 overflow-hidden shadow-sm">
+                        <div className="p-5 border-b border-white/5 bg-white/5 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                                    <span className="material-icons-round text-primary text-xl">sensors</span>
                                 </div>
-
-                                <div className="min-w-0 flex-1">
-                                    <h4 className="text-white font-bold text-sm truncate">
-                                        {entity.name}
-                                    </h4>
-                                    <p className="text-text-secondary text-[10px] font-bold uppercase tracking-widest mt-0.5">
-                                        {new Date(log.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {entity.type} - {entity.subtitle}
-                                    </p>
+                                <div>
+                                    <h2 className="text-lg font-bold text-white">Live Feed</h2>
+                                    <p className="text-[10px] text-text-muted uppercase font-bold tracking-widest">Entry History</p>
                                 </div>
+                            </div>
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
+                                Active
+                            </span>
+                        </div>
 
-                                <span className="material-icons-round text-text-muted/40">chevron_right</span>
-                            </button>
-                            );
-                        })}
+                        <div className="max-h-[calc(100vh-360px)] overflow-y-auto p-4 space-y-3">
+                            {history.map((log) => {
+                                const entity = getEntity(log);
+                                const isFreezeBlocked = String(log.status || '').toUpperCase() !== 'ALLOWED' && isFreezeBlockedLog(log);
+                                return (
+                                    <button
+                                        key={log.id}
+                                        onClick={() => setLatestLogId(log.id)}
+                                        className={`w-full flex items-center gap-3 p-4 rounded-2xl border transition-all text-left ${latestLogId === log.id
+                                            ? 'bg-primary/10 border-primary/30 shadow-lg'
+                                            : 'bg-white/5 border-white/5 hover:bg-white/10'
+                                            }`}
+                                    >
+                                        <div className="relative flex-shrink-0">
+                                            {entity.imageUrl ? (
+                                                <div className="w-12 h-12 rounded-2xl overflow-hidden border border-white/10">
+                                                    <img src={entity.imageUrl} className="w-full h-full object-cover" alt="" />
+                                                </div>
+                                            ) : (
+                                                <div className="w-12 h-12 rounded-2xl bg-surfaceHighlight flex items-center justify-center border border-white/10">
+                                                    <span className="text-lg font-bold text-text-muted">
+                                                        {entity.initials}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center border-2 border-surface ${log.status === 'ALLOWED' ? 'bg-emerald-500' : 'bg-red-500'
+                                                }`}>
+                                                <span className="material-icons-round text-white text-[10px]">
+                                                    {log.status === 'ALLOWED' ? 'check' : 'close'}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <div className="min-w-0 flex-1">
+                                            <h4 className="text-white font-bold text-sm truncate">
+                                                {entity.name}
+                                            </h4>
+                                            <p className="text-text-secondary text-[10px] font-bold uppercase tracking-widest mt-0.5">
+                                                {new Date(log.checkIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {entity.type} - {entity.subtitle}
+                                            </p>
+                                            {isFreezeBlocked && (
+                                                <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-300">Freezed Membership</p>
+                                            )}
+                                        </div>
+
+                                        <span className="material-icons-round text-text-muted/40">chevron_right</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
                     </div>
                 </div>
             </div>

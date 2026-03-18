@@ -5,6 +5,7 @@ import { EXPENSE_CATEGORIES } from '../../constants/categories';
 import { useConfirm } from '../../context/ConfirmContext';
 
 const VIEW_MODES = ['LIST', 'DAILY', 'MONTHLY', 'YEARLY'];
+const EXPENSE_PAGE_SIZE = 10;
 
 const categoryLabel = (value) => String(value || '').replace(/_/g, ' ');
 
@@ -44,6 +45,12 @@ const Expenses = () => {
     const [editingExpense, setEditingExpense] = useState(null);
     const [viewMode, setViewMode] = useState('LIST');
     const [selectedCategory, setSelectedCategory] = useState('ALL');
+    const [dateFilterType, setDateFilterType] = useState('ALL');
+    const [customDateRange, setCustomDateRange] = useState({
+        start: '',
+        end: ''
+    });
+    const [currentPage, setCurrentPage] = useState(1);
     const [formData, setFormData] = useState({
         title: '',
         amount: '',
@@ -55,6 +62,14 @@ const Expenses = () => {
     useEffect(() => {
         fetchExpenses();
     }, []);
+
+    useEffect(() => {
+        if (dateFilterType !== 'CUSTOM') return;
+        if (!customDateRange.start || !customDateRange.end) return;
+        if (customDateRange.end < customDateRange.start) {
+            setCustomDateRange((prev) => ({ ...prev, end: prev.start }));
+        }
+    }, [customDateRange.end, customDateRange.start, dateFilterType]);
 
     const fetchExpenses = async () => {
         try {
@@ -132,14 +147,61 @@ const Expenses = () => {
     };
 
     const filteredExpenses = useMemo(() => {
+        const now = new Date();
         const byCategory = expenses.filter((expense) => selectedCategory === 'ALL' || expense.category === selectedCategory);
-        return [...byCategory].sort((a, b) => new Date(b.date) - new Date(a.date));
-    }, [expenses, selectedCategory]);
+
+        const byDate = byCategory.filter((expense) => {
+            const expenseDate = new Date(expense.date);
+            if (Number.isNaN(expenseDate.getTime())) return false;
+
+            if (dateFilterType === 'ALL') return true;
+            if (dateFilterType === 'THIS_MONTH') {
+                return expenseDate.getMonth() === now.getMonth() && expenseDate.getFullYear() === now.getFullYear();
+            }
+            if (dateFilterType === 'LAST_MONTH') {
+                const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                return expenseDate.getMonth() === lastMonth.getMonth() && expenseDate.getFullYear() === lastMonth.getFullYear();
+            }
+            if (dateFilterType === 'THIS_YEAR') {
+                return expenseDate.getFullYear() === now.getFullYear();
+            }
+            if (dateFilterType === 'CUSTOM') {
+                if (!customDateRange.start || !customDateRange.end) return true;
+                const start = new Date(customDateRange.start);
+                start.setHours(0, 0, 0, 0);
+                const end = new Date(customDateRange.end);
+                end.setHours(23, 59, 59, 999);
+                if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return true;
+                return expenseDate >= start && expenseDate <= end;
+            }
+            return true;
+        });
+
+        return [...byDate].sort((a, b) => new Date(b.date) - new Date(a.date));
+    }, [customDateRange.end, customDateRange.start, dateFilterType, expenses, selectedCategory]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [selectedCategory, dateFilterType, customDateRange.start, customDateRange.end, viewMode]);
+
+    const totalPages = Math.max(1, Math.ceil(filteredExpenses.length / EXPENSE_PAGE_SIZE));
+    const safePage = Math.min(currentPage, totalPages);
+
+    useEffect(() => {
+        if (currentPage > totalPages) {
+            setCurrentPage(totalPages);
+        }
+    }, [currentPage, totalPages]);
+
+    const paginatedExpenses = useMemo(() => {
+        const start = (safePage - 1) * EXPENSE_PAGE_SIZE;
+        return filteredExpenses.slice(start, start + EXPENSE_PAGE_SIZE);
+    }, [filteredExpenses, safePage]);
 
     const groupedExpenses = useMemo(() => {
         if (viewMode === 'LIST') return [];
         const buckets = new Map();
-        filteredExpenses.forEach((expense) => {
+        paginatedExpenses.forEach((expense) => {
             const meta = getGroupMeta(expense, viewMode);
             if (!buckets.has(meta.key)) {
                 buckets.set(meta.key, {
@@ -155,7 +217,7 @@ const Expenses = () => {
             bucket.total += Number(expense.amount || 0);
         });
         return [...buckets.values()].sort((a, b) => b.sortValue - a.sortValue);
-    }, [filteredExpenses, viewMode]);
+    }, [paginatedExpenses, viewMode]);
 
     const totalExpenses = useMemo(
         () => filteredExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0),
@@ -221,6 +283,34 @@ const Expenses = () => {
                         >
                             Export CSV
                         </button>
+                        <select
+                            value={dateFilterType}
+                            onChange={(e) => setDateFilterType(e.target.value)}
+                            className="rounded-xl border border-white/10 bg-surfaceHighlight px-3 py-2 text-sm text-white outline-none transition-colors focus:border-primary"
+                        >
+                            <option value="ALL">All Dates</option>
+                            <option value="THIS_MONTH">This Month</option>
+                            <option value="LAST_MONTH">Last Month</option>
+                            <option value="THIS_YEAR">This Year</option>
+                            <option value="CUSTOM">Custom Range</option>
+                        </select>
+                        {dateFilterType === 'CUSTOM' && (
+                            <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-surfaceHighlight p-1.5">
+                                <input
+                                    type="date"
+                                    value={customDateRange.start}
+                                    onChange={(e) => setCustomDateRange((prev) => ({ ...prev, start: e.target.value }))}
+                                    className="rounded-lg bg-transparent px-2 py-1 text-sm text-white outline-none"
+                                />
+                                <span className="text-text-muted">→</span>
+                                <input
+                                    type="date"
+                                    value={customDateRange.end}
+                                    onChange={(e) => setCustomDateRange((prev) => ({ ...prev, end: e.target.value }))}
+                                    className="rounded-lg bg-transparent px-2 py-1 text-sm text-white outline-none"
+                                />
+                            </div>
+                        )}
                         <select
                             value={selectedCategory}
                             onChange={(e) => setSelectedCategory(e.target.value)}
@@ -318,7 +408,7 @@ const Expenses = () => {
                                         <td colSpan="6" className="p-6 text-center text-text-muted">No expenses recorded yet.</td>
                                     </tr>
                                 ) : (
-                                    filteredExpenses.map((expense, index) => (
+                                    paginatedExpenses.map((expense, index) => (
                                         <tr key={expense.id} className={`${index % 2 === 0 ? 'bg-white/[0.01]' : ''} transition-colors hover:bg-white/5`}>
                                             <td className="p-3 text-text-secondary">{formatDate(expense.date)}</td>
                                             <td className="p-3 font-medium text-white">{expense.title}</td>
@@ -416,6 +506,32 @@ const Expenses = () => {
                             </div>
                         ))
                     )}
+                </div>
+            )}
+
+            {!loading && filteredExpenses.length > 0 && (
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-xs text-text-muted">
+                        Page {safePage} of {totalPages} • Showing {paginatedExpenses.length} of {filteredExpenses.length} records
+                    </p>
+                    <div className="inline-flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                            disabled={safePage <= 1}
+                            className="rounded-lg border border-white/10 bg-surfaceHighlight px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            Previous
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                            disabled={safePage >= totalPages}
+                            className="rounded-lg border border-white/10 bg-surfaceHighlight px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            Next
+                        </button>
+                    </div>
                 </div>
             )}
 

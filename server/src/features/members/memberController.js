@@ -1759,6 +1759,7 @@ const renewMembership = async (req, res) => {
         const updateData = {
             expiryDate: newExpiry,
             status: 'ACTIVE',
+            freezeUsedCount: 0,
             ...(planId ? { planId: Number(planId) } : {}),
             ...(getPlanClassSessions(selectedPlan) > 0
                 ? { classSessionsRemaining: { increment: getPlanClassSessions(selectedPlan) } }
@@ -2032,7 +2033,14 @@ const updateMemberStatus = async (req, res) => {
                 id: true,
                 status: true,
                 freezeStartDate: true,
-                freezeEndDate: true
+                freezeEndDate: true,
+                freezeUsedCount: true,
+                plan: {
+                    select: {
+                        id: true,
+                        freezeLimitCount: true
+                    }
+                }
             }
         });
         if (!existingMember) {
@@ -2040,6 +2048,9 @@ const updateMemberStatus = async (req, res) => {
         }
 
         const updateData = { status: normalizedStatus };
+        const previousStatus = String(existingMember.status || '').toUpperCase();
+        const wasFrozen = previousStatus === 'FREEZED' || previousStatus === 'FROZEN';
+        const isFreezingTransition = normalizedStatus === 'FREEZED' && !wasFrozen;
 
         if (normalizedStatus === 'FREEZED') {
             const resolvedStart = freezeStartDate || startDate;
@@ -2053,13 +2064,22 @@ const updateMemberStatus = async (req, res) => {
             if (parsedEnd < parsedStart) {
                 return res.status(400).json({ error: "Freeze end date must be on or after start date" });
             }
+            if (isFreezingTransition) {
+                const freezeLimitCount = Math.max(0, Number(existingMember.plan?.freezeLimitCount || 0));
+                const freezeUsedCount = Math.max(0, Number(existingMember.freezeUsedCount || 0));
+                if (freezeLimitCount <= 0) {
+                    return res.status(400).json({ error: "Freeze is not allowed for this membership plan" });
+                }
+                if (freezeUsedCount >= freezeLimitCount) {
+                    return res.status(400).json({ error: "Freeze limit reached for this membership plan" });
+                }
+                updateData.freezeUsedCount = { increment: 1 };
+            }
 
             updateData.freezeStartDate = parsedStart;
             updateData.freezeEndDate = parsedEnd;
         } else if (normalizedStatus === 'ACTIVE') {
             // Keep freeze window for tracking and end it at the unfreeze time.
-            const previousStatus = String(existingMember.status || '').toUpperCase();
-            const wasFrozen = previousStatus === 'FREEZED' || previousStatus === 'FROZEN';
             const start = existingMember.freezeStartDate ? new Date(existingMember.freezeStartDate) : null;
 
             if (wasFrozen && start && !Number.isNaN(start.getTime())) {

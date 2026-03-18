@@ -11,9 +11,8 @@ const Payroll = () => {
     const { user: currentUser } = useAuth();
     const [stats, setStats] = useState({ totalPayrollThisMonth: 0, pendingCommissions: 0, pendingMaterialDeductions: 0 });
     const [trainers, setTrainers] = useState([]);
-    const [staff, setStaff] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState('TRAINERS'); // TRAINERS, STAFF
+    const activeTab = 'TRAINERS';
     const [trainerFilter, setTrainerFilter] = useState('ALL'); // ALL, FREELANCER, FULLTIME
 
     // Date Filter State
@@ -91,15 +90,13 @@ const Payroll = () => {
             setLoading(true);
             const params = { startDate: dateRange.start, endDate: dateRange.end };
 
-            const [statsRes, trainersRes, staffRes] = await Promise.all([
+            const [statsRes, trainersRes] = await Promise.all([
                 axios.get('/api/admin/payroll/stats', { params }),
-                axios.get('/api/admin/payroll/trainers', { params }),
-                axios.get('/api/admin/payroll/staff', { params })
+                axios.get('/api/admin/payroll/trainers', { params })
             ]);
 
             setStats(statsRes.data);
             setTrainers(trainersRes.data);
-            setStaff(staffRes.data);
             setLoading(false);
         } catch (error) {
             console.error("Failed to fetch payroll data", error);
@@ -164,7 +161,7 @@ const Payroll = () => {
                 category: 'SALARY',
                 date: new Date().toISOString(),
                 notes: notes,
-                [selectedUser.type === 'TRAINER' ? 'trainerId' : 'staffId']: selectedUser.id
+                trainerId: selectedUser.id
             };
 
             await axios.post('/api/expenses', data);
@@ -258,30 +255,21 @@ const Payroll = () => {
     };
 
     const exportCurrentPayroll = () => {
-        const rows = activeTab === 'TRAINERS'
-            ? filteredTrainers.map((trainer) => ([
-                trainer.name,
-                trainer.type === 'FREELANCER' ? 'Freelance' : 'Full-time',
-                `${Number(trainer.commissionRate || 0) * 100}%`,
-                Number(trainer.totalPaid || 0).toFixed(2),
-                Number(trainer.unpaidCommissions || 0).toFixed(2),
-                Number(trainer.outstandingMaterialDeductions || 0).toFixed(2)
-            ]))
-            : staff.map((user) => ([
-                user.name,
-                user.role,
-                Number(user.baseSalary || 0).toFixed(2),
-                Number(user.totalPaid || 0).toFixed(2)
-            ]));
+        const rows = filteredTrainers.map((trainer) => ([
+            trainer.name,
+            trainer.type === 'FREELANCER' ? 'Freelance' : 'Full-time',
+            `${Number(trainer.commissionRate || 0) * 100}%`,
+            Number(trainer.totalPaid || 0).toFixed(2),
+            Number(trainer.unpaidCommissions || 0).toFixed(2),
+            Number(trainer.outstandingMaterialDeductions || 0).toFixed(2)
+        ]));
 
         if (rows.length === 0) {
-            showAlert({ title: 'Nothing to Export', message: `No ${activeTab.toLowerCase()} payroll rows available for export.`, type: 'warning' });
+            showAlert({ title: 'Nothing to Export', message: 'No trainer payroll rows available for export.', type: 'warning' });
             return;
         }
 
-        const headers = activeTab === 'TRAINERS'
-            ? ['Name', 'Type', 'Commission Rate', 'Paid Selected Period', 'Unpaid Commissions', 'Material Deductions']
-            : ['Name', 'Role', 'Base Salary', 'Paid Selected Period'];
+        const headers = ['Name', 'Type', 'Commission Rate', 'Paid Selected Period', 'Unpaid Commissions', 'Material Deductions'];
         const csvBody = [headers, ...rows].map((line) => line.map(escapeCsv).join(',')).join('\n');
         const blob = new Blob([csvBody], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
@@ -325,7 +313,7 @@ const Payroll = () => {
 
     const payrollTable = (
         <DataTable
-            columns={activeTab === 'TRAINERS' ? [
+            columns={[
                 {
                     header: 'Name',
                     accessor: (trainer) => (
@@ -368,32 +356,10 @@ const Payroll = () => {
                     className: 'w-[10%] text-right',
                     cellClassName: 'text-right'
                 }
-            ] : [
-                {
-                    header: 'Name',
-                    accessor: (user) => (
-                        <span className="font-medium text-white">
-                            {user.name} <span className="ml-2 text-xs text-text-muted">({user.role})</span>
-                        </span>
-                    ),
-                    className: 'w-[40%]'
-                },
-                {
-                    header: 'Base Salary',
-                    accessor: (user) => <span className="text-text-secondary">{user.baseSalary ? formatPrice(user.baseSalary) : '-'}</span>,
-                    className: 'w-[12%] text-right',
-                    cellClassName: 'text-right'
-                },
-                {
-                    header: 'Paid (Period)',
-                    accessor: (user) => <span className="font-semibold text-emerald-300">{formatPrice(user.totalPaid)}</span>,
-                    className: 'w-[12%] text-right',
-                    cellClassName: 'text-right'
-                }
             ]}
-            data={activeTab === 'TRAINERS' ? filteredTrainers : staff}
-            emptyMessage={`No ${activeTab.toLowerCase()} found.`}
-            actions={(row) => activeTab === 'TRAINERS' ? (
+            data={filteredTrainers}
+            emptyMessage="No trainers found."
+            actions={(row) => (
                 <div className="flex justify-end gap-1.5">
                     <button
                         onClick={(e) => { e.stopPropagation(); handlePayCommission(row); }}
@@ -434,18 +400,6 @@ const Payroll = () => {
                         </div>
                     </details>
                 </div>
-            ) : (
-                <button
-                    onClick={(e) => { e.stopPropagation(); handleRecordPayment(row, 'STAFF'); }}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-bold text-white ${canPaySalary(row)
-                        ? 'bg-blue-500 hover:bg-blue-600'
-                        : 'cursor-not-allowed bg-white/20'
-                        }`}
-                    disabled={!canPaySalary(row)}
-                    title={!canPaySalary(row) ? "Only Owner can pay Admins/Owners" : ""}
-                >
-                    Pay Salary
-                </button>
             )}
         />
     );
@@ -517,44 +471,31 @@ const Payroll = () => {
                     </div>
                     <div className="rounded-xl border border-white/10 bg-surface px-3 py-2.5">
                         <p className="text-[10px] uppercase tracking-widest text-text-muted">Records</p>
-                        <p className="mt-1 text-base font-bold text-white">{activeTab === 'TRAINERS' ? filteredTrainers.length : staff.length}</p>
+                        <p className="mt-1 text-base font-bold text-white">{filteredTrainers.length}</p>
                         <p className="text-[10px] text-text-muted">In current view</p>
                     </div>
                 </div>
             </section>
 
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="grid w-full grid-cols-2 rounded-xl border border-white/10 bg-surfaceHighlight p-1 md:max-w-xl">
-                    <button
-                        onClick={() => setActiveTab('TRAINERS')}
-                        className={`w-full rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors ${activeTab === 'TRAINERS' ? 'bg-white/10 text-white' : 'text-text-secondary hover:text-white'}`}
-                    >
-                        Trainers ({trainers.length})
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('STAFF')}
-                        className={`w-full rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors ${activeTab === 'STAFF' ? 'bg-white/10 text-white' : 'text-text-secondary hover:text-white'}`}
-                    >
-                        Staff ({staff.length})
-                    </button>
+                <div className="rounded-xl border border-white/10 bg-surfaceHighlight px-4 py-2.5 md:max-w-xl">
+                    <p className="text-sm font-semibold text-white">Trainer Payroll View</p>
                 </div>
 
-                {activeTab === 'TRAINERS' && (
-                    <div className="inline-flex flex-wrap gap-2 md:justify-end">
-                        {[{ label: 'All', value: 'ALL' }, { label: 'Freelancers', value: 'FREELANCER' }, { label: 'Full-time', value: 'FULLTIME' }].map(f => (
-                            <button
-                                key={f.value}
-                                onClick={() => setTrainerFilter(f.value)}
-                                className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${trainerFilter === f.value
-                                    ? 'border-primary/50 bg-primary/10 text-primary'
-                                    : 'border-white/10 text-text-secondary hover:text-white'
-                                    }`}
-                            >
-                                {f.label}
-                            </button>
-                        ))}
-                    </div>
-                )}
+                <div className="inline-flex flex-wrap gap-2 md:justify-end">
+                    {[{ label: 'All', value: 'ALL' }, { label: 'Freelancers', value: 'FREELANCER' }, { label: 'Full-time', value: 'FULLTIME' }].map(f => (
+                        <button
+                            key={f.value}
+                            onClick={() => setTrainerFilter(f.value)}
+                            className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${trainerFilter === f.value
+                                ? 'border-primary/50 bg-primary/10 text-primary'
+                                : 'border-white/10 text-text-secondary hover:text-white'
+                                }`}
+                        >
+                            {f.label}
+                        </button>
+                    ))}
+                </div>
             </div>
 
             {/* Content */}
@@ -563,65 +504,61 @@ const Payroll = () => {
                     Loading payroll data...
                 </div>
             ) : (
-                activeTab === 'TRAINERS' ? (
-                    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
-                        {payrollTable}
-                        <aside className="h-fit rounded-2xl border border-white/10 bg-surface p-4 shadow-sm xl:sticky xl:top-24">
-                            <h3 className="text-sm font-bold uppercase tracking-wide text-text-muted">Release Summary</h3>
-                            <div className="mt-3 space-y-3 text-sm">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-text-muted">Trainers in view</span>
-                                    <span className="font-bold text-white">{filteredTrainers.length}</span>
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+                    {payrollTable}
+                    <aside className="h-fit rounded-2xl border border-white/10 bg-surface p-4 shadow-sm xl:sticky xl:top-24">
+                        <h3 className="text-sm font-bold uppercase tracking-wide text-text-muted">Release Summary</h3>
+                        <div className="mt-3 space-y-3 text-sm">
+                            <div className="flex items-center justify-between">
+                                <span className="text-text-muted">Trainers in view</span>
+                                <span className="font-bold text-white">{filteredTrainers.length}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <span className="text-text-muted">Selected payouts</span>
+                                <span className="font-bold text-amber-300">{formatPrice(trainerGrossPending)}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <span className="text-text-muted">Outstanding deductions</span>
+                                <span className="font-bold text-red-300">-{formatPrice(trainerOutstandingDeductions)}</span>
+                            </div>
+                            <div className="space-y-1.5">
+                                <div className="h-2.5 overflow-hidden rounded-full bg-white/5">
+                                    <div className="h-full bg-red-400/70" style={{ width: `${deductionPercent}%` }} />
                                 </div>
-                                <div className="flex items-center justify-between">
-                                    <span className="text-text-muted">Selected payouts</span>
-                                    <span className="font-bold text-amber-300">{formatPrice(trainerGrossPending)}</span>
+                                <div className="h-2.5 overflow-hidden rounded-full bg-white/5">
+                                    <div className="h-full bg-emerald-400/80" style={{ width: `${netPercent}%` }} />
                                 </div>
-                                <div className="flex items-center justify-between">
-                                    <span className="text-text-muted">Outstanding deductions</span>
-                                    <span className="font-bold text-red-300">-{formatPrice(trainerOutstandingDeductions)}</span>
-                                </div>
-                                <div className="space-y-1.5">
-                                    <div className="h-2.5 overflow-hidden rounded-full bg-white/5">
-                                        <div className="h-full bg-red-400/70" style={{ width: `${deductionPercent}%` }} />
-                                    </div>
-                                    <div className="h-2.5 overflow-hidden rounded-full bg-white/5">
-                                        <div className="h-full bg-emerald-400/80" style={{ width: `${netPercent}%` }} />
-                                    </div>
-                                    <div className="flex justify-between text-[10px] text-text-muted">
-                                        <span>Deductions</span>
-                                        <span>Net</span>
-                                    </div>
-                                </div>
-                                <div className="border-t border-white/10 pt-3">
-                                    <div className="flex items-center justify-between">
-                                        <span className="font-semibold text-white">Net to release</span>
-                                        <span className={`text-lg font-extrabold ${trainerNetRelease > 0 ? 'text-emerald-300' : 'text-text-muted'}`}>
-                                            {formatPrice(trainerNetRelease)}
-                                        </span>
-                                    </div>
-                                    {trainerGrossPending < trainerOutstandingDeductions && (
-                                        <p className="mt-2 text-[11px] text-red-300">
-                                            Deductions currently exceed pending commissions.
-                                        </p>
-                                    )}
-                                    <button
-                                        onClick={settleAllEligible}
-                                        disabled={trainerEligibleCount === 0}
-                                        className={`mt-3 w-full rounded-xl px-3 py-2.5 text-sm font-bold transition-colors ${trainerEligibleCount > 0
-                                            ? 'bg-primary text-background hover:bg-orange-600'
-                                            : 'cursor-not-allowed border border-white/10 bg-white/5 text-text-muted'
-                                            }`}
-                                    >
-                                        Settle All Eligible ({trainerEligibleCount})
-                                    </button>
+                                <div className="flex justify-between text-[10px] text-text-muted">
+                                    <span>Deductions</span>
+                                    <span>Net</span>
                                 </div>
                             </div>
-                        </aside>
-                    </div>
-                ) : (
-                    payrollTable
-                )
+                            <div className="border-t border-white/10 pt-3">
+                                <div className="flex items-center justify-between">
+                                    <span className="font-semibold text-white">Net to release</span>
+                                    <span className={`text-lg font-extrabold ${trainerNetRelease > 0 ? 'text-emerald-300' : 'text-text-muted'}`}>
+                                        {formatPrice(trainerNetRelease)}
+                                    </span>
+                                </div>
+                                {trainerGrossPending < trainerOutstandingDeductions && (
+                                    <p className="mt-2 text-[11px] text-red-300">
+                                        Deductions currently exceed pending commissions.
+                                    </p>
+                                )}
+                                <button
+                                    onClick={settleAllEligible}
+                                    disabled={trainerEligibleCount === 0}
+                                    className={`mt-3 w-full rounded-xl px-3 py-2.5 text-sm font-bold transition-colors ${trainerEligibleCount > 0
+                                        ? 'bg-primary text-background hover:bg-orange-600'
+                                        : 'cursor-not-allowed border border-white/10 bg-white/5 text-text-muted'
+                                        }`}
+                                >
+                                    Settle All Eligible ({trainerEligibleCount})
+                                </button>
+                            </div>
+                        </div>
+                    </aside>
+                </div>
             )}
 
             {/* Payments Modal */}

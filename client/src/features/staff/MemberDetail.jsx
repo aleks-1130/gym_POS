@@ -182,8 +182,12 @@ export default function MemberDetail() {
             });
             setShowFreezeModal(false);
             fetchMember();
-        } catch {
-            showAlert({ title: "Status Error", message: "Failed to update status", type: "danger" });
+        } catch (error) {
+            showAlert({
+                title: "Status Error",
+                message: error?.response?.data?.error || "Failed to update status",
+                type: "danger"
+            });
         }
     };
     const handleSetPassword = useCallback(async (e) => {
@@ -232,6 +236,13 @@ export default function MemberDetail() {
         () => member?.plan || null,
         [member]
     );
+    const freezeLimitCount = Math.max(0, Number(currentPlan?.freezeLimitCount || 0));
+    const freezeUsedCount = Math.max(0, Number(member?.freezeUsedCount || 0));
+    const freezeRemainingCount = Math.max(0, freezeLimitCount - freezeUsedCount);
+    const freezeUsageLabel = freezeLimitCount > 0
+        ? `${freezeUsedCount}/${freezeLimitCount} used`
+        : 'Not available';
+    const canUseFreezeNow = freezeLimitCount > 0 && freezeRemainingCount > 0;
     const isMembershipExpiredForClassPackages = useMemo(() => {
         const statusExpired = String(member?.status || '').toUpperCase() === 'EXPIRED';
         if (statusExpired) return true;
@@ -284,6 +295,36 @@ export default function MemberDetail() {
     const freezeWindowLabel = hasFreezeWindow
         ? `${freezeStartDate.toLocaleDateString()} - ${freezeEndDate.toLocaleDateString()}`
         : 'Not tracked';
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const freezeIsUpcoming = hasFreezeWindow && freezeStartDate > todayStart;
+    const freezeIsCompleted = hasFreezeWindow && freezeEndDate < todayStart;
+    const freezeIsActive = hasFreezeWindow && !freezeIsUpcoming && !freezeIsCompleted;
+    const freezeTotalDays = freezeDurationDays || 0;
+    const freezeElapsedDays = hasFreezeWindow
+        ? freezeIsUpcoming
+            ? 0
+            : freezeIsCompleted
+                ? freezeTotalDays
+                : (getInclusiveDayCount(freezeStartDate, todayStart) || 0)
+        : 0;
+    const freezeRemainingDays = hasFreezeWindow
+        ? freezeIsUpcoming
+            ? freezeTotalDays
+            : freezeIsCompleted
+                ? 0
+                : (getInclusiveDayCount(todayStart, freezeEndDate) || 0)
+        : 0;
+    const freezeProgressPct = hasFreezeWindow && freezeTotalDays > 0
+        ? Math.min(100, Math.max(0, (freezeElapsedDays / freezeTotalDays) * 100))
+        : 0;
+    const freezeStatusLabel = hasFreezeWindow
+        ? freezeIsUpcoming
+            ? `Starts ${freezeStartDate.toLocaleDateString()}`
+            : freezeIsActive
+                ? `${freezeRemainingDays} day${freezeRemainingDays > 1 ? 's' : ''} remaining`
+                : `Completed ${freezeEndDate.toLocaleDateString()}`
+        : 'No freeze period recorded';
 
 
     return (
@@ -327,6 +368,7 @@ export default function MemberDetail() {
                                         {normalizedStatus === 'FREEZED' ? 'Current freeze' : 'Last freeze'}: {freezeWindowLabel} ({freezeDurationLabel})
                                     </p>
                                 )}
+                                <p className="text-[11px] text-blue-300/90 mt-1">Freeze usage: {freezeUsageLabel}</p>
                             </div>
                         </div>
 
@@ -382,11 +424,12 @@ export default function MemberDetail() {
                 </div>
 
                 <div className="px-5 py-3 sm:px-6 bg-background/20">
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                         <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
                             <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Plan</p>
                             <p className="text-sm font-semibold text-white mt-1 truncate">{stats.combinedPlanLabel}</p>
                             <p className="text-xs text-text-muted">{formatPrice(currentPlan?.price || 0)} / {currentPlan?.duration || 0} days</p>
+                            <p className="text-xs text-blue-300/90 mt-1">Freeze: {freezeUsageLabel}</p>
                         </div>
                         <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
                             <div className="flex items-center justify-between">
@@ -398,6 +441,37 @@ export default function MemberDetail() {
                             </div>
                             <p className="text-xs text-text-muted mt-1">{Math.max(0, stats.daysRemaining)} days left</p>
                         </div>
+                        {hasFreezeWindow ? (
+                            <div className="relative overflow-hidden rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2.5">
+                                <div className="flex items-center justify-between">
+                                    <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Freeze Progress</p>
+                                    <p className="text-xs font-semibold text-white">{Math.round(freezeProgressPct)}%</p>
+                                </div>
+                                <div className="h-1.5 rounded-full bg-white/10 overflow-hidden mt-2">
+                                    <div className="h-full bg-blue-400" style={{ width: `${freezeProgressPct}%` }} />
+                                </div>
+                                <p className="text-xs text-text-muted mt-1">{`${freezeElapsedDays}/${freezeTotalDays} days used`}</p>
+                                <p className="text-xs mt-1 text-blue-200/90">Allowances: {freezeUsageLabel}</p>
+                                <p className="text-xs mt-1 text-blue-300">{freezeStatusLabel}</p>
+                            </div>
+                        ) : (
+                            <div className="relative overflow-hidden rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
+                                <div className="flex items-center justify-between">
+                                    <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Freeze Progress</p>
+                                    <p className="text-xs font-semibold text-white/80">{Math.round(freezeProgressPct)}%</p>
+                                </div>
+                                <div className="h-1.5 rounded-full bg-white/10 overflow-hidden mt-2">
+                                    <div className="h-full bg-blue-400/70" style={{ width: `${freezeProgressPct}%` }} />
+                                </div>
+                                <p className="text-xs text-text-muted mt-1">0/0 days used</p>
+                                <p className="text-xs mt-1 text-text-muted">Allowances: {freezeUsageLabel}</p>
+                                <p className="text-xs mt-1 text-text-muted">{freezeStatusLabel}</p>
+                                <div className="absolute inset-0 bg-black/15" />
+                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                    <span className="w-full text-center text-sm font-semibold tracking-[0.28em] text-white/65">NOT USED</span>
+                                </div>
+                            </div>
+                        )}
                         <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
                             <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Expiry</p>
                             <p className="text-sm font-semibold text-white mt-1">{member.expiryDate ? new Date(member.expiryDate).toLocaleDateString() : 'Not set'}</p>
@@ -433,7 +507,10 @@ export default function MemberDetail() {
                                     { label: 'Member Since', value: member.startDate ? new Date(member.startDate).toLocaleDateString() : 'Not provided' },
                                     { label: 'Expiry Date', value: member.expiryDate ? new Date(member.expiryDate).toLocaleDateString() : 'Not provided' },
                                     { label: 'Freeze Period', value: freezeWindowLabel },
-                                    { label: 'Freeze Duration', value: freezeDurationLabel }
+                                    { label: 'Freeze Duration', value: freezeDurationLabel },
+                                    { label: 'Freeze Allowance', value: freezeLimitCount > 0 ? `${freezeLimitCount} time${freezeLimitCount > 1 ? 's' : ''}` : 'Not allowed' },
+                                    { label: 'Freeze Remaining', value: freezeLimitCount > 0 ? `${freezeRemainingCount} time${freezeRemainingCount > 1 ? 's' : ''}` : 'Not allowed' },
+                                    { label: 'Freeze Progress', value: hasFreezeWindow ? `${Math.round(freezeProgressPct)}% (${freezeElapsedDays}/${freezeTotalDays} days)` : 'NOT USED' }
                                 ].map((row) => (
                                 <div key={row.label} className="grid grid-cols-[150px_minmax(0,1fr)] gap-3 py-3 border-b border-white/5 last:border-b-0">
                                     <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">{row.label}</p>
@@ -668,11 +745,19 @@ export default function MemberDetail() {
                         <h3 className="text-xl font-bold text-white mb-6">Freeze Membership</h3>
                         <form onSubmit={(e) => {
                             e.preventDefault();
+                            if (!canUseFreezeNow) return;
                             handleStatusChange('FREEZED', {
                                 freezeStartDate: freezeData.startDate,
                                 freezeEndDate: freezeData.endDate
                             });
                         }} className="space-y-4">
+                            <div className={`rounded-xl border px-3 py-2 text-xs ${canUseFreezeNow ? 'border-blue-500/25 bg-blue-500/10 text-blue-200' : 'border-red-500/25 bg-red-500/10 text-red-200'}`}>
+                                {canUseFreezeNow
+                                    ? `Freeze usage left: ${freezeRemainingCount} of ${freezeLimitCount}`
+                                    : (freezeLimitCount <= 0
+                                        ? 'This plan does not allow freezing.'
+                                        : 'Freeze usage limit reached for this membership.')}
+                            </div>
                             <div>
                                 <label className="text-text-muted text-sm mb-2 block">Start Date</label>
                                 <input required type="date" className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white outline-none" value={freezeData.startDate} onChange={e => setFreezeData({ ...freezeData, startDate: e.target.value })} />
@@ -681,7 +766,10 @@ export default function MemberDetail() {
                                 <label className="text-text-muted text-sm mb-2 block">End Date</label>
                                 <input required type="date" className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white outline-none" value={freezeData.endDate} onChange={e => setFreezeData({ ...freezeData, endDate: e.target.value })} />
                             </div>
-                            <div className="flex justify-end gap-3"><button type="button" onClick={() => setShowFreezeModal(false)} className="text-text-muted">Cancel</button><button type="submit" className="bg-blue-500 text-white font-bold px-8 py-2.5 rounded-2xl">Freeze</button></div>
+                            <div className="flex justify-end gap-3">
+                                <button type="button" onClick={() => setShowFreezeModal(false)} className="text-text-muted">Cancel</button>
+                                <button type="submit" disabled={!canUseFreezeNow} className="bg-blue-500 text-white font-bold px-8 py-2.5 rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed">Freeze</button>
+                            </div>
                         </form>
                     </div>
                 </div>
