@@ -1,7 +1,31 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 
 const ConfirmContext = createContext(null);
+const VALID_TYPES = ['info', 'danger', 'success', 'warning'];
+
+const normalizeOptions = (options) => {
+    if (typeof options === 'string') {
+        return { message: options };
+    }
+    if (!options || typeof options !== 'object') {
+        return {};
+    }
+    return options;
+};
+
+const normalizeType = (rawType) => {
+    const normalized = String(rawType || 'info').toLowerCase();
+    return VALID_TYPES.includes(normalized) ? normalized : 'info';
+};
+
+const getDefaultAlertTitle = (type) => {
+    if (type === 'success') return 'Success';
+    if (type === 'danger') return 'Action Failed';
+    if (type === 'warning') return 'Attention';
+    return 'Notice';
+};
 
 export const ConfirmProvider = ({ children }) => {
     const [config, setConfig] = useState({
@@ -16,14 +40,16 @@ export const ConfirmProvider = ({ children }) => {
     });
 
     const confirm = useCallback((options) => {
+        const parsed = normalizeOptions(options);
+        const type = normalizeType(parsed.type);
         return new Promise((resolve) => {
             setConfig({
                 isOpen: true,
-                title: options.title || 'Are you sure?',
-                message: options.message || '',
-                confirmLabel: options.confirmLabel || 'Confirm',
-                cancelLabel: options.cancelLabel || 'Cancel',
-                type: options.type || 'info',
+                title: parsed.title || 'Please Confirm',
+                message: parsed.message || '',
+                confirmLabel: parsed.confirmLabel || 'Confirm',
+                cancelLabel: parsed.cancelLabel || 'Cancel',
+                type,
                 onConfirm: () => {
                     setConfig(prev => ({ ...prev, isOpen: false }));
                     resolve(true);
@@ -37,17 +63,24 @@ export const ConfirmProvider = ({ children }) => {
     }, []);
 
     const alert = useCallback((options) => {
+        const parsed = normalizeOptions(options);
+        const type = normalizeType(parsed.type);
         return new Promise((resolve) => {
             setConfig({
                 isOpen: true,
-                title: options.title || 'Notice',
-                message: options.message || '',
-                confirmLabel: options.confirmLabel || 'OK',
+                title: parsed.title || getDefaultAlertTitle(type),
+                message: parsed.message || '',
+                confirmLabel: parsed.confirmLabel || 'OK',
                 cancelLabel: null, // No cancel button for alert
-                type: options.type || 'info',
+                type,
                 onConfirm: () => {
                     setConfig(prev => ({ ...prev, isOpen: false }));
                     resolve(true);
+                },
+                onCancel: () => {
+                    // Support dismiss-by-backdrop/escape while still resolving the promise.
+                    setConfig(prev => ({ ...prev, isOpen: false }));
+                    resolve(false);
                 }
             });
         });

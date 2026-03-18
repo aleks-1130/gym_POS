@@ -708,7 +708,7 @@ export default function Trainers() {
                                         </td>
                                         <td className="px-6 py-4 text-white">{session.trainer?.name || 'N/A'}</td>
                                         <td className="px-6 py-4 text-white">
-                                            <p className="text-xs max-w-[220px] truncate" title={session.trainerChangeRequest?.request?.reason || ''}>
+                                            <p className="text-xs max-w-[280px] whitespace-normal break-words leading-5" title={session.trainerChangeRequest?.request?.reason || ''}>
                                                 {session.trainerChangeRequest?.request?.reason || 'No reason provided'}
                                             </p>
                                         </td>

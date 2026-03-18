@@ -112,7 +112,7 @@ export default function TrainerRewards() {
     return (
         <div className="space-y-4 sm:space-y-6 max-w-5xl mx-auto">
             <TrainerPageHeader
-                title="Trainer Rewards Store"
+                title="Rewards Store"
                 subtitle="Earn points from trainer purchases and redeem rewards"
                 icon="card_giftcard"
                 className="border-white/10"
