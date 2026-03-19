@@ -54,6 +54,7 @@ import DoorScanner from '../features/staff/DoorScanner';
 import StaffSettings from '../features/staff/StaffSettings';
 import StaffTrainers from '../features/staff/Trainers';
 import StaffClasses from '../features/staff/Classes';
+import StaffRefunds from '../features/staff/Refunds';
 
 // Trainer Pages
 import TrainerClassesSessions from '../features/trainer/TrainerClassesSessions';
@@ -644,8 +645,16 @@ export default function AppRoutes() {
                 <Route
                     path="/refunds"
                     element={
-                        <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN]}>
-                            <Refunds />
+                        <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF]}>
+                            {user?.role === ROLES.STAFF ? <Navigate to="/staff/refunds" replace /> : <Refunds />}
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/staff/refunds"
+                    element={
+                        <ProtectedRoute allowedRoles={[ROLES.STAFF]}>
+                            <StaffRefunds />
                         </ProtectedRoute>
                     }
                 />

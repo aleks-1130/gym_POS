@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useConfirm } from '../../context/ConfirmContext';
 import TrainerPageHeader from './components/TrainerPageHeader';
 
-const HISTORY_STATUS_FILTERS = ['ALL', 'UPCOMING', 'COMPLETED', 'CANCELLED'];
+const HISTORY_STATUS_FILTERS = ['ALL', 'COMPLETED', 'REFUNDED', 'CANCELLED'];
 const HISTORY_TABS = ['BOOKINGS', 'CLASSES'];
 const SESSION_ACTION_GRACE_MINUTES = 5;
 
@@ -73,26 +73,48 @@ const canMarkSessionAttendanceNow = (session, now = new Date()) => {
   return now >= eligibleAt;
 };
 
+const getSessionRefundStatus = (session) => {
+  const payloadStatus = String(session?.refundException?.status || '').toUpperCase();
+  if (payloadStatus === 'APPROVED' || payloadStatus === 'REJECTED' || payloadStatus === 'PENDING') {
+    return payloadStatus;
+  }
+
+  const lines = String(session?.notes || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  let hasRequest = false;
+  let latestResolution = '';
+  lines.forEach((line) => {
+    if (line.startsWith('REFUND_EXCEPTION_REQUESTED')) hasRequest = true;
+    if (line.startsWith('REFUND_EXCEPTION_APPROVED')) latestResolution = 'APPROVED';
+    if (line.startsWith('REFUND_EXCEPTION_REJECTED')) latestResolution = 'REJECTED';
+  });
+
+  if (!hasRequest && !latestResolution) return 'NONE';
+  if (latestResolution) return latestResolution;
+  return 'PENDING';
+};
+
+const isSessionRefunded = (session) => getSessionRefundStatus(session) === 'APPROVED';
+
 const getSessionHistoryCategory = (session) => {
+  if (isSessionRefunded(session)) return 'REFUNDED';
   const status = String(session?.status || '').toUpperCase();
   if (status === 'CANCELLED' || status === 'NO_SHOW' || status === 'DECLINED') return 'CANCELLED';
-  if (status === 'COMPLETED') return 'COMPLETED';
-  const d = new Date(session?.date);
-  if (!Number.isNaN(d.getTime()) && d >= new Date()) return 'UPCOMING';
   return 'COMPLETED';
 };
 
 const getClassHistoryCategory = (entry) => {
   const status = String(entry?.status || '').toUpperCase();
   if (status === 'CANCELLED') return 'CANCELLED';
-  const d = new Date(entry?.date);
-  if (!Number.isNaN(d.getTime()) && d >= new Date()) return 'UPCOMING';
   return 'COMPLETED';
 };
 
 const getHistoryStatusLabel = (status) => {
-  if (status === 'UPCOMING') return 'Upcoming';
   if (status === 'COMPLETED') return 'Completed';
+  if (status === 'REFUNDED') return 'Refunded';
   if (status === 'CANCELLED') return 'Cancelled';
   return 'Unknown';
 };
@@ -306,20 +328,22 @@ export default function TrainerClassesSessions() {
   const selectedClasses = useMemo(() => classEvents.filter((c) => toDateKey(c.sessionDate) === selectedDay), [classEvents, selectedDay]);
 
   const bookingHistory = useMemo(() => {
+    const now = new Date();
     return [...sessions]
       .filter((s) => {
         const d = new Date(s.date);
         if (Number.isNaN(d.getTime())) return false;
-        return true;
+        return d < now;
       })
       .sort((a, b) => new Date(b.date) - new Date(a.date));
   }, [sessions]);
 
   const classHistoryEntries = useMemo(() => {
+    const now = new Date();
     return [...classHistory]
       .filter((entry) => {
         const d = new Date(entry.date);
-        return !Number.isNaN(d.getTime());
+        return !Number.isNaN(d.getTime()) && d < now;
       })
       .sort((a, b) => new Date(b.date) - new Date(a.date));
   }, [classHistory]);
@@ -369,12 +393,15 @@ export default function TrainerClassesSessions() {
       }
 
       const memberName = `${entry.member?.firstName || ''} ${entry.member?.lastName || ''}`.trim();
+      const refundStatus = getSessionRefundStatus(entry);
       const searchable = [
         memberName,
         entry.memberId,
         formatDate(entry.date),
         formatTime(entry.date),
         entry.status,
+        refundStatus === 'APPROVED' ? 'REFUNDED' : '',
+        refundStatus,
         getHistoryStatusLabel(entry.__historyCategory),
         Number(entry.duration || 0),
         formatMoney(entry.price)
@@ -394,14 +421,31 @@ export default function TrainerClassesSessions() {
   }), [filteredBookingHistoryWithCategory.length, filteredClassHistoryWithCategory.length]);
 
   const historySummary = useMemo(() => {
-    const total = activeTabBaseHistory.length;
-    const upcoming = activeTabBaseHistory.filter((entry) => entry.__historyCategory === 'UPCOMING').length;
-    const commission = activeHistoryTab === 'BOOKINGS'
-      ? activeTabBaseHistory.reduce((sum, entry) => sum + Number(entry.commissionAmount ?? entry.price ?? 0), 0)
-      : activeTabBaseHistory.reduce((sum, entry) => sum + Number(entry.commissionAmount || 0), 0);
+    if (activeHistoryTab === 'CLASSES') {
+      const completedClassEntries = activeTabBaseHistory.filter((entry) => entry.__historyCategory === 'COMPLETED');
+      const completedClasses = completedClassEntries.length;
+      const totalAttendance = completedClassEntries.reduce((sum, entry) => sum + Number(entry.attendeeCount || 0), 0);
+      const averageAttendance = completedClasses > 0 ? (totalAttendance / completedClasses) : 0;
+      const noShowCount = activeTabBaseHistory.reduce((sum, entry) => {
+        const participants = Array.isArray(entry?.participants) ? entry.participants : [];
+        if (participants.length > 0) {
+          return sum + participants.filter((participant) => String(participant?.status || '').toUpperCase().startsWith('NO_SHOW')).length;
+        }
+        const fallbackParticipants = Number(entry?.participantsCount || 0);
+        const attended = Number(entry?.attendeeCount || 0);
+        return sum + Math.max(0, fallbackParticipants - attended);
+      }, 0);
+      return {
+        completedClasses,
+        averageAttendance,
+        noShowCount
+      };
+    }
+
     const completed = activeTabBaseHistory.filter((entry) => entry.__historyCategory === 'COMPLETED').length;
+    const refunded = activeTabBaseHistory.filter((entry) => entry.__historyCategory === 'REFUNDED').length;
     const cancelled = activeTabBaseHistory.filter((entry) => entry.__historyCategory === 'CANCELLED').length;
-    return { total, upcoming, completed, cancelled, commission };
+    return { completed, refunded, cancelled };
   }, [activeHistoryTab, activeTabBaseHistory]);
 
   const monthYearLabel = monthCursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
@@ -473,8 +517,8 @@ export default function TrainerClassesSessions() {
   };
 
   const getHistoryBadgeClasses = (status) => {
-    if (status === 'UPCOMING') return 'bg-primary/15 text-primary border-primary/35';
     if (status === 'COMPLETED') return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/35';
+    if (status === 'REFUNDED') return 'bg-cyan-500/15 text-cyan-300 border-cyan-500/35';
     if (status === 'CANCELLED') return 'bg-rose-500/15 text-rose-300 border-rose-500/35';
     return 'bg-white/10 text-text-muted border-white/20';
   };
@@ -482,7 +526,7 @@ export default function TrainerClassesSessions() {
   const getParticipantStatusBadgeClasses = (status) => {
     const normalized = String(status || '').toUpperCase();
     if (normalized === 'ATTENDED') return 'bg-emerald-500/15 text-emerald-300 border-emerald-500/35';
-    if (normalized === 'NO_SHOW') return 'bg-amber-500/15 text-amber-300 border-amber-500/35';
+    if (normalized.startsWith('NO_SHOW')) return 'bg-amber-500/15 text-amber-300 border-amber-500/35';
     if (normalized === 'CANCELLED') return 'bg-rose-500/15 text-rose-300 border-rose-500/35';
     return 'bg-white/10 text-text-muted border-white/20';
   };
@@ -492,12 +536,15 @@ export default function TrainerClassesSessions() {
     const status = session.__historyCategory;
     const rawStatus = String(session.status || 'SCHEDULED').replace(/_/g, ' ');
     const commissionAmount = Number(session.commissionAmount ?? session.price ?? 0);
+    const refunded = isSessionRefunded(session);
     const normalizedStatus = String(session.status || '').toUpperCase();
     const hasRating = session.memberRating !== null && session.memberRating !== undefined && Number(session.memberRating) > 0;
     const ratingNode = hasRating ? renderRatingStars(session.memberRating) : null;
 
     let ratingLabel = 'No rating recorded';
-    if (normalizedStatus === 'COMPLETED') {
+    if (refunded) {
+      ratingLabel = 'Refund approved';
+    } else if (normalizedStatus === 'COMPLETED') {
       ratingLabel = hasRating ? `Member rated ${Number(session.memberRating).toFixed(1)}/5` : 'Rating pending';
     } else if (status === 'UPCOMING') {
       ratingLabel = 'Rating unavailable until completed';
@@ -516,6 +563,11 @@ export default function TrainerClassesSessions() {
             {getHistoryStatusLabel(status)}
           </span>
         </div>
+        {refunded && (
+          <div className="mt-2 inline-flex rounded-full border border-cyan-400/35 bg-cyan-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-cyan-300">
+            Refunded
+          </div>
+        )}
         <div className="mt-2.5 grid grid-cols-2 gap-2 text-[11px] text-text-muted">
           <span className="inline-flex items-center gap-1">
             <span className="material-icons-round text-sm">schedule</span>
@@ -739,11 +791,22 @@ export default function TrainerClassesSessions() {
                       {selectedSessions.map((s) => {
                         const canTakeAction = canTakeSessionAttendanceAction(s.status);
                         const canFinalizeNow = canMarkSessionAttendanceNow(s);
+                        const refunded = isSessionRefunded(s);
+                        const normalizedStatus = String(s.status || 'SCHEDULED').replace(/_/g, ' ');
                         return (
                           <div key={s.id} className="rounded-xl border border-primary/20 bg-primary/10 p-3">
-                            <p className="text-sm font-semibold text-primary">{formatTime(s.date)}</p>
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-sm font-semibold text-primary">{formatTime(s.date)}</p>
+                              {refunded && (
+                                <span className="rounded-full border border-cyan-400/35 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-cyan-300">
+                                  Refunded
+                                </span>
+                              )}
+                            </div>
                             <p className="text-sm text-white mt-1">{`${s.member?.firstName || ''} ${s.member?.lastName || ''}`.trim() || `Member #${s.memberId}`}</p>
-                            <p className="text-[11px] text-text-muted mt-1 uppercase tracking-wide">{Number(s.duration || 0)} min - {s.status || 'SCHEDULED'}</p>
+                            <p className="text-[11px] text-text-muted mt-1 uppercase tracking-wide">
+                              {Number(s.duration || 0)} min - {normalizedStatus}
+                            </p>
                             {canTakeAction && canFinalizeNow && (
                               <div className="mt-2 flex items-center gap-2">
                                 <button
@@ -875,18 +938,39 @@ export default function TrainerClassesSessions() {
       ) : (
         <section className="space-y-4">
           <div className="grid grid-cols-3 gap-2">
-            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5">
-              <p className="text-[10px] uppercase tracking-wide text-text-muted">Completed</p>
-              <p className="text-base font-bold text-emerald-300 mt-1">{historySummary.completed}</p>
-            </div>
-            <div className="rounded-xl border border-primary/30 bg-primary/10 px-3 py-2.5">
-              <p className="text-[10px] uppercase tracking-wide text-text-muted">Upcoming</p>
-              <p className="text-base font-bold text-primary mt-1">{historySummary.upcoming}</p>
-            </div>
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
-              <p className="text-[10px] uppercase tracking-wide text-text-muted">Commission</p>
-              <p className="text-sm font-bold text-amber-300 mt-1">{formatMoney(historySummary.commission)}</p>
-            </div>
+            {activeHistoryTab === 'BOOKINGS' ? (
+              <>
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5">
+                  <p className="text-[10px] uppercase tracking-wide text-text-muted">Completed</p>
+                  <p className="text-base font-bold text-emerald-300 mt-1">{historySummary.completed}</p>
+                </div>
+                <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2.5">
+                  <p className="text-[10px] uppercase tracking-wide text-text-muted">Refunded</p>
+                  <p className="text-base font-bold text-cyan-300 mt-1">{historySummary.refunded}</p>
+                </div>
+                <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5">
+                  <p className="text-[10px] uppercase tracking-wide text-text-muted">Cancelled</p>
+                  <p className="text-base font-bold text-rose-300 mt-1">{historySummary.cancelled}</p>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5">
+                  <p className="text-[10px] uppercase tracking-wide text-text-muted">Completed Classes</p>
+                  <p className="text-base font-bold text-emerald-300 mt-1">{historySummary.completedClasses}</p>
+                </div>
+                <div className="rounded-xl border border-primary/30 bg-primary/10 px-3 py-2.5">
+                  <p className="text-[10px] uppercase tracking-wide text-text-muted">Average Attendance</p>
+                  <p className="text-base font-bold text-primary mt-1">
+                    {Number(historySummary.averageAttendance || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
+                  <p className="text-[10px] uppercase tracking-wide text-text-muted">No-Show Count</p>
+                  <p className="text-base font-bold text-amber-300 mt-1">{historySummary.noShowCount}</p>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="space-y-2 rounded-xl border border-white/10 bg-surface p-3">

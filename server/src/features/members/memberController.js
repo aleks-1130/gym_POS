@@ -12,6 +12,17 @@ const {
 const FINALIZED_SESSION_STATUSES = ['CANCELLED', 'COMPLETED', 'NO_SHOW', 'DECLINED'];
 const ACTIVE_OCCUPANCY_STATUSES = ['CONFIRMED', 'ATTENDED'];
 const BOOKED_STATUSES = ['CONFIRMED', 'ATTENDED', 'WAITLISTED'];
+const CLASS_CANCEL_FREE_WINDOW_HOURS = 24;
+const CLASS_NO_SHOW_ACTION_WINDOW_HOURS = 24;
+const CLASS_NO_SHOW_ACTION_WINDOW_MS = CLASS_NO_SHOW_ACTION_WINDOW_HOURS * 60 * 60 * 1000;
+const CLASS_NO_SHOW_REFUND_REQUESTED_STATUS = 'NO_SHOW_REFUND_REQUESTED';
+const CLASS_NO_SHOW_RESCHEDULE_REQUESTED_STATUS = 'NO_SHOW_RESCHEDULE_REQUESTED';
+const CLASS_NO_SHOW_RESOLVE_STATUSES = [
+    'NO_SHOW_REFUND_APPROVED',
+    'NO_SHOW_REFUND_REJECTED',
+    'NO_SHOW_RESCHEDULE_APPROVED',
+    'NO_SHOW_RESCHEDULE_REJECTED'
+];
 const RATING_MIN = 1;
 const RATING_MAX = 5;
 const RATING_COMMENT_MAX_LENGTH = 500;
@@ -649,14 +660,41 @@ const cancelBooking = async (req, res) => {
                 return { error: "Booking found, but it cannot be cancelled (maybe already attended or cancelled).", status: 404 };
             }
 
-            const oldStatus = booking.status;
+            const oldStatus = String(booking.status || '').toUpperCase();
+            const bookingSessionDate = booking.sessionDate ? new Date(booking.sessionDate) : null;
+            const hasValidSessionDate = Boolean(bookingSessionDate && !Number.isNaN(bookingSessionDate.getTime()));
+            const hoursUntilClassStart = hasValidSessionDate
+                ? ((bookingSessionDate.getTime() - Date.now()) / (1000 * 60 * 60))
+                : Number.NEGATIVE_INFINITY;
+            const shouldRestoreCredit = oldStatus === 'CONFIRMED' && hoursUntilClassStart > CLASS_CANCEL_FREE_WINDOW_HOURS;
+
             await tx.booking.update({
                 where: { id: booking.id },
                 data: { status: 'CANCELLED' }
             });
 
-            // Business rule: once a class booking is joined/confirmed, the session stays consumed
-            // even when member cancels/leaves later. Do not restore class session counters here.
+            // If member leaves above 24 hours before class start, restore one session credit.
+            if (shouldRestoreCredit) {
+                const member = await tx.member.findUnique({
+                    where: { id: memberId },
+                    select: {
+                        id: true,
+                        classSessionsUsed: true
+                    }
+                });
+                if (member) {
+                    const usedCount = Math.max(0, Number(member.classSessionsUsed || 0));
+                    await tx.member.update({
+                        where: { id: member.id },
+                        data: {
+                            classSessionsRemaining: { increment: 1 },
+                            ...(usedCount > 0 ? { classSessionsUsed: { decrement: 1 } } : {})
+                        }
+                    });
+                }
+            }
+
+            // If member leaves within 24 hours to class start, keep session consumed.
 
             // If a confirmed spot was cancelled, promote someone from waitlist
             if (oldStatus === 'CONFIRMED') {
@@ -709,14 +747,24 @@ const cancelBooking = async (req, res) => {
                     }
             }
 
-            return { success: true };
+            return {
+                success: true,
+                restoredCredit: shouldRestoreCredit,
+                cancelledStatus: oldStatus
+            };
         });
 
         if (!cancelResult.success) {
             return res.status(cancelResult.status || 400).json({ error: cancelResult.error || "Cancellation failed" });
         }
 
-        res.json({ message: "Booking cancelled. Session remains consumed." });
+        res.json({
+            message: cancelResult.cancelledStatus === 'WAITLISTED'
+                ? "Removed from waitlist."
+                : (cancelResult.restoredCredit
+                    ? `Booking cancelled. Session credit restored (> ${CLASS_CANCEL_FREE_WINDOW_HOURS}h notice).`
+                    : "Booking cancelled. Session remains consumed.")
+        });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -1259,6 +1307,87 @@ const getMyClassBookings = async (req, res) => {
         res.json(bookings);
     } catch (e) {
         res.status(500).json({ error: "Failed to fetch class bookings", detail: e?.message });
+    }
+};
+
+const requestClassNoShowAction = async (req, res) => {
+    if (req.user.role !== 'MEMBER') {
+        return res.status(403).json({ error: "Only member accounts can access this endpoint" });
+    }
+
+    const bookingId = Number(req.params.id);
+    const action = String(req.body?.action || '').trim().toUpperCase();
+    if (!Number.isInteger(bookingId) || bookingId <= 0) {
+        return res.status(400).json({ error: "Invalid booking ID" });
+    }
+    if (!['REFUND', 'RESCHEDULE'].includes(action)) {
+        return res.status(400).json({ error: "action must be REFUND or RESCHEDULE" });
+    }
+
+    try {
+        const booking = await prisma.booking.findFirst({
+            where: {
+                id: bookingId,
+                memberId: Number(req.user.id)
+            },
+            include: {
+                class: {
+                    select: {
+                        id: true,
+                        name: true,
+                        duration: true
+                    }
+                }
+            }
+        });
+
+        if (!booking) {
+            return res.status(404).json({ error: "Class booking not found" });
+        }
+
+        const rawStatus = String(booking.status || '').toUpperCase();
+        if (rawStatus !== 'NO_SHOW') {
+            if (rawStatus === CLASS_NO_SHOW_REFUND_REQUESTED_STATUS || rawStatus === CLASS_NO_SHOW_RESCHEDULE_REQUESTED_STATUS || CLASS_NO_SHOW_RESOLVE_STATUSES.includes(rawStatus)) {
+                return res.status(400).json({ error: "A no-show action request already exists for this booking." });
+            }
+            return res.status(400).json({ error: "Only NO_SHOW class bookings can request refund/reschedule approval." });
+        }
+
+        const sessionStart = booking.sessionDate ? new Date(booking.sessionDate) : null;
+        if (!sessionStart || Number.isNaN(sessionStart.getTime())) {
+            return res.status(400).json({ error: "Booking has no valid session schedule." });
+        }
+        const durationMinutes = Math.max(0, Number(booking?.class?.duration || 0));
+        const sessionEnd = new Date(sessionStart.getTime() + durationMinutes * 60 * 1000);
+        const expiresAt = new Date(sessionEnd.getTime() + CLASS_NO_SHOW_ACTION_WINDOW_MS);
+        const now = new Date();
+        if (now < sessionEnd) {
+            return res.status(400).json({ error: "No-show actions are available only after class end." });
+        }
+        if (now > expiresAt) {
+            return res.status(400).json({
+                error: `No-show action window has expired. Requests must be submitted within ${CLASS_NO_SHOW_ACTION_WINDOW_HOURS} hours after class end.`
+            });
+        }
+
+        const nextStatus = action === 'REFUND'
+            ? CLASS_NO_SHOW_REFUND_REQUESTED_STATUS
+            : CLASS_NO_SHOW_RESCHEDULE_REQUESTED_STATUS;
+
+        const updated = await prisma.booking.update({
+            where: { id: bookingId },
+            data: { status: nextStatus }
+        });
+
+        return res.json({
+            message: action === 'REFUND'
+                ? "Class refund request submitted to staff/admin for approval."
+                : "Class reschedule request submitted to staff/admin for approval.",
+            expiresAt,
+            booking: updated
+        });
+    } catch (e) {
+        return res.status(500).json({ error: "Failed to submit class no-show action request", detail: e?.message });
     }
 };
 
@@ -2166,6 +2295,7 @@ module.exports = {
     getMemberProfile,
     getMyTrainingSessions,
     getMyClassBookings,
+    requestClassNoShowAction,
     rateTrainingSession,
     voidTrainingSessionRating,
     getPaymentMethods,

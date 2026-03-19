@@ -107,6 +107,7 @@ export default function Sidebar() {
             {
                 section: "Operations", items: [
                     { to: "/payments", icon: "receipt_long", label: "POS" },
+                    { to: "/staff/refunds", icon: "assignment_return", label: "Refunds" },
                     { to: "/members", icon: "groups", label: "Members" },
                     { to: "/access", icon: "qr_code_scanner", label: "Access" },
                 ]

@@ -72,13 +72,27 @@ const normalizeClassHistoryStatus = (entry, now) => {
     const isFuture = !Number.isNaN(date.getTime()) && date >= now;
 
     if (rawStatus === 'CANCELLED' || rawStatus === 'DECLINED') return 'CANCELLED';
-    if (rawStatus === 'NO_SHOW' || rawStatus === 'MISSED') return 'MISSED';
+    if (
+        rawStatus === 'NO_SHOW'
+        || rawStatus === 'MISSED'
+        || rawStatus === 'NO_SHOW_REFUND_APPROVED'
+        || rawStatus === 'NO_SHOW_RESCHEDULE_APPROVED'
+        || rawStatus === 'NO_SHOW_REFUND_REQUESTED'
+        || rawStatus === 'NO_SHOW_RESCHEDULE_REQUESTED'
+        || rawStatus === 'NO_SHOW_REFUND_REJECTED'
+        || rawStatus === 'NO_SHOW_RESCHEDULE_REJECTED'
+    ) return 'MISSED';
     if (rawStatus === 'ATTENDED' || rawStatus === 'COMPLETED') return 'COMPLETED';
     if (rawStatus === 'WAITLISTED') return 'WAITLISTED';
     if (rawStatus === 'CONFIRMED' && isFuture) return 'UPCOMING';
     if (rawStatus === 'CONFIRMED' && !isFuture) return 'MISSED';
     return rawStatus || 'UNKNOWN';
-    return rawStatus || 'UNKNOWN';
+};
+
+const getHoursUntilSessionStart = (sessionDateValue) => {
+    const sessionDate = new Date(sessionDateValue);
+    if (Number.isNaN(sessionDate.getTime())) return null;
+    return (sessionDate.getTime() - Date.now()) / (1000 * 60 * 60);
 };
 
 const toHistoryStatusLabel = (status) => {
@@ -106,7 +120,15 @@ const handleClassImageError = (event) => {
 
 export default function Schedule() {
     const { alert: showAlert, confirm: showConfirm } = useConfirm();
-    const sessionPolicyNote = 'Joining a class consumes 1 session. If you leave later, that session is still consumed and not refunded.';
+    const sessionPolicyNote = [
+        'Class Session Policy',
+        '1. Joining a class as CONFIRMED uses 1 class session immediately.',
+        '2. Joining WAITLIST does not use a session until you are promoted to CONFIRMED.',
+        '3. Leave above 24 hours before class start: 1 session credit is returned.',
+        '4. Leave within 24 hours of class start (including exactly 24h): session stays consumed.',
+        '5. If trainer marks you as NO SHOW after class, 1 session is auto-credited back.',
+        '6. History labels: ATTENDED = Completed, NO SHOW = Missed, Leave Class = Cancelled.'
+    ].join('\n');
     const [classes, setClasses] = useState([]);
     const [sessionInfo, setSessionInfo] = useState({
         classSessionsRemaining: 0,
@@ -177,15 +199,10 @@ export default function Schedule() {
             }
         };
 
-        const intervalId = setInterval(() => {
-            fetchClasses();
-            fetchClassHistory();
-        }, 15000);
         window.addEventListener('focus', handleFocus);
         document.addEventListener('visibilitychange', handleVisibility);
 
         return () => {
-            clearInterval(intervalId);
             window.removeEventListener('focus', handleFocus);
             document.removeEventListener('visibilitychange', handleVisibility);
         };
@@ -198,8 +215,8 @@ export default function Schedule() {
         const isFull = classToBook.enrolled >= classToBook.capacity;
         const confirmLabel = isFull ? 'Join Waitlist' : 'Join Class';
         const currentPolicyNote = isFull 
-            ? 'Joining the waitlist does NOT consume a session. If a spot opens up, you will be automatically added and 1 session will be consumed.'
-            : 'Joining a class consumes 1 session. If you leave later, that session is still consumed and not refunded.';
+            ? 'Joining WAITLIST does not consume a session. If promoted to CONFIRMED, 1 session will be consumed.'
+            : 'Joining as CONFIRMED consumes 1 session now. Leave above 24 hours before class start to restore the credit; within 24 hours it stays consumed.';
 
         const confirmed = await showConfirm({
             title: isFull ? 'Waitlist' : 'Session Policy',
@@ -222,10 +239,20 @@ export default function Schedule() {
         }
     };
 
-    const handleCancel = async (classId, sessionDate) => {
+    const handleCancel = async (classId, sessionDate, bookingStatus) => {
+        const normalizedBookingStatus = String(bookingStatus || '').toUpperCase();
+        const isWaitlisted = normalizedBookingStatus === 'WAITLISTED';
+        const hoursUntilStart = getHoursUntilSessionStart(sessionDate);
+        const canRestoreCredit = !isWaitlisted && hoursUntilStart !== null && hoursUntilStart > 24;
+        const policyMessage = isWaitlisted
+            ? 'You are currently waitlisted. Leaving now will remove you from waitlist and no class session will be consumed.'
+            : canRestoreCredit
+                ? 'You are leaving above 24 hours before class start. 1 class session credit will be returned.'
+                : 'You are leaving within 24 hours of class start (including exactly 24h). Your class session stays consumed.';
+
         const policyConfirmed = await showConfirm({
             title: 'Leave Class?',
-            message: 'Leaving this class will NOT refund your session. Your session remains consumed.',
+            message: policyMessage,
             confirmLabel: 'I Understand',
             type: 'danger'
         });
@@ -240,8 +267,12 @@ export default function Schedule() {
         if (!finalConfirmed) return;
 
         try {
-            await axios.post(withApiBase('/api/members/cancel-booking'), { classId, sessionDate });
-            await showAlert({ title: 'Left Class', message: 'You left the class. Your session is still counted as used.', type: 'success' });
+            const response = await axios.post(withApiBase('/api/members/cancel-booking'), { classId, sessionDate });
+            await showAlert({
+                title: 'Left Class',
+                message: response?.data?.message || 'Class booking updated successfully.',
+                type: 'success'
+            });
             fetchClasses();
             fetchClassHistory();
         } catch (error) {
@@ -650,6 +681,14 @@ export default function Schedule() {
                                 const cannotJoin = noSessionsLeft;
                                 const classTime = getClassTimeRange(cls.time, cls.duration);
                                 const scheduleType = String(cls.scheduleType || 'RECURRING').toUpperCase();
+                                const hoursUntilStart = getHoursUntilSessionStart(cls.sessionDate || cls.oneTimeDate);
+                                const leaveNotice = cls.isBooked
+                                    ? (String(cls.bookingStatus || '').toUpperCase() === 'WAITLISTED'
+                                        ? 'Waitlist leave: no session will be consumed.'
+                                        : (hoursUntilStart !== null && hoursUntilStart > 24
+                                            ? 'Leave above 24h before class start: session credit will be returned.'
+                                            : 'Leave within 24h of class start (including exactly 24h): session stays consumed.'))
+                                    : '';
 
                                 return (
                                     <div
@@ -728,13 +767,18 @@ export default function Schedule() {
                                             </div>
 
                                             {cls.isBooked ? (
-                                                <button
-                                                    onClick={() => handleCancel(cls.id, cls.sessionDate)}
-                                                    className="w-full py-2.5 rounded-lg bg-red-500/10 text-red-400 font-bold hover:bg-red-500/20 active:scale-95 transition-all text-sm border border-red-500/20 flex items-center justify-center gap-1"
-                                                >
-                                                    <span className="material-icons-round text-base">cancel</span>
-                                                    Leave Class
-                                                </button>
+                                                <>
+                                                    <p className="text-[11px] text-amber-200 font-semibold rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-2">
+                                                        {leaveNotice}
+                                                    </p>
+                                                    <button
+                                                        onClick={() => handleCancel(cls.id, cls.sessionDate, cls.bookingStatus)}
+                                                        className="w-full py-2.5 rounded-lg bg-red-500/10 text-red-400 font-bold hover:bg-red-500/20 active:scale-95 transition-all text-sm border border-red-500/20 flex items-center justify-center gap-1"
+                                                    >
+                                                        <span className="material-icons-round text-base">cancel</span>
+                                                        Leave Class
+                                                    </button>
+                                                </>
                                             ) : (
                                                 <button
                                                     onClick={() => handleBook(cls.id, cls.sessionDate)}
@@ -777,7 +821,7 @@ export default function Schedule() {
                     <div className="bg-surface border border-white/10 rounded-xl p-4 space-y-4">
                         <div className="flex items-center justify-between gap-2">
                             <div>
-                                <h2 className="text-white font-bold text-base">Joined Class History</h2>
+                                <h2 className="text-white font-bold text-base">Class History</h2>
                                 <p className="text-text-muted text-xs mt-0.5">Review your past completed, missed, and cancelled class joins</p>
                             </div>
                             <button
@@ -799,6 +843,10 @@ export default function Schedule() {
                             <div className="space-y-2.5">
                                 {filteredHistoryEntries.map((entry) => {
                                     const classTime = getClassTimeRange(entry?.class?.time, entry?.class?.duration);
+                                    const rawEntryStatus = String(entry?.status || '').toUpperCase();
+                                    const statusDetail = rawEntryStatus.startsWith('NO_SHOW')
+                                        ? 'NO SHOW'
+                                        : (String(entry?.status || '').replace(/_/g, ' ') || 'N/A');
                                     return (
                                         <article key={`class-history-${entry.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3">
                                             <div className="flex items-start justify-between gap-2">
@@ -823,7 +871,7 @@ export default function Schedule() {
                                                 </span>
                                                 <span className="inline-flex items-center gap-1">
                                                     <span className="material-icons-round text-sm">event</span>
-                                                    {String(entry.status || '').replace(/_/g, ' ') || 'N/A'}
+                                                    {statusDetail}
                                                 </span>
                                             </div>
                                         </article>

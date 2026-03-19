@@ -5,6 +5,8 @@ const MEMBER_RESCHEDULE_NOTICE_HOURS = 24;
 const MEMBER_RESCHEDULE_WINDOW_DAYS = 7;
 const COMPLETE_GRACE_MINUTES = 5;
 const NO_SHOW_GRACE_MINUTES = COMPLETE_GRACE_MINUTES;
+const NO_SHOW_ACTION_WINDOW_HOURS = 24;
+const NO_SHOW_ACTION_WINDOW_MS = NO_SHOW_ACTION_WINDOW_HOURS * 60 * 60 * 1000;
 const FINALIZED_SESSION_STATUSES = ['CANCELLED', 'COMPLETED', 'NO_SHOW', 'DECLINED'];
 
 const toLocalIsoDate = (value) => {
@@ -19,6 +21,99 @@ const toLocalIsoDate = (value) => {
 const appendPolicyNote = (existingNotes, extraLine) => {
     const base = (existingNotes || '').trim();
     return [base, extraLine].filter(Boolean).join('\n');
+};
+
+const parseRefundExceptionMeta = (notes) => {
+    const lines = String(notes || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    let latestRequest = null;
+    let latestResolution = null;
+
+    for (const line of lines) {
+        if (line.startsWith('REFUND_EXCEPTION_REQUESTED')) {
+            latestRequest = line;
+        }
+        if (line.startsWith('REFUND_EXCEPTION_APPROVED') || line.startsWith('REFUND_EXCEPTION_REJECTED')) {
+            latestResolution = line;
+        }
+    }
+
+    return {
+        hasRequest: Boolean(latestRequest),
+        isResolved: Boolean(latestResolution),
+        status: !latestRequest ? 'NONE' : (latestResolution ? (latestResolution.startsWith('REFUND_EXCEPTION_APPROVED') ? 'APPROVED' : 'REJECTED') : 'PENDING')
+    };
+};
+
+const parseTrainerChangeRequestMeta = (notes) => {
+    const lines = String(notes || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    let latestRequest = null;
+    let latestResolution = null;
+
+    for (const line of lines) {
+        if (line.startsWith('TRAINER_CHANGE_REQUESTED')) {
+            latestRequest = line;
+        }
+        if (line.startsWith('TRAINER_CHANGE_RESOLVED')) {
+            latestResolution = line;
+        }
+    }
+
+    return {
+        hasRequest: Boolean(latestRequest),
+        isResolved: Boolean(latestResolution),
+        status: !latestRequest ? 'NONE' : (latestResolution ? 'RESOLVED' : 'PENDING')
+    };
+};
+
+const parseNoShowMarkedAt = (session) => {
+    const lines = String(session?.notes || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    let parsed = null;
+    for (const line of lines) {
+        if (!line.startsWith('Marked NO_SHOW')) continue;
+        const atMatch = line.match(/ at ([^|]+)/);
+        if (!atMatch?.[1]) continue;
+        const timestamp = new Date(atMatch[1].trim());
+        if (!Number.isNaN(timestamp.getTime())) {
+            parsed = timestamp;
+        }
+    }
+
+    if (parsed) return parsed;
+
+    const fallbackUpdated = session?.updatedAt ? new Date(session.updatedAt) : null;
+    if (fallbackUpdated && !Number.isNaN(fallbackUpdated.getTime())) return fallbackUpdated;
+    const fallbackDate = session?.date ? new Date(session.date) : null;
+    if (fallbackDate && !Number.isNaN(fallbackDate.getTime())) return fallbackDate;
+    return null;
+};
+
+const getNoShowActionWindowState = (session, now = new Date()) => {
+    const noShowMarkedAt = parseNoShowMarkedAt(session);
+    if (!noShowMarkedAt) {
+        return {
+            noShowMarkedAt: null,
+            expiresAt: null,
+            isOpen: false
+        };
+    }
+    const expiresAt = new Date(noShowMarkedAt.getTime() + NO_SHOW_ACTION_WINDOW_MS);
+    return {
+        noShowMarkedAt,
+        expiresAt,
+        isOpen: now <= expiresAt
+    };
 };
 
 const isSessionTerminal = (status) => {
@@ -493,6 +588,11 @@ const cancelSession = async (req, res) => {
                 error: `Member cancellations require at least ${MEMBER_RESCHEDULE_NOTICE_HOURS} hours notice. Missed sessions are non-refundable by default.`
             });
         }
+        if (user.role === 'MEMBER' && String(session.paymentStatus || '').toUpperCase() === 'PAID') {
+            return res.status(400).json({
+                error: "Paid sessions cannot be cancelled directly. Submit a cancellation refund request for staff/admin approval."
+            });
+        }
 
         // 3. Update Status
         await prisma.trainingSession.update({
@@ -766,11 +866,88 @@ const markNoShow = async (req, res) => {
     }
 };
 
+const requestNoShowAction = async (req, res) => {
+    const sessionId = Number(req.params.id);
+    const action = String(req.body?.action || '').trim().toUpperCase();
+    const details = String(req.body?.details || '').trim();
+    const preferredDate = String(req.body?.preferredDate || '').trim();
+    const preferredTime = String(req.body?.preferredTime || '').trim();
+
+    if (!['REFUND', 'RESCHEDULE'].includes(action)) {
+        return res.status(400).json({ error: "action must be REFUND or RESCHEDULE" });
+    }
+
+    try {
+        const session = await prisma.trainingSession.findUnique({
+            where: { id: sessionId }
+        });
+        if (!session) {
+            return res.status(404).json({ error: "Session not found" });
+        }
+        if (req.user.role !== 'MEMBER' || Number(req.user.id) !== Number(session.memberId)) {
+            return res.status(403).json({ error: "Not authorized to request action for this session" });
+        }
+
+        const status = String(session.status || '').toUpperCase();
+        if (status !== 'NO_SHOW') {
+            return res.status(400).json({ error: "Only NO_SHOW sessions can request refund/reschedule review" });
+        }
+
+        const window = getNoShowActionWindowState(session);
+        if (!window.isOpen) {
+            return res.status(400).json({
+                error: `No-show action window has expired. Requests must be submitted within ${NO_SHOW_ACTION_WINDOW_HOURS} hours.`
+            });
+        }
+
+        const refundMeta = parseRefundExceptionMeta(session.notes);
+        const changeMeta = parseTrainerChangeRequestMeta(session.notes);
+        if (refundMeta.hasRequest || changeMeta.hasRequest) {
+            return res.status(400).json({ error: "An action request for this no-show session already exists." });
+        }
+
+        let line = '';
+        if (action === 'REFUND') {
+            line = `REFUND_EXCEPTION_REQUESTED by MEMBER#${req.user.id} at ${new Date().toISOString()} | reason=MEMBER_NO_SHOW${details ? ` | details=${details}` : ''}`;
+        } else {
+            let preferredSegment = '';
+            if ((preferredDate && !preferredTime) || (!preferredDate && preferredTime)) {
+                return res.status(400).json({ error: "preferredDate and preferredTime must be provided together" });
+            }
+            if (preferredDate && preferredTime) {
+                const preferredDateTime = new Date(`${preferredDate}T${preferredTime}`);
+                if (Number.isNaN(preferredDateTime.getTime())) {
+                    return res.status(400).json({ error: "Invalid preferred date/time" });
+                }
+                preferredSegment = ` | preferred=${preferredDate}T${preferredTime}`;
+            }
+            line = `TRAINER_CHANGE_REQUESTED by MEMBER#${req.user.id} at ${new Date().toISOString()} | reason=MEMBER_NO_SHOW_RESCHEDULE${preferredSegment}`;
+        }
+
+        const updated = await prisma.trainingSession.update({
+            where: { id: sessionId },
+            data: {
+                notes: appendPolicyNote(session.notes, line)
+            }
+        });
+
+        return res.json({
+            message: action === 'REFUND'
+                ? "Refund request submitted to staff/admin for approval."
+                : "Reschedule request submitted to staff/admin for approval.",
+            expiresAt: window.expiresAt,
+            session: updated
+        });
+    } catch (e) {
+        return res.status(500).json({ error: "Failed to submit no-show action request", detail: e?.message });
+    }
+};
+
 const requestRefundException = async (req, res) => {
     const sessionId = Number(req.params.id);
     const { reason, details } = req.body || {};
     const normalizedReason = String(reason || '').trim().toUpperCase();
-    const allowedReasons = ['TRAINER_ABSENT', 'GYM_CLOSURE', 'SYSTEM_ERROR', 'MEDICAL_EMERGENCY', 'OTHER'];
+    const allowedReasons = ['TRAINER_ABSENT', 'GYM_CLOSURE', 'SYSTEM_ERROR', 'MEDICAL_EMERGENCY', 'MEMBER_CANCEL_PAID', 'OTHER'];
 
     if (!allowedReasons.includes(normalizedReason)) {
         return res.status(400).json({ error: `reason must be one of: ${allowedReasons.join(', ')}` });
@@ -783,14 +960,43 @@ const requestRefundException = async (req, res) => {
         if (!session) {
             return res.status(404).json({ error: "Session not found" });
         }
+        if (isSessionTerminal(session.status)) {
+            return res.status(400).json({ error: "This session is already finalized" });
+        }
 
         const user = req.user;
         let authorized = ['ADMIN', 'STAFF', 'OWNER'].includes(user.role);
         if (!authorized && user.role === 'TRAINER' && session.trainerId === Number(user.trainerId)) {
             authorized = true;
         }
+        if (!authorized && user.role === 'MEMBER' && Number(session.memberId) === Number(user.id)) {
+            authorized = true;
+        }
         if (!authorized) {
             return res.status(403).json({ error: "Not authorized to request refund exception" });
+        }
+
+        if (user.role === 'MEMBER') {
+            if (normalizedReason !== 'MEMBER_CANCEL_PAID') {
+                return res.status(400).json({ error: "Members can only request paid cancellation review using reason MEMBER_CANCEL_PAID" });
+            }
+            if (String(session.paymentStatus || '').toUpperCase() !== 'PAID') {
+                return res.status(400).json({ error: "Only paid sessions can request paid cancellation review" });
+            }
+            if (new Date(session.date) < new Date()) {
+                return res.status(400).json({ error: "Paid cancellation review is only available before the session start time" });
+            }
+            const hoursUntilSession = (new Date(session.date).getTime() - Date.now()) / (1000 * 60 * 60);
+            if (hoursUntilSession < MEMBER_RESCHEDULE_NOTICE_HOURS) {
+                return res.status(400).json({
+                    error: `Paid cancellation review requests require at least ${MEMBER_RESCHEDULE_NOTICE_HOURS} hours notice before session start`
+                });
+            }
+        }
+
+        const refundMeta = parseRefundExceptionMeta(session.notes);
+        if (refundMeta.hasRequest && !refundMeta.isResolved) {
+            return res.status(400).json({ error: "A refund/cancellation request is already pending for this session" });
         }
 
         const updated = await prisma.trainingSession.update({
@@ -804,7 +1010,9 @@ const requestRefundException = async (req, res) => {
         });
 
         res.json({
-            message: "Refund exception request logged. Staff/owner approval is required before any refund action.",
+            message: user.role === 'MEMBER'
+                ? "Paid cancellation refund request submitted to staff/admin for approval."
+                : "Refund exception request logged. Staff/owner approval is required before any refund action.",
             session: updated
         });
     } catch (e) {
@@ -876,6 +1084,7 @@ module.exports = {
     declineSession,
     memberRescheduleSession,
     markNoShow,
+    requestNoShowAction,
     requestRefundException,
     requestUnableToAttend
 };

@@ -48,7 +48,7 @@ const getAnalytics = async (req, res) => {
             prisma.expense.findMany({ where: { date: { gte: prevStart, lte: prevEnd } }, select: { amount: true } }),
             // Training Sessions
             prisma.trainingSession.findMany({
-                where: { date: { gte: start, lte: end } },
+                where: { date: { gte: start, lte: end }, status: 'COMPLETED' },
                 select: {
                     id: true, date: true, price: true, materialsCost: true,
                     member: { select: { id: true, firstName: true, lastName: true } },

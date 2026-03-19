@@ -141,7 +141,7 @@ export default function StaffTrainers() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['staff-trainer-change-requests'] });
             setResolveModalSession(null);
-            showAlert({ title: 'Resolved', message: 'Trainer change request resolved.', type: 'success' });
+            showAlert({ title: 'Resolved', message: 'Session change request resolved.', type: 'success' });
         },
         onError: (error) => {
             showAlert({ title: 'Resolve Failed', message: error?.response?.data?.error || 'Failed to resolve request.', type: 'danger' });
@@ -172,10 +172,19 @@ export default function StaffTrainers() {
         const uniqueDays = new Set(modalAvailabilityRows.map((row) => Number(row.day)));
         return [0, 1, 2, 3, 4, 5, 6].every((day) => uniqueDays.has(day));
     }, [modalAvailabilityRows]);
+    const isClassBookingRequest = String(resolveModalSession?.requestEntity || '').toUpperCase() === 'CLASS_BOOKING';
 
     const handleSubmitResolution = async () => {
         if (!resolveModalSession) return;
         const payload = { action: resolveForm.action, note: resolveForm.note };
+        if (isClassBookingRequest && payload.action === 'MOVE') {
+            await showAlert({
+                title: 'Unsupported Action',
+                message: 'Move action is not available for class no-show requests. Choose Cancel & Credit, Cancel & Refund, or Deny.',
+                type: 'warning'
+            });
+            return;
+        }
         if (payload.action === 'MOVE') {
             if (!resolveForm.date || !resolveForm.time) {
                 await showAlert({ title: 'Validation', message: 'Date and time are required for MOVE action.', type: 'warning' });
@@ -368,8 +377,8 @@ export default function StaffTrainers() {
             ) : (
                 <section className="bg-surface rounded-3xl border border-white/10 overflow-hidden shadow-sm">
                     <div className="px-6 py-4 border-b border-white/10">
-                        <h3 className="text-white font-bold">Trainer Change Requests</h3>
-                        <p className="text-xs text-text-muted mt-1">Requests submitted by trainers when they cannot attend a session.</p>
+                        <h3 className="text-white font-bold">Session Change Requests</h3>
+                        <p className="text-xs text-text-muted mt-1">Requests submitted by trainers or members for session review.</p>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left text-sm text-text-secondary">
@@ -389,7 +398,7 @@ export default function StaffTrainers() {
                                     <tr><td colSpan="7" className="p-6 text-center text-text-muted">Loading requests...</td></tr>
                                 )}
                                 {!requestsLoading && trainerChangeRequests.length === 0 && (
-                                    <tr><td colSpan="7" className="p-6 text-center text-text-muted">No pending trainer change requests.</td></tr>
+                                    <tr><td colSpan="7" className="p-6 text-center text-text-muted">No pending session change requests.</td></tr>
                                 )}
                                 {trainerChangeRequests.map((session) => (
                                     <tr key={session.id} className="hover:bg-white/5 transition-colors align-top">
@@ -419,7 +428,8 @@ export default function StaffTrainers() {
                                             <button
                                                 onClick={() => {
                                                     setResolveModalSession(session);
-                                                    setResolveForm({ action: 'MOVE', date: '', time: '', note: '' });
+                                                    const isClassRequest = String(session?.requestEntity || '').toUpperCase() === 'CLASS_BOOKING';
+                                                    setResolveForm({ action: isClassRequest ? 'CANCEL_CREDIT' : 'MOVE', date: '', time: '', note: '' });
                                                 }}
                                                 className="text-xs font-bold px-3 py-1 rounded-lg border border-blue-500/30 text-blue-300 hover:bg-blue-500/10"
                                                 disabled={resolveRequestMutation.isPending}
@@ -581,7 +591,7 @@ export default function StaffTrainers() {
                 <div className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
                     <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4">
                         <div>
-                            <h2 className="text-xl font-bold text-white">Resolve Trainer Change Request</h2>
+                            <h2 className="text-xl font-bold text-white">Resolve Session Change Request</h2>
                             <p className="text-text-muted text-sm mt-1">
                                 {resolveModalSession.member?.firstName} {resolveModalSession.member?.lastName} - {resolveModalSession.trainer?.name}
                             </p>
@@ -600,7 +610,7 @@ export default function StaffTrainers() {
                                 onChange={(e) => setResolveForm((prev) => ({ ...prev, action: e.target.value }))}
                                 className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary"
                             >
-                                <option style={{ color: '#111', backgroundColor: '#fff' }} value="MOVE">Move Session</option>
+                                {!isClassBookingRequest && <option style={{ color: '#111', backgroundColor: '#fff' }} value="MOVE">Move Session</option>}
                                 <option style={{ color: '#111', backgroundColor: '#fff' }} value="CANCEL_CREDIT">Cancel & Credit</option>
                                 <option style={{ color: '#111', backgroundColor: '#fff' }} value="CANCEL_REFUND">Cancel & Refund</option>
                                 <option style={{ color: '#111', backgroundColor: '#fff' }} value="DENY">Deny Request</option>

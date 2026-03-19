@@ -1,7 +1,26 @@
 const prisma = require('../../config/prisma');
 const { isTimeAllowedForTrainer } = require('../../services/trainerAvailabilityService');
+const { getPosConfig } = require('../../services/configService');
+const bcrypt = require('bcryptjs');
 
 const FINALIZED_SESSION_STATUSES = ['CANCELLED', 'COMPLETED', 'NO_SHOW', 'DECLINED'];
+const CLASS_BOOKING_ID_PREFIX = 'CB-';
+const CLASS_NO_SHOW_REFUND_REQUESTED_STATUS = 'NO_SHOW_REFUND_REQUESTED';
+const CLASS_NO_SHOW_REFUND_APPROVED_STATUS = 'NO_SHOW_REFUND_APPROVED';
+const CLASS_NO_SHOW_REFUND_REJECTED_STATUS = 'NO_SHOW_REFUND_REJECTED';
+const CLASS_NO_SHOW_RESCHEDULE_REQUESTED_STATUS = 'NO_SHOW_RESCHEDULE_REQUESTED';
+const CLASS_NO_SHOW_RESCHEDULE_APPROVED_STATUS = 'NO_SHOW_RESCHEDULE_APPROVED';
+const CLASS_NO_SHOW_RESCHEDULE_REJECTED_STATUS = 'NO_SHOW_RESCHEDULE_REJECTED';
+const CLASS_REFUND_REQUEST_STATUSES = [
+    CLASS_NO_SHOW_REFUND_REQUESTED_STATUS,
+    CLASS_NO_SHOW_REFUND_APPROVED_STATUS,
+    CLASS_NO_SHOW_REFUND_REJECTED_STATUS
+];
+const CLASS_RESCHEDULE_REQUEST_STATUSES = [
+    CLASS_NO_SHOW_RESCHEDULE_REQUESTED_STATUS,
+    CLASS_NO_SHOW_RESCHEDULE_APPROVED_STATUS,
+    CLASS_NO_SHOW_RESCHEDULE_REJECTED_STATUS
+];
 
 const toLocalIsoDate = (value) => {
     const d = new Date(value);
@@ -103,6 +122,171 @@ const parseTrainerChangeRequestMeta = (notes) => {
 
 const appendNote = (currentNotes, line) => {
     return [String(currentNotes || '').trim(), line].filter(Boolean).join('\n');
+};
+
+const validateStaffVoidPin = async (req) => {
+    const role = String(req.user?.role || '').toUpperCase();
+    if (role !== 'STAFF') {
+        return { ok: true };
+    }
+
+    const pin = String(req.body?.pin || '').trim();
+    if (!pin) {
+        return {
+            ok: false,
+            status: 400,
+            error: 'Admin void PIN is required for staff refund decisions.'
+        };
+    }
+
+    const config = await getPosConfig();
+    if (!config?.voidPinHash) {
+        return {
+            ok: false,
+            status: 400,
+            error: 'Void PIN is not configured.'
+        };
+    }
+
+    const pinValid = await bcrypt.compare(pin, config.voidPinHash);
+    if (!pinValid) {
+        return {
+            ok: false,
+            status: 403,
+            error: 'Invalid admin void PIN.'
+        };
+    }
+
+    return { ok: true };
+};
+
+const parseRequestTarget = (rawId) => {
+    const raw = String(rawId || '').trim();
+    const classMatch = raw.match(/^CB-(\d+)$/i);
+    if (classMatch) {
+        const id = Number(classMatch[1]);
+        if (Number.isInteger(id) && id > 0) {
+            return { entity: 'CLASS_BOOKING', id };
+        }
+    }
+
+    const numericId = Number(raw);
+    if (Number.isInteger(numericId) && numericId > 0) {
+        return { entity: 'TRAINING_SESSION', id: numericId };
+    }
+    return null;
+};
+
+const toClassBookingRequestId = (bookingId) => `${CLASS_BOOKING_ID_PREFIX}${Number(bookingId)}`;
+
+const restoreMemberClassSessionCredit = async (tx, memberId) => {
+    const normalizedMemberId = Number(memberId);
+    if (!Number.isInteger(normalizedMemberId) || normalizedMemberId <= 0) return;
+
+    const member = await tx.member.findUnique({
+        where: { id: normalizedMemberId },
+        select: {
+            classSessionsRemaining: true,
+            classSessionsUsed: true
+        }
+    });
+    if (!member) return;
+
+    const usedCount = Math.max(0, Number(member.classSessionsUsed || 0));
+    await tx.member.update({
+        where: { id: normalizedMemberId },
+        data: {
+            classSessionsRemaining: { increment: 1 },
+            ...(usedCount > 0 ? { classSessionsUsed: { decrement: 1 } } : {})
+        }
+    });
+};
+
+const toMoney = (value) => Number(Number(value || 0).toFixed(2));
+
+const paymentRefundableBalance = (payment) => {
+    const amount = toMoney(payment?.amount);
+    const refunded = toMoney(payment?.refundedAmount);
+    return Math.max(0, toMoney(amount - refunded));
+};
+
+const sortPaymentsByTargetDate = (payments, targetDateInput) => {
+    const targetDate = new Date(targetDateInput || new Date());
+    const targetTs = Number.isNaN(targetDate.getTime()) ? Date.now() : targetDate.getTime();
+
+    return [...payments].sort((a, b) => {
+        const aTs = new Date(a?.date || 0).getTime();
+        const bTs = new Date(b?.date || 0).getTime();
+        const aDistance = Math.abs(aTs - targetTs);
+        const bDistance = Math.abs(bTs - targetTs);
+        if (aDistance !== bDistance) return aDistance - bDistance;
+        return bTs - aTs;
+    });
+};
+
+const applyTrainingPaymentRefund = async (tx, { memberId, amount, targetDate }) => {
+    let remaining = toMoney(amount);
+    if (remaining <= 0) return [];
+
+    const payments = await tx.payment.findMany({
+        where: {
+            memberId: Number(memberId),
+            type: 'TRAINING',
+            status: { in: ['COMPLETED', 'RETURNED'] }
+        },
+        select: {
+            id: true,
+            amount: true,
+            refundedAmount: true,
+            status: true,
+            date: true
+        },
+        orderBy: { date: 'desc' }
+    });
+
+    const sorted = sortPaymentsByTargetDate(payments, targetDate);
+    const allocations = [];
+
+    for (const payment of sorted) {
+        const refundable = paymentRefundableBalance(payment);
+        if (refundable <= 0) continue;
+
+        const refundableNow = Math.min(refundable, remaining);
+        if (refundableNow <= 0) continue;
+
+        const nextRefundedAmount = toMoney(toMoney(payment.refundedAmount) + refundableNow);
+        const updated = await tx.payment.update({
+            where: { id: payment.id },
+            data: {
+                refundedAmount: nextRefundedAmount,
+                status: nextRefundedAmount > 0 ? 'RETURNED' : payment.status
+            },
+            select: {
+                id: true,
+                amount: true,
+                refundedAmount: true,
+                status: true
+            }
+        });
+
+        allocations.push({
+            paymentId: updated.id,
+            refunded: refundableNow,
+            refundedAmount: updated.refundedAmount,
+            status: updated.status
+        });
+
+        remaining = toMoney(remaining - refundableNow);
+        if (remaining <= 0) break;
+    }
+
+    if (remaining > 0) {
+        const err = new Error("No matching paid training transaction found to reverse this refund amount.");
+        err.status = 409;
+        throw err;
+    }
+
+    return allocations;
 };
 
 const checkBookingConflict = async (trainerId, startDateTime, durationMinutes, excludeSessionId = null) => {
@@ -489,30 +673,85 @@ const getRefundExceptionRequests = async (req, res) => {
     }
 
     try {
-        const sessions = await prisma.trainingSession.findMany({
-            where: {
-                notes: { contains: 'REFUND_EXCEPTION_REQUESTED' }
-            },
-            include: { member: true, trainer: true },
-            orderBy: { updatedAt: 'desc' }
+        const [sessions, classBookings] = await Promise.all([
+            prisma.trainingSession.findMany({
+                where: {
+                    notes: { contains: 'REFUND_EXCEPTION_REQUESTED' }
+                },
+                include: { member: true, trainer: true },
+                orderBy: { updatedAt: 'desc' }
+            }),
+            prisma.booking.findMany({
+                where: {
+                    status: { in: CLASS_REFUND_REQUEST_STATUSES }
+                },
+                include: {
+                    member: true,
+                    class: {
+                        include: {
+                            trainer: true
+                        }
+                    }
+                },
+                orderBy: [{ sessionDate: 'desc' }, { createdAt: 'desc' }]
+            })
+        ]);
+
+        const normalizedSessions = sessions.map((session) => {
+            const meta = parseRefundExceptionMeta(session.notes);
+            return {
+                ...session,
+                requestEntity: 'TRAINING_SESSION',
+                refundException: {
+                    status: !meta.hasRequest ? 'NONE' : (meta.isResolved ? meta.resolution.status : 'PENDING'),
+                    request: meta.request,
+                    resolution: meta.resolution
+                }
+            };
         });
 
-        const normalized = sessions
-            .map((session) => {
-                const meta = parseRefundExceptionMeta(session.notes);
-                return {
-                    ...session,
-                    refundException: {
-                        status: !meta.hasRequest ? 'NONE' : (meta.isResolved ? meta.resolution.status : 'PENDING'),
-                        request: meta.request,
-                        resolution: meta.resolution
-                    }
-                };
-            })
-            .filter((session) => {
+        const normalizedClassBookings = classBookings.map((booking) => {
+            const rawStatus = String(booking.status || '').toUpperCase();
+            const refundStatus = rawStatus === CLASS_NO_SHOW_REFUND_REQUESTED_STATUS
+                ? 'PENDING'
+                : rawStatus === CLASS_NO_SHOW_REFUND_APPROVED_STATUS
+                    ? 'APPROVED'
+                    : 'REJECTED';
+            return {
+                ...booking,
+                id: toClassBookingRequestId(booking.id),
+                date: booking.sessionDate,
+                trainer: booking.class?.trainer || null,
+                requestEntity: 'CLASS_BOOKING',
+                refundException: {
+                    status: refundStatus,
+                    request: {
+                        requestedAt: booking.createdAt || null,
+                        reason: 'CLASS_NO_SHOW',
+                        details: booking.class?.name ? `Class: ${booking.class.name}` : null
+                    },
+                    resolution: refundStatus === 'PENDING'
+                        ? null
+                        : {
+                            status: refundStatus,
+                            resolvedAt: null,
+                            resolvedBy: null,
+                            note: null
+                        }
+                }
+            };
+        });
+
+        const normalized = [...normalizedSessions, ...normalizedClassBookings]
+            .filter((entry) => {
                 if (statusFilter === 'ALL') return true;
-                if (statusFilter === 'PENDING') return session.refundException.status === 'PENDING';
-                return session.refundException.status !== 'PENDING';
+                if (statusFilter === 'PENDING') return entry.refundException.status === 'PENDING';
+                return entry.refundException.status !== 'PENDING';
+            })
+            .sort((a, b) => {
+                const dateA = new Date(a.updatedAt || a.date || a.createdAt || 0).getTime();
+                const dateB = new Date(b.updatedAt || b.date || b.createdAt || 0).getTime();
+                return dateB - dateA;
             });
 
         res.json(normalized);
@@ -522,17 +761,70 @@ const getRefundExceptionRequests = async (req, res) => {
 };
 
 const resolveRefundException = async (req, res) => {
-    const sessionId = Number(req.params.id);
+    const target = parseRequestTarget(req.params.id);
     const decision = String(req.body?.decision || '').toUpperCase();
     const resolutionNote = String(req.body?.note || '').trim();
 
     if (!['APPROVE', 'REJECT'].includes(decision)) {
         return res.status(400).json({ error: "decision must be APPROVE or REJECT" });
     }
+    if (!target) {
+        return res.status(400).json({ error: "Invalid request id" });
+    }
 
     try {
+        const pinCheck = await validateStaffVoidPin(req);
+        if (!pinCheck.ok) {
+            return res.status(pinCheck.status).json({ error: pinCheck.error });
+        }
+
+        if (target.entity === 'CLASS_BOOKING') {
+            const booking = await prisma.booking.findUnique({
+                where: { id: target.id }
+            });
+            if (!booking) {
+                return res.status(404).json({ error: "Class booking request not found" });
+            }
+            const currentStatus = String(booking.status || '').toUpperCase();
+            if (currentStatus !== CLASS_NO_SHOW_REFUND_REQUESTED_STATUS) {
+                if (currentStatus === CLASS_NO_SHOW_REFUND_APPROVED_STATUS || currentStatus === CLASS_NO_SHOW_REFUND_REJECTED_STATUS) {
+                    return res.status(400).json({ error: "Refund exception request is already resolved" });
+                }
+                return res.status(400).json({ error: "No refund exception request found for this class booking" });
+            }
+
+            const nextStatus = decision === 'APPROVE'
+                ? CLASS_NO_SHOW_REFUND_APPROVED_STATUS
+                : CLASS_NO_SHOW_REFUND_REJECTED_STATUS;
+
+            const updated = await prisma.$transaction(async (tx) => {
+                const saved = await tx.booking.update({
+                    where: { id: target.id },
+                    data: { status: nextStatus }
+                });
+                if (decision === 'APPROVE') {
+                    await restoreMemberClassSessionCredit(tx, saved.memberId);
+                }
+                return saved;
+            });
+
+            return res.json({
+                message: `Class refund request ${decision === 'APPROVE' ? 'approved' : 'rejected'} successfully.`,
+                session: updated
+            });
+        }
+
         const session = await prisma.trainingSession.findUnique({
-            where: { id: sessionId }
+            where: { id: target.id },
+            include: {
+                trainer: {
+                    select: {
+                        id: true,
+                        name: true,
+                        commissionRate: true
+                    }
+                }
+            }
         });
         if (!session) return res.status(404).json({ error: "Training session not found" });
 
@@ -547,19 +839,74 @@ const resolveRefundException = async (req, res) => {
         const resolutionTag = decision === 'APPROVE' ? 'REFUND_EXCEPTION_APPROVED' : 'REFUND_EXCEPTION_REJECTED';
         const resolutionLine = `${resolutionTag} by ${req.user.role}#${req.user.id} at ${new Date().toISOString()}${resolutionNote ? ` | note=${resolutionNote}` : ''}`;
 
+        if (decision === 'APPROVE') {
+            const updateData = {
+                notes: appendNote(session.notes, resolutionLine),
+                ...(String(session.status || '').toUpperCase() !== 'CANCELLED' ? { status: 'CANCELLED' } : {})
+            };
+
+            const result = await prisma.$transaction(async (tx) => {
+                const shouldReversePayment = String(session.paymentStatus || '').toUpperCase() === 'PAID' && Number(session.price || 0) > 0;
+                const refundAllocations = shouldReversePayment
+                    ? await applyTrainingPaymentRefund(tx, {
+                        memberId: session.memberId,
+                        amount: Number(session.price || 0),
+                        targetDate: session.paidAt || session.date || session.updatedAt || new Date()
+                    })
+                    : [];
+
+                if (
+                    String(session.status || '').toUpperCase() === 'COMPLETED'
+                    && Boolean(session.commissionPaid)
+                    && Number(session.trainerId) > 0
+                ) {
+                    const commissionAmount = toMoney(Number(session.price || 0) * Number(session.trainer?.commissionRate || 0));
+                    if (commissionAmount > 0) {
+                        await tx.expense.create({
+                            data: {
+                                title: `Commission Reversal: ${session.trainer?.name || `Trainer #${session.trainerId}`}`,
+                                amount: -commissionAmount,
+                                category: 'SALARY',
+                                date: new Date(),
+                                notes: `Auto reversal for refunded training session #${session.id}`,
+                                recordedBy: `${req.user.role}#${req.user.id}`,
+                                trainerId: Number(session.trainerId)
+                            }
+                        });
+                    }
+                }
+
+                const savedSession = await tx.trainingSession.update({
+                    where: { id: target.id },
+                    data: updateData
+                });
+
+                return {
+                    session: savedSession,
+                    refundAllocations
+                };
+            });
+
+            return res.json({
+                message: "Refund exception approved. Payment reversed and session cancelled successfully.",
+                session: result.session,
+                refundAllocations: result.refundAllocations
+            });
+        }
+
         const updated = await prisma.trainingSession.update({
-            where: { id: sessionId },
+            where: { id: target.id },
             data: {
                 notes: appendNote(session.notes, resolutionLine)
             }
         });
 
-        res.json({
-            message: `Refund exception ${decision === 'APPROVE' ? 'approved' : 'rejected'} successfully.`,
+        return res.json({
+            message: "Refund exception rejected successfully.",
             session: updated
         });
     } catch (e) {
-        res.status(500).json({ error: "Failed to resolve refund exception", detail: e?.message });
+        res.status(e?.status || 500).json({ error: "Failed to resolve refund exception", detail: e?.message });
     }
 };
 
@@ -570,28 +917,81 @@ const getTrainerChangeRequests = async (req, res) => {
     }
 
     try {
-        const sessions = await prisma.trainingSession.findMany({
-            where: { notes: { contains: 'TRAINER_CHANGE_REQUESTED' } },
-            include: { member: true, trainer: true },
-            orderBy: { updatedAt: 'desc' }
+        const [sessions, classBookings] = await Promise.all([
+            prisma.trainingSession.findMany({
+                where: { notes: { contains: 'TRAINER_CHANGE_REQUESTED' } },
+                include: { member: true, trainer: true },
+                orderBy: { updatedAt: 'desc' }
+            }),
+            prisma.booking.findMany({
+                where: {
+                    status: { in: CLASS_RESCHEDULE_REQUEST_STATUSES }
+                },
+                include: {
+                    member: true,
+                    class: {
+                        include: {
+                            trainer: true
+                        }
+                    }
+                },
+                orderBy: [{ sessionDate: 'desc' }, { createdAt: 'desc' }]
+            })
+        ]);
+
+        const normalizedSessions = sessions.map((session) => {
+            const meta = parseTrainerChangeRequestMeta(session.notes);
+            return {
+                ...session,
+                requestEntity: 'TRAINING_SESSION',
+                trainerChangeRequest: {
+                    status: !meta.hasRequest ? 'NONE' : (meta.isResolved ? 'RESOLVED' : 'PENDING'),
+                    request: meta.request,
+                    resolution: meta.resolution
+                }
+            };
         });
 
-        const normalized = sessions
-            .map((session) => {
-                const meta = parseTrainerChangeRequestMeta(session.notes);
-                return {
-                    ...session,
-                    trainerChangeRequest: {
-                        status: !meta.hasRequest ? 'NONE' : (meta.isResolved ? 'RESOLVED' : 'PENDING'),
-                        request: meta.request,
-                        resolution: meta.resolution
-                    }
-                };
-            })
-            .filter((session) => {
+        const normalizedClassBookings = classBookings.map((booking) => {
+            const rawStatus = String(booking.status || '').toUpperCase();
+            const requestStatus = rawStatus === CLASS_NO_SHOW_RESCHEDULE_REQUESTED_STATUS ? 'PENDING' : 'RESOLVED';
+            const resolutionAction = rawStatus === CLASS_NO_SHOW_RESCHEDULE_APPROVED_STATUS ? 'CANCEL_CREDIT' : 'DENY';
+
+            return {
+                ...booking,
+                id: toClassBookingRequestId(booking.id),
+                date: booking.sessionDate,
+                trainer: booking.class?.trainer || null,
+                requestEntity: 'CLASS_BOOKING',
+                trainerChangeRequest: {
+                    status: requestStatus,
+                    request: {
+                        requestedAt: booking.createdAt || null,
+                        reason: 'CLASS_NO_SHOW_RESCHEDULE',
+                        preferred: null
+                    },
+                    resolution: requestStatus === 'PENDING'
+                        ? null
+                        : {
+                            resolvedBy: null,
+                            resolvedAt: null,
+                            action: resolutionAction,
+                            note: null
+                        }
+                }
+            };
+        });
+
+        const normalized = [...normalizedSessions, ...normalizedClassBookings]
+            .filter((entry) => {
                 if (statusFilter === 'ALL') return true;
-                if (statusFilter === 'PENDING') return session.trainerChangeRequest.status === 'PENDING';
-                return session.trainerChangeRequest.status === 'RESOLVED';
+                if (statusFilter === 'PENDING') return entry.trainerChangeRequest.status === 'PENDING';
+                return entry.trainerChangeRequest.status === 'RESOLVED';
+            })
+            .sort((a, b) => {
+                const dateA = new Date(a.updatedAt || a.date || a.createdAt || 0).getTime();
+                const dateB = new Date(b.updatedAt || b.date || b.createdAt || 0).getTime();
+                return dateB - dateA;
             });
 
         res.json(normalized);
@@ -601,7 +1001,7 @@ const getTrainerChangeRequests = async (req, res) => {
 };
 
 const resolveTrainerChangeRequest = async (req, res) => {
-    const sessionId = Number(req.params.id);
+    const target = parseRequestTarget(req.params.id);
     const action = String(req.body?.action || '').toUpperCase();
     const note = String(req.body?.note || '').trim();
     const date = String(req.body?.date || '').trim();
@@ -611,10 +1011,55 @@ const resolveTrainerChangeRequest = async (req, res) => {
     if (!allowedActions.includes(action)) {
         return res.status(400).json({ error: `action must be one of: ${allowedActions.join(', ')}` });
     }
+    if (!target) {
+        return res.status(400).json({ error: "Invalid request id" });
+    }
 
     try {
+        if (target.entity === 'CLASS_BOOKING') {
+            const booking = await prisma.booking.findUnique({
+                where: { id: target.id }
+            });
+            if (!booking) {
+                return res.status(404).json({ error: "Class booking request not found" });
+            }
+
+            const status = String(booking.status || '').toUpperCase();
+            if (status !== CLASS_NO_SHOW_RESCHEDULE_REQUESTED_STATUS) {
+                if (status === CLASS_NO_SHOW_RESCHEDULE_APPROVED_STATUS || status === CLASS_NO_SHOW_RESCHEDULE_REJECTED_STATUS) {
+                    return res.status(400).json({ error: "Session change request is already resolved" });
+                }
+                return res.status(400).json({ error: "No session change request found for this class booking" });
+            }
+
+            if (action === 'MOVE') {
+                return res.status(400).json({ error: "MOVE action is not supported for class no-show requests. Use Cancel & Credit, Cancel & Refund, or Deny." });
+            }
+
+            const shouldApprove = action === 'CANCEL_CREDIT' || action === 'CANCEL_REFUND';
+            const nextStatus = shouldApprove
+                ? CLASS_NO_SHOW_RESCHEDULE_APPROVED_STATUS
+                : CLASS_NO_SHOW_RESCHEDULE_REJECTED_STATUS;
+
+            const updated = await prisma.$transaction(async (tx) => {
+                const saved = await tx.booking.update({
+                    where: { id: target.id },
+                    data: { status: nextStatus }
+                });
+                if (shouldApprove) {
+                    await restoreMemberClassSessionCredit(tx, saved.memberId);
+                }
+                return saved;
+            });
+
+            return res.json({
+                message: "Session change request resolved successfully.",
+                session: updated
+            });
+        }
+
         const session = await prisma.trainingSession.findUnique({
-            where: { id: sessionId }
+            where: { id: target.id }
         });
         if (!session) return res.status(404).json({ error: "Training session not found" });
 
@@ -660,7 +1105,8 @@ const resolveTrainerChangeRequest = async (req, res) => {
             updateData.status = 'CANCELLED';
             actionDetail = action;
         } else if (action === 'DENY') {
-            updateData.status = 'SCHEDULED';
+            const currentStatus = String(session.status || '').toUpperCase();
+            updateData.status = currentStatus === 'NO_SHOW' ? 'NO_SHOW' : 'SCHEDULED';
             actionDetail = 'DENY';
         }
 
@@ -668,7 +1114,7 @@ const resolveTrainerChangeRequest = async (req, res) => {
         updateData.notes = appendNote(session.notes, resolutionLine);
 
         const updated = await prisma.trainingSession.update({
-            where: { id: sessionId },
+            where: { id: target.id },
             data: updateData
         });
 

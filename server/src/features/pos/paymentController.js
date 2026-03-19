@@ -700,9 +700,15 @@ const getAllPayments = async (req, res) => {
 
 const getRefunds = async (req, res) => {
     try {
-        const { startDate, endDate, page, limit } = req.query;
+        const { startDate, endDate, page, limit, type } = req.query;
+        const normalizedType = String(type || 'ALL').trim().toUpperCase();
+        const allowedTypes = ['ALL', 'RETURNED', 'VOIDED'];
+        if (!allowedTypes.includes(normalizedType)) {
+            return res.status(400).json({ error: `type must be one of: ${allowedTypes.join(', ')}` });
+        }
+        const targetStatuses = normalizedType === 'ALL' ? ['VOIDED', 'RETURNED'] : [normalizedType];
         const where = {
-            status: { in: ['VOIDED', 'RETURNED'] }
+            status: { in: targetStatuses }
         };
 
         if (startDate && endDate) {

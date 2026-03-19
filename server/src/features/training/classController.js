@@ -614,9 +614,37 @@ const updateAttendeeStatus = async (req, res) => {
             return res.status(409).json({ error: 'Attendance can only be updated while class is in progress.' });
         }
 
-        const updated = await prisma.booking.update({
-            where: { id: bookingId },
-            data: { status: normalizedStatus }
+        const previousStatus = String(booking.status || '').toUpperCase();
+        const nextStatus = normalizedStatus === 'NO_SHOW' ? 'NO_SHOW' : 'ATTENDED';
+
+        const updated = await prisma.$transaction(async (tx) => {
+            const saved = await tx.booking.update({
+                where: { id: bookingId },
+                data: { status: nextStatus }
+            });
+
+            if (previousStatus === 'CONFIRMED' && nextStatus === 'NO_SHOW') {
+                const member = await tx.member.findUnique({
+                    where: { id: Number(saved.memberId) },
+                    select: {
+                        id: true,
+                        classSessionsUsed: true
+                    }
+                });
+
+                if (member) {
+                    const usedCount = Math.max(0, Number(member.classSessionsUsed || 0));
+                    await tx.member.update({
+                        where: { id: member.id },
+                        data: {
+                            classSessionsRemaining: { increment: 1 },
+                            ...(usedCount > 0 ? { classSessionsUsed: { decrement: 1 } } : {})
+                        }
+                    });
+                }
+            }
+
+            return saved;
         });
         res.json(updated);
     } catch (e) {

@@ -5,8 +5,26 @@ import { useCurrency } from '../../context/CurrencyContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import MemberPageHeader from './components/MemberPageHeader';
 
+const parseSessionExceptionFlags = (session) => {
+    const rawStatus = String(session?.status || '').toUpperCase();
+    const lines = String(session?.notes || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    const markedNoShow = rawStatus === 'NO_SHOW' || lines.some((line) => line.startsWith('Marked NO_SHOW'));
+    const refundApproved = lines.some((line) => line.startsWith('REFUND_EXCEPTION_APPROVED'));
+
+    return {
+        markedNoShow,
+        refundApproved
+    };
+};
+
 const normalizeTrainerHistoryStatus = (session) => {
     const rawStatus = String(session?.status || '').toUpperCase();
+    const flags = parseSessionExceptionFlags(session);
+    if (flags.markedNoShow && flags.refundApproved) return 'MISSED';
     if (rawStatus === 'CANCELLED' || rawStatus === 'DECLINED') return 'CANCELLED';
     if (rawStatus === 'NO_SHOW' || rawStatus === 'MISSED') return 'MISSED';
     if (rawStatus === 'COMPLETED' || rawStatus === 'ATTENDED') return 'COMPLETED';
@@ -51,11 +69,39 @@ const toPaymentStatusClass = (status) => {
     return 'bg-white/10 text-text-muted border-white/20';
 };
 
+const ACTIVE_BOOKING_STATUSES = ['SCHEDULED', 'RESCHEDULED'];
+
+const hasActiveBookingStatus = (session) => ACTIVE_BOOKING_STATUSES.includes(String(session?.status || '').toUpperCase());
+
+const getSessionWindow = (session) => {
+    const start = new Date(session?.date);
+    if (Number.isNaN(start.getTime())) return null;
+    const durationMinutes = Math.max(0, Number(session?.duration || 0));
+    const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
+    return { start, end };
+};
+
+const isSessionOngoing = (session, now = new Date()) => {
+    if (!hasActiveBookingStatus(session)) return false;
+    const window = getSessionWindow(session);
+    if (!window) return false;
+    return now >= window.start && now < window.end;
+};
+
+const isSessionUpcoming = (session, now = new Date()) => {
+    if (!hasActiveBookingStatus(session)) return false;
+    const window = getSessionWindow(session);
+    if (!window) return false;
+    return now < window.start;
+};
+
 const fallbackTrainerImage = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='480' viewBox='0 0 480 480'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop stop-color='%230f172a'/%3E%3Cstop offset='1' stop-color='%231e293b'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='480' height='480' fill='url(%23g)'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='%2394a3b8' font-family='Arial' font-size='22'%3ETrainer Image Unavailable%3C/text%3E%3C/svg%3E";
 const fallbackMemberAvatar = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' x2='1' y1='0' y2='1'%3E%3Cstop stop-color='%23111827'/%3E%3Cstop offset='1' stop-color='%231e293b'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='60' cy='60' r='60' fill='url(%23g)'/%3E%3Ccircle cx='60' cy='46' r='20' fill='%23475569'/%3E%3Cpath d='M24 101c8-17 22-27 36-27s28 10 36 27' fill='%23475569'/%3E%3C/svg%3E";
 const RATING_COMMENT_LIMIT = 500;
 const TOP_RATED_MIN_SCORE = 4.5;
 const TOP_RATED_MIN_COUNT = 5;
+const NO_SHOW_ACTION_WINDOW_HOURS = 24;
+const NO_SHOW_ACTION_WINDOW_MS = NO_SHOW_ACTION_WINDOW_HOURS * 60 * 60 * 1000;
 
 const handleTrainerImageError = (event) => {
     event.currentTarget.onerror = null;
@@ -85,11 +131,114 @@ const formatReviewDateLabel = (value) => {
     });
 };
 
+const parseNoShowMarkedAt = (session) => {
+    const lines = String(session?.notes || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+        const line = lines[i];
+        if (!line.startsWith('Marked NO_SHOW')) continue;
+        const atMatch = line.match(/ at ([^|]+)/);
+        const parsed = atMatch?.[1] ? new Date(atMatch[1].trim()) : null;
+        if (parsed && !Number.isNaN(parsed.getTime())) return parsed;
+    }
+    const fallbackUpdated = session?.updatedAt ? new Date(session.updatedAt) : null;
+    if (fallbackUpdated && !Number.isNaN(fallbackUpdated.getTime())) return fallbackUpdated;
+    return null;
+};
+
+const parseNoShowRequestMeta = (notes) => {
+    const lines = String(notes || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    let hasRefundRequest = false;
+    let refundStatus = 'NONE';
+    let hasRescheduleRequest = false;
+    let rescheduleStatus = 'NONE';
+
+    lines.forEach((line) => {
+        if (line.startsWith('REFUND_EXCEPTION_REQUESTED')) {
+            hasRefundRequest = true;
+            refundStatus = 'PENDING';
+        }
+        if (line.startsWith('REFUND_EXCEPTION_APPROVED')) {
+            hasRefundRequest = true;
+            refundStatus = 'APPROVED';
+        }
+        if (line.startsWith('REFUND_EXCEPTION_REJECTED')) {
+            hasRefundRequest = true;
+            refundStatus = 'REJECTED';
+        }
+        if (line.startsWith('TRAINER_CHANGE_REQUESTED')) {
+            hasRescheduleRequest = true;
+            rescheduleStatus = 'PENDING';
+        }
+        if (line.startsWith('TRAINER_CHANGE_RESOLVED')) {
+            hasRescheduleRequest = true;
+            rescheduleStatus = 'RESOLVED';
+        }
+    });
+
+    return {
+        hasRefundRequest,
+        refundStatus,
+        hasRescheduleRequest,
+        rescheduleStatus,
+        hasAnyRequest: hasRefundRequest || hasRescheduleRequest
+    };
+};
+
+const getNoShowActionMeta = (session, now = new Date()) => {
+    const status = String(session?.status || '').toUpperCase();
+    if (status !== 'NO_SHOW') {
+        return {
+            eligible: false,
+            isOpen: false,
+            expiresAt: null,
+            remainingMs: 0,
+            ...parseNoShowRequestMeta(session?.notes)
+        };
+    }
+
+    const noShowMarkedAt = parseNoShowMarkedAt(session);
+    if (!noShowMarkedAt) {
+        return {
+            eligible: true,
+            isOpen: false,
+            expiresAt: null,
+            remainingMs: 0,
+            ...parseNoShowRequestMeta(session?.notes)
+        };
+    }
+
+    const expiresAt = new Date(noShowMarkedAt.getTime() + NO_SHOW_ACTION_WINDOW_MS);
+    const remainingMs = expiresAt.getTime() - now.getTime();
+
+    return {
+        eligible: true,
+        isOpen: remainingMs > 0,
+        expiresAt,
+        remainingMs: Math.max(0, remainingMs),
+        ...parseNoShowRequestMeta(session?.notes)
+    };
+};
+
+const formatNoShowRemaining = (remainingMs) => {
+    const totalMinutes = Math.max(0, Math.ceil(remainingMs / (1000 * 60)));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours <= 0) return `${minutes}m left`;
+    return `${hours}h ${minutes}m left`;
+};
+
 export default function TrainerBooking() {
     const { user } = useAuth();
     const { formatPrice } = useCurrency();
     const { alert: showAlert, confirm: showConfirm } = useConfirm();
-    const bookingPolicyNote = 'No refund by default for missed sessions. One reschedule is allowed with at least 24-hour notice.';
+    const bookingPolicyNote = 'No refund by default for missed sessions. If trainer marks no-show, member may request refund/reschedule review within 24 hours. Paid session cancellations require staff/admin approval. One direct member reschedule is allowed with at least 24-hour notice.';
     const trainersInfoNote = 'Review trainer credentials, specialties, ratings, and open slots before confirming your booking.';
     const historyInfoNote = 'History shows completed, missed, and cancelled trainer sessions including your rating and payment records.';
     const [trainers, setTrainers] = useState([]);
@@ -108,6 +257,8 @@ export default function TrainerBooking() {
     const [memberSessions, setMemberSessions] = useState([]);
     const [sessionsLoading, setSessionsLoading] = useState(false);
     const [sessionsError, setSessionsError] = useState('');
+    const [noShowActionSubmittingId, setNoShowActionSubmittingId] = useState(null);
+    const [paidCancelRequestSubmittingId, setPaidCancelRequestSubmittingId] = useState(null);
     const [activeTab, setActiveTab] = useState('trainers'); // trainers, bookings, history
     const [filterView, setFilterView] = useState('all'); // all, available, top-rated
     const [trainerSearch, setTrainerSearch] = useState('');
@@ -244,6 +395,76 @@ export default function TrainerBooking() {
         } catch (error) {
             console.error("Failed to cancel session", error);
             await showAlert({ title: 'Cancel Failed', message: error.response?.data?.error || 'Failed to cancel session', type: 'danger' });
+        }
+    };
+
+    const handleRequestNoShowAction = async (session, action) => {
+        if (!session?.id) return;
+        const isRefund = action === 'REFUND';
+        const confirmed = await showConfirm({
+            title: isRefund ? 'Request Refund Review?' : 'Request Reschedule Review?',
+            message: isRefund
+                ? 'This will submit your refund request to staff/admin for approval.'
+                : 'This will submit your reschedule request to staff/admin for approval.',
+            confirmLabel: isRefund ? 'Request Refund' : 'Request Reschedule',
+            type: 'warning'
+        });
+        if (!confirmed) return;
+
+        setNoShowActionSubmittingId(session.id);
+        try {
+            await axios.post(`/api/members/me/training-sessions/${session.id}/no-show-action`, {
+                action
+            });
+            await showAlert({
+                title: 'Request Submitted',
+                message: isRefund
+                    ? 'Refund request sent for staff/admin approval.'
+                    : 'Reschedule request sent for staff/admin approval.',
+                type: 'success'
+            });
+            fetchMemberSessions();
+        } catch (error) {
+            await showAlert({
+                title: 'Request Failed',
+                message: error.response?.data?.error || 'Failed to submit request',
+                type: 'danger'
+            });
+        } finally {
+            setNoShowActionSubmittingId(null);
+        }
+    };
+
+    const handleRequestPaidCancellationReview = async (session) => {
+        if (!session?.id) return;
+        const confirmed = await showConfirm({
+            title: 'Request Paid Cancellation Review?',
+            message: 'This sends your paid cancellation/refund request to staff/admin for approval. Direct cancellation is disabled for paid sessions.',
+            confirmLabel: 'Submit Request',
+            type: 'warning'
+        });
+        if (!confirmed) return;
+
+        setPaidCancelRequestSubmittingId(session.id);
+        try {
+            await axios.post(`/api/members/me/training-sessions/${session.id}/refund-exception`, {
+                reason: 'MEMBER_CANCEL_PAID',
+                details: 'Member requested cancellation review for paid upcoming session.'
+            });
+            await showAlert({
+                title: 'Request Submitted',
+                message: 'Paid cancellation/refund request sent for staff/admin approval.',
+                type: 'success'
+            });
+            fetchMemberSessions();
+        } catch (error) {
+            await showAlert({
+                title: 'Request Failed',
+                message: error.response?.data?.error || 'Failed to submit cancellation review request',
+                type: 'danger'
+            });
+        } finally {
+            setPaidCancelRequestSubmittingId(null);
         }
     };
 
@@ -440,8 +661,28 @@ export default function TrainerBooking() {
         !['GCASH', 'MAYA'].includes(String(method.type || '').toUpperCase())
     );
     const now = new Date();
-    const upcomingSessions = memberSessions.filter((session) => new Date(session.date) >= now);
-    const pastSessions = memberSessions.filter((session) => new Date(session.date) < now);
+    const ongoingSessions = memberSessions.filter((session) => isSessionOngoing(session, now));
+    const upcomingSessions = memberSessions.filter((session) => isSessionUpcoming(session, now));
+    const pastSessions = memberSessions.filter((session) => !isSessionOngoing(session, now) && !isSessionUpcoming(session, now));
+    const noShowActionSessions = useMemo(() => {
+        const current = new Date();
+        return memberSessions
+            .map((session) => {
+                const meta = getNoShowActionMeta(session, current);
+                return { session, meta };
+            })
+            .filter(({ meta }) => (
+                meta.eligible
+                && meta.isOpen
+                && meta.refundStatus !== 'APPROVED'
+                && meta.rescheduleStatus !== 'RESOLVED'
+            ))
+            .sort((a, b) => {
+                const aExpiry = a.meta.expiresAt ? new Date(a.meta.expiresAt).getTime() : Number.POSITIVE_INFINITY;
+                const bExpiry = b.meta.expiresAt ? new Date(b.meta.expiresAt).getTime() : Number.POSITIVE_INFINITY;
+                return aExpiry - bExpiry;
+            });
+    }, [memberSessions]);
     const pendingRatingSessions = memberSessions.filter((session) =>
         String(session?.status || '').toUpperCase() === 'COMPLETED'
         && (session?.memberRating === null || session?.memberRating === undefined)
@@ -512,6 +753,7 @@ export default function TrainerBooking() {
                 entry?.duration,
                 entry?.price,
                 entry?.memberRating,
+                parseSessionExceptionFlags(entry).refundApproved ? 'refunded' : '',
                 entry?.date ? entry.date.toISOString() : ''
             ]
                 .filter((item) => item !== null && item !== undefined && item !== '')
@@ -529,17 +771,58 @@ export default function TrainerBooking() {
         () => filteredBookingEntries.filter((entry) => entry.bookingType === 'upcoming'),
         [filteredBookingEntries]
     );
+    const visibleOngoingSessions = useMemo(() => {
+        if (bookingFilter === 'ratings') return [];
+        const query = bookingSearch.trim().toLowerCase();
+        if (!query) return ongoingSessions;
+
+        return ongoingSessions.filter((session) => {
+            const searchableText = [
+                session?.trainer?.name,
+                session?.status,
+                session?.notes,
+                session?.date
+            ]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase();
+            return searchableText.includes(query);
+        });
+    }, [bookingFilter, bookingSearch, ongoingSessions]);
+    const visibleNoShowActionSessions = useMemo(() => {
+        if (bookingFilter === 'ratings') return [];
+        const query = bookingSearch.trim().toLowerCase();
+        if (!query) return noShowActionSessions;
+
+        return noShowActionSessions.filter(({ session }) => {
+            const searchableText = [
+                session?.trainer?.name,
+                session?.status,
+                session?.notes,
+                session?.date
+            ]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase();
+            return searchableText.includes(query);
+        });
+    }, [bookingFilter, bookingSearch, noShowActionSessions]);
     const visibleRatingSessions = useMemo(
         () => filteredBookingEntries.filter((entry) => entry.bookingType === 'rating'),
         [filteredBookingEntries]
     );
-    const bookingActionCount = pendingRatingSessions.length;
-    const hasPendingRatings = bookingActionCount > 0;
+    const bookingActionCount = pendingRatingSessions.length + noShowActionSessions.filter(({ meta }) => !meta.hasAnyRequest).length;
+    const hasPendingRatings = pendingRatingSessions.length > 0;
     const nextUpcomingSession = useMemo(() => {
         if (!Array.isArray(upcomingSessions) || upcomingSessions.length === 0) return null;
         const sorted = [...upcomingSessions].sort((a, b) => new Date(a.date) - new Date(b.date));
         return sorted[0] || null;
     }, [upcomingSessions]);
+    const nextOngoingSession = useMemo(() => {
+        if (!Array.isArray(ongoingSessions) || ongoingSessions.length === 0) return null;
+        const sorted = [...ongoingSessions].sort((a, b) => new Date(a.date) - new Date(b.date));
+        return sorted[0] || null;
+    }, [ongoingSessions]);
     const selectedTrainerReviewState = selectedTrainer
         ? (trainerReviewsById[selectedTrainer.id] || null)
         : null;
@@ -998,7 +1281,7 @@ export default function TrainerBooking() {
                 title={activeTab === 'bookings' ? 'My Bookings' : activeTab === 'history' ? 'Session History' : 'Personal Trainers'}
                 subtitle={
                     activeTab === 'bookings'
-                        ? 'Manage upcoming trainer sessions and pending ratings'
+                        ? 'Manage upcoming sessions, no-show requests, and pending ratings'
                         : activeTab === 'history'
                             ? 'Review completed, missed, and cancelled past trainer sessions'
                             : 'Find your trainer and book sessions quickly'
@@ -1041,6 +1324,11 @@ export default function TrainerBooking() {
                     >
                         <span className="material-icons-round text-base">event_note</span>
                         <span>My Bookings</span>
+                        {ongoingSessions.length > 0 && (
+                            <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-black leading-none ${activeTab === 'bookings' ? 'bg-emerald-700/80 text-emerald-100' : 'bg-emerald-500/30 text-emerald-200'}`}>
+                                LIVE
+                            </span>
+                        )}
                         {bookingActionCount > 0 && (
                             <span className={`absolute right-1 top-1 min-w-[16px] h-4 px-1 rounded-md text-[9px] font-bold leading-none inline-flex items-center justify-center ${activeTab === 'bookings' ? 'bg-amber-400 text-black' : 'bg-amber-500/90 text-black'}`}>
                                 {bookingActionCount > 9 ? '9+' : bookingActionCount}
@@ -1126,7 +1414,12 @@ export default function TrainerBooking() {
             {activeTab === 'bookings' ? (
                 /* My Booked Sessions */
                 <div className="space-y-5">
-                    <div className="grid grid-cols-2 gap-2.5">
+                    <div className="grid grid-cols-3 gap-2.5">
+                        <div className="rounded-2xl border border-cyan-500/25 bg-gradient-to-br from-cyan-500/20 to-cyan-500/5 p-3.5">
+                            <p className="text-[10px] uppercase tracking-[0.16em] text-cyan-200/90 font-bold">Ongoing</p>
+                            <p className="text-2xl font-black text-white mt-1">{ongoingSessions.length}</p>
+                            <p className="text-[11px] text-cyan-100/75 mt-1">Live sessions now</p>
+                        </div>
                         <div className="rounded-2xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/20 to-emerald-500/5 p-3.5">
                             <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-300/90 font-bold">Upcoming</p>
                             <p className="text-2xl font-black text-white mt-1">{upcomingSessions.length}</p>
@@ -1138,6 +1431,23 @@ export default function TrainerBooking() {
                             <p className="text-[11px] text-amber-100/75 mt-1">Complete to unlock booking</p>
                         </div>
                     </div>
+
+                    {nextOngoingSession && (
+                        <div className="rounded-2xl border border-cyan-500/35 bg-gradient-to-r from-cyan-500/20 via-cyan-500/10 to-transparent p-4">
+                            <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                    <p className="text-[10px] uppercase tracking-[0.18em] text-cyan-200 font-bold">Ongoing Now</p>
+                                    <p className="text-base font-bold text-white mt-1 truncate">{nextOngoingSession?.trainer?.name || 'Trainer'}</p>
+                                    <p className="text-[11px] text-text-muted mt-0.5">
+                                        Started at {new Date(nextOngoingSession.date).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                                    </p>
+                                </div>
+                                <span className="shrink-0 rounded-full border border-cyan-500/40 bg-cyan-500/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-cyan-200">
+                                    Live
+                                </span>
+                            </div>
+                        </div>
+                    )}
 
                     {nextUpcomingSession && (
                         <div className="rounded-2xl border border-primary/30 bg-gradient-to-r from-primary/20 via-primary/10 to-transparent p-4">
@@ -1183,9 +1493,9 @@ export default function TrainerBooking() {
                     </div>
                     <p className="text-[11px] text-text-muted">
                         {bookingFilter === 'all'
-                            ? 'Showing upcoming bookings and sessions pending rating.'
+                            ? 'Showing ongoing/upcoming bookings and sessions pending rating.'
                             : bookingFilter === 'upcoming'
-                                ? 'Filter: Upcoming sessions'
+                                ? 'Filter: Active sessions (ongoing/upcoming)'
                                 : 'Filter: Needs rating'}
                     </p>
 
@@ -1229,96 +1539,251 @@ export default function TrainerBooking() {
                     ) : (
                         <div className="space-y-6">
                             {bookingFilter !== 'ratings' && (
-                                <section className="space-y-3 rounded-2xl border border-white/10 bg-surface p-3 sm:p-4">
-                                <h3 className="text-sm font-bold text-white flex items-center gap-2 uppercase tracking-wide">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                                    BOOKED SESSIONS
-                                </h3>
-                                {visibleUpcomingSessions.length === 0 ? (
-                                    <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-xs text-text-muted">
-                                        No upcoming booked sessions.
-                                    </div>
-                                ) : visibleUpcomingSessions.map((session) => {
-                                    const sessionDate = new Date(session.date);
-                                    const hoursUntil = (sessionDate.getTime() - now.getTime()) / (1000 * 60 * 60);
-                                    const canRequestReschedule = hoursUntil >= 24 && session.status === 'SCHEDULED';
-                                    const trainerId = Number(session?.trainer?.id || session?.trainerId);
-                                    const trainerImage = trainerCardImageById.get(trainerId) || session?.trainer?.cardImageUrl || null;
-                                    const bookingTimeLabel = sessionDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-                                    const bookingDateLabel = sessionDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-                                    const bookingWeekdayLabel = sessionDate.toLocaleDateString(undefined, { weekday: 'long' });
-                                    return (
-                                        <div key={session.id} className="bg-surface rounded-xl p-4 border border-primary/30 bg-primary/5 transition-all hover:border-primary/40">
-                                            <div className="space-y-3">
-                                                <div className="flex gap-3">
-                                                    <div className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/5">
-                                                        {trainerImage ? (
-                                                            <img src={trainerImage} alt={session.trainer?.name || 'Trainer'} onError={handleTrainerImageError} className="h-full w-full object-cover" />
-                                                        ) : (
-                                                            <div className="flex h-full w-full items-center justify-center text-text-muted">
-                                                                <span className="material-icons-round text-2xl">person</span>
+                                <>
+                                    <section className="space-y-3 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-3 sm:p-4">
+                                        <h3 className="text-sm font-bold text-white flex items-center gap-2 uppercase tracking-wide">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-300 animate-pulse" />
+                                            ONGOING NOW
+                                        </h3>
+                                        {visibleOngoingSessions.length === 0 ? (
+                                            <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-xs text-text-muted">
+                                                No ongoing sessions right now.
+                                            </div>
+                                        ) : visibleOngoingSessions.map((session) => {
+                                            const sessionDate = new Date(session.date);
+                                            const durationMinutes = Math.max(0, Number(session?.duration || 0));
+                                            const sessionEnd = new Date(sessionDate.getTime() + durationMinutes * 60 * 1000);
+                                            const trainerId = Number(session?.trainer?.id || session?.trainerId);
+                                            const trainerImage = trainerCardImageById.get(trainerId) || session?.trainer?.cardImageUrl || null;
+                                            return (
+                                                <div key={`ongoing-${session.id}`} className="rounded-xl border border-cyan-500/25 bg-cyan-500/10 p-4">
+                                                    <div className="flex gap-3">
+                                                        <div className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/5">
+                                                            {trainerImage ? (
+                                                                <img src={trainerImage} alt={session.trainer?.name || 'Trainer'} onError={handleTrainerImageError} className="h-full w-full object-cover" />
+                                                            ) : (
+                                                                <div className="flex h-full w-full items-center justify-center text-text-muted">
+                                                                    <span className="material-icons-round text-2xl">person</span>
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex items-start justify-between gap-2">
+                                                                <div>
+                                                                    <p className="text-[10px] uppercase tracking-wide text-cyan-200/80">In Progress</p>
+                                                                    <p className="text-sm font-bold text-white">
+                                                                        {sessionDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                                    </p>
+                                                                    <p className="text-[11px] text-text-muted">
+                                                                        {sessionDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                                                                        {' - '}
+                                                                        {sessionEnd.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                                                                    </p>
+                                                                </div>
+                                                                <span className="rounded-full border border-cyan-500/40 bg-cyan-500/15 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-cyan-200">
+                                                                    Live
+                                                                </span>
                                                             </div>
+                                                            <h3 className="mt-2 text-base font-bold text-white leading-tight break-words">{session.trainer?.name || 'Trainer'}</h3>
+                                                            <p className="mt-1 text-[11px] text-text-muted">Session is currently in progress.</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </section>
+
+                                    <section className="space-y-3 rounded-2xl border border-amber-500/20 bg-amber-500/5 p-3 sm:p-4">
+                                        <h3 className="text-sm font-bold text-white flex items-center gap-2 uppercase tracking-wide">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                                            MISSED BOOKINGS
+                                        </h3>
+                                        {visibleNoShowActionSessions.length === 0 ? (
+                                            <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-xs text-text-muted">
+                                                No no-show sessions requiring action right now.
+                                            </div>
+                                        ) : visibleNoShowActionSessions.map(({ session, meta }) => {
+                                            const sessionDate = new Date(session.date);
+                                            const trainerId = Number(session?.trainer?.id || session?.trainerId);
+                                            const trainerImage = trainerCardImageById.get(trainerId) || session?.trainer?.cardImageUrl || null;
+                                            const busy = noShowActionSubmittingId === session.id;
+                                            return (
+                                                <div key={`no-show-${session.id}`} className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-4 space-y-3">
+                                                    <div className="flex gap-3">
+                                                        <div className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/5">
+                                                            {trainerImage ? (
+                                                                <img src={trainerImage} alt={session.trainer?.name || 'Trainer'} onError={handleTrainerImageError} className="h-full w-full object-cover" />
+                                                            ) : (
+                                                                <div className="flex h-full w-full items-center justify-center text-text-muted">
+                                                                    <span className="material-icons-round text-2xl">person</span>
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex items-start justify-between gap-2">
+                                                                <div>
+                                                                    <p className="text-[10px] uppercase tracking-wide text-text-muted">Missed Session</p>
+                                                                    <p className="text-sm font-bold text-white">
+                                                                        {sessionDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                                    </p>
+                                                                    <p className="text-[11px] text-text-muted">
+                                                                        {sessionDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                                                                    </p>
+                                                                </div>
+                                                                <span className="rounded-full border border-amber-500/40 bg-amber-500/15 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-amber-300">
+                                                                    No Show
+                                                                </span>
+                                                            </div>
+                                                            <h3 className="mt-2 text-base font-bold text-white leading-tight break-words">{session.trainer?.name || 'Trainer'}</h3>
+                                                            <p className="mt-1 text-[11px] text-amber-200 font-semibold">
+                                                                {meta.isOpen && meta.remainingMs > 0
+                                                                    ? `${formatNoShowRemaining(meta.remainingMs)} to submit request`
+                                                                    : 'Request window closed'}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+
+                                                    {meta.hasAnyRequest ? (
+                                                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-text-muted">
+                                                            {meta.refundStatus === 'PENDING' && 'Refund request pending staff/admin approval.'}
+                                                            {meta.refundStatus === 'APPROVED' && 'Refund request approved by staff/admin.'}
+                                                            {meta.refundStatus === 'REJECTED' && 'Refund request rejected by staff/admin.'}
+                                                            {meta.rescheduleStatus === 'PENDING' && 'Reschedule request pending staff/admin approval.'}
+                                                            {meta.rescheduleStatus === 'RESOLVED' && 'Reschedule request resolved by staff/admin.'}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                type="button"
+                                                                disabled={busy}
+                                                                onClick={() => handleRequestNoShowAction(session, 'RESCHEDULE')}
+                                                                className="flex-1 py-2.5 rounded-lg bg-primary/10 text-primary font-bold hover:bg-primary/20 active:scale-95 transition-all text-sm border border-primary/25 disabled:opacity-60"
+                                                            >
+                                                                {busy ? 'Submitting...' : 'Request Reschedule'}
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                disabled={busy}
+                                                                onClick={() => handleRequestNoShowAction(session, 'REFUND')}
+                                                                className="flex-1 py-2.5 rounded-lg bg-red-500/10 text-red-300 font-bold hover:bg-red-500/20 active:scale-95 transition-all text-sm border border-red-500/25 disabled:opacity-60"
+                                                            >
+                                                                {busy ? 'Submitting...' : 'Request Refund'}
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </section>
+
+                                    <section className="space-y-3 rounded-2xl border border-white/10 bg-surface p-3 sm:p-4">
+                                    <h3 className="text-sm font-bold text-white flex items-center gap-2 uppercase tracking-wide">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                                        BOOKED SESSIONS
+                                    </h3>
+                                    {visibleUpcomingSessions.length === 0 ? (
+                                        <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-xs text-text-muted">
+                                            No upcoming booked sessions.
+                                        </div>
+                                    ) : visibleUpcomingSessions.map((session) => {
+                                        const sessionDate = new Date(session.date);
+                                        const hoursUntil = (sessionDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+                                        const canRequestReschedule = hoursUntil >= 24 && session.status === 'SCHEDULED';
+                                        const isPaidSession = String(session?.paymentStatus || '').toUpperCase() === 'PAID';
+                                        const refundRequestMeta = parseNoShowRequestMeta(session?.notes);
+                                        const hasPendingPaidCancelRequest = refundRequestMeta.hasRefundRequest && refundRequestMeta.refundStatus === 'PENDING';
+                                        const trainerId = Number(session?.trainer?.id || session?.trainerId);
+                                        const trainerImage = trainerCardImageById.get(trainerId) || session?.trainer?.cardImageUrl || null;
+                                        const bookingTimeLabel = sessionDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+                                        const bookingDateLabel = sessionDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+                                        const bookingWeekdayLabel = sessionDate.toLocaleDateString(undefined, { weekday: 'long' });
+                                        return (
+                                            <div key={session.id} className="bg-surface rounded-xl p-4 border border-primary/30 bg-primary/5 transition-all hover:border-primary/40">
+                                                <div className="space-y-3">
+                                                    <div className="flex gap-3">
+                                                        <div className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/5">
+                                                            {trainerImage ? (
+                                                                <img src={trainerImage} alt={session.trainer?.name || 'Trainer'} onError={handleTrainerImageError} className="h-full w-full object-cover" />
+                                                            ) : (
+                                                                <div className="flex h-full w-full items-center justify-center text-text-muted">
+                                                                    <span className="material-icons-round text-2xl">person</span>
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex items-start justify-between gap-2">
+                                                                <div className="min-w-0">
+                                                                    <p className="text-[10px] uppercase tracking-wide text-text-muted">Next Session</p>
+                                                                    <p className="text-sm font-bold text-white">{bookingDateLabel}</p>
+                                                                    <p className="text-[11px] text-text-muted">{bookingWeekdayLabel}</p>
+                                                                    <p className="mt-0.5 text-lg font-extrabold text-primary leading-none">{bookingTimeLabel}</p>
+                                                                </div>
+                                                                <div className="shrink-0 flex flex-col items-end gap-1">
+                                                                    <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${toSessionStatusClass(session.status)}`}>
+                                                                        {session.status || 'SCHEDULED'}
+                                                                    </span>
+                                                                    <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${toPaymentStatusClass(session.paymentStatus)}`}>
+                                                                        {toPaymentStatusLabel(session.paymentStatus)}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+
+                                                            <h3 className="mt-2 text-base font-bold text-white leading-tight break-words">{session.trainer?.name || 'Trainer'}</h3>
+
+                                                            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
+                                                                <span className="inline-flex items-center gap-1">
+                                                                    <span className="material-icons-round text-sm">schedule</span>
+                                                                    {session.duration} min
+                                                                </span>
+                                                                <span className="inline-flex items-center gap-1">
+                                                                    <span className="material-icons-round text-sm">payments</span>
+                                                                    {formatPrice(session.price)}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-2">
+                                                        {canRequestReschedule && (
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); handleOpenRescheduleModal(session); }}
+                                                                className="flex-1 py-2.5 rounded-lg bg-primary/10 text-primary font-bold hover:bg-primary/20 active:scale-95 transition-all text-sm border border-primary/25 flex items-center justify-center gap-1"
+                                                            >
+                                                                <span className="material-icons-round text-base">update</span>
+                                                                Reschedule
+                                                            </button>
+                                                        )}
+                                                        {!isPaidSession && session.status !== 'CANCELLED' && session.status !== 'NO_SHOW' && (
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); handleCancelSession(session.id); }}
+                                                                className={`${canRequestReschedule ? 'flex-1' : 'w-full'} py-2.5 rounded-lg bg-red-500/10 text-red-400 font-bold hover:bg-red-500/20 active:scale-95 transition-all text-sm border border-red-500/20 flex items-center justify-center gap-1`}
+                                                            >
+                                                                <span className="material-icons-round text-base">cancel</span>
+                                                                Cancel Booking
+                                                            </button>
+                                                        )}
+                                                        {isPaidSession && session.status !== 'CANCELLED' && session.status !== 'NO_SHOW' && (
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); handleRequestPaidCancellationReview(session); }}
+                                                                disabled={paidCancelRequestSubmittingId === session.id || hasPendingPaidCancelRequest}
+                                                                className={`${canRequestReschedule ? 'flex-1' : 'w-full'} py-2.5 rounded-lg bg-amber-500/10 text-amber-300 font-bold hover:bg-amber-500/20 active:scale-95 transition-all text-sm border border-amber-500/25 flex items-center justify-center gap-1 disabled:opacity-60`}
+                                                            >
+                                                                <span className="material-icons-round text-base">assignment</span>
+                                                                {hasPendingPaidCancelRequest
+                                                                    ? 'Review Requested'
+                                                                    : (paidCancelRequestSubmittingId === session.id ? 'Submitting...' : 'Request Cancel Review')}
+                                                            </button>
                                                         )}
                                                     </div>
-
-                                                    <div className="min-w-0 flex-1">
-                                                        <div className="flex items-start justify-between gap-2">
-                                                            <div className="min-w-0">
-                                                                <p className="text-[10px] uppercase tracking-wide text-text-muted">Next Session</p>
-                                                                <p className="text-sm font-bold text-white">{bookingDateLabel}</p>
-                                                                <p className="text-[11px] text-text-muted">{bookingWeekdayLabel}</p>
-                                                                <p className="mt-0.5 text-lg font-extrabold text-primary leading-none">{bookingTimeLabel}</p>
-                                                            </div>
-                                                            <div className="shrink-0 flex flex-col items-end gap-1">
-                                                                <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${toSessionStatusClass(session.status)}`}>
-                                                                    {session.status || 'SCHEDULED'}
-                                                                </span>
-                                                                <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${toPaymentStatusClass(session.paymentStatus)}`}>
-                                                                    {toPaymentStatusLabel(session.paymentStatus)}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-
-                                                        <h3 className="mt-2 text-base font-bold text-white leading-tight break-words">{session.trainer?.name || 'Trainer'}</h3>
-
-                                                        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
-                                                            <span className="inline-flex items-center gap-1">
-                                                                <span className="material-icons-round text-sm">schedule</span>
-                                                                {session.duration} min
-                                                            </span>
-                                                            <span className="inline-flex items-center gap-1">
-                                                                <span className="material-icons-round text-sm">payments</span>
-                                                                {formatPrice(session.price)}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                <div className="flex items-center gap-2">
-                                                    {canRequestReschedule && (
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); handleOpenRescheduleModal(session); }}
-                                                            className="flex-1 py-2.5 rounded-lg bg-primary/10 text-primary font-bold hover:bg-primary/20 active:scale-95 transition-all text-sm border border-primary/25 flex items-center justify-center gap-1"
-                                                        >
-                                                            <span className="material-icons-round text-base">update</span>
-                                                            Reschedule
-                                                        </button>
-                                                    )}
-                                                    {session.status !== 'CANCELLED' && session.status !== 'NO_SHOW' && (
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); handleCancelSession(session.id); }}
-                                                            className={`${canRequestReschedule ? 'flex-1' : 'w-full'} py-2.5 rounded-lg bg-red-500/10 text-red-400 font-bold hover:bg-red-500/20 active:scale-95 transition-all text-sm border border-red-500/20 flex items-center justify-center gap-1`}
-                                                        >
-                                                            <span className="material-icons-round text-base">cancel</span>
-                                                            Cancel Booking
-                                                        </button>
-                                                    )}
                                                 </div>
                                             </div>
-                                        </div>
-                                    );
-                                })}
-                                </section>
+                                        );
+                                    })}
+                                    </section>
+                                </>
                             )}
 
                             {bookingFilter !== 'upcoming' && (
@@ -1518,6 +1983,7 @@ export default function TrainerBooking() {
                                 {filteredTrainerHistoryEntries.map((entry) => {
                                     const trainerId = Number(entry?.trainer?.id || entry?.trainerId);
                                     const matchedTrainer = trainers.find((trainer) => Number(trainer.id) === trainerId) || null;
+                                    const exceptionFlags = parseSessionExceptionFlags(entry);
                                     return (
                                         <article key={`trainer-history-${entry.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3.5">
                                             <div className="flex items-start justify-between gap-2">
@@ -1529,9 +1995,16 @@ export default function TrainerBooking() {
                                                         {entry.date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
                                                     </p>
                                                 </div>
-                                                <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${toTrainerHistoryStatusClass(entry.normalizedHistoryStatus)}`}>
-                                                    {toTrainerHistoryStatusLabel(entry.normalizedHistoryStatus)}
-                                                </span>
+                                                <div className="flex flex-col items-end gap-1">
+                                                    <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${toTrainerHistoryStatusClass(entry.normalizedHistoryStatus)}`}>
+                                                        {toTrainerHistoryStatusLabel(entry.normalizedHistoryStatus)}
+                                                    </span>
+                                                    {exceptionFlags.refundApproved && (
+                                                        <span className="rounded-full border border-cyan-500/35 bg-cyan-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-cyan-300">
+                                                            Refunded
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </div>
                                             <div className="mt-2.5 grid grid-cols-2 gap-2 text-[11px] text-text-muted">
                                                 <span className="inline-flex items-center gap-1">
@@ -1556,6 +2029,12 @@ export default function TrainerBooking() {
                                                     <span className="inline-flex items-center gap-1 col-span-2">
                                                         <span className="material-icons-round text-sm">star</span>
                                                         {entry.memberRating ? `Rated ${entry.memberRating}/5` : (entry.memberRatingVoided ? 'Not Rated (Skipped)' : 'Not Rated')}
+                                                    </span>
+                                                )}
+                                                {exceptionFlags.refundApproved && (
+                                                    <span className="inline-flex items-center gap-1 col-span-2 text-cyan-300">
+                                                        <span className="material-icons-round text-sm">payments</span>
+                                                        Refunded by staff/admin approval
                                                     </span>
                                                 )}
                                             </div>
