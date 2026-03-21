@@ -332,7 +332,7 @@ export default function TransactionDetail() {
                                 items={receiptItems}
                                 member={payment.member}
                                 cashierName={payment.cashier?.name || 'Staff'}
-                                discount={payment.discount || 0}
+                                discount={discountAmount || 0}
                                 paymentDetails={{
                                     method: payment.method,
                                     tendered: payment.cashTendered,

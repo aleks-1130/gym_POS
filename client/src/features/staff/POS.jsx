@@ -495,7 +495,10 @@ export default function POS() {
                 amount: Math.max(0, previewSubtotal - previewDiscount),
                 type: 'POS_PREVIEW',
                 method: 'CASH',
-                date: new Date().toISOString()
+                date: new Date().toISOString(),
+                pointsAwarded: usePOSStore.getState().selectedMemberId ? Math.floor(Math.max(0, previewSubtotal - previewDiscount - usePOSStore.getState().getTotals().couponDiscount) * 0.1) : 0,
+                couponCode: usePOSStore.getState().appliedCoupon ? (usePOSStore.getState().appliedCoupon.label || usePOSStore.getState().appliedCoupon.code) : null,
+                couponDiscount: usePOSStore.getState().appliedCoupon ? usePOSStore.getState().getTotals().couponDiscount : 0
             },
             items: previewItems,
             member: selectedMemberId ? members.find((m) => m.id === Number(selectedMemberId)) : null,

@@ -296,6 +296,10 @@ export default function TrainerPurchaseHistory() {
                     }];
                 }
 
+                const grossTotal = receiptItems.reduce((sum, item) => sum + (Number(item.price || 0) * Number(item.quantity || 0)), 0);
+                const discountRate = Number(selectedReceipt.discount || 0);
+                const discountAmount = Number((grossTotal * (discountRate / 100)).toFixed(2));
+
                 return (
                     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in overflow-y-auto">
                         <div className="relative my-8">
@@ -311,6 +315,7 @@ export default function TrainerPurchaseHistory() {
                                 items={receiptItems}
                                 member={user || null}
                                 cashierName={selectedReceipt.cashier?.name}
+                                discount={discountAmount || 0}
                                 paymentDetails={{
                                     method: selectedReceipt.method,
                                     tendered: selectedReceipt.cashTendered,

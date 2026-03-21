@@ -338,7 +338,14 @@ export default function POSCart({ members, trainers, discountOptions, initiateCh
                         </div>
                     </div>
                     <div className="flex justify-between items-center pt-2 border-t border-white/10">
-                        <span className="text-white font-bold">Total Due</span>
+                        <div className="flex flex-col">
+                            <span className="text-white font-bold">Total Due</span>
+                            {selectedMemberId && cartTotal > 0 && (
+                                <span className="text-[10px] text-emerald-400 font-bold tracking-wide mt-0.5">
+                                    Earn +{Math.floor(cartTotal * 0.1)} Points
+                                </span>
+                            )}
+                        </div>
                         <span className="text-xl font-black text-primary">{formatPrice(cartTotal)}</span>
                     </div>
                 </div>

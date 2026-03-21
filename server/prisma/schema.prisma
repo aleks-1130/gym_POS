@@ -225,6 +225,8 @@ model Payment {
   externalRef            String?
   externalDate           DateTime?
   discount               Float               @default(0)
+  couponCode             String?             // Added to trace applied coupons
+  couponDiscount         Float               @default(0) // Added for explicit receipt breakdown
   companyId              String?
   currency               String              @default("PHP")
   financialInstitutionId String?

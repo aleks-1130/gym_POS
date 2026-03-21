@@ -318,7 +318,8 @@ const createPayment = async (req, res) => {
         // --- Coupon / Promo Validation ---
         let appliedCoupon = null;
         let appliedPromo = null;
-        let discountValue = Number((authoritativeAmount * (effectiveDiscountPercent / 100)).toFixed(2));
+        let presetDiscountValue = Number((authoritativeAmount * (effectiveDiscountPercent / 100)).toFixed(2));
+        let couponDiscountValue = 0;
         
         if (couponCode) {
             const codeUpper = couponCode.toUpperCase();
@@ -335,7 +336,7 @@ const createPayment = async (req, res) => {
                 
                 // Calculate actual discount based on new scope/BOGO logic
                 const { discountAmount } = calculateDiscount(appliedPromo, normalizedItems);
-                discountValue = discountAmount;
+                couponDiscountValue = discountAmount;
                 
             } else {
                 // Validate loyalty coupon (Coupons are still legacy FLAT/PERCENTAGE on total)
@@ -348,13 +349,14 @@ const createPayment = async (req, res) => {
                 }
                 
                 if (appliedCoupon.type === 'FLAT') {
-                    discountValue = Math.min(appliedCoupon.value, authoritativeAmount);
+                    couponDiscountValue = Math.min(appliedCoupon.value, authoritativeAmount - presetDiscountValue);
                 } else if (appliedCoupon.type === 'PERCENTAGE') {
-                    discountValue = authoritativeAmount * (appliedCoupon.value / 100);
+                    couponDiscountValue = (authoritativeAmount - presetDiscountValue) * (appliedCoupon.value / 100);
                 }
             }
         }
 
+        const discountValue = presetDiscountValue + couponDiscountValue;
         const discountedAmount = Number(Math.max(0, authoritativeAmount - discountValue).toFixed(2));
 
         // Invoice/Receipt specific calculations using Gym settings
@@ -428,7 +430,9 @@ const createPayment = async (req, res) => {
                 changeDue: normalizedChangeDue,
                 externalRef: ['GCASH', 'PAYMAYA', 'CARD', 'BANK_TRANSFER'].includes(method) ? (externalRef || null) : null,
                 externalDate: normalizedExternalDate,
-                discount: normalizedDiscount
+                discount: normalizedDiscount,
+                couponCode: appliedCoupon ? appliedCoupon.code : appliedPromo ? appliedPromo.code : null,
+                couponDiscount: Number(couponDiscountValue.toFixed(2))
             };
 
             const removableOptionalFields = new Set(['discount', 'cashTendered', 'changeDue', 'externalRef', 'externalDate', 'payableAmount', 'taxAmount', 'taxableAmount', 'roundingAdjustment', 'currency', 'referenceId', 'companyId', 'financialInstitutionId']);
@@ -568,7 +572,7 @@ const createPayment = async (req, res) => {
                         const updated = await tx.productStock.updateMany({
                             where: {
                                 productId: item.productId,
-                                gymId,
+                                gymId: req.user.gymId,
                                 quantity: { gte: item.quantity }
                             },
                             data: { quantity: { decrement: item.quantity } }
@@ -596,6 +600,16 @@ const createPayment = async (req, res) => {
                 await tx.member.update({
                     where: { id: Number(resolvedMemberId) },
                     data: { points: { increment: pointsAwarded } }
+                });
+                
+                await tx.loyaltyTransaction.create({
+                    data: {
+                        memberId: Number(resolvedMemberId),
+                        points: pointsAwarded,
+                        type: 'EARNED',
+                        description: `Points earned from purchase (Ref: ${referenceId || 'N/A'})`,
+                        gymId: gym.id
+                    }
                 });
             }
 
@@ -1119,7 +1133,7 @@ const updatePosSettings = async (req, res) => {
     }
 };
 
-const getPosReceiptSettings = async (_req, res) => {
+const getPosReceiptSettings = async (req, res) => {
     try {
         const settings = await getReceiptSettings();
         res.json(settings);
@@ -1128,7 +1142,7 @@ const getPosReceiptSettings = async (_req, res) => {
     }
 };
 
-const getPosDiscountOptions = async (_req, res) => {
+const getPosDiscountOptions = async (req, res) => {
     try {
         const discountPresets = await getStoredDiscountPresets(req.user.gymId);
         res.json(discountPresets);

@@ -140,9 +140,21 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
                     <span>{formatCurrency(subtotal)}</span>
                 </div>
                 {discount > 0 && (
-                    <div className="flex justify-between text-red-600 print:text-black">
+                    <div className="flex justify-between text-black">
                         <span>Discount:</span>
                         <span>-{formatCurrency(discount)}</span>
+                    </div>
+                )}
+                {transaction?.couponCode && transaction?.couponDiscount > 0 && (
+                    <div className="flex justify-between text-black">
+                        <span>Coupon ({transaction.couponCode}):</span>
+                        <span>-{formatCurrency(transaction.couponDiscount)}</span>
+                    </div>
+                )}
+                {transaction?.pointsAwarded > 0 && (
+                    <div className="flex justify-between text-black">
+                        <span>Points Earned:</span>
+                        <span>+{transaction.pointsAwarded}</span>
                     </div>
                 )}
                 
