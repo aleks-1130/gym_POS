@@ -31,6 +31,7 @@ export const AuthProvider = ({ children }) => {
     const clearLocalSession = () => {
         setUser(null);
         localStorage.removeItem('user');
+        localStorage.removeItem('activeGymId');
         sessionStorage.removeItem('user');
     };
 
@@ -181,6 +182,23 @@ export const AuthProvider = ({ children }) => {
         clearLocalSession();
     };
 
+    const switchBranch = async (gymId) => {
+        if (!gymId) {
+            localStorage.removeItem('activeGymId');
+        } else {
+            localStorage.setItem('activeGymId', String(gymId));
+        }
+        
+        // Re-sync user to get updated gym context from backend
+        const updatedUser = await syncUserWithBackend();
+        if (updatedUser) {
+            setUser(updatedUser);
+            localStorage.setItem('user', JSON.stringify(updatedUser));
+            return true;
+        }
+        return false;
+    };
+
     // Initialize session check
     useEffect(() => {
         const initSession = async () => {
@@ -211,7 +229,7 @@ export const AuthProvider = ({ children }) => {
     }, [isAuthClientReady]);
 
     return (
-        <AuthContext.Provider value={{ user, login, register, logout, logoutAllSessions, loading }}>
+        <AuthContext.Provider value={{ user, login, register, logout, logoutAllSessions, switchBranch, loading }}>
             {!loading && children}
         </AuthContext.Provider>
     );

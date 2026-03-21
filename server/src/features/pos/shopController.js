@@ -42,7 +42,12 @@ const checkout = async (req, res) => {
         const uniqueProductIds = [...new Set(normalizedItems.map((item) => item.productId))];
         const products = await prisma.product.findMany({
             where: { id: { in: uniqueProductIds } },
-            select: { id: true, name: true, price: true, stock: true }
+            select: { 
+                id: true, 
+                name: true, 
+                price: true,
+                stocks: { where: { gymId: require('../../utils/context').getGymId() } }
+            }
         });
         const productById = new Map(products.map((product) => [product.id, product]));
 
@@ -52,7 +57,8 @@ const checkout = async (req, res) => {
             if (!product) {
                 return res.status(404).json({ error: `Product ${item.productId} not found` });
             }
-            if (item.quantity > product.stock) {
+            const currentStock = product.stocks?.[0]?.quantity || 0;
+            if (item.quantity > currentStock) {
                 return res.status(400).json({ error: `Insufficient stock for ${product.name}` });
             }
             computedTotal += Number(product.price) * item.quantity;
@@ -175,12 +181,14 @@ const checkout = async (req, res) => {
 
                 // Pending cash checkout should not consume stock until cashier accepts payment.
                 if (!isPendingCash) {
-                    const updated = await tx.product.updateMany({
+                    const gymId = require('../../utils/context').getGymId();
+                    const updated = await tx.productStock.updateMany({
                         where: {
-                            id: item.productId,
-                            stock: { gte: item.quantity }
+                            productId: item.productId,
+                            gymId,
+                            quantity: { gte: item.quantity }
                         },
-                        data: { stock: { decrement: item.quantity } }
+                        data: { quantity: { decrement: item.quantity } }
                     });
                     if (updated.count === 0) {
                         throw new Error(`Insufficient stock for ${product.name}`);

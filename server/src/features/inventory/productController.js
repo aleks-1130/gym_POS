@@ -23,27 +23,44 @@ const normalizeProductPayload = (payload = {}) => {
     if (!Number.isInteger(minStock) || minStock < 0) return { error: "Min stock must be a non-negative integer" };
     if (!Number.isFinite(supplyCost) || supplyCost < 0) return { error: "Supply cost must be a non-negative number" };
 
+    const isGlobal = payload.isGlobal === true || String(payload.isGlobal).toLowerCase() === 'true';
+
     return {
         data: {
             name,
             category,
             description: description || null,
             price,
-            stock,
-            minStock,
             imageUrl: payload.imageUrl || null,
             sku: barcode || null,
-            supplyCost,
-            supplierId: payload.supplierId ? Number(payload.supplierId) : null
+            isGlobal
+        },
+        stockData: {
+            quantity: stock,
+            minQuantity: minStock,
+            // Supplier and cost are now branch-specific (in ProductStock)
+            supplierId: payload.supplierId ? Number(payload.supplierId) : null,
+            supplyCost: payload.supplyCost !== undefined && payload.supplyCost !== null && payload.supplyCost !== ''
+                ? Number(payload.supplyCost)
+                : 0
         }
     };
 };
 
-const serializeProduct = (product) => ({
-    ...product,
-    barcode: product.sku || '',
-    cost: product.price
-});
+const serializeProduct = (product) => {
+    // Priority: Use branch-specific data from stock record if available
+    const stockInfo = product.stocks?.[0] || { quantity: 0, minQuantity: 5, supplierId: null, supplyCost: 0 };
+    return {
+        ...product,
+        stock: stockInfo.quantity,
+        minStock: stockInfo.minQuantity,
+        supplierId: stockInfo.supplierId,
+        supplyCost: stockInfo.supplyCost,
+        supplier: stockInfo.supplier || null,
+        barcode: product.sku || '',
+        cost: product.price
+    };
+};
 
 const getAllProducts = async (req, res) => {
     try {
@@ -89,25 +106,39 @@ const getAllProducts = async (req, res) => {
 
         const mapWithStock = (p) => {
             const serialized = serializeProduct(p);
-            serialized.availableStock = p.stock - (holds[p.id] || 0);
+            serialized.availableStock = (p.stocks?.[0]?.quantity || 0) - (holds[p.id] || 0);
             return serialized;
         };
 
         if (!isPaginated) {
             console.log("[DEBUG] Fetching products from DB (non-paginated)...");
             const startDb = Date.now();
+            const getGymId = () => req.gymId || req.user?.gymId;
             const products = await prisma.product.findMany({
                 where,
+                include: { 
+                    stocks: { 
+                        where: { gymId: getGymId() },
+                        include: { supplier: true }
+                    }
+                },
                 orderBy: { name: 'asc' }
             });
             console.log(`[DEBUG] DB fetch took ${Date.now() - startDb}ms for ${products.length} products`);
             return res.json(products.map(mapWithStock));
         }
 
+        const getGymId = () => req.gymId || req.user?.gymId;
         const [total, rows] = await Promise.all([
             prisma.product.count({ where }),
             prisma.product.findMany({
                 where,
+                include: { 
+                    stocks: { 
+                        where: { gymId: getGymId() },
+                        include: { supplier: true }
+                    }
+                },
                 orderBy: { name: 'asc' },
                 skip: (page - 1) * limit,
                 take: limit
@@ -136,8 +167,15 @@ const getProductById = async (req, res) => {
     }
 
     try {
+        const gymId = req.gymId || req.user?.gymId;
         const product = await prisma.product.findUnique({
-            where: { id }
+            where: { id },
+            include: { 
+                stocks: { 
+                    where: { gymId },
+                    include: { supplier: true }
+                }
+            }
         });
         if (!product) {
             return res.status(404).json({ error: "Product not found" });
@@ -145,6 +183,8 @@ const getProductById = async (req, res) => {
 
         res.json(serializeProduct(product));
     } catch (e) {
+        console.error("Fetch Product Error:", e);
+        try { require('fs').writeFileSync('e:/OJT Files/gym_POS-1/server/error_debug_get.log', e.stack); } catch (err) {}
         res.status(500).json({ error: "Failed to fetch product" });
     }
 };
@@ -154,21 +194,44 @@ const createProduct = async (req, res) => {
         const normalized = normalizeProductPayload(req.body);
         if (normalized.error) return res.status(400).json({ error: normalized.error });
 
-        const existingSku = normalized.data.sku
-            ? await prisma.product.findUnique({ where: { sku: normalized.data.sku } })
-            : null;
-        if (existingSku) {
-            return res.status(400).json({ error: "Barcode already exists" });
-        }
+        const created = await prisma.$transaction(async (tx) => {
+            const gymId = req.gymId || req.user?.gymId;
+            if (!gymId) throw new Error("Gym context required to manage stock");
 
-        const product = await prisma.product.create({
-            data: normalized.data
+            const productData = { ...normalized.data };
+            const isGlobal = productData.isGlobal;
+            delete productData.isGlobal;
+
+            const product = await tx.product.create({
+                data: {
+                    ...productData,
+                    isGlobal,
+                    gym: isGlobal ? { disconnect: true } : { connect: { id: gymId } }
+                }
+            });
+
+            await tx.productStock.create({
+                data: {
+                    productId: product.id,
+                    gymId,
+                    ...normalized.stockData
+                }
+            });
+
+            return tx.product.findUnique({
+                where: { id: product.id },
+                include: { 
+                    supplier: true,
+                    stocks: { where: { gymId } }
+                }
+            });
         });
-        await logAudit("CREATE_PRODUCT", req.user.email, `Product: ${product.name}`, "Created new product");
 
-        res.json(serializeProduct(product));
+        await logAudit("CREATE_PRODUCT", req.user.email, `Product: ${created.name}`, "Created new product");
+        res.status(201).json(serializeProduct(created));
     } catch (e) {
-        res.status(500).json({ error: e.message });
+        console.error("Create Product Error:", e);
+        res.status(500).json({ error: e.code === 'P2002' ? "Barcode already exists" : "Failed to create product" });
     }
 };
 
@@ -182,21 +245,49 @@ const updateProduct = async (req, res) => {
         const normalized = normalizeProductPayload(req.body);
         if (normalized.error) return res.status(400).json({ error: normalized.error });
 
-        if (normalized.data.sku) {
-            const existingSku = await prisma.product.findUnique({ where: { sku: normalized.data.sku } });
-            if (existingSku && existingSku.id !== id) {
-                return res.status(400).json({ error: "Barcode already exists" });
-            }
-        }
+        const updated = await prisma.$transaction(async (tx) => {
+            const gymId = req.gymId || req.user?.gymId;
+            if (!gymId) throw new Error("Gym context required to manage stock");
 
-        const product = await prisma.product.update({
-            where: { id },
-            data: normalized.data
+            const productData = { ...normalized.data };
+            const isGlobal = productData.isGlobal;
+            delete productData.isGlobal;
+
+            await tx.product.update({
+                where: { id },
+                data: {
+                    ...productData,
+                    isGlobal,
+                    gym: isGlobal ? { disconnect: true } : { connect: { id: gymId } }
+                }
+            });
+
+            await tx.productStock.upsert({
+                where: { productId_gymId: { productId: id, gymId } },
+                update: normalized.stockData,
+                create: {
+                    productId: id,
+                    gymId,
+                    ...normalized.stockData
+                }
+            });
+
+            return tx.product.findUnique({
+                where: { id },
+                include: { 
+                    stocks: { 
+                        where: { gymId },
+                        include: { supplier: true }
+                    }
+                }
+            });
         });
-        await logAudit("UPDATE_PRODUCT", req.user.email, `Product: ${product.name}`, "Updated details");
-        res.json(serializeProduct(product));
+
+        await logAudit("UPDATE_PRODUCT", req.user.email, `Product: ${updated.name}`, "Updated details");
+        res.json(serializeProduct(updated));
     } catch (e) {
-        res.status(500).json({ error: e.message });
+        console.error("Update Product Error:", e);
+        res.status(500).json({ error: e.code === 'P2002' ? "Barcode already exists" : "Failed to update product" });
     }
 };
 
@@ -227,19 +318,30 @@ const restockProduct = async (req, res) => {
     }
 
     try {
-        const product = await prisma.product.findUnique({ where: { id: Number(productId) } });
+        const gymId = req.gymId || req.user?.gymId;
+        if (!gymId) return res.status(403).json({ error: "Missing branch context" });
+
+        const product = await prisma.product.findUnique({ 
+            where: { id: Number(productId) },
+            include: {
+                stocks: { where: { gymId } }
+            }
+        });
         if (!product) return res.status(404).json({ error: "Product not found" });
 
-        if (!product.supplierId) {
-            return res.status(400).json({ error: "Product has no assigned supplier. Please link a supplier first." });
+        const stockRecord = product.stocks?.[0];
+        if (!stockRecord?.supplierId) {
+            return res.status(400).json({ error: "Product has no assigned supplier for this branch. Please link a supplier first." });
         }
 
-        const costPerUnit = product.supplyCost || 0;
+        const costPerUnit = stockRecord.supplyCost || 0;
         const totalCost = Number(quantity) * costPerUnit;
 
-        const updatedProduct = await prisma.product.update({
-            where: { id: Number(productId) },
-            data: { stock: { increment: Number(quantity) } }
+        const updatedStock = await prisma.$transaction(async (tx) => {
+            return tx.productStock.update({
+                where: { id: stockRecord.id },
+                data: { quantity: { increment: Number(quantity) } }
+            });
         });
 
         const expense = await prisma.expense.create({
@@ -250,7 +352,7 @@ const restockProduct = async (req, res) => {
                 date: new Date(),
                 notes: notes || `Restocked ${quantity} units @ ${costPerUnit}/unit (Fixed Cost)`,
                 recordedBy: req.user.id.toString(),
-                supplierId: product.supplierId
+                supplierId: stockRecord.supplierId
             }
         });
 
@@ -263,7 +365,7 @@ const restockProduct = async (req, res) => {
 
         res.json({
             message: "Restock successful",
-            newStock: updatedProduct.stock,
+            newStock: updatedStock.quantity,
             expenseId: expense.id
         });
 

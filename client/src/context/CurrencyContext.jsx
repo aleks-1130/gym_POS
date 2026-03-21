@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState } from 'react';
+import { useAuth } from './AuthContext';
 
 const CurrencyContext = createContext();
 
@@ -7,18 +8,21 @@ export function useCurrency() {
 }
 
 export function CurrencyProvider({ children }) {
-    // Current application uses PHP only. 
-    // We keep the structure for compatibility but remove conversion logic.
+    const { user } = useAuth();
+    const gym = user?.gym;
+    
     const [rate] = useState(1);
-    const [currency] = useState('PHP');
+    const currency = gym?.currency || 'PHP';
 
     // Helper to format price
     const formatPrice = (amount) => {
-        if (amount === undefined || amount === null) return '₱0.00';
+        if (amount === undefined || amount === null) return currency === 'PHP' ? '₱0.00' : `${currency} 0.00`;
 
-        return new Intl.NumberFormat('en-PH', {
+        const locale = currency === 'SGD' ? 'en-SG' : (currency === 'PHP' ? 'en-PH' : 'en-US');
+        
+        return new Intl.NumberFormat(locale, {
             style: 'currency',
-            currency: 'PHP',
+            currency: currency,
             minimumFractionDigits: 2,
             maximumFractionDigits: 2
         }).format(amount);

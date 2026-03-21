@@ -194,12 +194,12 @@ const validateCoupon = async (req, res) => {
         const { code, subtotal, memberId } = req.body;
         if (!code) return res.status(400).json({ error: 'Coupon code is required' });
 
-        let coupon = await prisma.coupon.findUnique({ where: { code: code.toUpperCase() } });
+        let coupon = await prisma.coupon.findFirst({ where: { code: code.toUpperCase() } });
         let source = 'LOYALTY';
 
         if (!coupon) {
             // Fallback to global PromoCode
-            coupon = await prisma.promoCode.findUnique({ where: { code: code.toUpperCase() } });
+            coupon = await prisma.promoCode.findFirst({ where: { code: code.toUpperCase() } });
             if (!coupon) return res.status(404).json({ error: 'Coupon / Promo code not found' });
             
             if (!coupon.isActive) return res.status(400).json({ error: 'Promo code is inactive' });

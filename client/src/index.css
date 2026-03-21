@@ -7,6 +7,11 @@
 
 body {
   @apply bg-background text-text-primary font-sans antialiased;
+  color-scheme: dark;
+}
+
+select, input, textarea {
+  color-scheme: dark;
 }
 
 /* Custom Scrollbar for Dark Theme */

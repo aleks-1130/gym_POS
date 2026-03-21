@@ -5,8 +5,8 @@
     "main": "server.js",
     "scripts": {
         "start": "npx prisma migrate deploy && node server.js",
-        "dev": "npx prisma generate && nodemon server.js",
-        "prisma:generate": "prisma generate",
+        "dev": "nodemon server.js",
+        "prisma:generate": "npx prisma generate",
         "prisma:push": "prisma db push"
     },
     "prisma": {
@@ -30,12 +30,12 @@
         "node-cron": "^4.2.1",
         "node-fetch": "^2.7.0",
         "nodemailer": "^8.0.1",
-        "prisma": "^5.7.1",
         "react-to-print": "^3.2.0",
         "redis": "^5.11.0",
         "sqlite3": "^5.1.7"
     },
     "devDependencies": {
-        "nodemon": "^3.0.2"
+        "nodemon": "^3.0.2",
+        "prisma": "^5.22.0"
     }
 }

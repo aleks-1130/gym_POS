@@ -13,6 +13,7 @@ const { connectRedis } = require('./src/config/redisClient');
 
 const cookieParser = require('cookie-parser');
 const app = express();
+app.set('trust proxy', 1); // Trust first proxy (e.g. Railway/Nginx)
 const schedulingService = require('./src/services/schedulingService');
 schedulingService.init();
 

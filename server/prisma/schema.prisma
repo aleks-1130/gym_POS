@@ -7,31 +7,140 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Tenant {
+  id        Int      @id @default(autoincrement())
+  tenantId  String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  gyms      Gym[]
+  users     User[]
+}
+
+model Gym {
+  id                      Int                      @id @default(autoincrement())
+  tenantId                Int
+  companyId               String                   @unique
+  name                    String
+  address                 String?
+  phone                   String?
+  email                   String?
+  website                 String?
+  currency                String                   @default("PHP")
+  taxRate                 Float                    @default(12.0)
+  roundingRule            String                   @default("NONE")
+  timezone                String                   @default("Asia/Manila")
+  referencePrefix         String                   @default("A321")
+  isActive                Boolean                  @default(true)
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  accessLogs              AccessLog[]
+  auditLogs               AuditLog[]
+  bookings                Booking[]
+  categories              Category[]
+  classes                 Class[]
+  classHistory            ClassHistory[]
+  classSessions           ClassSession[]
+  classPackages           ClassSessionPackage[]
+  coupons                 Coupon[]
+  expenses                Expense[]
+  financialInstitutions   FinancialInstitution[]
+  tenant                  Tenant                   @relation(fields: [tenantId], references: [id])
+  gymProfiles             GymProfile[]
+  loyaltyRewards          LoyaltyReward[]
+  loyaltyTransactions     LoyaltyTransaction[]
+  members                 Member[]
+  memberNotes             MemberNote[]
+  membershipPeriods       MembershipPeriod[]
+  notifications           Notification[]
+  notificationPreferences NotificationPreference[]
+  orders                  Order[]
+  orderItems              OrderItem[]
+  payments                Payment[]
+  paymentItems            PaymentItem[]
+  productStocks           ProductStock[]
+  paymentCollections      PaymentCollection[]
+  paymentMethods          PaymentMethod[]
+  plans                   Plan[]
+  posConfigs              PosConfig[]
+  products                Product[]
+  promoCodes              PromoCode[]
+  sessionMaterials        SessionMaterial[]
+  stockOrders             StockOrder[]
+  stockOrderItems         StockOrderItem[]
+  suppliers               Supplier[]
+  trainers                Trainer[]
+  trainerAvailabilities   TrainerAvailability[]
+  changeRequests          TrainerChangeRequest[]
+  trainingSessions        TrainingSession[]
+  users                   User[]
+  payrollConfigs          PayrollConfig[]
+  receiptSettings         ReceiptSettings[]
+
+  @@index([tenantId])
+}
+
+model FinancialInstitution {
+  id                     Int      @id @default(autoincrement())
+  gymId                  Int
+  method                 String
+  financialInstitutionId String
+  label                  String
+  isActive               Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  gym                    Gym      @relation(fields: [gymId], references: [id])
+
+  @@unique([gymId, method])
+}
+
+model PaymentCollection {
+  id                     Int      @id @default(autoincrement())
+  paymentId              Int
+  amount                 Float
+  financialInstitutionId String
+  method                 String
+  createdAt              DateTime @default(now())
+  gymId                  Int?
+  gym                    Gym?     @relation(fields: [gymId], references: [id])
+  payment                Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@index([gymId])
+}
+
 model User {
-  id                                 Int                    @id @default(autoincrement())
-  email                              String                 @unique
+  id                                 Int                     @id @default(autoincrement())
+  email                              String                  @unique
   password                           String
-  sessionVersion                     Int                    @default(0)
   name                               String?
-  role                               String                 @default("STAFF")
-  trainerId                          Int?                   @unique
-  createdAt                          DateTime               @default(now())
-  baseSalary                         Float                  @default(0.0)
-  loyaltyPoints                      Int                    @default(0)
+  role                               String                  @default("STAFF")
+  trainerId                          Int?                    @unique
+  createdAt                          DateTime                @default(now())
+  baseSalary                         Float                   @default(0.0)
+  loyaltyPoints                      Int                     @default(0)
   activationExpires                  DateTime?
-  activationToken                    String?                @unique
-  status                             String                 @default("ACTIVE")
+  activationToken                    String?                 @unique
+  status                             String                  @default("ACTIVE")
   resetPasswordExpires               DateTime?
-  resetPasswordToken                 String?                @unique
-  expenses                           Expense[]              @relation("StaffExpense")
+  resetPasswordToken                 String?                 @unique
+  sessionVersion                     Int                     @default(0)
+  gymId                              Int?
+  tenantId                           Int?
+  expenses                           Expense[]               @relation("StaffExpense")
   memberNotes                        MemberNote[]
-  payments                           Payment[]              @relation("PaymentCashier")
-  stockOrdersCreated                 StockOrder[]           @relation("StockOrderCreator")
-  trainerChangeRequestsAdminReviewed TrainerChangeRequest[] @relation("TrainerChangeAdminDecisionBy")
-  trainerChangeRequestsOwnerReviewed TrainerChangeRequest[] @relation("TrainerChangeOwnerDecisionBy")
-  trainerChangeRequestsSubmitted     TrainerChangeRequest[] @relation("TrainerChangeRequestedBy")
-  trainer                            Trainer?               @relation("TrainerUser", fields: [trainerId], references: [id])
   notificationPreference             NotificationPreference?
+  payments                           Payment[]               @relation("PaymentCashier")
+  stockOrdersCreated                 StockOrder[]            @relation("StockOrderCreator")
+  trainerChangeRequestsAdminReviewed TrainerChangeRequest[]  @relation("TrainerChangeAdminDecisionBy")
+  trainerChangeRequestsOwnerReviewed TrainerChangeRequest[]  @relation("TrainerChangeOwnerDecisionBy")
+  trainerChangeRequestsSubmitted     TrainerChangeRequest[]  @relation("TrainerChangeRequestedBy")
+  gym                                Gym?                    @relation(fields: [gymId], references: [id])
+  tenant                             Tenant?                 @relation(fields: [tenantId], references: [id])
+  trainer                            Trainer?                @relation("TrainerUser", fields: [trainerId], references: [id])
+
+  @@unique([email, gymId])
+  @@index([tenantId])
 }
 
 model AuditLog {
@@ -41,89 +150,102 @@ model AuditLog {
   target      String?
   details     String?
   timestamp   DateTime @default(now())
+  gymId       Int?
+  gym         Gym?     @relation(fields: [gymId], references: [id])
+
+  @@index([gymId])
 }
 
 model Member {
-  id                     Int                  @id @default(autoincrement())
+  id                     Int                     @id @default(autoincrement())
   firstName              String
   lastName               String
-  email                  String?              @unique
+  email                  String?                 @unique
   password               String?
-  sessionVersion         Int                  @default(0)
   phone                  String?
-  status                 String               @default("ACTIVE")
+  status                 String                  @default("ACTIVE")
   planId                 Int?
-  startDate              DateTime             @default(now())
+  startDate              DateTime                @default(now())
   expiryDate             DateTime?
   lastCheckIn            DateTime?
-  createdAt              DateTime             @default(now())
-  updatedAt              DateTime             @updatedAt
-  points                 Int                  @default(0)
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  points                 Int                     @default(0)
   freezeStartDate        DateTime?
   freezeEndDate          DateTime?
-  freezeUsedCount        Int                  @default(0)
   birthDate              DateTime?
   sex                    String?
   imageUrl               String?
-  classSessionsPurchased Int                  @default(0)
-  classSessionsRemaining Int                  @default(0)
-  classSessionsUsed      Int                  @default(0)
+  classSessionsPurchased Int                     @default(0)
+  classSessionsRemaining Int                     @default(0)
+  classSessionsUsed      Int                     @default(0)
   activationExpires      DateTime?
-  activationToken        String?              @unique
+  activationToken        String?                 @unique
   resetPasswordExpires   DateTime?
-  resetPasswordToken     String?              @unique
+  resetPasswordToken     String?                 @unique
+  sessionVersion         Int                     @default(0)
+  freezeUsedCount        Int                     @default(0)
+  gymId                  Int?
   accessLogs             AccessLog[]
   bookings               Booking[]
   coupons                Coupon[]
   loyaltyTransactions    LoyaltyTransaction[]
-  plan                   Plan?                @relation(fields: [planId], references: [id])
+  gym                    Gym?                    @relation(fields: [gymId], references: [id])
+  plan                   Plan?                   @relation(fields: [planId], references: [id])
   notes                  MemberNote[]
   membershipPeriods      MembershipPeriod[]
   notifications          Notification[]
+  notificationPreference NotificationPreference?
   orders                 Order[]
   payments               Payment[]
   paymentMethods         PaymentMethod[]
   trainingSessions       TrainingSession[]
-  notificationPreference NotificationPreference?
 
+  @@unique([email, gymId])
   @@index([status])
   @@index([createdAt])
   @@index([planId])
+  @@index([gymId])
 }
 
 model Payment {
-  id                     Int           @id @default(autoincrement())
+  id                     Int                 @id @default(autoincrement())
   amount                 Float
   type                   String
   method                 String
-  status                 String        @default("COMPLETED")
-  date                   DateTime      @default(now())
+  status                 String              @default("COMPLETED")
+  date                   DateTime            @default(now())
   memberId               Int?
   cashierId              Int?
-  pointsAwarded          Int           @default(0)
-  pointsReversed         Int           @default(0)
-  refundedAmount         Float         @default(0)
+  pointsAwarded          Int                 @default(0)
+  pointsReversed         Int                 @default(0)
+  refundedAmount         Float               @default(0)
   cashTendered           Float?
   changeDue              Float?
   externalRef            String?
   externalDate           DateTime?
-  discount               Float         @default(0)
+  discount               Float               @default(0)
   companyId              String?
-  currency               String        @default("PHP")
+  currency               String              @default("PHP")
   financialInstitutionId String?
-  payableAmount          Float         @default(0)
-  referenceId            String?       @unique
-  roundingAdjustment     Float         @default(0)
-  taxAmount              Float         @default(0)
-  taxableAmount          Float         @default(0)
-  cashier                User?         @relation("PaymentCashier", fields: [cashierId], references: [id])
-  member                 Member?       @relation(fields: [memberId], references: [id])
+  payableAmount          Float               @default(0)
+  referenceId            String?
+  roundingAdjustment     Float               @default(0)
+  taxAmount              Float               @default(0)
+  taxableAmount          Float               @default(0)
+  gymId                  Int?
+  cashier                User?               @relation("PaymentCashier", fields: [cashierId], references: [id])
+  gym                    Gym?                @relation(fields: [gymId], references: [id])
+  member                 Member?             @relation(fields: [memberId], references: [id])
+  collections            PaymentCollection[]
   items                  PaymentItem[]
 
+  @@unique([companyId, referenceId])
   @@index([date])
   @@index([type])
   @@index([memberId])
   @@index([referenceId])
+  @@index([gymId])
 }
 
 model AccessLog {
@@ -132,12 +254,15 @@ model AccessLog {
   checkIn   DateTime @default(now())
   status    String   @default("ALLOWED")
   trainerId Int?
+  gymId     Int?
+  gym       Gym?     @relation(fields: [gymId], references: [id])
   member    Member?  @relation(fields: [memberId], references: [id])
   trainer   Trainer? @relation(fields: [trainerId], references: [id])
 
   @@index([checkIn])
   @@index([memberId])
   @@index([trainerId])
+  @@index([gymId])
 }
 
 model Expense {
@@ -155,11 +280,14 @@ model Expense {
   inventoryTransactionId Int?
   staffId                Int?
   trainerId              Int?
+  gymId                  Int?
+  gym                    Gym?      @relation(fields: [gymId], references: [id])
   staff                  User?     @relation("StaffExpense", fields: [staffId], references: [id])
   supplier               Supplier? @relation(fields: [supplierId], references: [id])
   trainer                Trainer?  @relation(fields: [trainerId], references: [id])
 
   @@index([date])
+  @@index([gymId])
 }
 
 model TrainingSession {
@@ -178,20 +306,23 @@ model TrainingSession {
   notes                String?
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
-  reminderSent         Boolean           @default(false)
-  finalReminderSent    Boolean           @default(false)
   memberRatedAt        DateTime?
   memberRating         Int?
   memberRatingComment  String?
   memberRatingVoided   Boolean           @default(false)
   memberRatingVoidedAt DateTime?
+  reminderSent         Boolean           @default(false)
+  finalReminderSent    Boolean           @default(false)
+  gymId                Int?
   materials            SessionMaterial[]
+  gym                  Gym?              @relation(fields: [gymId], references: [id])
   member               Member            @relation(fields: [memberId], references: [id])
   trainer              Trainer           @relation(fields: [trainerId], references: [id])
 
   @@index([date])
   @@index([trainerId])
   @@index([memberId])
+  @@index([gymId])
 }
 
 model PaymentMethod {
@@ -204,6 +335,8 @@ model PaymentMethod {
   token     String
   isDefault Boolean  @default(false)
   createdAt DateTime @default(now())
+  gymId     Int?
+  gym       Gym?     @relation(fields: [gymId], references: [id])
   member    Member   @relation(fields: [memberId], references: [id])
 }
 
@@ -215,8 +348,12 @@ model Plan {
   includedClassSessions Int                @default(0)
   includesClasses       Boolean            @default(false)
   freezeLimitCount      Int                @default(0)
+  gymId                 Int?
   members               Member[]
   membershipPeriods     MembershipPeriod[]
+  gym                   Gym?               @relation(fields: [gymId], references: [id])
+
+  @@unique([name, gymId])
 }
 
 model ClassSessionPackage {
@@ -227,6 +364,8 @@ model ClassSessionPackage {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  gymId     Int?
+  gym       Gym?     @relation(fields: [gymId], references: [id])
 }
 
 model PaymentItem {
@@ -241,8 +380,12 @@ model PaymentItem {
   intendedForSessionMaterial Boolean  @default(false)
   materialUsedQuantity       Int      @default(0)
   materialSettledQuantity    Int      @default(0)
+  gymId                      Int?
+  gym                        Gym?     @relation(fields: [gymId], references: [id])
   payment                    Payment  @relation(fields: [paymentId], references: [id])
   product                    Product? @relation(fields: [productId], references: [id])
+
+  @@index([gymId])
 }
 
 model Supplier {
@@ -254,9 +397,14 @@ model Supplier {
   notes       String?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
+  gymId       Int?
   expenses    Expense[]
   products    Product[]
+  productStocks ProductStock[]
   stockOrders StockOrder[]
+  gym         Gym?         @relation(fields: [gymId], references: [id])
+
+  @@index([gymId])
 }
 
 model Product {
@@ -266,31 +414,59 @@ model Product {
   price            Float
   stock            Int               @default(0)
   minStock         Int               @default(5)
-  sku              String?           @unique
+  sku              String?
   imageUrl         String?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   supplierId       Int?
   supplyCost       Float             @default(0)
   description      String?
+  gymId            Int?
   orderItems       OrderItem[]
   paymentItems     PaymentItem[]
+  gym              Gym?              @relation(fields: [gymId], references: [id])
   supplier         Supplier?         @relation(fields: [supplierId], references: [id])
   sessionMaterials SessionMaterial[]
+  isGlobal         Boolean           @default(false)
   stockOrderItems  StockOrderItem[]
+  stocks           ProductStock[]
+
+  @@unique([sku, gymId])
+  @@index([gymId])
+}
+
+model ProductStock {
+  id          Int      @id @default(autoincrement())
+  productId   Int
+  gymId       Int
+  quantity    Int      @default(0)
+  minQuantity Int      @default(5)
+  supplierId  Int?
+  supplyCost  Float    @default(0)
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  gym         Gym      @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  supplier    Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+
+  @@unique([productId, gymId])
+  @@index([gymId])
+  @@index([productId])
 }
 
 model Category {
   id          Int      @id @default(autoincrement())
-  name        String   @unique
+  name        String
   description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  gymId       Int?
+  gym         Gym?     @relation(fields: [gymId], references: [id])
+
+  @@unique([name, gymId])
 }
 
 model StockOrder {
   id             Int              @id @default(autoincrement())
-  orderNumber    String           @unique
+  orderNumber    String
   supplierId     Int
   status         String           @default("PENDING")
   notes          String?
@@ -302,13 +478,17 @@ model StockOrder {
   updatedAt      DateTime         @updatedAt
   receivedAt     DateTime?
   cancelledAt    DateTime?
+  gymId          Int?
   creator        User?            @relation("StockOrderCreator", fields: [createdBy], references: [id])
+  gym            Gym?             @relation(fields: [gymId], references: [id])
   supplier       Supplier         @relation(fields: [supplierId], references: [id])
   items          StockOrderItem[]
 
+  @@unique([orderNumber, gymId])
   @@index([createdAt])
   @@index([status])
   @@index([supplierId])
+  @@index([gymId])
 }
 
 model StockOrderItem {
@@ -321,11 +501,14 @@ model StockOrderItem {
   category     String
   quantity     Int
   cost         Float
+  gymId        Int?
+  gym          Gym?       @relation(fields: [gymId], references: [id])
   product      Product?   @relation(fields: [productId], references: [id])
   stockOrder   StockOrder @relation(fields: [stockOrderId], references: [id])
 
   @@index([stockOrderId])
   @@index([productId])
+  @@index([gymId])
 }
 
 model Trainer {
@@ -350,15 +533,19 @@ model Trainer {
   type              TrainerType            @default(FULLTIME)
   cardImageUrl      String?
   statusDescription String?
+  gymId             Int?
   accessLogs        AccessLog[]
   classes           Class[]
   classHistory      ClassHistory[]
   classSessions     ClassSession[]
   expenses          Expense[]
+  gym               Gym?                   @relation(fields: [gymId], references: [id])
   availability      TrainerAvailability?
   changeRequests    TrainerChangeRequest[]
   trainingSessions  TrainingSession[]
   user              User?                  @relation("TrainerUser")
+
+  @@index([gymId])
 }
 
 model TrainerChangeRequest {
@@ -378,7 +565,9 @@ model TrainerChangeRequest {
   appliedAt       DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+  gymId           Int?
   adminReviewer   User?     @relation("TrainerChangeAdminDecisionBy", fields: [adminDecisionBy], references: [id])
+  gym             Gym?      @relation(fields: [gymId], references: [id])
   ownerReviewer   User?     @relation("TrainerChangeOwnerDecisionBy", fields: [ownerDecisionBy], references: [id])
   requestedBy     User?     @relation("TrainerChangeRequestedBy", fields: [requestedById], references: [id])
   trainer         Trainer   @relation(fields: [trainerId], references: [id], onDelete: Cascade)
@@ -386,6 +575,7 @@ model TrainerChangeRequest {
   @@index([trainerId])
   @@index([status])
   @@index([createdAt])
+  @@index([gymId])
 }
 
 model TrainerAvailability {
@@ -394,9 +584,12 @@ model TrainerAvailability {
   settings  Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  gymId     Int?
+  gym       Gym?     @relation(fields: [gymId], references: [id])
   trainer   Trainer  @relation(fields: [trainerId], references: [id], onDelete: Cascade)
 
   @@index([updatedAt])
+  @@index([gymId])
 }
 
 model SessionMaterial {
@@ -409,8 +602,12 @@ model SessionMaterial {
   costPerUnit Float
   totalCost   Float
   createdAt   DateTime        @default(now())
+  gymId       Int?
+  gym         Gym?            @relation(fields: [gymId], references: [id])
   product     Product?        @relation(fields: [productId], references: [id])
   session     TrainingSession @relation(fields: [sessionId], references: [id])
+
+  @@index([gymId])
 }
 
 model Class {
@@ -430,10 +627,14 @@ model Class {
   daysOfWeek   String         @default("")
   endDate      DateTime?
   startDate    DateTime       @default(now())
+  gymId        Int?
   bookings     Booking[]
+  gym          Gym?           @relation(fields: [gymId], references: [id])
   trainer      Trainer        @relation(fields: [trainerId], references: [id])
   history      ClassHistory[]
   sessions     ClassSession[]
+
+  @@index([gymId])
 }
 
 model ClassHistory {
@@ -445,27 +646,33 @@ model ClassHistory {
   commissionAmount Float
   commissionPaid   Boolean  @default(false)
   createdAt        DateTime @default(now())
+  gymId            Int?
   class            Class    @relation(fields: [classId], references: [id])
+  gym              Gym?     @relation(fields: [gymId], references: [id])
   trainer          Trainer  @relation(fields: [trainerId], references: [id])
 
   @@index([date])
   @@index([trainerId])
+  @@index([gymId])
 }
 
 model Booking {
-  id          Int       @id @default(autoincrement())
-  memberId    Int
-  classId     Int
-  status      String    @default("CONFIRMED")
-  reminderSent Boolean   @default(false)
-  finalReminderSent Boolean @default(false)
-  createdAt   DateTime  @default(now())
-  sessionDate DateTime?
-  class       Class     @relation(fields: [classId], references: [id])
-  member      Member    @relation(fields: [memberId], references: [id])
+  id                Int       @id @default(autoincrement())
+  memberId          Int
+  classId           Int
+  status            String    @default("CONFIRMED")
+  createdAt         DateTime  @default(now())
+  sessionDate       DateTime?
+  reminderSent      Boolean   @default(false)
+  finalReminderSent Boolean   @default(false)
+  gymId             Int?
+  class             Class     @relation(fields: [classId], references: [id])
+  gym               Gym?      @relation(fields: [gymId], references: [id])
+  member            Member    @relation(fields: [memberId], references: [id])
 
   @@index([classId, sessionDate])
   @@index([memberId, sessionDate])
+  @@index([gymId])
 }
 
 model ClassSession {
@@ -482,12 +689,15 @@ model ClassSession {
   isAutoStarted   Boolean   @default(false)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+  gymId           Int?
   class           Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  gym             Gym?      @relation(fields: [gymId], references: [id])
   trainer         Trainer   @relation(fields: [trainerId], references: [id])
 
   @@unique([classId, sessionDate])
   @@index([trainerId, sessionDate])
   @@index([status, sessionDate])
+  @@index([gymId])
 }
 
 model Order {
@@ -496,8 +706,12 @@ model Order {
   total     Float
   status    String      @default("COMPLETED")
   createdAt DateTime    @default(now())
+  gymId     Int?
+  gym       Gym?        @relation(fields: [gymId], references: [id])
   member    Member      @relation(fields: [memberId], references: [id])
   items     OrderItem[]
+
+  @@index([gymId])
 }
 
 model OrderItem {
@@ -506,8 +720,12 @@ model OrderItem {
   productId Int
   quantity  Int
   price     Float
+  gymId     Int?
+  gym       Gym?    @relation(fields: [gymId], references: [id])
   order     Order   @relation(fields: [orderId], references: [id])
   product   Product @relation(fields: [productId], references: [id])
+
+  @@index([gymId])
 }
 
 model MembershipPeriod {
@@ -519,8 +737,12 @@ model MembershipPeriod {
   amount    Float?
   method    String?
   createdAt DateTime @default(now())
+  gymId     Int?
+  gym       Gym?     @relation(fields: [gymId], references: [id])
   member    Member   @relation(fields: [memberId], references: [id])
   plan      Plan?    @relation(fields: [planId], references: [id])
+
+  @@index([gymId])
 }
 
 model LoyaltyReward {
@@ -533,6 +755,10 @@ model LoyaltyReward {
   createdAt   DateTime @default(now())
   actionType  String?  @default("NONE")
   actionValue Float?
+  gymId       Int?
+  gym         Gym?     @relation(fields: [gymId], references: [id])
+
+  @@index([gymId])
 }
 
 model LoyaltyTransaction {
@@ -542,27 +768,34 @@ model LoyaltyTransaction {
   type        String
   description String?
   createdAt   DateTime @default(now())
+  gymId       Int?
+  gym         Gym?     @relation(fields: [gymId], references: [id])
   member      Member   @relation(fields: [memberId], references: [id])
 
   @@index([memberId])
   @@index([type])
   @@index([createdAt])
+  @@index([gymId])
 }
 
 model Coupon {
   id         Int       @id @default(autoincrement())
-  code       String    @unique
+  code       String
   memberId   Int?
   type       String
   value      Float
   status     String    @default("ACTIVE")
   expiryDate DateTime?
   createdAt  DateTime  @default(now())
+  gymId      Int?
+  gym        Gym?      @relation(fields: [gymId], references: [id])
   member     Member?   @relation(fields: [memberId], references: [id])
 
+  @@unique([code, gymId])
   @@index([code])
   @@index([memberId])
   @@index([status])
+  @@index([gymId])
 }
 
 model PosConfig {
@@ -571,14 +804,21 @@ model PosConfig {
   returnPinHash   String?
   updatedAt       DateTime @updatedAt
   discountPresets Json?
+  gymId           Int?
+  gym             Gym?     @relation(fields: [gymId], references: [id])
+
+  @@index([gymId])
 }
 
 model ReceiptSettings {
-  id        Int      @id @default(1)
+  id        Int      @id @default(autoincrement())
   settings  Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  gymId     Int?
+  gym       Gym?     @relation(fields: [gymId], references: [id])
 
+  @@index([gymId])
   @@map("receipt_settings")
 }
 
@@ -593,7 +833,11 @@ model Notification {
   targetGroup    String   @default("ALL")
   targetId       Int?
   memberId       Int?
+  gymId          Int?
+  gym            Gym?     @relation(fields: [gymId], references: [id])
   member         Member?  @relation(fields: [memberId], references: [id])
+
+  @@index([gymId])
 }
 
 model MemberNote {
@@ -602,8 +846,12 @@ model MemberNote {
   content   String
   createdAt DateTime @default(now())
   createdBy Int?
+  gymId     Int?
   user      User?    @relation(fields: [createdBy], references: [id])
+  gym       Gym?     @relation(fields: [gymId], references: [id])
   member    Member   @relation(fields: [memberId], references: [id])
+
+  @@index([gymId])
 }
 
 model GymProfile {
@@ -614,36 +862,48 @@ model GymProfile {
   email     String?  @default("contact@fitos.com")
   website   String?  @default("www.fitos.com")
   updatedAt DateTime @updatedAt
+  gymId     Int?
+  gym       Gym?     @relation(fields: [gymId], references: [id])
+
+  @@index([gymId])
 }
 
 model PayrollConfig {
-  id                   Int      @id @default(1)
+  id                   Int      @id @default(autoincrement())
   classBasePay         Float    @default(350.0)
   classBonusPerStudent Float    @default(30.0)
   classBonusThreshold  Int      @default(5)
   lastUpdatedBy        Int?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
+  gymId                Int?
+  gym                  Gym?     @relation(fields: [gymId], references: [id])
 
+  @@index([gymId])
   @@map("payroll_config")
 }
 
 model PromoCode {
   id          Int       @id @default(autoincrement())
-  code        String    @unique
-  type        String    // PERCENTAGE | FIXED | BOGO
+  code        String
+  type        String
   value       Float
   description String?
-  scope       String    @default("ORDER") // ORDER | PRODUCT | CATEGORY
-  productIds  Int[]     @default([])
-  categories  String[]  @default([])
-  bogoConfig  Json?     // { buyQty: Int, getQty: Int, getProductId?: Int }
   maxUses     Int?
   usedCount   Int       @default(0)
   isActive    Boolean   @default(true)
   expiryDate  DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  bogoConfig  Json?
+  categories  String[]  @default([])
+  productIds  Int[]     @default([])
+  scope       String    @default("ORDER")
+  gymId       Int?
+  gym         Gym?      @relation(fields: [gymId], references: [id])
+
+  @@unique([code, gymId])
+  @@index([gymId])
 }
 
 model NotificationPreference {
@@ -658,8 +918,12 @@ model NotificationPreference {
   appReceipts        Boolean  @default(true)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+  gymId              Int?
+  gym                Gym?     @relation(fields: [gymId], references: [id])
   member             Member?  @relation(fields: [memberId], references: [id], onDelete: Cascade)
   user               User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([gymId])
 }
 
 enum TrainerType {

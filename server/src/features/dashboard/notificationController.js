@@ -17,14 +17,14 @@ const getNotifications = async (req, res) => {
 
         const where = {
             OR: [
-                { targetGroup: 'ALL' },
+                { targetGroup: 'ALL', memberId: null },
                 { isAnnouncement: true, targetGroup: 'ALL' },
                 // Role-based targeting
                 ...(role === 'ADMIN' || role === 'OWNER' || role === 'STAFF' 
                     ? [{ targetGroup: 'STAFF' }] 
                     : []),
                 ...(role === 'TRAINER' ? [{ targetGroup: 'TRAINER' }] : []),
-                // Direct member notifications
+                // Direct member notifications (Only visible to the specific member)
                 ...(targetMemberId ? [{ memberId: targetMemberId }] : []),
                 // Class-based targeting (if member is in that class)
                 ...(targetMemberId ? [{
@@ -82,7 +82,7 @@ const markAllAsRead = async (req, res) => {
         // We mark as read using the same logic as getNotifications visibility
         const where = {
             OR: [
-                { targetGroup: 'ALL' },
+                { targetGroup: 'ALL', memberId: null },
                 { isAnnouncement: true, targetGroup: 'ALL' },
                 ...(role === 'ADMIN' || role === 'OWNER' || role === 'STAFF' 
                     ? [{ targetGroup: 'STAFF' }] 

@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useSettings } from '../../context/SettingsContext';
@@ -19,8 +19,17 @@ export default function Settings() {
         address: '',
         phone: '',
         email: '',
-        website: ''
+        website: '',
+        // Operational settings
+        currency: 'PHP',
+        taxRate: 12.0,
+        roundingRule: 'NONE',
+        referencePrefix: '',
+        companyId: ''
     });
+
+    const [financialInstitutions, setFinancialInstitutions] = useState([]);
+    const [instDraft, setInstDraft] = useState({ method: 'CASH', financialInstitutionId: '', label: '', isActive: true });
 
     const [plans, setPlans] = useState([]);
     const [planFormData, setPlanFormData] = useState({
@@ -29,7 +38,8 @@ export default function Settings() {
         duration: '',
         freezeLimitCount: '',
         includesClasses: false,
-        includedClassSessions: ''
+        includedClassSessions: '',
+        isGlobal: false
     });
 
     const [sessionPackages, setSessionPackages] = useState([]);
@@ -37,7 +47,8 @@ export default function Settings() {
         name: '',
         sessions: '',
         price: '',
-        isActive: true
+        isActive: true,
+        isGlobal: false
     });
 
     const [loadingPlan, setLoadingPlan] = useState(false);
@@ -50,7 +61,8 @@ export default function Settings() {
         duration: '',
         freezeLimitCount: '',
         includesClasses: false,
-        includedClassSessions: ''
+        includedClassSessions: '',
+        isGlobal: false
     });
 
     useEffect(() => {
@@ -60,10 +72,27 @@ export default function Settings() {
                 address: settings.address || '',
                 phone: settings.phone || '',
                 email: settings.email || '',
-                website: settings.website || ''
+                website: settings.website || '',
+                currency: settings.currency || 'PHP',
+                taxRate: settings.taxRate || 12.0,
+                roundingRule: settings.roundingRule || 'NONE',
+                referencePrefix: settings.referencePrefix || '',
+                companyId: settings.companyId || ''
             });
         }
     }, [settings]);
+
+    useEffect(() => {
+        const fetchFinancialInstitutions = async () => {
+            try {
+                const res = await axios.get('/api/settings/financial-institutions');
+                setFinancialInstitutions(res.data);
+            } catch (error) {
+                console.error("Failed to fetch institutions", error);
+            }
+        };
+        fetchFinancialInstitutions();
+    }, []);
 
     useEffect(() => {
         fetchPlans();
@@ -112,8 +141,8 @@ export default function Settings() {
             price: plan.price ?? '',
             duration: plan.duration ?? '',
             freezeLimitCount: plan.freezeLimitCount ?? 0,
-            includesClasses: Boolean(plan.includesClasses),
-            includedClassSessions: plan.includedClassSessions ?? ''
+            includedClassSessions: plan.includedClassSessions ?? '',
+            isGlobal: plan.gymId === null
         });
     };
 
@@ -125,8 +154,8 @@ export default function Settings() {
             price: '',
             duration: '',
             freezeLimitCount: '',
-            includesClasses: false,
-            includedClassSessions: ''
+            includedClassSessions: '',
+            isGlobal: false
         });
     };
 
@@ -137,9 +166,8 @@ export default function Settings() {
                 name: editPlanData.name,
                 price: Number(editPlanData.price),
                 duration: Number(editPlanData.duration),
-                freezeLimitCount: Number(editPlanData.freezeLimitCount || 0),
-                includesClasses: editPlanData.includesClasses,
-                includedClassSessions: editPlanData.includesClasses ? Number(editPlanData.includedClassSessions || 0) : 0
+                includedClassSessions: editPlanData.includesClasses ? Number(editPlanData.includedClassSessions || 0) : 0,
+                isGlobal: editPlanData.isGlobal
             });
             handleCancelEditPlan();
             fetchPlans();
@@ -150,6 +178,7 @@ export default function Settings() {
         }
     };
 
+
     const handleCreatePlan = async (e) => {
         e.preventDefault();
         setLoadingPlan(true);
@@ -158,23 +187,43 @@ export default function Settings() {
                 name: planFormData.name,
                 price: Number(planFormData.price),
                 duration: Number(planFormData.duration),
-                freezeLimitCount: Number(planFormData.freezeLimitCount || 0),
-                includesClasses: planFormData.includesClasses,
-                includedClassSessions: planFormData.includesClasses ? Number(planFormData.includedClassSessions || 0) : 0
+                includedClassSessions: planFormData.includesClasses ? Number(planFormData.includedClassSessions || 0) : 0,
+                isGlobal: planFormData.isGlobal
             });
             setPlanFormData({
                 name: '',
                 price: '',
                 duration: '',
                 freezeLimitCount: '',
-                includesClasses: false,
-                includedClassSessions: ''
+                includedClassSessions: '',
+                isGlobal: false
             });
             fetchPlans();
         } catch (e) {
             await showAlert({ title: 'Create Failed', message: e.response?.data?.error || 'Failed to create plan', type: 'danger' });
         } finally {
             setLoadingPlan(false);
+        }
+    };
+
+    const handleAddInstitution = () => {
+        if (!instDraft.financialInstitutionId || !instDraft.label) return;
+        setFinancialInstitutions([...financialInstitutions, { ...instDraft, id: `temp-${Date.now()}` }]);
+        setInstDraft({ method: 'CASH', financialInstitutionId: '', label: '', isActive: true });
+    };
+
+    const handleRemoveInstitution = (id) => {
+        setFinancialInstitutions(financialInstitutions.filter(i => i.id !== id));
+    };
+
+    const handleSaveInstitutions = async () => {
+        try {
+            const res = await axios.post('/api/settings/financial-institutions', { institutions: financialInstitutions });
+            setFinancialInstitutions(res.data);
+            await showAlert({ title: "Success", message: "Mappings updated", type: "success" });
+        } catch (error) {
+            console.error("Failed to save institutions", error);
+            await showAlert({ title: 'Update Failed', message: error.response?.data?.error || 'Failed to update branding.', type: 'danger' });
         }
     };
 
@@ -196,9 +245,10 @@ export default function Settings() {
                 name: packageFormData.name,
                 sessions: Number(packageFormData.sessions),
                 price: Number(packageFormData.price),
-                isActive: packageFormData.isActive
+                isActive: packageFormData.isActive,
+                isGlobal: packageFormData.isGlobal
             });
-            setPackageFormData({ name: '', sessions: '', price: '', isActive: true });
+            setPackageFormData({ name: '', sessions: '', price: '', isActive: true, isGlobal: false });
             fetchSessionPackages();
         } catch (e) {
             await showAlert({ title: 'Create Failed', message: e.response?.data?.error || 'Failed to create package', type: 'danger' });
@@ -259,13 +309,22 @@ export default function Settings() {
                     {activeTab === 'packages' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary rounded-t-full"></div>}
                 </button>
                 {isOwner && (
-                    <button
-                        onClick={() => setActiveTab('branding')}
-                        className={`pb-4 px-2 font-bold text-sm transition-colors relative ${activeTab === 'branding' ? 'text-primary' : 'text-text-muted hover:text-white'}`}
-                    >
-                        Gym Branding
-                        {activeTab === 'branding' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary rounded-t-full"></div>}
-                    </button>
+                    <>
+                        <button
+                            onClick={() => setActiveTab('branding')}
+                            className={`pb-4 px-2 font-bold text-sm transition-colors relative ${activeTab === 'branding' ? 'text-primary' : 'text-text-muted hover:text-white'}`}
+                        >
+                            Branch Profile
+                            {activeTab === 'branding' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary rounded-t-full"></div>}
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('branch_settings')}
+                            className={`pb-4 px-2 font-bold text-sm transition-colors relative ${activeTab === 'branch_settings' ? 'text-primary' : 'text-text-muted hover:text-white'}`}
+                        >
+                            Branch Settings
+                            {activeTab === 'branch_settings' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary rounded-t-full"></div>}
+                        </button>
+                    </>
                 )}
             </div>
 
@@ -334,6 +393,18 @@ export default function Settings() {
                                                     placeholder="Included class sessions"
                                                 />
                                             )}
+                                            <div className="flex items-center gap-3 bg-background/40 border border-white/10 rounded-xl px-3 py-2">
+                                                <label className="relative flex items-center cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={editPlanData.isGlobal}
+                                                        onChange={(e) => setEditPlanData(prev => ({ ...prev, isGlobal: e.target.checked }))}
+                                                        className="sr-only peer"
+                                                    />
+                                                    <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+                                                    <span className="ms-3 text-xs font-medium text-white">Global Plan</span>
+                                                </label>
+                                            </div>
                                             <div className="flex items-center justify-end gap-2">
                                                 <button
                                                     onClick={handleCancelEditPlan}
@@ -463,6 +534,20 @@ export default function Settings() {
                                 </div>
                             )}
 
+                            <div className="flex items-center gap-3 bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3">
+                                <label className="relative flex items-center cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={planFormData.isGlobal}
+                                        onChange={(e) => setPlanFormData(prev => ({ ...prev, isGlobal: e.target.checked }))}
+                                        className="sr-only peer"
+                                    />
+                                    <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                                    <span className="ms-3 text-sm font-medium text-white">Global Plan</span>
+                                </label>
+                                <span className="material-icons-round text-text-muted text-sm" title="Global plans are shared across all branches.">help_outline</span>
+                            </div>
+
                             <button disabled={loadingPlan} type="submit" className="w-full bg-primary hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-colors disabled:opacity-50">
                                 {loadingPlan ? 'Creating...' : 'Create Plan'}
                             </button>
@@ -550,6 +635,21 @@ export default function Settings() {
                                 />
                                 <span className="text-sm text-white font-medium">Available for sale</span>
                             </label>
+                            
+                            <div className="flex items-center gap-3 bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3">
+                                <label className="relative flex items-center cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={packageFormData.isGlobal}
+                                        onChange={(e) => setPackageFormData(prev => ({ ...prev, isGlobal: e.target.checked }))}
+                                        className="sr-only peer"
+                                    />
+                                    <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                                    <span className="ms-3 text-sm font-medium text-white">Global Package</span>
+                                </label>
+                                <span className="material-icons-round text-text-muted text-sm" title="Global packages are shared across all branches.">help_outline</span>
+                            </div>
+
                             <button disabled={loadingPackage} type="submit" className="w-full bg-primary hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-colors disabled:opacity-50">
                                 {loadingPackage ? 'Creating...' : 'Create Package'}
                             </button>
@@ -560,7 +660,7 @@ export default function Settings() {
 
             {isOwner && activeTab === 'branding' && (
                 <div className="bg-surface rounded-3xl border border-white/5 p-8 shadow-sm max-w-2xl">
-                    <h3 className="text-xl font-bold text-white mb-6">Business Profile</h3>
+                    <h3 className="text-xl font-bold text-white mb-6">Branch Profile</h3>
                     <form onSubmit={handleProfileSave} className="space-y-6">
                         <div>
                             <label className="block text-xs text-text-secondary font-bold mb-1">Gym Name</label>
@@ -583,12 +683,149 @@ export default function Settings() {
 
                         <div className="pt-4 flex justify-end">
                             <button type="submit" className="bg-white text-black font-bold px-8 py-3 rounded-xl hover:bg-gray-200 transition-colors shadow-lg">
-                                Save Changes
+                                Save Profile
                             </button>
                         </div>
                     </form>
                 </div>
             )}
+
+            {isOwner && activeTab === 'branch_settings' && (
+                <div className="bg-surface rounded-3xl border border-white/5 p-8 shadow-sm max-w-2xl">
+                    <h3 className="text-xl font-bold text-white mb-6">Branch Operations</h3>
+                    <form onSubmit={handleProfileSave} className="space-y-6">
+                        <div className="grid grid-cols-2 gap-6">
+                            <div>
+                                <label className="block text-xs text-text-secondary font-bold mb-1">Currency</label>
+                                <select 
+                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white"
+                                    value={gymProfile.currency}
+                                    onChange={e => setGymProfile({ ...gymProfile, currency: e.target.value })}
+                                >
+                                    <option value="PHP">Philippine Peso (PHP)</option>
+                                    <option value="SGD">Singapore Dollar (SGD)</option>
+                                    <option value="USD">US Dollar (USD)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs text-text-secondary font-bold mb-1">Tax Rate (%)</label>
+                                <input 
+                                    type="number" 
+                                    step="0.01"
+                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white" 
+                                    value={gymProfile.taxRate} 
+                                    onChange={e => setGymProfile({ ...gymProfile, taxRate: e.target.value })} 
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-6">
+                            <div>
+                                <label className="block text-xs text-text-secondary font-bold mb-1">Rounding Rule</label>
+                                <select 
+                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white"
+                                    value={gymProfile.roundingRule}
+                                    onChange={e => setGymProfile({ ...gymProfile, roundingRule: e.target.value })}
+                                >
+                                    <option value="NONE">None</option>
+                                    <option value="NEAREST_005">Nearest 0.05</option>
+                                    <option value="NEAREST_01">Nearest 0.10</option>
+                                    <option value="NEAREST_1">Nearest 1.00</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs text-text-secondary font-bold mb-1">Reference Prefix</label>
+                                <input 
+                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white" 
+                                    value={gymProfile.referencePrefix} 
+                                    onChange={e => setGymProfile({ ...gymProfile, referencePrefix: e.target.value })} 
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs text-text-secondary font-bold mb-1">Company ID (Receipts)</label>
+                            <input 
+                                className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white" 
+                                value={gymProfile.companyId} 
+                                onChange={e => setGymProfile({ ...gymProfile, companyId: e.target.value })} 
+                            />
+                        </div>
+
+                        <div className="pt-4 flex justify-end">
+                            <button type="submit" className="bg-primary text-white font-bold px-8 py-3 rounded-xl hover:bg-orange-600 transition-colors shadow-lg">
+                                Save Settings
+                            </button>
+                        </div>
+                    </form>
+
+                    <div className="mt-12 pt-8 border-t border-white/5">
+                        <h3 className="text-xl font-bold text-white mb-6">Internal Payment Mappings</h3>
+                        <p className="text-sm text-text-muted mb-6">Map payment methods to internal institution identifiers for financial reports.</p>
+                        
+                        <div className="space-y-4">
+                            {financialInstitutions.map((inst) => (
+                                <div key={inst.id} className="flex items-center gap-4 bg-surfaceHighlight border border-white/10 p-4 rounded-xl">
+                                    <div className="flex-1">
+                                        <p className="text-xs text-text-muted font-bold uppercase">{inst.method}</p>
+                                        <p className="text-white font-bold">{inst.label} <span className="text-text-muted font-normal">({inst.financialInstitutionId})</span></p>
+                                    </div>
+                                    <button 
+                                        onClick={() => handleRemoveInstitution(inst.id)}
+                                        className="text-red-400 hover:text-red-300 p-2"
+                                    >
+                                        <span className="material-icons-round">delete</span>
+                                    </button>
+                                </div>
+                            ))}
+
+                            <div className="grid grid-cols-3 gap-4 bg-white/5 p-4 rounded-xl">
+                                <select 
+                                    className="bg-surfaceHighlight border border-white/10 rounded-lg px-3 py-2 text-white text-sm"
+                                    value={instDraft.method}
+                                    onChange={e => setInstDraft({ ...instDraft, method: e.target.value })}
+                                >
+                                    <option value="CASH">CASH</option>
+                                    <option value="CARD">CARD</option>
+                                    <option value="GCASH">GCASH</option>
+                                    <option value="MAYA">MAYA</option>
+                                    <option value="BANK_TRANSFER">BANK TRANSFER</option>
+                                </select>
+                                <input 
+                                    placeholder="Bank ID (e.g. 1023)"
+                                    className="bg-surfaceHighlight border border-white/10 rounded-lg px-3 py-2 text-white text-sm"
+                                    value={instDraft.financialInstitutionId}
+                                    onChange={e => setInstDraft({ ...instDraft, financialInstitutionId: e.target.value })}
+                                />
+                                <input 
+                                    placeholder="Label (e.g. BDO Savings)"
+                                    className="bg-surfaceHighlight border border-white/10 rounded-lg px-3 py-2 text-white text-sm"
+                                    value={instDraft.label}
+                                    onChange={e => setInstDraft({ ...instDraft, label: e.target.value })}
+                                />
+                                <div className="col-span-3 flex justify-end">
+                                    <button 
+                                        onClick={handleAddInstitution}
+                                        className="text-white bg-white/10 hover:bg-white/20 font-bold px-4 py-2 rounded-lg text-sm"
+                                    >
+                                        Add Mapping
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="pt-4 flex justify-end">
+                                <button 
+                                    onClick={handleSaveInstitutions}
+                                    className="bg-white text-black font-bold px-8 py-3 rounded-xl hover:bg-gray-200 transition-colors shadow-lg"
+                                >
+                                    Update Mappings
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
         </div>
     );
 }

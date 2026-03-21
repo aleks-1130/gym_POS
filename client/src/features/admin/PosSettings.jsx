@@ -18,7 +18,6 @@ const DEFAULT_RECEIPT_SETTINGS = {
     branchAddress: '123 Fitness Blvd, Gym City',
     tin: '',
     vatType: 'VAT',
-    vatRate: '12',
     permitToUseNo: '',
     birAccreditationNo: '',
     minNo: '',
@@ -85,7 +84,8 @@ export default function PosSettings() {
         categories: '', // comma separated categories
         bogoBuyQty: 1,
         bogoGetQty: 1,
-        bogoGetProductId: ''
+        bogoGetProductId: '',
+        isGlobal: false
     });
     const [promoSaving, setPromoSaving] = useState(false);
     const [promoLoading, setPromoLoading] = useState(false);
@@ -323,7 +323,7 @@ export default function PosSettings() {
             await axios.post(withApiBase('/api/pos/promo-codes'), payload, {
                 headers: authHeaders()
             });
-            setPromoDraft({ code: '', type: 'PERCENTAGE', value: '', description: '', maxUses: '', expiryDate: '', scope: 'ORDER', productIds: '', categories: '', bogoBuyQty: 1, bogoGetQty: 1, bogoGetProductId: '' });
+            setPromoDraft({ code: '', type: 'PERCENTAGE', value: '', description: '', maxUses: '', expiryDate: '', scope: 'ORDER', productIds: '', categories: '', bogoBuyQty: 1, bogoGetQty: 1, bogoGetProductId: '', isGlobal: false });
             await fetchPromoCodes();
             await showAlert({ title: 'Success', message: 'Promo code created successfully.', type: 'success' });
         } catch (e) {
@@ -513,13 +513,6 @@ export default function PosSettings() {
                                     <option value="NON-VAT">NON-VAT</option>
                                 </select>
                             </div>
-
-                            <Field
-                                label="VAT Rate (%)"
-                                value={receiptSettings.vatRate}
-                                onChange={(v) => updateReceiptField('vatRate', v)}
-                                placeholder="12"
-                            />
 
                             <p className="text-xs font-bold uppercase tracking-widest text-text-muted pt-2">Body</p>
                             <Field label="Date/Time Label" value={receiptSettings.issuedDateLabel} onChange={(v) => updateReceiptField('issuedDateLabel', v)} placeholder="Date & Time Issued" />
@@ -830,6 +823,21 @@ export default function PosSettings() {
                                         onChange={e => setPromoDraft(p => ({ ...p, expiryDate: e.target.value }))}
                                     />
                                 </div>
+                                <div className="flex items-center gap-2 h-full pt-4">
+                                    <label className="flex items-center cursor-pointer gap-2 group">
+                                        <div className="relative">
+                                            <input
+                                                type="checkbox"
+                                                className="sr-only"
+                                                checked={promoDraft.isGlobal}
+                                                onChange={e => setPromoDraft(p => ({ ...p, isGlobal: e.target.checked }))}
+                                            />
+                                            <div className={`w-10 h-5 rounded-full transition-colors ${promoDraft.isGlobal ? 'bg-primary' : 'bg-white/10'}`}></div>
+                                            <div className={`absolute top-1 left-1 w-3 h-3 rounded-full bg-white transition-transform ${promoDraft.isGlobal ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                        </div>
+                                        <span className="text-[10px] text-text-muted font-bold uppercase group-hover:text-primary transition-colors">All Branches</span>
+                                    </label>
+                                </div>
                                 <div className={`flex items-end ${promoDraft.scope !== 'ORDER' ? 'lg:col-start-4' : ''}`}>
                                     <button
                                         type="submit"
@@ -864,6 +872,11 @@ export default function PosSettings() {
                                             <tr key={promo.id} className="border-b border-white/5 group hover:bg-white/5 transition-colors">
                                                 <td className="py-4 px-2">
                                                     <span className="font-mono font-bold text-primary">{promo.code}</span>
+                                                    {promo.gymId === null && (
+                                                        <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold bg-primary/20 text-primary uppercase">
+                                                            Global
+                                                        </span>
+                                                    )}
                                                     {promo.scope !== 'ORDER' && (
                                                         <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold bg-white/10 text-white">
                                                             SCOPE: {promo.scope}

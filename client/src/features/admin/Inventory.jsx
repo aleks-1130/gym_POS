@@ -323,6 +323,14 @@ function ProductsTab({ navigate }) {
                             )
                         },
                         {
+                            header: 'Supplier',
+                            accessor: (product) => (
+                                <span className="text-text-secondary">
+                                    {product.supplier?.name || <span className="text-text-muted italic">None</span>}
+                                </span>
+                            )
+                        },
+                        {
                             header: 'Cost',
                             accessor: (product) => <span className="text-white font-semibold">{formatPrice(safeNumber(product.cost, safeNumber(product.price)))}</span>,
                             className: 'text-right',
@@ -386,7 +394,7 @@ function ProductsTab({ navigate }) {
                                     </div>
                                 </div>
                                 <div className="flex items-center justify-between text-xs">
-                                    <span className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-text-secondary font-semibold uppercase">{product.category}</span>
+                                    <span className="text-text-secondary truncate pr-2">Supplier: {product.supplier?.name || 'None'}</span>
                                     <span className="text-white font-semibold">{formatPrice(safeNumber(product.cost, safeNumber(product.price)))}</span>
                                 </div>
                                 <div className="flex items-center justify-between text-sm">
@@ -449,7 +457,7 @@ function CategoriesTab() {
     const [loading, setLoading] = useState(false);
     const [showForm, setShowForm] = useState(false);
     const [editingCategory, setEditingCategory] = useState(null);
-    const [formData, setFormData] = useState({ name: '', description: '' });
+    const [formData, setFormData] = useState({ name: '', description: '', isGlobal: false });
     const [viewMode, setViewMode] = useState('list');
     const [searchTerm, setSearchTerm] = useState('');
     const [page, setPage] = useState(1);
@@ -490,20 +498,24 @@ function CategoriesTab() {
 
     const openCreate = () => {
         setEditingCategory(null);
-        setFormData({ name: '', description: '' });
+        setFormData({ name: '', description: '', isGlobal: false });
         setShowForm(true);
     };
 
     const openEdit = (category) => {
         setEditingCategory(category);
-        setFormData({ name: category.name || '', description: category.description || '' });
+        setFormData({ 
+            name: category.name || '', 
+            description: category.description || '',
+            isGlobal: category.gymId === null
+        });
         setShowForm(true);
     };
 
     const closeForm = () => {
         setShowForm(false);
         setEditingCategory(null);
-        setFormData({ name: '', description: '' });
+        setFormData({ name: '', description: '', isGlobal: false });
     };
 
     const submitCategory = async (event) => {
@@ -714,6 +726,19 @@ function CategoriesTab() {
                                     className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none min-h-[110px]"
                                     placeholder="Describe this category"
                                 />
+                            </div>
+                            <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+                                <label className="relative flex items-center cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={formData.isGlobal}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, isGlobal: e.target.checked }))}
+                                        className="sr-only peer"
+                                    />
+                                    <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                                    <span className="ms-3 text-sm font-medium text-white">Global Category</span>
+                                </label>
+                                <span className="material-icons-round text-text-muted text-sm" title="Global categories are shared across all branches.">help_outline</span>
                             </div>
                             <div className="flex justify-end gap-3 pt-2">
                                 <button type="button" onClick={closeForm} className="px-4 py-2 text-text-muted hover:text-white">
@@ -1102,15 +1127,18 @@ function ProductFormPage({ productId, onCancel, onSaved }) {
     const { formatPrice } = useCurrency();
     const [loading, setLoading] = useState(false);
     const [categories, setCategories] = useState([]);
+    const [suppliers, setSuppliers] = useState([]);
     const [formData, setFormData] = useState({
         imageUrl: '',
         barcode: '',
         name: '',
         description: '',
         category: '',
+        supplierId: '',
         cost: '',
         stock: '',
-        minStock: '5'
+        minStock: '5',
+        isGlobal: false
     });
 
     const isEditing = Boolean(productId);
@@ -1140,9 +1168,11 @@ function ProductFormPage({ productId, onCancel, onSaved }) {
                 name: product.name || '',
                 description: product.description || '',
                 category: product.category || '',
+                supplierId: product.supplierId || '',
                 cost: String(safeNumber(product.cost, safeNumber(product.price))),
                 stock: String(safeInt(product.stock)),
-                minStock: String(safeInt(product.minStock, 5))
+                minStock: String(safeInt(product.minStock, 5)),
+                isGlobal: product.gymId === null
             });
         } catch (error) {
             await showAlert({ title: 'Load Failed', message: 'Failed to load product details', type: 'danger' });
@@ -1152,8 +1182,18 @@ function ProductFormPage({ productId, onCancel, onSaved }) {
         }
     };
 
+    const fetchSuppliers = async () => {
+        try {
+            const res = await axios.get('/api/suppliers');
+            setSuppliers(Array.isArray(res.data) ? res.data : []);
+        } catch (error) {
+            setSuppliers([]);
+        }
+    };
+
     useEffect(() => {
         fetchCategories();
+        fetchSuppliers();
     }, []);
 
     useEffect(() => {
@@ -1168,10 +1208,12 @@ function ProductFormPage({ productId, onCancel, onSaved }) {
             name: String(formData.name || '').trim(),
             description: String(formData.description || '').trim(),
             category: String(formData.category || '').trim(),
+            supplierId: formData.supplierId ? Number(formData.supplierId) : null,
             cost: safeNumber(formData.cost),
             price: safeNumber(formData.cost),
             stock: safeInt(formData.stock),
-            minStock: safeInt(formData.minStock)
+            minStock: safeInt(formData.minStock),
+            isGlobal: formData.isGlobal
         };
 
         try {
@@ -1220,6 +1262,25 @@ function ProductFormPage({ productId, onCancel, onSaved }) {
                             <span className="material-icons-round text-primary">badge</span>
                             <h2 className="text-white font-semibold">Basic Details</h2>
                         </div>
+                        <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+                            <label className="relative flex items-center cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={formData.isGlobal}
+                                    onChange={(e) => {
+                                        const checked = e.target.checked;
+                                        setFormData(prev => ({ 
+                                            ...prev, 
+                                            isGlobal: checked
+                                        }));
+                                    }}
+                                    className="sr-only peer"
+                                />
+                                <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                                <span className="ms-3 text-sm font-medium text-white">Global Product</span>
+                            </label>
+                            <span className="material-icons-round text-text-muted text-sm" title="Global products are visible and sellable in all branches.">help_outline</span>
+                        </div>
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-xs text-text-secondary mb-1">Product Name</label>
@@ -1242,29 +1303,45 @@ function ProductFormPage({ productId, onCancel, onSaved }) {
                                 />
                             </div>
                         </div>
-                        <div>
-                            <label className="block text-xs text-text-secondary mb-1">Category</label>
-                            {categories.length > 0 ? (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs text-text-secondary mb-1">Category</label>
+                                {categories.length > 0 ? (
+                                    <select
+                                        required
+                                        value={formData.category}
+                                        onChange={(event) => setFormData((prev) => ({ ...prev, category: event.target.value }))}
+                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none"
+                                    >
+                                        {!formData.category && <option value="">Select category</option>}
+                                        {categories.map((category) => (
+                                            <option key={category.id} value={category.name}>{category.name}</option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <input
+                                        required
+                                        value={formData.category}
+                                        onChange={(event) => setFormData((prev) => ({ ...prev, category: event.target.value }))}
+                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none"
+                                        placeholder="Enter category"
+                                    />
+                                )}
+                            </div>
+                             <div>
+                                <label className="block text-xs mb-1 text-text-secondary">Supplier (Optional)</label>
                                 <select
-                                    required
-                                    value={formData.category}
-                                    onChange={(event) => setFormData((prev) => ({ ...prev, category: event.target.value }))}
-                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none"
+                                    value={formData.supplierId}
+                                    onChange={(event) => setFormData((prev) => ({ ...prev, supplierId: event.target.value }))}
+                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none text-sm transition-all"
                                 >
-                                    {!formData.category && <option value="">Select category</option>}
-                                    {categories.map((category) => (
-                                        <option key={category.id} value={category.name}>{category.name}</option>
+                                    <option value="">No Supplier Assigned</option>
+                                    {suppliers.map((sup) => (
+                                        <option key={sup.id} value={sup.id}>{sup.name}</option>
                                     ))}
                                 </select>
-                            ) : (
-                                <input
-                                    required
-                                    value={formData.category}
-                                    onChange={(event) => setFormData((prev) => ({ ...prev, category: event.target.value }))}
-                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary outline-none"
-                                    placeholder="Enter category"
-                                />
-                            )}
+                                {formData.isGlobal && <p className="text-[10px] text-primary/60 mt-1 ml-1 font-medium italic">Branch-specific vendor for this global product</p>}
+                            </div>
                         </div>
                         <div>
                             <label className="block text-xs text-text-secondary mb-1">Description</label>

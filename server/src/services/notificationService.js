@@ -9,7 +9,7 @@ const notificationService = {
     /**
      * Send a notification to a specific member or broadcast to all
      */
-    async send({ memberId, title, message, type = 'INFO', isAnnouncement = false, eventData = {}, excludeEmail = false }) {
+    async send({ memberId, title, message, type = 'INFO', isAnnouncement = false, eventData = {}, excludeEmail = false, gymId = null }) {
         try {
             // 0. Fetch Preferences (if applicable)
             let prefs = null;
@@ -37,7 +37,9 @@ const notificationService = {
                         message,
                         type,
                         isAnnouncement,
-                        memberId: memberId ? parseInt(memberId) : null
+                        targetGroup: memberId ? 'PRIVATE' : (eventData.targetGroup || 'ALL'),
+                        memberId: memberId ? parseInt(memberId) : null,
+                        gymId: gymId || null
                     }
                 });
             }
@@ -142,7 +144,7 @@ const notificationService = {
     /**
      * Specifically send a payment receipt
      */
-    async sendReceipt({ memberId, amount, method, items, receiptId, referenceId }) {
+    async sendReceipt({ memberId, amount, method, items, receiptId, referenceId, gymId = null }) {
         try {
             const member = memberId ? await prisma.member.findUnique({
                 where: { id: parseInt(memberId) },
@@ -178,7 +180,9 @@ const notificationService = {
                         title: 'Payment Received',
                         message: `Your payment of ₱${amount.toLocaleString()} has been processed. Receipt: ${receiptId}`,
                         type: 'PAYMENT_RECEIPT',
-                        memberId: parseInt(memberId)
+                        targetGroup: 'PRIVATE',
+                        memberId: parseInt(memberId),
+                        gymId: gymId || null
                     }
                 });
             }

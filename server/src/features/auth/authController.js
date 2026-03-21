@@ -32,6 +32,8 @@ const login = async (req, res) => {
                 password: true,
                 name: true,
                 role: true,
+                gymId: true,
+                tenantId: true,
                 trainerId: true,
                 sessionVersion: true
             }
@@ -45,6 +47,8 @@ const login = async (req, res) => {
                     id: user.id,
                     email: user.email,
                     role: user.role,
+                    gymId: user.gymId,
+                    tenantId: user.tenantId,
                     type: 'USER',
                     trainerId: user.trainerId,
                     sessionVersion: Number(user.sessionVersion || 0)
@@ -52,8 +56,23 @@ const login = async (req, res) => {
                 console.log("[DEBUG] Signing JWT for user:", user.email, "with SECRET length:", SECRET ? SECRET.length : 0);
                 const token = jwt.sign(payload, SECRET);
                 res.cookie('token', token, cookieOptions);
-                console.log("[DEBUG] Cookie 'token' set successfully via res.cookie");
-                return res.json({ user: { id: user.id, name: user.name, role: user.role, trainerId: user.trainerId } });
+                
+                const gym = user.gymId ? await prisma.gym.findUnique({
+                    where: { id: user.gymId },
+                    select: { id: true, name: true, currency: true, taxRate: true, companyId: true, address: true, phone: true }
+                }) : null;
+
+                return res.json({ 
+                    user: { 
+                        id: user.id, 
+                        name: user.name, 
+                        role: user.role, 
+                        gymId: user.gymId, 
+                        tenantId: user.tenantId,
+                        trainerId: user.trainerId,
+                        gym
+                    } 
+                });
             }
         }
 
@@ -65,6 +84,7 @@ const login = async (req, res) => {
                 email: true,
                 password: true,
                 status: true,
+                gymId: true,
                 firstName: true,
                 sessionVersion: true
             }
@@ -81,14 +101,28 @@ const login = async (req, res) => {
                     id: member.id,
                     email: member.email,
                     role: 'MEMBER',
+                    gymId: member.gymId,
                     type: 'MEMBER',
                     sessionVersion: Number(member.sessionVersion || 0)
                 };
                 console.log("[DEBUG] Signing JWT for member:", member.email, "with SECRET length:", SECRET ? SECRET.length : 0);
                 const token = jwt.sign(payload, SECRET);
                 res.cookie('token', token, cookieOptions);
-                console.log("[DEBUG] Cookie 'token' set successfully for member");
-                return res.json({ user: { id: member.id, name: member.firstName, role: 'MEMBER' } });
+                
+                const gym = member.gymId ? await prisma.gym.findUnique({
+                    where: { id: member.gymId },
+                    select: { id: true, name: true, currency: true, taxRate: true, companyId: true, address: true, phone: true }
+                }) : null;
+
+                return res.json({ 
+                    user: { 
+                        id: member.id, 
+                        name: member.firstName, 
+                        role: 'MEMBER', 
+                        gymId: member.gymId,
+                        gym
+                    } 
+                });
             }
         }
 
@@ -123,7 +157,7 @@ const setupMemberPassword = async (req, res) => {
         // Check if syncToNeonAuth is imported. It is likely not, so we need to add it or fix imports.
         // Wait, I need to check imports in authController.js first.
         try {
-            await syncToNeonAuth(`${member.firstName} ${member.lastName}`, normalizedEmail, password);
+            await syncToNeonAuth(`${member.firstName} ${member.lastName}`, normalizedEmail, password, true);
         } catch (syncErr) {
             console.error("Neon Auth Sync Warning:", syncErr.message);
             // Don't fail the request, just warn
@@ -136,11 +170,16 @@ const setupMemberPassword = async (req, res) => {
 };
 
 const getMe = async (req, res) => {
-    // req.user is already populated by the authenticateToken middleware
     if (!req.user) {
         return res.status(401).json({ error: "Not authenticated" });
     }
-    res.json(req.user);
+
+    const gym = req.user.gymId ? await prisma.gym.findUnique({
+        where: { id: req.user.gymId },
+        select: { id: true, name: true, currency: true, taxRate: true, companyId: true, address: true, phone: true }
+    }) : null;
+
+    res.json({ ...req.user, gym });
 };
 
 const verifyToken = async (req, res) => {
@@ -236,7 +275,7 @@ const activateAccount = async (req, res) => {
         // Sync to Neon Auth
         try {
             const fullName = isMember ? `${account.firstName} ${account.lastName}` : account.name;
-            await syncToNeonAuth(fullName, account.email, password);
+            await syncToNeonAuth(fullName, account.email, password, true);
         } catch (syncErr) {
             console.error("Neon Auth Sync Warning:", syncErr.message);
         }
@@ -354,7 +393,7 @@ const resetPassword = async (req, res) => {
         // Sync to Neon Auth
         try {
             const fullName = isMember ? `${account.firstName} ${account.lastName}` : account.name;
-            await syncToNeonAuth(fullName, account.email, newPassword);
+            await syncToNeonAuth(fullName, account.email, newPassword, true);
         } catch (syncErr) {
             console.error("Neon Auth Sync Warning:", syncErr.message);
         }

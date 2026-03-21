@@ -163,6 +163,7 @@ export default function Sidebar() {
             {
                 section: "Administration", items: [
                     { to: "/users", icon: "admin_panel_settings", label: "Users" },
+                    { to: "/branches", icon: "location_on", label: "Branches" },
                     { to: "/payroll", icon: "payments", label: "Payroll" },
                     { to: "/audit", icon: "verified_user", label: "Audit Logs" },
                     { to: "/refunds", icon: "assignment_return", label: "Refunds" },
@@ -234,7 +235,9 @@ export default function Sidebar() {
                             <span className="material-icons-round text-white text-xl">fitness_center</span>
                         </div>
                         <div className={`transition-all duration-300 overflow-hidden ${isCollapsed ? 'lg:w-0 lg:opacity-0' : 'w-auto opacity-100'}`}>
-                            <h1 className="text-white font-bold text-lg whitespace-nowrap">FitOS</h1>
+                            <h1 className="text-white font-bold text-lg whitespace-nowrap">
+                                {user?.gym?.name || 'FitOS'}
+                            </h1>
                             <p className="text-text-muted text-[10px] uppercase tracking-wider font-medium whitespace-nowrap">
                                 {user?.role || 'System'}
                             </p>

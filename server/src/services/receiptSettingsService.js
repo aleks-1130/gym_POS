@@ -6,7 +6,6 @@ const DEFAULT_RECEIPT_SETTINGS = {
     branchAddress: '123 Fitness Blvd, Gym City',
     tin: '',
     vatType: 'VAT',
-    vatRate: '12',
     permitToUseNo: '',
     birAccreditationNo: '',
     minNo: '',
@@ -29,7 +28,6 @@ const sanitizeReceiptSettings = (input = {}) => ({
     branchAddress: asCleanString(input.branchAddress || DEFAULT_RECEIPT_SETTINGS.branchAddress),
     tin: asCleanString(input.tin),
     vatType: asCleanString(input.vatType || DEFAULT_RECEIPT_SETTINGS.vatType).toUpperCase() === 'NON-VAT' ? 'NON-VAT' : 'VAT',
-    vatRate: asCleanString(input.vatRate || DEFAULT_RECEIPT_SETTINGS.vatRate),
     permitToUseNo: asCleanString(input.permitToUseNo),
     birAccreditationNo: asCleanString(input.birAccreditationNo),
     minNo: asCleanString(input.minNo),
@@ -50,14 +48,11 @@ const mergeWithDefaults = (value) => sanitizeReceiptSettings({
 });
 
 async function getReceiptSettings() {
-    const record = await prisma.receiptSettings.findUnique({
-        where: { id: 1 }
-    });
+    const record = await prisma.receiptSettings.findFirst();
     if (!record) {
         const defaults = mergeWithDefaults();
         await prisma.receiptSettings.create({
             data: {
-                id: 1,
                 settings: defaults
             }
         });
@@ -68,16 +63,18 @@ async function getReceiptSettings() {
 
 async function saveReceiptSettings(settings) {
     const merged = mergeWithDefaults(settings);
-    await prisma.receiptSettings.upsert({
-        where: { id: 1 },
-        create: {
-            id: 1,
-            settings: merged
-        },
-        update: {
-            settings: merged
-        }
-    });
+    const existing = await prisma.receiptSettings.findFirst();
+    
+    if (existing) {
+        await prisma.receiptSettings.update({
+            where: { id: existing.id },
+            data: { settings: merged }
+        });
+    } else {
+        await prisma.receiptSettings.create({
+            data: { settings: merged }
+        });
+    }
     return merged;
 }
 

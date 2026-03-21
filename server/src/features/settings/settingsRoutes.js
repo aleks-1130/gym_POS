@@ -1,9 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const { getSettings, updateSettings } = require('./settingsController');
+const { getFinancialInstitutions, updateFinancialInstitutions } = require('./financialInstitutionController');
 const { authenticateToken, authorize } = require('../../middleware/authMiddleware');
 
-router.get('/', authenticateToken, getSettings); // Authenticated for security
+router.get('/', authenticateToken, getSettings);
 router.post('/', authenticateToken, authorize(['OWNER']), updateSettings);
+
+router.get('/financial-institutions', authenticateToken, getFinancialInstitutions);
+router.post('/financial-institutions', authenticateToken, authorize(['OWNER']), updateFinancialInstitutions);
 
 module.exports = router;

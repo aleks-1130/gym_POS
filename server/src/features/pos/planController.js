@@ -31,7 +31,8 @@ const normalizePlanInput = (body = {}) => {
             duration,
             includesClasses,
             includedClassSessions,
-            freezeLimitCount
+            freezeLimitCount,
+            isGlobal: (body.isGlobal === true || String(body.isGlobal).toLowerCase() === 'true')
         }
     };
 };
@@ -131,7 +132,13 @@ const normalizePackageInput = (body = {}) => {
     }
 
     return {
-        data: { name, sessions, price, isActive }
+        data: { 
+            name, 
+            sessions, 
+            price, 
+            isActive,
+            isGlobal: (body.isGlobal === true || String(body.isGlobal).toLowerCase() === 'true')
+        }
     };
 };
 

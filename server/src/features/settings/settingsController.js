@@ -2,21 +2,18 @@ const prisma = require('../../config/prisma');
 const { isDatabaseUnreachableError } = require('../../utils/prismaError');
 
 const getSettings = async (req, res) => {
+    const gymId = req.gymId;
+    if (!gymId) return res.status(400).json({ error: "Gym context missing" });
+
     try {
-        let profile = await prisma.gymProfile.findFirst();
-        if (!profile) {
-            // Create default if not exists
-            profile = await prisma.gymProfile.create({
-                data: {
-                    name: 'FitOS Gym',
-                    address: '123 Fitness Blvd, Gym City',
-                    phone: '(555) 123-4567',
-                    email: 'contact@fitos.com',
-                    website: 'www.fitos.com'
-                }
-            });
+        const gym = await prisma.gym.findUnique({
+            where: { id: gymId }
+        });
+        
+        if (!gym) {
+            return res.status(404).json({ error: 'Gym not found' });
         }
-        res.json(profile);
+        res.json(gym);
     } catch (error) {
         if (isDatabaseUnreachableError(error)) {
             console.error('Error fetching settings: database unreachable');
@@ -28,23 +25,28 @@ const getSettings = async (req, res) => {
 };
 
 const updateSettings = async (req, res) => {
+    const gymId = req.gymId;
+    if (!gymId) return res.status(400).json({ error: "Gym context missing" });
+
     try {
-        const { name, address, phone, email, website } = req.body;
+        const { 
+            name, address, phone, email, website, 
+            currency, taxRate, roundingRule, referencePrefix, companyId 
+        } = req.body;
 
-        let profile = await prisma.gymProfile.findFirst();
+        const updatedGym = await prisma.gym.update({
+            where: { id: gymId },
+            data: { 
+                name, address, phone, email, website,
+                currency, 
+                taxRate: taxRate !== undefined ? Number(taxRate) : undefined,
+                roundingRule, 
+                referencePrefix, 
+                companyId 
+            }
+        });
 
-        if (profile) {
-            profile = await prisma.gymProfile.update({
-                where: { id: profile.id },
-                data: { name, address, phone, email, website }
-            });
-        } else {
-            profile = await prisma.gymProfile.create({
-                data: { name, address, phone, email, website }
-            });
-        }
-
-        res.json(profile);
+        res.json(updatedGym);
     } catch (error) {
         if (isDatabaseUnreachableError(error)) {
             console.error('Error updating settings: database unreachable');

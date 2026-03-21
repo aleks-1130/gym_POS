@@ -2270,6 +2270,7 @@ const changePassword = async (req, res) => {
         if (!member || !member.password) {
             return res.status(400).json({ error: "Password is not set for this account" });
         }
+        const bcrypt = require('bcryptjs');
         const ok = await bcrypt.compare(currentPassword, member.password);
         if (!ok) return res.status(400).json({ error: "Current password is incorrect" });
 
@@ -2278,6 +2279,15 @@ const changePassword = async (req, res) => {
             where: { id: Number(id) },
             data: { password: hashedPassword }
         });
+
+        // Sync to Neon Auth (Forced re-sync)
+        try {
+            const { syncToNeonAuth } = require('../../services/neonAuthSync');
+            await syncToNeonAuth(`${member.firstName} ${member.lastName}`, member.email, newPassword, true);
+        } catch (syncErr) {
+            console.error("Neon Auth Sync Warning (Member Change):", syncErr.message);
+        }
+
         res.json({ message: "Password updated" });
     } catch (e) {
         res.status(500).json({ error: e.message });

@@ -376,10 +376,16 @@ const markStockOrderReceived = async (req, res) => {
 
         const updatedOrder = await prisma.$transaction(async (tx) => {
             for (const item of order.items) {
-                await tx.product.update({
-                    where: { id: Number(item.productId) },
-                    data: {
-                        stock: { increment: Number(item.quantity) }
+                const gymId = req.gymId || req.user?.gymId;
+                if (!gymId) throw new Error("Gym context required to receive stock");
+                await tx.productStock.upsert({
+                    where: { productId_gymId: { productId: Number(item.productId), gymId } },
+                    update: { quantity: { increment: Number(item.quantity) } },
+                    create: {
+                        productId: Number(item.productId),
+                        gymId,
+                        quantity: Number(item.quantity),
+                        minQuantity: 5 // Default min stock
                     }
                 });
             }

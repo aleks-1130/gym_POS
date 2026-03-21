@@ -28,6 +28,7 @@ import DisplayMonitor from '../features/shared/DisplayMonitor';
 import Settings from '../features/shared/Settings';
 import UserManagement from '../features/shared/UserManagement';
 import AuditLogs from '../features/shared/AuditLogs';
+import Branches from '../features/admin/Branches';
 
 // Admin Pages
 import Analytics from '../features/admin/Analytics';
@@ -615,6 +616,14 @@ export default function AppRoutes() {
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.OWNER]}>
                             <AuditLogs />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/branches"
+                    element={
+                        <ProtectedRoute allowedRoles={[ROLES.OWNER]}>
+                            <Branches />
                         </ProtectedRoute>
                     }
                 />

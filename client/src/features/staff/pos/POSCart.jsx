@@ -15,11 +15,14 @@ import { useConfirm } from '../../../context/ConfirmContext';
 import axios from 'axios';
 import { withApiBase } from '../../../config/api';
 import { authHeaders } from './POSUtils';
+import { useAuth } from '../../../context/AuthContext';
 
 /**
  * POSCart Component - Manages the cart items, member selection, and training details.
  */
 export default function POSCart({ members, trainers, discountOptions, initiateCheckout, openReceiptTemplatePreview }) {
+    const { user } = useAuth();
+    const branchTaxRate = user?.gym?.taxRate ?? 12;
     const { currency: globalCurrency } = useCurrency();
     
     // Local currency formatting for flexibility (SGD/PHP)
@@ -327,11 +330,11 @@ export default function POSCart({ members, trainers, discountOptions, initiateCh
                     <div className="pt-2 border-t border-white/5 space-y-1">
                         <div className="flex justify-between items-center text-[10px] opacity-50">
                             <span>Taxable Amount</span>
-                            <span>{formatPrice(cartTotal / 1.12)}</span>
+                            <span>{formatPrice(cartTotal / (1 + branchTaxRate / 100))}</span>
                         </div>
                         <div className="flex justify-between items-center text-[10px] opacity-50">
-                            <span>VAT (12%)</span>
-                            <span>{formatPrice(cartTotal - (cartTotal / 1.12))}</span>
+                            <span>VAT ({branchTaxRate}%)</span>
+                            <span>{formatPrice(cartTotal - (cartTotal / (1 + branchTaxRate / 100)))}</span>
                         </div>
                     </div>
                     <div className="flex justify-between items-center pt-2 border-t border-white/10">

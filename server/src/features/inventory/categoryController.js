@@ -67,7 +67,11 @@ const createCategory = async (req, res) => {
         }
 
         const created = await prisma.category.create({
-            data: { name, description: description || null }
+            data: { 
+                name, 
+                description: description || null,
+                isGlobal: req.body.isGlobal === true || String(req.body.isGlobal).toLowerCase() === 'true'
+            }
         });
 
         await logAudit('CREATE_CATEGORY', req.user.email, `Category: ${name}`, 'Created inventory category');
@@ -118,7 +122,8 @@ const updateCategory = async (req, res) => {
                 where: { id },
                 data: {
                     name,
-                    description: description || null
+                    description: description || null,
+                    isGlobal: req.body.isGlobal === true || String(req.body.isGlobal).toLowerCase() === 'true'
                 }
             });
         });

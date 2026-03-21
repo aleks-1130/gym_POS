@@ -86,13 +86,13 @@ const applyPromoCode = async (req, res) => {
             return res.status(400).json({ error: 'Code and cartItems are required.' });
         }
 
-        const promo = await prisma.promoCode.findUnique({
+        const promo = await prisma.promoCode.findFirst({
             where: { code: code.toUpperCase() }
         });
 
         if (!promo) {
             // Fallback to legacy Coupon
-            const coupon = await prisma.coupon.findUnique({
+            const coupon = await prisma.coupon.findFirst({
                 where: { code: code.toUpperCase() }
             });
 
@@ -158,15 +158,16 @@ const getPromoCodes = async (req, res) => {
 const createPromoCode = async (req, res) => {
     try {
         const {
-            code, type, value, description, maxUses, expiryDate,
+            code, type, value, description, maxUses, expiryDate, isGlobal,
             scope = 'ORDER', productIds = [], categories = [], bogoConfig = null
         } = req.body;
 
-        const existing = await prisma.promoCode.findUnique({ where: { code: code.toUpperCase() } });
+        const existing = await prisma.promoCode.findFirst({ where: { code: code.toUpperCase() } });
         if (existing) return res.status(400).json({ error: 'Promo code already exists' });
 
         const promo = await prisma.promoCode.create({
             data: {
+                isGlobal: !!isGlobal,
                 code: code.toUpperCase(),
                 type,
                 value: Number(value),

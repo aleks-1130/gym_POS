@@ -1,7 +1,9 @@
 import React from 'react';
+import { useAuth } from '../context/AuthContext';
 
 // This component can be used in a modal or hidden iframe for printing
 export const Receipt = React.forwardRef(({ transaction, items, member, cashierName, discount = 0, paymentDetails, receiptSettings }, ref) => {
+    const { user } = useAuth();
     const transactionCurrency = transaction?.currency || 'PHP';
     const transactionLocale = transactionCurrency === 'SGD' ? 'en-SG' : 'en-PH';
 
@@ -18,11 +20,10 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
 
     const settings = {
         invoiceTitle: receiptSettings?.invoiceTitle || 'SALES INVOICE',
-        businessName: receiptSettings?.businessName || 'FitOS Gym',
-        branchAddress: receiptSettings?.branchAddress || '123 Fitness Blvd, Gym City',
+        businessName: receiptSettings?.businessName || user?.gym?.name || 'FitOS Gym',
+        branchAddress: receiptSettings?.branchAddress || user?.gym?.address || '123 Fitness Blvd, Gym City',
         tin: receiptSettings?.tin || '',
         vatType: String(receiptSettings?.vatType || 'VAT').toUpperCase() === 'NON-VAT' ? 'NON-VAT' : 'VAT',
-        vatRate: Number.parseFloat(receiptSettings?.vatRate || '12'),
         vatRegTin: receiptSettings?.vatRegTin || '',
         issuedDateLabel: receiptSettings?.issuedDateLabel || 'Date & Time Issued',
         permitToUseNo: receiptSettings?.permitToUseNo || '',
@@ -50,7 +51,7 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
 
     const subtotal = receiptItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
     const total = Math.max(0, subtotal - discount);
-    const vatRate = Number.isFinite(settings.vatRate) && settings.vatRate >= 0 ? settings.vatRate : 12;
+    const vatRate = Number.isFinite(user?.gym?.taxRate) && user?.gym?.taxRate >= 0 ? user.gym.taxRate : 12;
 
     const memberFullName = [member?.firstName, member?.lastName].filter(Boolean).join(' ').trim();
     const customerName = memberFullName
@@ -62,7 +63,7 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
     
     // Dynamic Invoice Logic
     const invoiceNo = transaction?.referenceId || String(transaction?.id || 'PENDING');
-    const companyId = transaction?.companyId || 'FITOS_GYM_001';
+    const companyId = transaction?.companyId || user?.gym?.companyId || 'FITOS_GYM_001';
     const serialNo = settings.serialNo ? `${settings.serialNo}${invoiceNo}` : invoiceNo;
 
     return (
@@ -148,7 +149,7 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
                 <div className="border-t border-black border-dotted my-2 pt-2">
                     <div className="flex justify-between text-xs opacity-75">
                         <span>Taxable Amount:</span>
-                        <span>{formatCurrency(transaction?.taxableAmount || (total / 1.12))}</span>
+                        <span>{formatCurrency(transaction?.taxableAmount || (total / (1 + (vatRate / 100))))}</span>
                     </div>
                     <div className="flex justify-between text-xs opacity-75">
                         <span>VAT ({vatRate}%):</span>

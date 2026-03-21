@@ -40,21 +40,24 @@ const normalizeDiscountPresets = (rawPresets) => {
     });
 };
 
-const getStoredDiscountPresets = async (configId) => {
-    const rows = await prisma.$queryRawUnsafe(
-        'SELECT "discountPresets" FROM "PosConfig" WHERE "id" = $1 LIMIT 1',
-        Number(configId)
-    );
-    const rawPresets = Array.isArray(rows) && rows.length > 0 ? rows[0]?.discountPresets : null;
-    return normalizeDiscountPresets(rawPresets);
+const getStoredDiscountPresets = async (gymId) => {
+    // We can use Prisma Client since we added gymId to PosConfig
+    const config = await prisma.posConfig.findFirst({
+        where: { gymId: Number(gymId) }
+    });
+    return normalizeDiscountPresets(config?.discountPresets);
 };
 
-const saveDiscountPresets = async (configId, presets) => {
-    await prisma.$executeRawUnsafe(
-        'UPDATE "PosConfig" SET "discountPresets" = $1::jsonb WHERE "id" = $2',
-        JSON.stringify(presets || []),
-        Number(configId)
-    );
+const saveDiscountPresets = async (gymId, presets) => {
+    const config = await prisma.posConfig.findFirst({
+        where: { gymId: Number(gymId) }
+    });
+    if (config) {
+        await prisma.posConfig.update({
+            where: { id: config.id },
+            data: { discountPresets: presets || [] }
+        });
+    }
 };
 
 const getPlanClassSessions = (plan) => {
@@ -241,7 +244,12 @@ const createPayment = async (req, res) => {
                 productIds.length
                     ? prisma.product.findMany({
                         where: { id: { in: productIds } },
-                        select: { id: true, name: true, price: true, stock: true }
+                        select: { 
+                            id: true, 
+                            name: true, 
+                            price: true,
+                            stocks: { where: { gymId: req.user.gymId } }
+                         }
                     })
                     : Promise.resolve([]),
                 planIds.length
@@ -263,16 +271,17 @@ const createPayment = async (req, res) => {
             const classPackageById = new Map(classPackages.map((pkg) => [pkg.id, pkg]));
 
             authoritativeAmount = 0;
-            for (const item of normalizedItems) {
-                if (!Number.isInteger(item.quantity) || item.quantity <= 0) badRequest("Invalid item quantity");
+                for (const item of normalizedItems) {
+                    if (!Number.isInteger(item.quantity) || item.quantity <= 0) badRequest("Invalid item quantity");
 
-                if (item.type === 'PRODUCT') {
-                    const product = productById.get(item.productId);
-                    if (!product) badRequest(`Product ${item.productId} not found`);
-                    if (item.quantity > product.stock) badRequest(`Insufficient stock for ${product.name}`);
-                    authoritativeAmount += Number(product.price) * item.quantity;
-                    continue;
-                }
+                    if (item.type === 'PRODUCT') {
+                        const product = productById.get(item.productId);
+                        if (!product) badRequest(`Product ${item.productId} not found`);
+                        const currentStock = product.stocks?.[0]?.quantity || 0;
+                        if (item.quantity > currentStock) badRequest(`Insufficient stock for ${product.name} (Available: ${currentStock})`);
+                        authoritativeAmount += Number(product.price) * item.quantity;
+                        continue;
+                    }
 
                 if (item.type === 'PLAN') {
                     const planId = Number(item.id || item.planId || item.productId);
@@ -297,6 +306,13 @@ const createPayment = async (req, res) => {
             badRequest("Invalid payment amount");
         }
 
+        // --- Multi-Tenancy: Fetch Gym Settings ---
+        const gym = await prisma.gym.findUnique({
+            where: { id: req.user.gymId },
+            include: { tenant: true }
+        });
+        if (!gym) badRequest("Gym configuration not found");
+
         let effectiveDiscountPercent = normalizedDiscount;
 
         // --- Coupon / Promo Validation ---
@@ -306,11 +322,11 @@ const createPayment = async (req, res) => {
         
         if (couponCode) {
             const codeUpper = couponCode.toUpperCase();
-            appliedCoupon = await prisma.coupon.findUnique({ where: { code: codeUpper } });
+            appliedCoupon = await prisma.coupon.findFirst({ where: { code: codeUpper } });
             
             if (!appliedCoupon) {
                 // Fallback to PromoCode
-                appliedPromo = await prisma.promoCode.findUnique({ where: { code: codeUpper } });
+                appliedPromo = await prisma.promoCode.findFirst({ where: { code: codeUpper } });
                 if (!appliedPromo) badRequest('Coupon / Promo code not found');
                 
                 if (!appliedPromo.isActive) badRequest('Promo code is inactive');
@@ -341,30 +357,43 @@ const createPayment = async (req, res) => {
 
         const discountedAmount = Number(Math.max(0, authoritativeAmount - discountValue).toFixed(2));
 
-        // Invoice/Receipt specific calculations
-        const taxableAmount = Number((discountedAmount / 1.12).toFixed(2));
+        // Invoice/Receipt specific calculations using Gym settings
+        const taxRate = gym.taxRate || 12.0;
+        const taxableAmount = Number((discountedAmount / (1 + (taxRate / 100))).toFixed(2));
         const taxAmount = Number((discountedAmount - taxableAmount).toFixed(2));
-        const referenceId = `A321-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
         
-        // Dynamic mapping for Financial Institution ID
-        const financialInstitutionMap = {
-            'CASH': 'CASH_FRONT_DESK',
-            'GCASH': 'GCASH_PAYMENT_GATEWAY',
-            'PAYMAYA': 'PAYMAYA_GATEWAY',
-            'CARD': 'STRIPE_TERMINAL',
-            'BANK_TRANSFER': 'DIRECT_BANK_DEPOSIT'
-        };
-        const financialInstitutionId = financialInstitutionMap[method] || 'EXTERNAL_COLLECTION';
+        // Rounding Logic
+        let roundingAdjustment = 0;
+        let finalPayableAmount = discountedAmount;
+        if (gym.roundingRule === 'NEAREST_005') {
+            finalPayableAmount = Math.round(discountedAmount * 20) / 20;
+            roundingAdjustment = Number((finalPayableAmount - discountedAmount).toFixed(2));
+        } else if (gym.roundingRule === 'NEAREST_01') {
+            finalPayableAmount = Math.round(discountedAmount * 10) / 10;
+            roundingAdjustment = Number((finalPayableAmount - discountedAmount).toFixed(2));
+        } else if (gym.roundingRule === 'NEAREST_1') {
+            finalPayableAmount = Math.round(discountedAmount);
+            roundingAdjustment = Number((finalPayableAmount - discountedAmount).toFixed(2));
+        }
+
+        const referencePrefix = gym.referencePrefix || 'A321';
+        const referenceId = `${referencePrefix}-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+        
+        // Resolve Financial Institution ID from current gym settings
+        const fi = await prisma.financialInstitution.findFirst({
+            where: { method, isActive: true }
+        });
+        const financialInstitutionId = fi?.financialInstitutionId || 'EXTERNAL';
 
         const normalizedCashTendered = method === 'CASH'
             ? (cashTendered !== undefined && cashTendered !== null && cashTendered !== '' ? Number(cashTendered) : null)
             : null;
-        if (method === 'CASH' && (!Number.isFinite(normalizedCashTendered) || normalizedCashTendered < discountedAmount)) {
+        if (method === 'CASH' && (!Number.isFinite(normalizedCashTendered) || normalizedCashTendered < finalPayableAmount)) {
             badRequest("Cash tendered is invalid or less than amount");
         }
 
         const normalizedChangeDue = method === 'CASH'
-            ? (changeDue !== undefined && changeDue !== null && changeDue !== '' ? Number(changeDue) : (normalizedCashTendered - discountedAmount))
+            ? (changeDue !== undefined && changeDue !== null && changeDue !== '' ? Number(changeDue) : (normalizedCashTendered - finalPayableAmount))
             : null;
         if (method === 'CASH' && !Number.isFinite(normalizedChangeDue)) badRequest("Invalid change due");
 
@@ -376,24 +405,24 @@ const createPayment = async (req, res) => {
         }
 
         const { LOYALTY_CONFIG } = require('../../config/businessConfig');
-        const pointsAwarded = resolvedMemberId ? Math.floor(discountedAmount * LOYALTY_CONFIG.POINTS_PER_CURRENCY_UNIT) : 0;
+        const pointsAwarded = resolvedMemberId ? Math.floor(finalPayableAmount * LOYALTY_CONFIG.POINTS_PER_CURRENCY_UNIT) : 0;
         const resolvedCashierId = req.user.role === 'MEMBER' ? null : req.user.id;
 
         const payment = await prisma.$transaction(async (tx) => {
             const paymentCreateData = {
-                amount: discountedAmount,
-                payableAmount: discountedAmount,
+                amount: finalPayableAmount,
+                payableAmount: finalPayableAmount,
                 taxAmount,
                 taxableAmount,
-                roundingAdjustment: 0,
-                currency: currency || 'PHP',
+                roundingAdjustment,
+                currency: gym.currency || 'PHP',
                 referenceId,
                 financialInstitutionId,
-                companyId: process.env.COMPANY_ID || 'FITOS_GYM_001',
+                companyId: gym.companyId || 'FITOS_GYM_001',
                 type,
                 method,
-                ...(resolvedMemberId ? { member: { connect: { id: Number(resolvedMemberId) } } } : {}),
-                ...(resolvedCashierId ? { cashier: { connect: { id: Number(resolvedCashierId) } } } : {}),
+                memberId: resolvedMemberId ? Number(resolvedMemberId) : null,
+                cashierId: resolvedCashierId ? Number(resolvedCashierId) : null,
                 pointsAwarded,
                 cashTendered: normalizedCashTendered,
                 changeDue: normalizedChangeDue,
@@ -441,7 +470,12 @@ const createPayment = async (req, res) => {
                     productIds.length
                         ? tx.product.findMany({
                             where: { id: { in: productIds } },
-                            select: { id: true, name: true, price: true }
+                            select: { 
+                                id: true, 
+                                name: true, 
+                                price: true,
+                                stocks: { where: { gymId: gym.id } }
+                            }
                         })
                         : Promise.resolve([]),
                     planIds.length
@@ -460,6 +494,18 @@ const createPayment = async (req, res) => {
                 const productById = new Map(products.map((product) => [product.id, product]));
                 const planById = new Map(plans.map((plan) => [plan.id, plan]));
                 const classPackageById = new Map(classPackages.map((pkg) => [pkg.id, pkg]));
+
+                // Pre-checkout stock check
+                for (const item of normalizedItems) {
+                    if (item.type === 'PRODUCT') {
+                        const product = productById.get(Number(item.productId));
+                        if (!product) throw new Error(`Product ${item.productId} not found`);
+                        const currentStock = product.stocks?.[0]?.quantity || 0;
+                        if (item.quantity > currentStock) {
+                            throw new Error(`Insufficient stock for product ${product.name} (Available: ${currentStock})`);
+                        }
+                    }
+                }
 
                 const paymentItems = normalizedItems.map((item) => {
                     const planId = Number(item.id || item.planId || item.productId);
@@ -519,12 +565,13 @@ const createPayment = async (req, res) => {
                             }
                         });
                     } else if (item.type === 'PRODUCT' && item.productId) {
-                        const updated = await tx.product.updateMany({
+                        const updated = await tx.productStock.updateMany({
                             where: {
-                                id: item.productId,
-                                stock: { gte: item.quantity }
+                                productId: item.productId,
+                                gymId,
+                                quantity: { gte: item.quantity }
                             },
-                            data: { stock: { decrement: item.quantity } }
+                            data: { quantity: { decrement: item.quantity } }
                         });
                         if (updated.count === 0) throw new Error(`Insufficient stock for product ${item.productId}`);
                     } else if (item.type === 'CLASS_PACKAGE') {
@@ -565,6 +612,16 @@ const createPayment = async (req, res) => {
                 });
             }
 
+            // Create PaymentCollection record for split payment support (even if single method)
+            await tx.paymentCollection.create({
+                data: {
+                    paymentId: createdPayment.id,
+                    amount: finalPayableAmount,
+                    method,
+                    financialInstitutionId
+                }
+            });
+
 
             return createdPayment;
         });
@@ -577,7 +634,8 @@ const createPayment = async (req, res) => {
                 method: payment.method,
                 items: normalizedItems,
                 receiptId: payment.referenceId || `REC-${payment.id}`,
-                referenceId: payment.referenceId
+                referenceId: payment.referenceId,
+                gymId: req.user.gymId
             }).catch(err => console.error('Failed to send receipt notification:', err));
         }
 
@@ -966,7 +1024,7 @@ const getPosSettings = async (req, res) => {
             getPosConfig(),
             getReceiptSettings()
         ]);
-        const discountPresets = await getStoredDiscountPresets(config.id);
+        const discountPresets = await getStoredDiscountPresets(req.user.gymId);
         res.json({
             hasVoidPin: Boolean(config.voidPinHash),
             hasReturnPin: Boolean(config.returnPinHash),
@@ -1042,7 +1100,7 @@ const updatePosSettings = async (req, res) => {
         }
 
         if (hasDiscountPresetsInput) {
-            await saveDiscountPresets(config.id, normalizedDiscountPresets);
+            await saveDiscountPresets(req.user.gymId, normalizedDiscountPresets);
         }
 
         let savedReceiptSettings = null;
@@ -1072,8 +1130,7 @@ const getPosReceiptSettings = async (_req, res) => {
 
 const getPosDiscountOptions = async (_req, res) => {
     try {
-        const config = await getPosConfig();
-        const discountPresets = await getStoredDiscountPresets(config.id);
+        const discountPresets = await getStoredDiscountPresets(req.user.gymId);
         res.json(discountPresets);
     } catch (e) {
         res.status(500).json({ error: "Failed to load discount presets" });
@@ -1234,13 +1291,14 @@ const completePayment = async (req, res) => {
 
     try {
         const payment = await prisma.payment.findUnique({
-            where: { id: Number(id) }
+            where: { id: Number(id) },
+            include: { items: true, member: true, cashier: true }
         });
 
         if (!payment) return res.status(404).json({ error: "Payment not found" });
         if (payment.status === 'COMPLETED') return res.status(400).json({ error: "Payment already completed" });
 
-        const changeDue = Number(cashTendered) - payment.amount;
+        const changeDue = Number(cashTendered) - (payment.payableAmount || payment.amount);
         if (changeDue < 0) return res.status(400).json({ error: "Insufficient cash tendered" });
 
         const updated = await prisma.$transaction(async (tx) => {
@@ -1269,13 +1327,80 @@ const completePayment = async (req, res) => {
                     changeDue,
                     cashierId: req.user.id
                 },
-                include: { member: true, items: true, cashier: true }
+                include: { member: true, items: true, cashier: { select: { id: true, name: true, role: true } } }
             });
         });
 
         res.json(updated);
     } catch (e) {
+        console.error('Complete Payment Error:', e);
         res.status(500).json({ error: "Failed to complete payment" });
+    }
+};
+
+const exportInvoices = async (req, res) => {
+    const { startDate, endDate } = req.query;
+
+    try {
+        const gym = await prisma.gym.findUnique({
+            where: { id: req.user.gymId }
+        });
+
+        if (!gym) {
+            return res.status(404).json({ error: "Gym context not found" });
+        }
+
+        const where = {
+            status: 'COMPLETED'
+        };
+
+        if (startDate || endDate) {
+            where.date = {};
+            if (startDate) where.date.gte = new Date(startDate);
+            if (endDate) where.date.lte = new Date(new Date(endDate).setHours(23, 59, 59, 999));
+        }
+
+        const payments = await prisma.payment.findMany({
+            where,
+            include: {
+                items: true,
+                collections: true
+            },
+            orderBy: { date: 'asc' }
+        });
+
+        const exportData = {
+            company_id: gym.companyId,
+            branch_id: gym.id.toString(),
+            branch_name: gym.name,
+            invoices: payments.map(p => ({
+                reference_id: p.referenceId,
+                date: p.date.toISOString(),
+                total_amount: Number(p.amount),
+                payable_amount: Number(p.payableAmount || p.amount),
+                taxable_amount: Number(p.taxableAmount || 0),
+                tax_amount: Number(p.taxAmount || 0),
+                rounding_adjustment: Number(p.roundingAdjustment || 0),
+                currency: p.currency || 'PHP',
+                status: 'PAID',
+                items: p.items.map(i => ({
+                    name: i.name,
+                    quantity: i.quantity,
+                    unit_price: Number(i.unitPrice),
+                    total: Number(i.quantity * i.unitPrice)
+                })),
+                collections: p.collections.map(c => ({
+                    amount: Number(c.amount),
+                    method: c.method,
+                    financial_institution_id: c.financialInstitutionId
+                }))
+            }))
+        };
+
+        res.json(exportData);
+    } catch (e) {
+        console.error('Invoice Export Error:', e);
+        res.status(500).json({ error: "Failed to export invoices" });
     }
 };
 
@@ -1293,5 +1418,6 @@ module.exports = {
     getMyTransactions,
     collectPendingCashPayment,
     declinePendingCashPayment,
-    getRefunds
+    getRefunds,
+    exportInvoices
 };

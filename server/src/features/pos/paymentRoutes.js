@@ -22,4 +22,7 @@ router.post('/:id/return-items', authenticateToken, authorize(['OWNER', 'ADMIN',
 router.post('/:id/void', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), paymentController.voidPayment);
 router.post('/:id/complete', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), paymentController.completePayment);
 
+// Export Invoices for Tax Reporting
+router.get('/export', authenticateToken, authorize(['OWNER', 'ADMIN']), paymentController.exportInvoices);
+
 module.exports = router;

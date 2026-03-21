@@ -1,9 +1,11 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
+import { useAuth } from './AuthContext';
 
 const SettingsContext = createContext();
 
 export const SettingsProvider = ({ children }) => {
+    const { user } = useAuth();
     const [settings, setSettings] = useState({
         name: 'FitOS Gym',
         address: '123 Fitness Blvd, Gym City',
@@ -14,8 +16,10 @@ export const SettingsProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        fetchSettings();
-    }, []);
+        if (user) {
+            fetchSettings();
+        }
+    }, [user?.id, user?.gymId]);
 
     const fetchSettings = async () => {
         try {

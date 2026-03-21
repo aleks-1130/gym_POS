@@ -1,5 +1,6 @@
 const prisma = require('../../config/prisma');
 const { logAudit } = require('../../services/auditService');
+const { syncToNeonAuth } = require('../../services/neonAuthSync');
 
 // Get Audit Logs (Owner Only)
 const getAuditLogs = async (req, res) => {
@@ -14,17 +15,217 @@ const getAuditLogs = async (req, res) => {
     }
 };
 
-// Manage Staff/Admins (List all users) - Owner/Admin view
+// Manage Staff/Admins (List users in branch for Admin, all for Owner)
 const getUsers = async (req, res) => {
+    const { gymId: filterGymId, page = 1, limit = 10 } = req.query;
+    const { role: userRole, gymId: userGymId } = req.user;
+    
+    const pageNum = Math.max(1, Number(page));
+    const limitNum = Math.max(1, Number(limit));
+    const skip = (pageNum - 1) * limitNum;
+
     try {
+        let where = {};
+        
+        if (userRole === 'OWNER') {
+            if (filterGymId) {
+                where.gymId = Number(filterGymId);
+            } else {
+                where.id = { not: 0 }; 
+            }
+        } else {
+            where.gymId = userGymId;
+        }
+
+        // Get total count for pagination metadata
+        const totalUsers = await prisma.user.count({ where });
+        const totalPages = Math.ceil(totalUsers / limitNum);
+
         const users = await prisma.user.findMany({
-            select: { id: true, name: true, email: true, role: true, createdAt: true }
+            where,
+            skip,
+            take: limitNum,
+            orderBy: { createdAt: 'desc' },
+            select: { 
+                id: true, 
+                name: true, 
+                email: true, 
+                role: true, 
+                createdAt: true, 
+                gymId: true,
+                gym: { select: { name: true } }
+            }
         });
-        // Admins should maybe not see Owners? 
-        // For simplicity, returning all, frontend filters actions.
-        res.json(users);
+
+        res.json({
+            users,
+            pagination: {
+                totalUsers,
+                totalPages,
+                currentPage: pageNum,
+                limit: limitNum
+            }
+        });
     } catch (e) {
+        console.error("Pagination Error:", e);
         res.status(500).json({ error: "Failed to fetch users" });
+    }
+};
+
+// Create a new Staff/Admin (Owner/Admin Only)
+const adminCreateUser = async (req, res) => {
+    const { name, email, password, role, gymId: targetGymId } = req.body;
+    const bcrypt = require('bcryptjs');
+
+    try {
+        const { role: creatorRole, gymId: creatorGymId, tenantId } = req.user;
+
+        // Restriction: Admin can only create Staff for their own gym
+        if (creatorRole === 'ADMIN') {
+            if (role !== 'STAFF') return res.status(403).json({ error: "Admins can only create Staff users" });
+            if (Number(targetGymId) !== creatorGymId) return res.status(403).json({ error: "Admins can only create users for their own branch" });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const newUser = await prisma.user.create({
+            data: {
+                name,
+                email,
+                password: hashedPassword,
+                role,
+                gymId: Number(targetGymId),
+                tenantId: tenantId,
+                status: 'ACTIVE' // Admin created users are active immediately
+            }
+        });
+
+        await logAudit("USER_CREATE", req.user.email, newUser.email, `Created ${role} for branch ${targetGymId}`);
+
+        // Sync to Neon Auth
+        try {
+            await syncToNeonAuth(name, email, password);
+        } catch (syncErr) {
+            console.error("Neon Auth Sync Warning:", syncErr.message);
+        }
+
+        res.json({ message: "User created successfully", user: { id: newUser.id, email: newUser.email } });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: e.message || "Failed to create user" });
+    }
+};
+
+// Update User (Owner/Admin)
+const adminUpdateUser = async (req, res) => {
+    const { id } = req.params;
+    const { name, email, password, role, gymId } = req.body;
+    const bcrypt = require('bcryptjs');
+
+    try {
+        const { role: creatorRole, gymId: creatorGymId } = req.user;
+        const target = await prisma.user.findUnique({ where: { id: Number(id) } });
+
+        if (!target) return res.status(404).json({ error: "User not found" });
+
+        // Security: Admin can only update users in their own branch
+        if (creatorRole === 'ADMIN' && target.gymId !== creatorGymId) {
+            return res.status(403).json({ error: "Access denied: User is in another branch" });
+        }
+
+        // Security: Cannot update Owner unless you are Owner
+        if (target.role === 'OWNER' && creatorRole !== 'OWNER') {
+            return res.status(403).json({ error: "Cannot modify Owner account" });
+        }
+
+        // Security: Admin cannot change role to OWNER
+        if (role === 'OWNER' && creatorRole !== 'OWNER') {
+             return res.status(403).json({ error: "Only Owners can promote to Owner" });
+        }
+
+        const updateData = { name, email };
+        if (role) updateData.role = role;
+        if (gymId) updateData.gymId = Number(gymId);
+        if (password) {
+            updateData.password = await bcrypt.hash(password, 10);
+        }
+
+        const updatedUser = await prisma.user.update({
+            where: { id: Number(id) },
+            data: updateData
+        });
+
+        // Sync to Neon Auth if critical fields changed
+        if (password || email) {
+            try {
+                // If password changed, we MUST force (re-create) to update hash
+                // If email changed, we MUST force (re-create) because the old email record is stale
+                const syncName = name || updatedUser.name || target.name;
+                const syncEmail = email || updatedUser.email || target.email;
+                const syncPassword = password; // If password not provided here, we can't re-sync hash easily without knowing it.
+                
+                // Only sync if we have a password (either new or we'd need to know the old one - but we don't have it in plain text)
+                if (password) {
+                    await syncToNeonAuth(syncName, syncEmail, password, true);
+                } else if (email) {
+                    // Email changed but no new password provided? 
+                    // This is a problem because we can't re-create the account without a password.
+                    // For now, we skip or show a warning. 
+                    console.warn("[AdminUpdate] Email changed without password. Neon Auth will be out of sync.");
+                }
+            } catch (syncErr) {
+                console.error("Neon Auth Sync Warning (Update):", syncErr.message);
+            }
+        }
+
+        await logAudit("USER_UPDATE", req.user.email, updatedUser.email, `Updated user details`);
+        res.json({ message: "User updated successfully" });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+};
+
+// Delete User (Owner/Admin)
+const adminDeleteUser = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const { role: creatorRole, gymId: creatorGymId, id: creatorId } = req.user;
+        const target = await prisma.user.findUnique({ where: { id: Number(id) } });
+
+        if (!target) return res.status(404).json({ error: "User not found" });
+
+        // Security: Cannot delete yourself
+        if (Number(id) === creatorId) {
+            return res.status(400).json({ error: "Cannot delete your own account" });
+        }
+
+        // Security: Admin can only delete users in their own branch
+        if (creatorRole === 'ADMIN' && target.gymId !== creatorGymId) {
+            return res.status(403).json({ error: "Access denied: User is in another branch" });
+        }
+
+        // Security: Cannot delete Owner
+        if (target.role === 'OWNER') {
+            return res.status(403).json({ error: "Cannot delete the Owner account" });
+        }
+
+        await prisma.user.delete({ where: { id: Number(id) } });
+
+        // Sync to Neon Auth: Force delete from Neon Auth as well
+        try {
+            // We use name='' because we are just deleting, it won't trigger sign-up if we don't pass password
+            // Actually, we should probably add a dedicated delete function to neonAuthSync, 
+            // but calling force=true without a password will trigger the delete block and then fail the sign-up (which is fine)
+            // Better: I'll just use the delete logic inside neonAuthSync by passing force=true.
+            await syncToNeonAuth('', target.email, '', true);
+        } catch (syncErr) {
+            console.error("Neon Auth Delete Sync Warning:", syncErr.message);
+        }
+
+        await logAudit("USER_DELETE", req.user.email, target.email, `Deleted user`);
+        res.json({ message: "User deleted successfully" });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
 };
 
@@ -84,5 +285,8 @@ module.exports = {
     getAuditLogs,
     getUsers,
     changeUserRole,
-    transferOwnership
+    transferOwnership,
+    adminCreateUser,
+    adminUpdateUser,
+    adminDeleteUser
 };

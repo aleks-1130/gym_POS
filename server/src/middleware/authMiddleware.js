@@ -116,31 +116,33 @@ const authenticateToken = async (req, res, next) => {
         // 1. Check User (Admin/Staff/Owner/Trainer)
         const user = await prisma.user.findFirst({
             where: { email: { equals: email, mode: 'insensitive' } },
-            select: { id: true, role: true, name: true, trainerId: true, sessionVersion: true }
+            select: { id: true, role: true, name: true, gymId: true, tenantId: true, trainerId: true, sessionVersion: true }
         });
         console.log('[DEBUG] User Search Result:', user);
 
-        if (user) {
-            userId = user.id;
-            userRole = user.role;
-            userName = user.name;
-            userTrainerId = user.trainerId;
-            userSessionVersion = Number(user.sessionVersion || 0);
-        } else {
-            // 2. Check Member
-            const member = await prisma.member.findFirst({
-                where: { email: { equals: email, mode: 'insensitive' } },
-                select: { id: true, firstName: true, sessionVersion: true }
-            });
-            console.log('[DEBUG] Member Search Result:', member);
+            if (user) {
+                userId = user.id;
+                userRole = user.role;
+                userName = user.name;
+                req.gymId = user.gymId || decodedPayload?.gymId || null;
+                userTrainerId = user.trainerId;
+                userSessionVersion = Number(user.sessionVersion || 0);
+            } else {
+                // 2. Check Member
+                const member = await prisma.member.findFirst({
+                    where: { email: { equals: email, mode: 'insensitive' } },
+                    select: { id: true, firstName: true, gymId: true, sessionVersion: true }
+                });
+                console.log('[DEBUG] Member Search Result:', member);
 
-            if (member) {
-                userId = member.id;
-                userRole = 'MEMBER';
-                userName = member.firstName;
-                userSessionVersion = Number(member.sessionVersion || 0);
+                if (member) {
+                    userId = member.id;
+                    userRole = 'MEMBER';
+                    userName = member.firstName;
+                    req.gymId = member.gymId || decodedPayload?.gymId || null;
+                    userSessionVersion = Number(member.sessionVersion || 0);
+                }
             }
-        }
 
         if (!userRole) {
             console.log('[DEBUG] User not found in local DB. Email:', email);
@@ -158,12 +160,31 @@ const authenticateToken = async (req, res, next) => {
             email,
             role: userRole,
             name: userName,
+            gymId: req.gymId,
+            tenantId: user?.tenantId || decodedPayload?.tenantId || null,
             trainerId: userTrainerId,
             neonSub: neonUserId,
             sessionVersion: userSessionVersion
         };
 
-        next();
+        // Cross-gym access for OWNER via header override
+        const gymHeader = req.headers['x-gym-id'];
+        if (gymHeader && userRole === 'OWNER') {
+            const requestedGymId = Number(gymHeader);
+            if (!Number.isNaN(requestedGymId)) {
+                req.gymId = requestedGymId;
+                req.user.gymId = requestedGymId;
+            }
+        }
+
+        const { runWithContext } = require('../utils/context');
+        runWithContext({ 
+            gymId: req.gymId, 
+            role: userRole, 
+            tenantId: req.user.tenantId 
+        }, () => {
+            next();
+        });
     } catch (err) {
         console.error('User sync failed:', err);
         const { isDatabaseUnreachableError } = require('../utils/prismaError');
