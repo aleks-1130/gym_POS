@@ -310,6 +310,45 @@ export default function Profile() {
 
             </section>
 
+            <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden mt-4">
+                <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/10">
+                    <div>
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                            <span className="material-icons-round text-yellow-400 text-base">star</span>
+                            Rewards History
+                        </h3>
+                        <p className="text-xs text-text-muted mt-0.5">Your points and activity ledger</p>
+                    </div>
+                    <div className="text-right">
+                         <span className="text-lg font-bold text-yellow-400">{member?.points || 0}</span>
+                         <p className="text-[10px] uppercase tracking-wider text-text-muted mt-0.5">Total Points</p>
+                    </div>
+                </div>
+                <div className="divide-y divide-white/5 max-h-64 overflow-y-auto">
+                    {member?.loyaltyTransactions?.length > 0 ? (
+                        member.loyaltyTransactions.map((tx) => (
+                            <div key={tx.id} className="flex flex-col gap-1 px-3 py-3 hover:bg-white/5 transition-colors">
+                                <div className="flex justify-between items-start">
+                                    <span className="text-[13px] font-semibold text-white">{tx.description || tx.type}</span>
+                                    <span className={`text-[13px] font-bold ${tx.type === 'REDEEMED' || tx.type === 'REVERSED' ? 'text-red-400' : 'text-emerald-400'}`}>
+                                        {tx.type === 'REDEEMED' || tx.type === 'REVERSED' ? '-' : '+'}{tx.points}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between items-center mt-1">
+                                    <span className="text-[11px] text-text-muted">{new Date(tx.createdAt).toLocaleDateString()} {new Date(tx.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-white/70 uppercase tracking-widest">{tx.type}</span>
+                                </div>
+                            </div>
+                        ))
+                    ) : (
+                        <div className="px-3 py-6 text-center text-[12px] text-text-muted flex flex-col items-center gap-2">
+                            <span className="material-icons-round text-2xl opacity-20">history</span>
+                            No reward history available yet.
+                        </div>
+                    )}
+                </div>
+            </section>
+
             <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
                 <div className="px-3 py-2.5 border-b border-white/10">
                     <h3 className="text-sm font-bold text-white">Settings</h3>

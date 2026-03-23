@@ -161,15 +161,23 @@ const managePoints = async (req, res) => {
     }
 };
 
+const loyaltyService = require('../../services/loyaltyService');
+
 const getHistory = async (req, res) => {
     try {
         const { id } = req.params;
+        
+        // Ensure starting balance reconciliation is run for this member
+        // so staff doesn't see a mismatched ledger!
+        await loyaltyService.reconcileMemberHistory({ memberId: Number(id) });
+
         const history = await prisma.loyaltyTransaction.findMany({
             where: { memberId: Number(id) },
             orderBy: { createdAt: 'desc' }
         });
         res.json(history);
     } catch (e) {
+        console.error("Reconciliation/Fetch Error in Loyalty Manager:", e);
         res.status(500).json({ error: "Failed to fetch loyalty history" });
     }
 };

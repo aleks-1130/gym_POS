@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
@@ -646,6 +646,64 @@ export default function MemberDetail() {
                             </article>
                         ))}
                         {notes.length === 0 && <p className="text-sm text-text-muted">No staff notes available.</p>}
+                    </div>
+                </section>
+            )}
+
+            {activeTab === 'history' && (
+                <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
+                        <div>
+                            <h3 className="text-white font-bold flex items-center gap-2">
+                                <span className="material-icons-round text-yellow-400 text-base">star</span>
+                                Rewards History
+                            </h3>
+                            <p className="text-xs text-text-muted mt-0.5">Member's loyalty points and activity ledger</p>
+                        </div>
+                        <div className="text-right">
+                            <span className="text-xl font-bold text-yellow-400">{member?.points || 0}</span>
+                            <p className="text-[10px] uppercase tracking-wider text-text-muted mt-0.5">Total Points</p>
+                        </div>
+                    </div>
+                    <div className="overflow-x-auto max-h-[620px]">
+                        <table className="w-full min-w-[620px]">
+                            <thead className="bg-white/5 sticky top-0">
+                                <tr className="text-left">
+                                    <th className="px-5 py-2.5 text-[11px] uppercase tracking-wide text-text-muted">Date</th>
+                                    <th className="px-5 py-2.5 text-[11px] uppercase tracking-wide text-text-muted">Type</th>
+                                    <th className="px-5 py-2.5 text-[11px] uppercase tracking-wide text-text-muted">Description</th>
+                                    <th className="px-5 py-2.5 text-[11px] uppercase tracking-wide text-text-muted text-right">Points</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5">
+                                {member?.loyaltyTransactions?.length > 0 ? (
+                                    member.loyaltyTransactions.map((tx) => (
+                                        <tr key={tx.id} className="hover:bg-white/5 transition-colors">
+                                            <td className="px-5 py-3 text-sm text-white">
+                                                {new Date(tx.createdAt).toLocaleDateString()}
+                                                <div className="text-[11px] text-text-muted mt-0.5">{new Date(tx.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                                            </td>
+                                            <td className="px-5 py-3">
+                                                <span className="text-[10px] px-2 py-1 rounded-md bg-white/10 text-white/80 uppercase tracking-widest">{tx.type}</span>
+                                            </td>
+                                            <td className="px-5 py-3 text-sm text-text-secondary">{tx.description || tx.type}</td>
+                                            <td className={`px-5 py-3 text-right font-bold ${tx.type === 'REDEEMED' || tx.type === 'REVERSED' ? 'text-red-400' : 'text-emerald-400'}`}>
+                                                {tx.type === 'REDEEMED' || tx.type === 'REVERSED' ? '-' : '+'}{tx.points}
+                                            </td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan="4" className="px-5 py-12 text-center text-sm text-text-muted">
+                                            <div className="flex flex-col items-center gap-2">
+                                                <span className="material-icons-round text-3xl opacity-20">history</span>
+                                                No reward history available yet.
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
                     </div>
                 </section>
             )}

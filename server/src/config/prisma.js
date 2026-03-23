@@ -21,6 +21,7 @@ const prisma = prismaClient.$extends({
 
         // Apply gymId filter and auto-include for Product stock
         if (['findFirst', 'findMany', 'findUnique', 'count', 'aggregate', 'groupBy'].includes(operation)) {
+          args.where = args.where || {}; // Ensure args.where is defined
           if (isGlobalModel) {
             if (operation === 'findUnique') {
               // findUnique does not support OR. Skip injection to avoid Prisma error.

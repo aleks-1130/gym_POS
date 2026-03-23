@@ -50,7 +50,8 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
             : []);
 
     const subtotal = receiptItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
-    const total = Math.max(0, subtotal - discount);
+    const couponDiscount = transaction?.couponDiscount || 0;
+    const total = Math.max(0, subtotal - discount - couponDiscount);
     const vatRate = Number.isFinite(user?.gym?.taxRate) && user?.gym?.taxRate >= 0 ? user.gym.taxRate : 12;
 
     const memberFullName = [member?.firstName, member?.lastName].filter(Boolean).join(' ').trim();

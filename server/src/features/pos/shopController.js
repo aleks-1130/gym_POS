@@ -197,9 +197,14 @@ const checkout = async (req, res) => {
             }
 
             if (memberId && pointsAwarded > 0) {
-                await tx.member.update({
-                    where: { id: memberId },
-                    data: { points: { increment: pointsAwarded } }
+                const loyaltyService = require('../../services/loyaltyService');
+                await loyaltyService.recordPoints({
+                    memberId,
+                    points: pointsAwarded,
+                    type: 'EARNED',
+                    description: 'Points earned from in-app store purchase',
+                    gymId: require('../../utils/context').getGymId(),
+                    tx
                 });
             }
             if (!memberId && isTrainer && pointsAwarded > 0) {

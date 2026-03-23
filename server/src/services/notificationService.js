@@ -144,7 +144,7 @@ const notificationService = {
     /**
      * Specifically send a payment receipt
      */
-    async sendReceipt({ memberId, amount, method, items, receiptId, referenceId, gymId = null }) {
+    async sendReceipt({ memberId, amount, method, items, receiptId, referenceId, gymId = null, taxAmount = 0, discountAmount = 0, subtotal = 0, gymName = null, gymLogo = null, cashierName, cashTendered, changeDue, paymentDate, companyId }) {
         try {
             const member = memberId ? await prisma.member.findUnique({
                 where: { id: parseInt(memberId) },
@@ -153,14 +153,28 @@ const notificationService = {
 
             const payload = {
                 eventType: 'PAYMENT_RECEIPT',
-                name: member ? `${member.firstName} ${member.lastName}` : 'Valued Customer',
-                email: member?.email,
+                name: member ? `${member.firstName} ${member.lastName}` : 'Walk-in Customer',
+                email: member?.email || '',
                 amount,
                 method,
                 items: Array.isArray(items) ? items : [items],
                 receiptId,
-                referenceId
+                referenceId,
+                taxAmount,
+                discountAmount,
+                subtotal,
+                gymName,
+                gymLogo,
+                cashierName,
+                cashTendered,
+                changeDue,
+                paymentDate,
+                companyId,
+                branchName: gymName,
+                heartbeat: 'FINAL_V5'
             };
+
+            console.log('[NotificationService] DISPATCHING TO N8N:', JSON.stringify(payload, null, 2));
 
             // Fetch Preferences for receipt
             let prefs = null;
@@ -187,11 +201,11 @@ const notificationService = {
                 });
             }
 
-            if (process.env.N8N_NOTIFICATIONS_WEBHOOK_URL && (member?.email || !memberId) && shouldSendEmail) {
-                console.log(`[NotificationService] Dispatching receipt to unified-notifications webhook for ${member?.email || 'Walk-in'}`);
+            if (process.env.N8N_NOTIFICATIONS_WEBHOOK_URL && shouldSendEmail && payload.email) {
+                console.log(`[NotificationService] Dispatching receipt ${receiptId} to webhook for ${payload.email}`);
                 await sendEmailWebhook(process.env.N8N_NOTIFICATIONS_WEBHOOK_URL, payload);
             } else {
-                console.warn(`[NotificationService] Skipped receipt webhook (URL missing, disabled by user, or no recipient email)`);
+                console.warn(`[NotificationService] Skipped receipt webhook (URL missing, disabled by user, or no email address provided)`);
             }
         } catch (error) {
             console.error('[NotificationService] Error sending receipt:', error);

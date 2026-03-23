@@ -227,7 +227,7 @@ const getDashboardStats = async (req, res) => {
                 _sum: { amount: true },
                 where: { date: { gte: queryStart, lte: queryEnd }, type: 'MEMBERSHIP', status: { in: ['COMPLETED', 'RETURNED'] } }
             }),
-            getRecentActivity(),
+            getRecentActivity(req.user?.gymId || req.gymId),
             // 6-Month History (exclude voided) - Calculate start range using PHT
             prisma.payment.groupBy({
                 by: ['date'],
@@ -445,9 +445,10 @@ const getDashboardStats = async (req, res) => {
     }
 };
 
-const getRecentActivity = async () => {
+const getRecentActivity = async (gymId) => {
     // Fetch last 5 payments with member info
     const payments = await prisma.payment.findMany({
+        where: gymId ? { gymId } : undefined,
         take: 5,
         orderBy: { date: 'desc' },
         include: { member: { select: { firstName: true, lastName: true } } }

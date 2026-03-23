@@ -1232,7 +1232,16 @@ const getMemberProfile = async (req, res) => {
             include: { plan: true, payments: { orderBy: { date: 'desc' } }, accessLogs: { orderBy: { checkIn: 'desc' }, take: 20 }, membershipPeriods: { include: { plan: true }, orderBy: { startDate: 'desc' } } }
         });
         if (!member) return res.status(404).json({ error: "Member not found" });
-        res.json(member);
+
+        const loyaltyService = require('../../services/loyaltyService');
+        await loyaltyService.reconcileMemberHistory({ memberId: Number(id) }).catch(err => console.error('Failed to reconcile loyalty history:', err.message));
+
+        const auditedMember = await prisma.member.findUnique({
+            where: { id: Number(id) },
+            include: { plan: true, loyaltyTransactions: { orderBy: { createdAt: 'desc' } }, payments: { orderBy: { date: 'desc' } }, accessLogs: { orderBy: { checkIn: 'desc' }, take: 20 }, membershipPeriods: { include: { plan: true }, orderBy: { startDate: 'desc' } } }
+        });
+
+        res.json(auditedMember);
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -1773,9 +1782,14 @@ const createMember = async (req, res) => {
             });
 
             if (pointsAwarded > 0) {
-                await tx.member.update({
-                    where: { id: createdMember.id },
-                    data: { points: { increment: pointsAwarded } }
+                const loyaltyService = require('../../services/loyaltyService');
+                await loyaltyService.recordPoints({
+                    memberId: createdMember.id,
+                    points: pointsAwarded,
+                    type: 'EARNED',
+                    description: `Points earned from Member Registration (${plan.name})`,
+                    gymId,
+                    tx
                 });
             }
 
@@ -1955,9 +1969,13 @@ const renewMembership = async (req, res) => {
         });
 
         if (pointsAwarded > 0) {
-            await prisma.member.update({
-                where: { id: Number(id) },
-                data: { points: { increment: pointsAwarded } }
+            const loyaltyService = require('../../services/loyaltyService');
+            await loyaltyService.recordPoints({
+                memberId: Number(id),
+                points: pointsAwarded,
+                type: 'EARNED',
+                description: `Points earned from Membership Renewal (${planName})`,
+                gymId: member.gymId
             });
         }
 
@@ -2065,10 +2083,21 @@ const purchaseClassSessionPackage = async (req, res) => {
                 where: { id: memberId },
                 data: {
                     classSessionsRemaining: { increment: Number(packageRecord.sessions) },
-                    classSessionsPurchased: { increment: Number(packageRecord.sessions) },
-                    ...(pointsAwarded > 0 ? { points: { increment: pointsAwarded } } : {})
+                    classSessionsPurchased: { increment: Number(packageRecord.sessions) }
                 }
             });
+
+            if (pointsAwarded > 0) {
+                const loyaltyService = require('../../services/loyaltyService');
+                await loyaltyService.recordPoints({
+                    memberId,
+                    points: pointsAwarded,
+                    type: 'EARNED',
+                    description: `Points earned from Class Package (${packageRecord.name})`,
+                    gymId: require('../../utils/context').getGymId(),
+                    tx
+                });
+            }
 
             return { payment, member: updatedMember };
         });

@@ -597,19 +597,15 @@ const createPayment = async (req, res) => {
             }
 
             if (resolvedMemberId && pointsAwarded > 0) {
-                await tx.member.update({
-                    where: { id: Number(resolvedMemberId) },
-                    data: { points: { increment: pointsAwarded } }
-                });
-                
-                await tx.loyaltyTransaction.create({
-                    data: {
-                        memberId: Number(resolvedMemberId),
-                        points: pointsAwarded,
-                        type: 'EARNED',
-                        description: `Points earned from purchase (Ref: ${referenceId || 'N/A'})`,
-                        gymId: gym.id
-                    }
+                const loyaltyService = require('../../services/loyaltyService');
+                await loyaltyService.recordPoints({
+                    memberId: Number(resolvedMemberId),
+                    points: pointsAwarded,
+                    type: 'EARNED',
+                    description: `Points earned from purchase (Ref: ${referenceId || 'N/A'})`,
+                    gymId: gym.id,
+                    transactionId: createdPayment.id,
+                    tx
                 });
             }
 
@@ -642,14 +638,36 @@ const createPayment = async (req, res) => {
 
         // After successful payment, trigger notification/receipt
         if (payment && resolvedMemberId) {
+            const taxAmount = Number(payment.taxAmount || 0);
+            const rawDiscount = Number(payment.discount || 0);
+            const couponDiscount = Number(payment.couponDiscount || 0);
+            const totalDiscount = rawDiscount + couponDiscount;
+            const payable = Number(payment.payableAmount || payment.amount);
+            const estimatedSubtotal = payable + totalDiscount - taxAmount;
+
+            console.log(`[PaymentController] Triggering notification for payment ${payment.id}. Subtotal: ${estimatedSubtotal}`);
+
+            console.log(`[PaymentController] Triggering notification. Amount: ${payment.amount}, Ref: ${payment.referenceId}`);
+            
             notificationService.sendReceipt({
-                memberId: resolvedMemberId,
-                amount: payment.amount,
-                method: payment.method,
+                memberId: Number(resolvedMemberId),
+                amount: Number(payment.amount), 
+                method: String(payment.method),
                 items: normalizedItems,
-                receiptId: payment.referenceId || `REC-${payment.id}`,
-                referenceId: payment.referenceId,
-                gymId: req.user.gymId
+                receiptId: String(payment.referenceId || `REC-${payment.id}`),
+                referenceId: String(payment.referenceId || ''),
+                gymId: Number(req.user.gymId || req.gymId || gym.id),
+                taxAmount: Number(taxAmount),
+                discountAmount: Number(totalDiscount),
+                subtotal: Number(estimatedSubtotal),
+                gymName: String(gym.name || 'FITOS'),
+                gymLogo: String(gym.logoUrl || process.env.GYM_LOGO_URL || ''),
+                cashierName: String(req.user.name || req.user.firstName || 'Admin'),
+                cashTendered: payment.cashTendered ? Number(payment.cashTendered) : 0,
+                changeDue: payment.changeDue ? Number(payment.changeDue) : 0,
+                paymentDate: payment.date ? new Date(payment.date).toISOString() : new Date().toISOString(),
+                companyId: String(gym.companyId || 'FITOS_GYM_001'),
+                heartbeat: 'CONTROLLER_V4'
             }).catch(err => console.error('Failed to send receipt notification:', err));
         }
 

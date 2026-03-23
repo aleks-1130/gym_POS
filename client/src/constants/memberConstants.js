@@ -23,6 +23,7 @@ export const ACTIVITY_FILTERS = {
 export const TABS = [
     { id: 'overview', label: 'Overview', icon: 'dashboard' },
     { id: 'activity', label: 'Activity', icon: 'history' },
+    { id: 'history', label: 'History', icon: 'star' },
     { id: 'payments', label: 'Payments', icon: 'receipt_long' },
     { id: 'notes', label: 'Notes', icon: 'description' }
 ];
