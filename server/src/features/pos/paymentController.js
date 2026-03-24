@@ -95,13 +95,18 @@ const getPaymentDetails = async (req, res) => {
         return res.sendStatus(403);
     }
 
+    const { tenantId } = req.user;
     try {
-        const payment = await prisma.payment.findUnique({
-            where: { id: Number(id) },
+        const payment = await prisma.payment.findFirst({
+            where: { 
+                id: Number(id),
+                gym: { tenantId } // Enforce Tenant Isolation
+            },
             include: {
                 member: true,
                 items: true,
-                cashier: { select: { id: true, name: true, role: true } }
+                cashier: { select: { id: true, name: true, role: true } },
+                collections: true
             }
         });
         if (!payment) return res.status(404).json({ error: "Payment not found" });
@@ -158,10 +163,13 @@ const getPaymentDetails = async (req, res) => {
             }
         }
 
-        const collections = [{
-            amount: Number(payment.payableAmount || payment.amount),
-            financial_institution_id: payment.financialInstitutionId || 'N/A'
-        }];
+        const collections = payment.collections && payment.collections.length > 0
+            ? payment.collections
+            : [{
+                method: payment.method || 'N/A',
+                amount: Number(payment.payableAmount || payment.amount),
+                financialInstitutionId: payment.financialInstitutionId || 'N/A'
+            }];
 
         res.json({
             ...payment,
@@ -175,10 +183,14 @@ const getPaymentDetails = async (req, res) => {
 
 // POS Payment Creation
 const createPayment = async (req, res) => {
-    const { amount, type, method, memberId, items, discount, cashTendered, changeDue, externalRef, externalDate, couponCode, currency } = req.body;
+    const { amount, type, method, memberId, items, discount, cashTendered, changeDue, externalRef, externalDate, couponCode, currency, collections: bodyCollections } = req.body;
     const resolvedMemberId = req.user.role === 'MEMBER'
         ? req.user.id
         : (memberId ? Number(memberId) : null);
+
+    let productById = new Map();
+    let planById = new Map();
+    let classPackageById = new Map();
 
     try {
         const badRequest = (message) => {
@@ -190,8 +202,35 @@ const createPayment = async (req, res) => {
         if (!type) badRequest("Payment type is required");
 
         const { PAYMENT_METHODS } = require('../../config/businessConfig');
-        const allowedMethods = PAYMENT_METHODS.map(m => m.value);
-        if (!allowedMethods.includes(method)) badRequest("Invalid payment method");
+        const allowedMethods = PAYMENT_METHODS.map(m => m.value).filter(m => m !== 'LOYALTY_POINTS'); // Per user request, points not for split
+
+        // Normalize collections
+        let finalCollections = [];
+        if (Array.isArray(bodyCollections) && bodyCollections.length > 0) {
+            finalCollections = bodyCollections.map(c => ({
+                method: String(c.method).toUpperCase(),
+                amount: Number(c.amount),
+                financialInstitutionId: c.financialInstitutionId || c.financial_institution_id || null
+            }));
+
+            // Validate methods
+            for (const c of finalCollections) {
+                if (!allowedMethods.includes(c.method)) {
+                    badRequest(`Invalid payment method: ${c.method}`);
+                }
+                if (c.amount <= 0) badRequest("Collection amount must be greater than 0");
+            }
+        } else {
+            // Fallback to single method from root
+            if (!method) badRequest("Payment method or collections required");
+            if (!allowedMethods.includes(String(method).toUpperCase())) badRequest("Invalid payment method");
+            
+            finalCollections = [{
+                method: String(method).toUpperCase(),
+                amount: Number(amount),
+                financialInstitutionId: req.body.financialInstitutionId || null
+            }];
+        }
 
         const normalizedDiscount = discount !== undefined ? Number(discount) : 0;
         if (!Number.isFinite(normalizedDiscount) || normalizedDiscount < 0 || normalizedDiscount > 100) {
@@ -207,14 +246,18 @@ const createPayment = async (req, res) => {
             }))
             : [];
 
+        const { tenantId } = req.user;
         const hasClassPackageItems = normalizedItems.some((item) => item.type === 'CLASS_PACKAGE');
         if (hasClassPackageItems) {
             if (!resolvedMemberId) badRequest("Member ID required for class package purchase");
-            const member = await prisma.member.findUnique({
-                where: { id: Number(resolvedMemberId) },
+            const member = await prisma.member.findFirst({
+                where: { 
+                    id: Number(resolvedMemberId),
+                    gym: { tenantId } // Enforce Tenant Isolation
+                },
                 select: { id: true, status: true, expiryDate: true }
             });
-            if (!member) badRequest("Member not found");
+            if (!member) badRequest("Member not found or access denied");
             if (isMemberMembershipExpired(member)) {
                 badRequest("Cannot add class sessions for expired membership. Renew membership first.");
             }
@@ -243,7 +286,10 @@ const createPayment = async (req, res) => {
             const [products, plans, classPackages] = await Promise.all([
                 productIds.length
                     ? prisma.product.findMany({
-                        where: { id: { in: productIds } },
+                        where: { 
+                            id: { in: productIds },
+                            tenantId: req.user.tenantId
+                        },
                         select: { 
                             id: true, 
                             name: true, 
@@ -254,21 +300,28 @@ const createPayment = async (req, res) => {
                     : Promise.resolve([]),
                 planIds.length
                     ? prisma.plan.findMany({
-                        where: { id: { in: planIds } },
+                        where: { 
+                            id: { in: planIds },
+                            tenantId: req.user.tenantId
+                        },
                         select: { id: true, name: true, price: true, duration: true, includesClasses: true, includedClassSessions: true }
                     })
                     : Promise.resolve([]),
                 classPackageIds.length
                     ? prisma.classSessionPackage.findMany({
-                        where: { id: { in: classPackageIds }, isActive: true },
+                        where: { 
+                            id: { in: classPackageIds }, 
+                            isActive: true,
+                            tenantId: req.user.tenantId
+                        },
                         select: { id: true, name: true, price: true, sessions: true }
                     })
                     : Promise.resolve([])
             ]);
 
-            const productById = new Map(products.map((product) => [product.id, product]));
-            const planById = new Map(plans.map((plan) => [plan.id, plan]));
-            const classPackageById = new Map(classPackages.map((pkg) => [pkg.id, pkg]));
+            productById = new Map(products.map((product) => [product.id, product]));
+            planById = new Map(plans.map((plan) => [plan.id, plan]));
+            classPackageById = new Map(classPackages.map((pkg) => [pkg.id, pkg]));
 
             authoritativeAmount = 0;
                 for (const item of normalizedItems) {
@@ -327,7 +380,16 @@ const createPayment = async (req, res) => {
             
             if (!appliedCoupon) {
                 // Fallback to PromoCode
-                appliedPromo = await prisma.promoCode.findFirst({ where: { code: codeUpper } });
+                appliedPromo = await prisma.promoCode.findFirst({ 
+                    where: { 
+                        code: codeUpper,
+                        tenantId: req.user.tenantId, // Enforce Tenant Isolation
+                        OR: [
+                            { gymId: req.user.gymId },
+                            { gymId: null }
+                        ]
+                    } 
+                });
                 if (!appliedPromo) badRequest('Coupon / Promo code not found');
                 
                 if (!appliedPromo.isActive) badRequest('Promo code is inactive');
@@ -383,7 +445,11 @@ const createPayment = async (req, res) => {
         
         // Resolve Financial Institution ID from current gym settings
         const fi = await prisma.financialInstitution.findFirst({
-            where: { method, isActive: true }
+            where: { 
+                method, 
+                isActive: true,
+                gym: { tenantId } // Enforce Tenant Isolation
+            }
         });
         const financialInstitutionId = fi?.financialInstitutionId || 'EXTERNAL';
 
@@ -432,7 +498,8 @@ const createPayment = async (req, res) => {
                 externalDate: normalizedExternalDate,
                 discount: normalizedDiscount,
                 couponCode: appliedCoupon ? appliedCoupon.code : appliedPromo ? appliedPromo.code : null,
-                couponDiscount: Number(couponDiscountValue.toFixed(2))
+                couponDiscount: Number(couponDiscountValue.toFixed(2)),
+                tenantId: req.user.tenantId
             };
 
             const removableOptionalFields = new Set(['discount', 'cashTendered', 'changeDue', 'externalRef', 'externalDate', 'payableAmount', 'taxAmount', 'taxableAmount', 'roundingAdjustment', 'currency', 'referenceId', 'companyId', 'financialInstitutionId']);
@@ -473,7 +540,10 @@ const createPayment = async (req, res) => {
                 const [products, plans, classPackages] = await Promise.all([
                     productIds.length
                         ? tx.product.findMany({
-                            where: { id: { in: productIds } },
+                            where: { 
+                                id: { in: productIds },
+                                tenantId: req.user.tenantId
+                            },
                             select: { 
                                 id: true, 
                                 name: true, 
@@ -484,13 +554,20 @@ const createPayment = async (req, res) => {
                         : Promise.resolve([]),
                     planIds.length
                         ? tx.plan.findMany({
-                            where: { id: { in: planIds } },
+                            where: { 
+                                id: { in: planIds },
+                                tenantId: req.user.tenantId
+                            },
                             select: { id: true, name: true, price: true, duration: true, includesClasses: true, includedClassSessions: true }
                         })
                         : Promise.resolve([]),
                     classPackageIds.length
                         ? tx.classSessionPackage.findMany({
-                            where: { id: { in: classPackageIds }, isActive: true },
+                            where: { 
+                                id: { in: classPackageIds }, 
+                                isActive: true,
+                                tenantId: req.user.tenantId
+                            },
                             select: { id: true, name: true, price: true, sessions: true }
                         })
                         : Promise.resolve([])
@@ -531,7 +608,8 @@ const createPayment = async (req, res) => {
                                 ? Number(plan.price)
                                 : item.type === 'CLASS_PACKAGE'
                                     ? Number(classPackage.price)
-                                    : (parseFloat(item.price) || 0)
+                                    : (parseFloat(item.price) || 0),
+                        tenantId: req.user.tenantId
                     };
                 });
                 try {
@@ -573,6 +651,7 @@ const createPayment = async (req, res) => {
                             where: {
                                 productId: item.productId,
                                 gymId: req.user.gymId,
+                                tenantId: req.user.tenantId,
                                 quantity: { gte: item.quantity }
                             },
                             data: { quantity: { decrement: item.quantity } }
@@ -622,22 +701,26 @@ const createPayment = async (req, res) => {
                 });
             }
 
-            // Create PaymentCollection record for split payment support (even if single method)
-            await tx.paymentCollection.create({
-                data: {
-                    paymentId: createdPayment.id,
-                    amount: finalPayableAmount,
-                    method,
-                    financialInstitutionId
-                }
-            });
+            // Create PaymentCollection records for split payment support
+            for (const col of finalCollections) {
+                await tx.paymentCollection.create({
+                    data: {
+                        payment: { connect: { id: createdPayment.id } },
+                        amount: col.amount,
+                        method: col.method,
+                        financialInstitutionId: col.financialInstitutionId || 'N/A',
+                        tenantId: req.user.tenantId,
+                        gym: (req.user.gymId || gym.id) ? { connect: { id: req.user.gymId || gym.id } } : undefined
+                    }
+                });
+            }
 
 
             return createdPayment;
         });
 
         // After successful payment, trigger notification/receipt
-        if (payment && resolvedMemberId) {
+        if (payment && (resolvedMemberId || req.body.customerEmail)) {
             const taxAmount = Number(payment.taxAmount || 0);
             const rawDiscount = Number(payment.discount || 0);
             const couponDiscount = Number(payment.couponDiscount || 0);
@@ -646,14 +729,57 @@ const createPayment = async (req, res) => {
             const estimatedSubtotal = payable + totalDiscount - taxAmount;
 
             console.log(`[PaymentController] Triggering notification for payment ${payment.id}. Subtotal: ${estimatedSubtotal}`);
+         // Check for rounding or small mismatches
+        if (Math.abs(authoritativeAmount - finalPayableAmount) > 0.05) {
+            console.warn(`[PaymentController] Totals mismatch: Auth=${authoritativeAmount}, FinalPayable=${finalPayableAmount}`);
+        }
+
+        // Validate collections total matches finalPayableAmount
+        const collectionTotal = finalCollections.reduce((sum, c) => sum + c.amount, 0);
+        if (Math.abs(collectionTotal - finalPayableAmount) > 0.1) {
+            badRequest(`Payment collections total (₱${collectionTotal.toFixed(2)}) must equal payable total (₱${finalPayableAmount.toFixed(2)})`);
+        }
 
             console.log(`[PaymentController] Triggering notification. Amount: ${payment.amount}, Ref: ${payment.referenceId}`);
             
+            const enrichedItems = normalizedItems.map(item => {
+                let name = item.name;
+                let unitPrice = item.price || item.unitPrice;
+                
+                if (item.type === 'PRODUCT') {
+                    const p = productById.get(item.productId);
+                    if (p) {
+                        name = p.name;
+                        unitPrice = p.price;
+                    }
+                } else if (item.type === 'PLAN') {
+                    const pl = planById.get(Number(item.id || item.planId || item.productId));
+                    if (pl) {
+                        name = pl.name;
+                        unitPrice = pl.price;
+                    }
+                } else if (item.type === 'CLASS_PACKAGE') {
+                    const cp = classPackageById.get(Number(item.id || item.classPackageId || item.packageId || item.productId));
+                    if (cp) {
+                        name = cp.name;
+                        unitPrice = cp.price;
+                    }
+                }
+                
+                return {
+                    ...item,
+                    name: name || 'Item',
+                    unitPrice: Number(unitPrice || 0)
+                };
+            });
+
             notificationService.sendReceipt({
-                memberId: Number(resolvedMemberId),
+                memberId: resolvedMemberId ? Number(resolvedMemberId) : null,
+                customerEmail: req.body.customerEmail || null,
+                customerName: req.body.customerName || null,
                 amount: Number(payment.amount), 
-                method: String(payment.method),
-                items: normalizedItems,
+                method: finalCollections.length > 1 ? 'SPLIT' : finalCollections[0].method,
+                items: enrichedItems,
                 receiptId: String(payment.referenceId || `REC-${payment.id}`),
                 referenceId: String(payment.referenceId || ''),
                 gymId: Number(req.user.gymId || req.gymId || gym.id),
@@ -667,7 +793,8 @@ const createPayment = async (req, res) => {
                 changeDue: payment.changeDue ? Number(payment.changeDue) : 0,
                 paymentDate: payment.date ? new Date(payment.date).toISOString() : new Date().toISOString(),
                 companyId: String(gym.companyId || 'FITOS_GYM_001'),
-                heartbeat: 'CONTROLLER_V4'
+                collections: finalCollections, // Send full collections to N8N
+                heartbeat: 'CONTROLLER_SPLIT_PAY'
             }).catch(err => console.error('Failed to send receipt notification:', err));
         }
 
@@ -682,14 +809,9 @@ const createPayment = async (req, res) => {
             }
         }
 
-        const collections = [{
-            amount: Number(payment.payableAmount || payment.amount),
-            financial_institution_id: payment.financialInstitutionId
-        }];
-
         res.json({
             ...payment,
-            collections
+            collections: finalCollections
         });
     } catch (e) {
         res.status(e.status || 500).json({ error: e.message || "Payment failed" });
@@ -697,19 +819,25 @@ const createPayment = async (req, res) => {
 };
 
 const getAllPayments = async (req, res) => {
+    const { tenantId } = req.user;
+
     // Member: see own payments
     if (req.user.role === 'MEMBER') {
-        const videos = await prisma.payment.findMany({
-            where: { memberId: req.user.id },
+        const payments = await prisma.payment.findMany({
+            where: { 
+                memberId: req.user.id,
+                gym: { tenantId } // Enforce Tenant Isolation
+            },
             take: 50,
             orderBy: { date: 'desc' }
         });
-        return res.json(videos);
+        return res.json(payments);
     }
 
     if (req.user.role === 'STAFF') {
         const payments = await prisma.payment.findMany({
             where: {
+                gym: { tenantId }, // Enforce Tenant Isolation
                 OR: [
                     { cashierId: req.user.id },
                     { type: 'STORE_SALE' },
@@ -730,7 +858,9 @@ const getAllPayments = async (req, res) => {
 
     // Staff/Admin: see all
     const { startDate, endDate, page, limit } = req.query;
-    const where = {};
+    const where = {
+        gym: { tenantId } // Enforce Tenant Isolation
+    };
     if (startDate || endDate) {
         const date = {};
         if (startDate) {
@@ -798,7 +928,8 @@ const getRefunds = async (req, res) => {
         }
         const targetStatuses = normalizedType === 'ALL' ? ['VOIDED', 'RETURNED'] : [normalizedType];
         const where = {
-            status: { in: targetStatuses }
+            status: { in: targetStatuses },
+            gym: { tenantId: req.user.tenantId } // Enforce Tenant Isolation
         };
 
         if (startDate && endDate) {
@@ -872,9 +1003,13 @@ const returnPaymentItems = async (req, res) => {
         if (!pin || !(await bcrypt.compare(String(pin), config.returnPinHash))) {
             return res.status(403).json({ error: "Invalid PIN" });
         }
+        const { tenantId } = req.user;
 
-        const payment = await prisma.payment.findUnique({
-            where: { id: paymentId },
+        const payment = await prisma.payment.findFirst({
+            where: { 
+                id: paymentId,
+                gym: { tenantId } // Enforce Tenant Isolation
+            },
             include: {
                 items: true,
                 cashier: { select: { id: true, role: true } }
@@ -921,11 +1056,17 @@ const returnPaymentItems = async (req, res) => {
             // 1. Restore stock and mark items as returned
             for (const { item, returnQty } of validReturnItems) {
                 await tx.paymentItem.update({
-                    where: { id: item.id },
+                    where: { 
+                        id: item.id,
+                        tenantId // Enforce Tenant Isolation
+                    },
                     data: { returnedQuantity: { increment: returnQty } }
                 });
                 await tx.product.update({
-                    where: { id: item.productId },
+                    where: { 
+                        id: item.productId,
+                        tenantId // Enforce Tenant Isolation
+                    },
                     data: { stock: { increment: returnQty } }
                 });
             }
@@ -933,7 +1074,12 @@ const returnPaymentItems = async (req, res) => {
             // 2. Reverse loyalty points if applicable
             if (pointsReversal > 0) {
                 if (payment.memberId) {
-                    const member = await tx.member.findUnique({ where: { id: payment.memberId } });
+                    const member = await tx.member.findFirst({ 
+                        where: { 
+                            id: payment.memberId,
+                            tenantId // Enforce Tenant Isolation
+                        } 
+                    });
                     if (member) {
                         await tx.member.update({
                             where: { id: payment.memberId },
@@ -974,16 +1120,20 @@ const voidPayment = async (req, res) => {
     const paymentId = Number(req.params.id);
 
     try {
-        const config = await getPosConfig();
+        const config = await getPosConfig(req.user.gymId);
         if (!config.voidPinHash) {
             return res.status(400).json({ error: "Void PIN is not configured" });
         }
         if (!pin || !(await bcrypt.compare(String(pin), config.voidPinHash))) {
             return res.status(403).json({ error: "Invalid PIN" });
         }
+        const { tenantId } = req.user;
 
-        const payment = await prisma.payment.findUnique({
-            where: { id: paymentId },
+        const payment = await prisma.payment.findFirst({
+            where: { 
+                id: paymentId,
+                gym: { tenantId } // Enforce Tenant Isolation
+            },
             include: {
                 items: true,
                 cashier: { select: { id: true, role: true } }
@@ -1006,7 +1156,10 @@ const voidPayment = async (req, res) => {
             for (const item of payment.items) {
                 if (item.productId) {
                     await tx.product.update({
-                        where: { id: item.productId },
+                        where: { 
+                            id: item.productId,
+                            tenantId // Enforce Tenant Isolation
+                        },
                         data: { stock: { increment: item.quantity } }
                     });
                 }
@@ -1015,7 +1168,12 @@ const voidPayment = async (req, res) => {
             // 2. Reverse loyalty points if applicable
             if (pointsReversal > 0) {
                 if (payment.memberId) {
-                    const member = await tx.member.findUnique({ where: { id: payment.memberId } });
+                    const member = await tx.member.findFirst({ 
+                        where: { 
+                            id: payment.memberId,
+                            tenantId // Enforce Tenant Isolation
+                        } 
+                    });
                     if (member) {
                         await tx.member.update({
                             where: { id: payment.memberId },
@@ -1023,7 +1181,12 @@ const voidPayment = async (req, res) => {
                         });
                     }
                 } else if (trainerBuyerId) {
-                    const trainerUser = await tx.user.findUnique({ where: { id: trainerBuyerId } });
+                    const trainerUser = await tx.user.findFirst({ 
+                        where: { 
+                            id: trainerBuyerId,
+                            tenantId // Enforce Tenant Isolation
+                        } 
+                    });
                     if (trainerUser) {
                         await tx.user.update({
                             where: { id: trainerBuyerId },
@@ -1053,8 +1216,8 @@ const voidPayment = async (req, res) => {
 const getPosSettings = async (req, res) => {
     try {
         const [config, receiptSettings] = await Promise.all([
-            getPosConfig(),
-            getReceiptSettings()
+            getPosConfig(req.user.gymId),
+            getReceiptSettings(req.user.gymId)
         ]);
         const discountPresets = await getStoredDiscountPresets(req.user.gymId);
         res.json({
@@ -1079,8 +1242,8 @@ const updatePosSettings = async (req, res) => {
 
         if (!hasVoidPinInput && !hasReturnPinInput && !hasReceiptSettingsInput && !hasDiscountPresetsInput) {
             const [config, currentReceiptSettings] = await Promise.all([
-                getPosConfig(),
-                getReceiptSettings()
+                getPosConfig(req.user.gymId),
+                getReceiptSettings(req.user.gymId)
             ]);
             return res.json({
                 message: "No changes submitted",
@@ -1137,7 +1300,7 @@ const updatePosSettings = async (req, res) => {
 
         let savedReceiptSettings = null;
         if (hasReceiptSettingsInput) {
-            savedReceiptSettings = await saveReceiptSettings(receiptSettings || {});
+            savedReceiptSettings = await saveReceiptSettings(req.user.gymId, receiptSettings || {});
         }
 
         res.json({
@@ -1153,7 +1316,7 @@ const updatePosSettings = async (req, res) => {
 
 const getPosReceiptSettings = async (req, res) => {
     try {
-        const settings = await getReceiptSettings();
+        const settings = await getReceiptSettings(req.user.gymId);
         res.json(settings);
     } catch (e) {
         res.status(500).json({ error: "Failed to load receipt settings" });
@@ -1172,8 +1335,12 @@ const getPosDiscountOptions = async (req, res) => {
 const getMyTransactions = async (req, res) => {
     try {
         const memberId = req.user.id;
+        const { tenantId } = req.user;
         const payments = await prisma.payment.findMany({
-            where: { memberId },
+            where: { 
+                memberId,
+                gym: { tenantId } // Enforce Tenant Isolation
+            },
             include: {
                 items: true,
                 cashier: { select: { name: true } }
@@ -1198,8 +1365,12 @@ const collectPendingCashPayment = async (req, res) => {
     }
 
     try {
-        const payment = await prisma.payment.findUnique({
-            where: { id: paymentId },
+        const { tenantId } = req.user;
+        const payment = await prisma.payment.findFirst({
+            where: { 
+                id: paymentId,
+                gym: { tenantId } // Enforce Tenant Isolation
+            },
             include: {
                 member: true,
                 cashier: { select: { id: true, role: true } }
@@ -1231,6 +1402,7 @@ const collectPendingCashPayment = async (req, res) => {
                 const decremented = await tx.product.updateMany({
                     where: {
                         id: Number(item.productId),
+                        tenantId: req.user.tenantId, // Enforce Tenant Isolation
                         stock: { gte: Number(item.quantity) }
                     },
                     data: { stock: { decrement: Number(item.quantity) } }
@@ -1257,8 +1429,11 @@ const collectPendingCashPayment = async (req, res) => {
             });
 
             if (payment.memberId && pointsAwarded > 0) {
-                await tx.member.update({
-                    where: { id: Number(payment.memberId) },
+                await tx.member.updateMany({
+                    where: { 
+                        id: Number(payment.memberId),
+                        tenantId: req.user.tenantId
+                    },
                     data: { points: { increment: pointsAwarded } }
                 });
             }
@@ -1285,8 +1460,12 @@ const declinePendingCashPayment = async (req, res) => {
     }
 
     try {
-        const payment = await prisma.payment.findUnique({
-            where: { id: paymentId },
+        const { tenantId } = req.user;
+        const payment = await prisma.payment.findFirst({
+            where: { 
+                id: paymentId,
+                gym: { tenantId } // Enforce Tenant Isolation
+            },
             include: { member: true }
         });
         if (!payment) return res.status(404).json({ error: "Payment not found" });
@@ -1320,10 +1499,14 @@ const declinePendingCashPayment = async (req, res) => {
 const completePayment = async (req, res) => {
     const { id } = req.params;
     const { cashTendered } = req.body;
+    const { tenantId } = req.user;
 
     try {
-        const payment = await prisma.payment.findUnique({
-            where: { id: Number(id) },
+        const payment = await prisma.payment.findFirst({
+            where: { 
+                id: Number(id),
+                gym: { tenantId } // Enforce Tenant Isolation
+            },
             include: { items: true, member: true, cashier: true }
         });
 
@@ -1372,10 +1555,14 @@ const completePayment = async (req, res) => {
 
 const exportInvoices = async (req, res) => {
     const { startDate, endDate } = req.query;
+    const { tenantId } = req.user;
 
     try {
-        const gym = await prisma.gym.findUnique({
-            where: { id: req.user.gymId }
+        const gym = await prisma.gym.findFirst({
+            where: { 
+                id: req.user.gymId,
+                tenantId // Enforce Tenant Isolation
+            }
         });
 
         if (!gym) {
@@ -1383,7 +1570,8 @@ const exportInvoices = async (req, res) => {
         }
 
         const where = {
-            status: 'COMPLETED'
+            status: 'COMPLETED',
+            gym: { tenantId } // Enforce Tenant Isolation
         };
 
         if (startDate || endDate) {

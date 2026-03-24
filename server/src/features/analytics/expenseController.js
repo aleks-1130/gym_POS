@@ -3,7 +3,9 @@ const { logAudit } = require('../../services/auditService');
 
 const getExpenses = async (req, res) => {
     try {
+        const { tenantId } = req.user;
         const expenses = await prisma.expense.findMany({
+            where: { tenantId },
             orderBy: { date: 'desc' }
         });
         res.json(expenses);
@@ -25,7 +27,12 @@ const createExpense = async (req, res) => {
 
         // 2. Prevent Admin from paying other Admins (Only Owner can)
         if (req.body.staffId) {
-            const targetUser = await prisma.user.findUnique({ where: { id: Number(req.body.staffId) } });
+            const targetUser = await prisma.user.findFirst({ 
+                where: { 
+                    id: Number(req.body.staffId),
+                    tenantId: req.user.tenantId
+                } 
+            });
             if (targetUser && (targetUser.role === 'ADMIN' || targetUser.role === 'OWNER') && req.user.role !== 'OWNER') {
                 return res.status(403).json({ error: "Only the Owner can pay Admin or Owner salaries." });
             }
@@ -33,6 +40,7 @@ const createExpense = async (req, res) => {
     }
 
     try {
+        const { tenantId } = req.user;
         const expense = await prisma.expense.create({
             data: {
                 title,
@@ -42,7 +50,8 @@ const createExpense = async (req, res) => {
                 notes,
                 recordedBy: req.user.id.toString(),
                 trainerId: req.body.trainerId ? Number(req.body.trainerId) : null,
-                staffId: req.body.staffId ? Number(req.body.staffId) : null
+                staffId: req.body.staffId ? Number(req.body.staffId) : null,
+                tenantId
             }
         });
         await logAudit("CREATE_EXPENSE", req.user.email, `Expense: ${expense.title}`, `Recorded ${expense.amount} in ${expense.category}`);
@@ -57,8 +66,9 @@ const updateExpense = async (req, res) => {
     const { id } = req.params;
     const { title, amount, category, date, notes } = req.body;
     try {
-        const expense = await prisma.expense.update({
-            where: { id: Number(id) },
+        const { tenantId } = req.user;
+        const expense = await prisma.expense.updateMany({
+            where: { id: Number(id), tenantId },
             data: {
                 title,
                 amount: parseFloat(amount),
@@ -67,8 +77,10 @@ const updateExpense = async (req, res) => {
                 notes
             }
         });
-        await logAudit("UPDATE_EXPENSE", req.user.email, `Expense: ${expense.title}`, `Updated ${expense.amount} in ${expense.category}`);
-        res.json(expense);
+        if (expense.count === 0) return res.status(404).json({ error: "Expense not found" });
+        
+        await logAudit("UPDATE_EXPENSE", req.user.email, `Expense ID: ${id}`, `Updated details`);
+        res.json({ message: "Expense updated" });
     } catch (e) {
         if (e.code === 'P2025') {
             return res.status(404).json({ error: "Expense not found" });
@@ -79,9 +91,13 @@ const updateExpense = async (req, res) => {
 };
 
 const deleteExpense = async (req, res) => {
-    const { id } = req.params;
     try {
-        await prisma.expense.delete({ where: { id: Number(id) } });
+        const { tenantId } = req.user;
+        const deleted = await prisma.expense.deleteMany({ 
+            where: { id: Number(id), tenantId } 
+        });
+        if (deleted.count === 0) return res.status(404).json({ error: "Expense not found" });
+
         await logAudit("DELETE_EXPENSE", req.user.email, `Expense ID: ${id}`, "Deleted expense record");
         res.json({ message: "Expense deleted" });
     } catch (e) {

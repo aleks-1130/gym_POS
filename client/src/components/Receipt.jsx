@@ -186,21 +186,36 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
                         <span>Payment Method:</span>
                         <span>{(transaction?.method || paymentDetails?.method || 'N/A').replaceAll('_', ' ')}</span>
                     </div>
-                    {paymentDetails && paymentDetails.method === 'CASH' && (
+
+                    {/* Split Payment Breakdown */}
+                    {(transaction?.collections || paymentDetails?.collections) && (transaction?.method === 'SPLIT' || paymentDetails?.method === 'SPLIT') && (
+                        <div className="mt-2 space-y-1 pl-4 border-l-2 border-gray-100">
+                            {(transaction?.collections || paymentDetails?.collections).map((col, idx) => (
+                                <div key={idx} className="flex justify-between text-[11px]">
+                                    <span>{(col?.method || 'N/A').replaceAll('_', ' ')}:</span>
+                                    <span>{formatCurrency(col.amount)}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Cash Details (Show if main method is CASH or if one of the splits is CASH) */}
+                    {(paymentDetails?.method === 'CASH' || (paymentDetails?.collections && paymentDetails.collections.some(c => c.method === 'CASH'))) && (
                         <>
                             <div className="flex justify-between text-xs mt-1">
                                 <span>Cash Tendered:</span>
                                 <span>{formatCurrency(paymentDetails.tendered ?? transaction?.cashTendered)}</span>
                             </div>
-                            <div className="flex justify-between text-xs">
+                            <div className="flex justify-between text-xs font-bold">
                                 <span>Change Due:</span>
                                 <span>{formatCurrency(paymentDetails.change ?? transaction?.changeDue)}</span>
                             </div>
                         </>
                     )}
-                    {transaction?.financialInstitutionId && (
-                        <div className="flex justify-between text-[10px] opacity-60 italic">
-                            <span>Financial Inst. ID:</span>
+                    
+                    {transaction?.financialInstitutionId && transaction.method !== 'SPLIT' && (
+                        <div className="flex justify-between text-[10px] opacity-60 italic mt-1">
+                            <span>Ref ID:</span>
                             <span>{transaction.financialInstitutionId}</span>
                         </div>
                     )}

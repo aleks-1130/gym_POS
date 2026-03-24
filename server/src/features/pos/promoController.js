@@ -86,14 +86,27 @@ const applyPromoCode = async (req, res) => {
             return res.status(400).json({ error: 'Code and cartItems are required.' });
         }
 
+        const { tenantId, gymId: userGymId } = req.user;
+        const gymId = userGymId || req.gymId;
         const promo = await prisma.promoCode.findFirst({
-            where: { code: code.toUpperCase() }
+            where: { 
+                code: code.toUpperCase(),
+                tenantId: tenantId, // Enforce Tenant Isolation
+                OR: [
+                    { gymId: Number(gymId) },
+                    { gymId: null }
+                ]
+            }
         });
 
         if (!promo) {
             // Fallback to legacy Coupon
+            const gymId = req.user.gymId || req.gymId;
             const coupon = await prisma.coupon.findFirst({
-                where: { code: code.toUpperCase() }
+                where: { 
+                    code: code.toUpperCase(),
+                    gymId: Number(gymId)
+                }
             });
 
             if (!coupon) return res.status(404).json({ error: 'Code not found.' });
@@ -148,7 +161,18 @@ const applyPromoCode = async (req, res) => {
 
 const getPromoCodes = async (req, res) => {
     try {
-        const promos = await prisma.promoCode.findMany({ orderBy: { createdAt: 'desc' } });
+        const { tenantId, gymId: userGymId } = req.user;
+        const gymId = userGymId || req.gymId;
+        const promos = await prisma.promoCode.findMany({ 
+            where: { 
+                tenantId: tenantId, // Enforce Tenant Isolation
+                OR: [
+                    { gymId: Number(gymId) },
+                    { gymId: null }
+                ]
+            },
+            orderBy: { createdAt: 'desc' } 
+        });
         res.json(promos);
     } catch (e) {
         res.status(500).json({ error: 'Failed to fetch promo codes' });
@@ -162,12 +186,21 @@ const createPromoCode = async (req, res) => {
             scope = 'ORDER', productIds = [], categories = [], bogoConfig = null
         } = req.body;
 
-        const existing = await prisma.promoCode.findFirst({ where: { code: code.toUpperCase() } });
+        const { tenantId, gymId: userGymId } = req.user;
+        const gymId = userGymId || req.gymId;
+        const targetGymId = isGlobal ? null : Number(gymId);
+
+        const existing = await prisma.promoCode.findFirst({ 
+            where: { 
+                code: code.toUpperCase(),
+                gymId: targetGymId,
+                tenantId: tenantId
+            } 
+        });
         if (existing) return res.status(400).json({ error: 'Promo code already exists' });
 
         const promo = await prisma.promoCode.create({
             data: {
-                isGlobal: !!isGlobal,
                 code: code.toUpperCase(),
                 type,
                 value: Number(value),
@@ -177,7 +210,9 @@ const createPromoCode = async (req, res) => {
                 scope,
                 productIds: Array.isArray(productIds) ? productIds.map(Number) : [],
                 categories: Array.isArray(categories) ? categories : [],
-                bogoConfig: bogoConfig || null
+                bogoConfig: bogoConfig || null,
+                gymId: targetGymId,
+                tenantId: tenantId
             }
         });
         res.status(201).json(promo);
@@ -192,8 +227,17 @@ const updatePromoCode = async (req, res) => {
         const { id } = req.params;
         const { isActive, description, maxUses, expiryDate, scope, productIds, categories, bogoConfig } = req.body;
 
+        const { tenantId, gymId: userGymId } = req.user;
+        const gymId = userGymId || req.gymId;
         const promo = await prisma.promoCode.update({
-            where: { id: Number(id) },
+            where: { 
+                id: Number(id),
+                tenantId: tenantId, // Enforce Tenant Isolation
+                OR: [
+                    { gymId: Number(gymId) },
+                    { gymId: null }
+                ]
+            },
             data: {
                 ...(isActive !== undefined && { isActive }),
                 ...(description !== undefined && { description }),
@@ -214,7 +258,19 @@ const updatePromoCode = async (req, res) => {
 const deletePromoCode = async (req, res) => {
     try {
         const { id } = req.params;
-        await prisma.promoCode.update({ where: { id: Number(id) }, data: { isActive: false } });
+        const { tenantId, gymId: userGymId } = req.user;
+        const gymId = userGymId || req.gymId;
+        await prisma.promoCode.update({ 
+            where: { 
+                id: Number(id),
+                tenantId: tenantId, // Enforce Tenant Isolation
+                OR: [
+                    { gymId: Number(gymId) },
+                    { gymId: null }
+                ]
+            }, 
+            data: { isActive: false } 
+        });
         res.json({ message: 'Promo code deactivated' });
     } catch (e) {
         res.status(500).json({ error: 'Failed to delete promo code' });

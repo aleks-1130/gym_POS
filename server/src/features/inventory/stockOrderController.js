@@ -90,7 +90,9 @@ const listStockOrders = async (req, res) => {
         const limit = Number.parseInt(req.query.limit, 10) || 10;
         const status = String(req.query.status || '').trim().toUpperCase();
 
-        const where = {};
+        const where = {
+            tenantId: req.user.tenantId
+        };
         if (status) {
             where.status = status;
         }
@@ -131,8 +133,11 @@ const getStockOrderById = async (req, res) => {
     }
 
     try {
-        const order = await prisma.stockOrder.findUnique({
-            where: { id },
+        const order = await prisma.stockOrder.findFirst({
+            where: { 
+                id,
+                tenantId: req.user.tenantId
+            },
             include: {
                 supplier: { select: { name: true } },
                 items: true
@@ -158,14 +163,22 @@ const createStockOrder = async (req, res) => {
     }
 
     try {
-        const supplier = await prisma.supplier.findUnique({ where: { id: supplierId } });
+        const supplier = await prisma.supplier.findFirst({ 
+            where: { 
+                id: supplierId,
+                tenantId: req.user.tenantId
+            } 
+        });
         if (!supplier) {
             return res.status(404).json({ error: 'Supplier not found' });
         }
 
         const productIds = [...new Set(normalizedItems.data.map((item) => item.productId))];
         const products = await prisma.product.findMany({
-            where: { id: { in: productIds } }
+            where: { 
+                id: { in: productIds },
+                tenantId: req.user.tenantId
+            }
         });
         if (products.length !== productIds.length) {
             return res.status(400).json({ error: 'One or more selected products are invalid' });
@@ -196,7 +209,8 @@ const createStockOrder = async (req, res) => {
                     createdBy: req.user.id,
                     subtotal: summary.subtotal,
                     totalQuantity: summary.totalQuantity,
-                    totalLineItems: summary.totalLineItems
+                    totalLineItems: summary.totalLineItems,
+                    tenantId: req.user.tenantId
                 }
             });
 
@@ -215,12 +229,16 @@ const createStockOrder = async (req, res) => {
                     imageUrl: item.imageUrl,
                     category: item.category,
                     quantity: item.quantity,
-                    cost: item.cost
+                    cost: item.cost,
+                    tenantId: req.user.tenantId
                 }))
             });
 
-            const complete = await tx.stockOrder.findUnique({
-                where: { id: updatedOrder.id },
+            const complete = await tx.stockOrder.findFirst({
+                where: { 
+                    id: updatedOrder.id,
+                    tenantId: req.user.tenantId
+                },
                 include: {
                     supplier: { select: { name: true } },
                     items: true
@@ -260,8 +278,11 @@ const updateStockOrder = async (req, res) => {
     }
 
     try {
-        const existingOrder = await prisma.stockOrder.findUnique({
-            where: { id },
+        const existingOrder = await prisma.stockOrder.findFirst({
+            where: { 
+                id,
+                tenantId: req.user.tenantId
+            },
             include: {
                 supplier: { select: { name: true } },
                 items: true
@@ -274,14 +295,22 @@ const updateStockOrder = async (req, res) => {
             return res.status(400).json({ error: `Only pending orders can be edited (current: ${existingOrder.status})` });
         }
 
-        const supplier = await prisma.supplier.findUnique({ where: { id: supplierId } });
+        const supplier = await prisma.supplier.findFirst({ 
+            where: { 
+                id: supplierId,
+                tenantId: req.user.tenantId
+            } 
+        });
         if (!supplier) {
             return res.status(404).json({ error: 'Supplier not found' });
         }
 
         const productIds = [...new Set(normalizedItems.data.map((item) => item.productId))];
         const products = await prisma.product.findMany({
-            where: { id: { in: productIds } }
+            where: { 
+                id: { in: productIds },
+                tenantId: req.user.tenantId
+            }
         });
         if (products.length !== productIds.length) {
             return res.status(400).json({ error: 'One or more selected products are invalid' });
@@ -315,7 +344,10 @@ const updateStockOrder = async (req, res) => {
             });
 
             await tx.stockOrderItem.deleteMany({
-                where: { stockOrderId: existingOrder.id }
+                where: { 
+                    stockOrderId: existingOrder.id,
+                    tenantId: req.user.tenantId
+                }
             });
 
             await tx.stockOrderItem.createMany({
@@ -327,12 +359,16 @@ const updateStockOrder = async (req, res) => {
                     imageUrl: item.imageUrl,
                     category: item.category,
                     quantity: item.quantity,
-                    cost: item.cost
+                    cost: item.cost,
+                    tenantId: req.user.tenantId
                 }))
             });
 
-            return tx.stockOrder.findUnique({
-                where: { id: existingOrder.id },
+            return tx.stockOrder.findFirst({
+                where: { 
+                    id: existingOrder.id,
+                    tenantId: req.user.tenantId
+                },
                 include: {
                     supplier: { select: { name: true } },
                     items: true
@@ -360,8 +396,11 @@ const markStockOrderReceived = async (req, res) => {
     }
 
     try {
-        const order = await prisma.stockOrder.findUnique({
-            where: { id },
+        const order = await prisma.stockOrder.findFirst({
+            where: { 
+                id,
+                tenantId: req.user.tenantId
+            },
             include: {
                 supplier: { select: { name: true } },
                 items: true
@@ -385,7 +424,8 @@ const markStockOrderReceived = async (req, res) => {
                         productId: Number(item.productId),
                         gymId,
                         quantity: Number(item.quantity),
-                        minQuantity: 5 // Default min stock
+                        minQuantity: 5, // Default min stock
+                        tenantId: req.user.tenantId
                     }
                 });
             }
@@ -398,7 +438,8 @@ const markStockOrderReceived = async (req, res) => {
                     date: new Date(),
                     notes: order.notes || `Received stock order ${order.orderNumber}`,
                     recordedBy: req.user.id.toString(),
-                    supplierId: order.supplierId
+                    supplierId: order.supplierId,
+                    tenantId: req.user.tenantId
                 }
             });
 
@@ -435,8 +476,11 @@ const cancelStockOrder = async (req, res) => {
     }
 
     try {
-        const order = await prisma.stockOrder.findUnique({
-            where: { id },
+        const order = await prisma.stockOrder.findFirst({
+            where: { 
+                id,
+                tenantId: req.user.tenantId
+            },
             include: {
                 supplier: { select: { name: true } },
                 items: true

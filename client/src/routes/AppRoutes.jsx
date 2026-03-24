@@ -80,6 +80,10 @@ import ShopCheckout from '../features/member/ShopCheckout';
 import MemberAnnouncements from '../features/member/MemberAnnouncements';
 import TermsConditions from '../features/member/TermsConditions';
 
+// SuperAdmin Pages
+import SuperAdminLayout from '../features/superadmin/SuperAdminLayout';
+import TenantManagement from '../features/superadmin/TenantManagement';
+
 // Components
 import ProfileResult from '../components/ProfileResult';
 
@@ -95,8 +99,11 @@ const ProtectedRoute = ({ children, allowedRoles, fullScreen }) => {
 
     if (!user) return <Navigate to="/login" />;
 
-    // Redirect unauthorized users to dashboard
+    // Redirect unauthorized users
     if (allowedRoles && !allowedRoles.includes(user.role)) {
+        if (user.role === ROLES.SUPERADMIN) {
+            return <Navigate to="/superadmin/tenants" replace />;
+        }
         return <Navigate to="/dashboard" replace />;
     }
 
@@ -117,6 +124,15 @@ const ProtectedRoute = ({ children, allowedRoles, fullScreen }) => {
                 </main>
                 <BottomNav />
             </div>
+        );
+    }
+
+    // SuperAdmin uses its own layout
+    if (user.role === ROLES.SUPERADMIN) {
+        return (
+            <SuperAdminLayout>
+                {children}
+            </SuperAdminLayout>
         );
     }
 
@@ -252,7 +268,9 @@ export default function AppRoutes() {
     const isStandaloneApp = typeof window !== 'undefined'
         && (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true);
     const rootElement = user
-        ? <Navigate to="/dashboard" replace />
+        ? String(user.role || '').toUpperCase() === ROLES.SUPERADMIN
+            ? <Navigate to="/superadmin/tenants" replace />
+            : <Navigate to="/dashboard" replace />
         : isStandaloneApp
             ? <Navigate to="/login" replace />
             : <Landing />;
@@ -277,6 +295,16 @@ export default function AppRoutes() {
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.ADMIN, ROLES.STAFF, ROLES.MEMBER, ROLES.TRAINER]}>
                             <Dashboard />
+                        </ProtectedRoute>
+                    }
+                />
+
+                {/* --- SUPERADMIN ROUTES --- */}
+                <Route
+                    path="/superadmin/tenants"
+                    element={
+                        <ProtectedRoute allowedRoles={[ROLES.SUPERADMIN]}>
+                            <TenantManagement />
                         </ProtectedRoute>
                     }
                 />

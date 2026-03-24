@@ -143,6 +143,9 @@ app.use('/api/settings', require('./src/features/settings/settingsRoutes'));
 app.use('/api/plans', require('./src/features/pos/planRoutes'));
 app.use('/api/owner/projection', require('./src/features/analytics/projectionRoutes'));
 
+// --- SUPERADMIN ROUTES ---
+app.use('/api/superadmin', require('./src/features/superadmin/superadminRoutes'));
+
 // --- INVENTORY / PRODUCT / SUPPLIER ROUTES ---
 // Moved to src/routes/productRoutes.js and src/routes/supplierRoutes.js
 

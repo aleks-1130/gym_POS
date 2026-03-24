@@ -177,18 +177,24 @@ const applyPlanClassSessions = async ({ tx, memberId, plan }) => {
 
 const getMembers = async (req, res) => {
     try {
-        const page = parseInt(req.query.page);
-        const limit = parseInt(req.query.limit);
-        const search = req.query.search;
-
-        const baseWhere = { status: { not: 'DELETED' } };
+        const { tenantId } = req.user;
+        const { search, page, limit } = req.query;
+        const baseWhere = { 
+            status: { not: 'DELETED' },
+            gym: { tenantId: tenantId } // Enforce Tenant Isolation
+        };
         const where = { ...baseWhere };
 
         if (search) {
-            where.OR = [
-                { firstName: { contains: search, mode: 'insensitive' } },
-                { lastName: { contains: search, mode: 'insensitive' } },
-                { email: { contains: search, mode: 'insensitive' } }
+            where.AND = [
+                { gym: { tenantId: tenantId } },
+                {
+                    OR: [
+                        { firstName: { contains: search, mode: 'insensitive' } },
+                        { lastName: { contains: search, mode: 'insensitive' } },
+                        { email: { contains: search, mode: 'insensitive' } }
+                    ]
+                }
             ];
         }
 
@@ -199,7 +205,9 @@ const getMembers = async (req, res) => {
         };
 
         if (page && limit) {
-            const skip = (page - 1) * limit;
+            const pageNum = Math.max(1, Number(page));
+            const limitNum = Math.max(1, Number(limit));
+            const skip = (pageNum - 1) * limitNum;
             const todayStart = new Date();
             todayStart.setHours(0, 0, 0, 0);
 
@@ -207,7 +215,7 @@ const getMembers = async (req, res) => {
                 prisma.member.findMany({
                     ...queryOptions,
                     skip,
-                    take: limit
+                    take: limitNum
                 }),
                 prisma.member.count({ where: queryOptions.where })
             ]);
@@ -272,9 +280,13 @@ const deleteMember = async (req, res) => {
     }
 
     try {
+        const { tenantId } = req.user;
         const deletedSummary = await prisma.$transaction(async (tx) => {
-            const existingMember = await tx.member.findUnique({
-                where: { id: memberId },
+            const existingMember = await tx.member.findFirst({
+                where: { 
+                    id: memberId,
+                    gym: { tenantId } // Enforce Tenant Isolation
+                },
                 select: { id: true }
             });
 
@@ -368,12 +380,14 @@ const getAvailableClasses = async (req, res) => {
     try {
         const memberId = Number(req.user.id);
         const now = new Date();
+        const { tenantId } = req.user;
         const [member, classes, memberBookings] = await Promise.all([
-            prisma.member.findUnique({
-                where: { id: memberId },
+            prisma.member.findFirst({
+                where: { id: memberId, gym: { tenantId } },
                 include: { plan: true }
             }),
             prisma.class.findMany({
+                where: { gym: { tenantId } }, // Enforce Tenant Isolation
                 include: { trainer: true }
             }),
             prisma.booking.findMany({
@@ -486,9 +500,16 @@ const bookClass = async (req, res) => {
 
         const bookingResult = await prisma.$transaction(async (tx) => {
             const now = new Date();
+            const { tenantId } = req.user;
             const [member, cls] = await Promise.all([
-                tx.member.findUnique({ where: { id: memberId } }),
-                tx.class.findUnique({ where: { id: parsedClassId }, include: { trainer: true } })
+                tx.member.findFirst({ where: { id: memberId, gym: { tenantId } } }),
+                tx.class.findFirst({ 
+                    where: { 
+                        id: parsedClassId,
+                        gym: { tenantId } // Enforce Tenant Isolation
+                    }, 
+                    include: { trainer: true } 
+                })
             ]);
 
             if (!member) {
@@ -1220,25 +1241,43 @@ const bookTrainingCash = async (req, res) => {
 // Members can see their own profile; Staff/Admin can see any
 const getMemberProfile = async (req, res) => {
     const { id } = req.params;
+    const { tenantId, role: userRole, id: userId } = req.user;
 
     // Authorization check
-    if (req.user.role === 'MEMBER' && req.user.id !== Number(id)) {
+    if (userRole === 'MEMBER' && Number(id) !== userId) {
         return res.sendStatus(403);
     }
 
     try {
-        const member = await prisma.member.findUnique({
-            where: { id: Number(id) },
-            include: { plan: true, payments: { orderBy: { date: 'desc' } }, accessLogs: { orderBy: { checkIn: 'desc' }, take: 20 }, membershipPeriods: { include: { plan: true }, orderBy: { startDate: 'desc' } } }
+        const member = await prisma.member.findFirst({
+            where: { 
+                id: Number(id),
+                gym: { tenantId: tenantId } // Enforce Tenant Isolation
+            },
+            include: { 
+                plan: true, 
+                payments: { orderBy: { date: 'desc' } }, 
+                accessLogs: { orderBy: { checkIn: 'desc' }, take: 20 }, 
+                membershipPeriods: { include: { plan: true }, orderBy: { startDate: 'desc' } } 
+            }
         });
-        if (!member) return res.status(404).json({ error: "Member not found" });
+        if (!member) return res.status(404).json({ error: "Member not found or access denied" });
 
         const loyaltyService = require('../../services/loyaltyService');
         await loyaltyService.reconcileMemberHistory({ memberId: Number(id) }).catch(err => console.error('Failed to reconcile loyalty history:', err.message));
 
-        const auditedMember = await prisma.member.findUnique({
-            where: { id: Number(id) },
-            include: { plan: true, loyaltyTransactions: { orderBy: { createdAt: 'desc' } }, payments: { orderBy: { date: 'desc' } }, accessLogs: { orderBy: { checkIn: 'desc' }, take: 20 }, membershipPeriods: { include: { plan: true }, orderBy: { startDate: 'desc' } } }
+        const auditedMember = await prisma.member.findFirst({
+            where: { 
+                id: Number(id),
+                gym: { tenantId: tenantId } // Enforce Tenant Isolation
+            },
+            include: { 
+                plan: true, 
+                loyaltyTransactions: { orderBy: { createdAt: 'desc' } }, 
+                payments: { orderBy: { date: 'desc' } }, 
+                accessLogs: { orderBy: { checkIn: 'desc' }, take: 20 }, 
+                membershipPeriods: { include: { plan: true }, orderBy: { startDate: 'desc' } } 
+            }
         });
 
         res.json(auditedMember);
@@ -1708,9 +1747,17 @@ const createMember = async (req, res) => {
             return res.status(400).json({ error: "Invalid payment method" });
         }
 
+        const { tenantId, gymId: userGymId } = req.user;
+        const effectiveGymId = userGymId; // Staff/Admin should create in their own gym
+
         // Calculate expiry based on plan
-        const plan = await prisma.plan.findUnique({ where: { id: Number(planId) } });
-        if (!plan) return res.status(404).json({ error: "Plan not found" });
+        const plan = await prisma.plan.findFirst({ 
+            where: { 
+                id: Number(planId),
+                gym: { tenantId } // Enforce Tenant Isolation
+            } 
+        });
+        if (!plan) return res.status(404).json({ error: "Plan not found or access denied" });
         const startDate = new Date();
         const expiryDate = new Date();
         expiryDate.setDate(startDate.getDate() + (plan ? plan.duration : 30));
@@ -1738,6 +1785,7 @@ const createMember = async (req, res) => {
 
             const createdMember = await tx.member.create({
                 data: {
+                    gymId: effectiveGymId, // Explicitly set gymId
                     firstName, lastName, email, phone, planId: Number(planId),
                     imageUrl,
                     birthDate: birthDate ? new Date(birthDate) : null,
@@ -1870,11 +1918,22 @@ const renewMembership = async (req, res) => {
             return res.status(400).json({ error: `${normalizedMethod} reference is required for e-wallet renewals` });
         }
 
-        const member = await prisma.member.findUnique({ where: { id: Number(id) } });
-        if (!member) return res.status(404).json({ error: "Member not found" });
+        const { tenantId } = req.user;
+        const member = await prisma.member.findFirst({ 
+            where: { 
+                id: Number(id),
+                gym: { tenantId } // Enforce Tenant Isolation
+            } 
+        });
+        if (!member) return res.status(404).json({ error: "Member not found or access denied" });
         const selectedPlanId = planId ? Number(planId) : member.planId;
         const selectedPlan = selectedPlanId
-            ? await prisma.plan.findUnique({ where: { id: selectedPlanId } })
+            ? await prisma.plan.findFirst({ 
+                where: { 
+                    id: selectedPlanId,
+                    gym: { tenantId } 
+                } 
+            })
             : null;
 
         const now = new Date();
@@ -2016,17 +2075,26 @@ const purchaseClassSessionPackage = async (req, res) => {
         return res.status(400).json({ error: "Invalid payment method" });
     }
 
+    const { tenantId } = req.user;
     try {
-        const packageRecord = await prisma.classSessionPackage.findUnique({
-            where: { id: Number(packageId) }
+        const packageRecord = await prisma.classSessionPackage.findFirst({
+            where: { 
+                id: Number(packageId),
+                gym: { tenantId } // Enforce Tenant Isolation
+            }
         });
         if (!packageRecord || !packageRecord.isActive) {
-            return res.status(404).json({ error: "Class session package not found" });
+            return res.status(404).json({ error: "Class session package not found or access denied" });
         }
 
-        const member = await prisma.member.findUnique({ where: { id: memberId } });
+        const member = await prisma.member.findFirst({ 
+            where: { 
+                id: memberId,
+                gym: { tenantId } // Enforce Tenant Isolation
+            } 
+        });
         if (!member) {
-            return res.status(404).json({ error: "Member not found" });
+            return res.status(404).json({ error: "Member not found or access denied" });
         }
         if (isMemberMembershipExpired(member)) {
             return res.status(400).json({ error: "Cannot add class sessions for expired membership. Renew membership first." });
@@ -2110,9 +2178,13 @@ const purchaseClassSessionPackage = async (req, res) => {
 
 const getMemberPayments = async (req, res) => {
     const { id } = req.params;
+    const { tenantId } = req.user;
     try {
         const payments = await prisma.payment.findMany({
-            where: { memberId: Number(id) },
+            where: { 
+                memberId: Number(id),
+                gym: { tenantId } // Enforce Tenant Isolation
+            },
             include: {
                 items: true,
                 cashier: { select: { name: true } }
@@ -2127,9 +2199,13 @@ const getMemberPayments = async (req, res) => {
 
 const getMemberNotes = async (req, res) => {
     const { id } = req.params;
+    const { tenantId } = req.user;
     try {
         const notes = await prisma.memberNote.findMany({
-            where: { memberId: Number(id) },
+            where: { 
+                memberId: Number(id),
+                gym: { tenantId } // Enforce Tenant Isolation
+            },
             orderBy: { createdAt: 'desc' },
             include: { user: { select: { id: true, name: true, email: true } } }
         });
@@ -2175,6 +2251,7 @@ const updateMemberStatus = async (req, res) => {
         startDate,
         endDate
     } = req.body;
+    const { tenantId } = req.user;
     try {
         const normalizedStatus = String(status || '').toUpperCase();
         if (!normalizedStatus) {
@@ -2185,8 +2262,11 @@ const updateMemberStatus = async (req, res) => {
             return res.status(400).json({ error: "Invalid member id" });
         }
 
-        const existingMember = await prisma.member.findUnique({
-            where: { id: memberId },
+        const existingMember = await prisma.member.findFirst({
+            where: { 
+                id: memberId,
+                gym: { tenantId } // Enforce Tenant Isolation
+            },
             select: {
                 id: true,
                 status: true,
@@ -2263,10 +2343,24 @@ const updateMemberStatus = async (req, res) => {
 const updateMember = async (req, res) => {
     const { id } = req.params;
     const { firstName, lastName, email, phone, imageUrl, birthDate, sex, expiryDate, startDate } = req.body;
+    const { tenantId, role: userRole, id: userId } = req.user;
     try {
-        if (req.user.role === 'MEMBER' && req.user.id !== Number(id)) {
+        if (userRole === 'MEMBER' && userId !== Number(id)) {
             return res.sendStatus(403);
         }
+
+        // First, check if the member belongs to the tenant
+        const existingMember = await prisma.member.findFirst({
+            where: {
+                id: Number(id),
+                gym: { tenantId }
+            }
+        });
+
+        if (!existingMember) {
+            return res.status(404).json({ error: "Member not found or access denied" });
+        }
+
         const member = await prisma.member.update({
             where: { id: Number(id) },
             data: {

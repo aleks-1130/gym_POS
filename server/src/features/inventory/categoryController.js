@@ -6,22 +6,26 @@ const DEFAULT_CATEGORY_NAMES = ['SUPPLEMENT', 'DRINK', 'MERCH', 'EQUIPMENT', 'OT
 const normalizeCategoryName = (value) => String(value || '').trim();
 const normalizeCategoryDescription = (value) => String(value || '').trim();
 
-const ensureDefaultCategories = async () => {
-    const count = await prisma.category.count();
+const ensureDefaultCategories = async (tenantId) => {
+    if (!tenantId) return;
+    const count = await prisma.category.count({ where: { tenantId } });
     if (count > 0) return;
 
     await prisma.category.createMany({
         data: DEFAULT_CATEGORY_NAMES.map((name) => ({
             name,
-            description: ''
+            description: '',
+            tenantId,
+            isGlobal: true
         })),
         skipDuplicates: true
     });
 };
 
-const buildCategoryResponse = async (categories) => {
+const buildCategoryResponse = async (categories, tenantId) => {
     const productCounts = await prisma.product.groupBy({
         by: ['category'],
+        where: { tenantId },
         _count: { _all: true }
     });
 
@@ -39,11 +43,13 @@ const buildCategoryResponse = async (categories) => {
 
 const getCategories = async (req, res) => {
     try {
-        await ensureDefaultCategories();
+        const tenantId = req.tenantId;
+        await ensureDefaultCategories(tenantId);
         const categories = await prisma.category.findMany({
+            where: { tenantId },
             orderBy: { name: 'asc' }
         });
-        const response = await buildCategoryResponse(categories);
+        const response = await buildCategoryResponse(categories, tenantId);
         res.json(response);
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch categories' });
@@ -59,8 +65,12 @@ const createCategory = async (req, res) => {
     }
 
     try {
+        const tenantId = req.tenantId;
         const existing = await prisma.category.findFirst({
-            where: { name: { equals: name, mode: 'insensitive' } }
+            where: { 
+                tenantId,
+                name: { equals: name, mode: 'insensitive' } 
+            }
         });
         if (existing) {
             return res.status(400).json({ error: 'Category already exists' });
@@ -70,6 +80,7 @@ const createCategory = async (req, res) => {
             data: { 
                 name, 
                 description: description || null,
+                tenantId: req.tenantId,
                 isGlobal: req.body.isGlobal === true || String(req.body.isGlobal).toLowerCase() === 'true'
             }
         });
@@ -94,13 +105,17 @@ const updateCategory = async (req, res) => {
     }
 
     try {
-        const existingCategory = await prisma.category.findUnique({ where: { id } });
+        const tenantId = req.tenantId;
+        const existingCategory = await prisma.category.findFirst({ 
+            where: { id, tenantId } 
+        });
         if (!existingCategory) {
             return res.status(404).json({ error: 'Category not found' });
         }
 
         const duplicate = await prisma.category.findFirst({
             where: {
+                tenantId,
                 id: { not: id },
                 name: { equals: name, mode: 'insensitive' }
             }
@@ -113,13 +128,13 @@ const updateCategory = async (req, res) => {
         const updated = await prisma.$transaction(async (tx) => {
             if (previousName.toLowerCase() !== name.toLowerCase()) {
                 await tx.product.updateMany({
-                    where: { category: previousName },
+                    where: { category: previousName, tenantId },
                     data: { category: name }
                 });
             }
 
             return tx.category.update({
-                where: { id },
+                where: { id, tenantId },
                 data: {
                     name,
                     description: description || null,
@@ -135,7 +150,7 @@ const updateCategory = async (req, res) => {
             `Updated to ${name}`
         );
 
-        const response = await buildCategoryResponse([updated]);
+        const response = await buildCategoryResponse([updated], tenantId);
         const result = response[0] || updated;
         res.json({ ...result, description: result.description || '' });
     } catch (error) {
@@ -150,19 +165,24 @@ const deleteCategory = async (req, res) => {
     }
 
     try {
-        const category = await prisma.category.findUnique({ where: { id } });
+        const tenantId = req.tenantId;
+        const category = await prisma.category.findFirst({ 
+            where: { id, tenantId } 
+        });
         if (!category) {
             return res.status(404).json({ error: 'Category not found' });
         }
 
         const linkedProducts = await prisma.product.count({
-            where: { category: category.name }
+            where: { category: category.name, tenantId }
         });
         if (linkedProducts > 0) {
             return res.status(400).json({ error: 'Cannot delete category with linked products' });
         }
 
-        await prisma.category.delete({ where: { id } });
+        await prisma.category.deleteMany({ 
+            where: { id, tenantId } 
+        });
 
         await logAudit(
             'DELETE_CATEGORY',

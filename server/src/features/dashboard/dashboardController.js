@@ -131,8 +131,7 @@ const getDashboardStats = async (req, res) => {
         const queryStart = req.query.startDate ? new Date(req.query.startDate) : firstDayOfMonth;
         const queryEnd = req.query.endDate ? new Date(new Date(req.query.endDate).setUTCHours(23, 59, 59, 999)) : new Date();
 
-        // 1. Parallelize Period Financials, Trend, Net Profit basics, Expiring, Distribution, and Legacy Stats
-        // 1. Parallelize Period Financials, Trend, Net Profit basics, Expiring, Distribution, and Legacy Stats
+        const { tenantId } = req.user;
         const [
             periodRevenueAgg,
             periodExpensesAgg,
@@ -161,25 +160,43 @@ const getDashboardStats = async (req, res) => {
             // 1. Period Financials (exclude voided)
             prisma.payment.aggregate({
                 _sum: { amount: true, refundedAmount: true },
-                where: { date: { gte: queryStart, lte: queryEnd }, status: { in: ['COMPLETED', 'RETURNED'] } }
+                where: { 
+                    date: { gte: queryStart, lte: queryEnd }, 
+                    status: { in: ['COMPLETED', 'RETURNED'] },
+                    gym: { tenantId }
+                }
             }),
             prisma.expense.aggregate({
                 _sum: { amount: true },
-                where: { date: { gte: queryStart, lte: queryEnd } }
+                where: { 
+                    date: { gte: queryStart, lte: queryEnd },
+                    tenantId
+                }
             }),
             // 2. Revenue Trend (exclude voided)
             prisma.payment.findMany({
-                where: { date: { gte: queryStart, lte: queryEnd }, status: { in: ['COMPLETED', 'RETURNED'] } },
+                where: { 
+                    date: { gte: queryStart, lte: queryEnd }, 
+                    status: { in: ['COMPLETED', 'RETURNED'] },
+                    gym: { tenantId }
+                },
                 select: { date: true, amount: true, refundedAmount: true }
             }),
             // Net Profit (This Month, exclude voided)
             prisma.payment.aggregate({
                 _sum: { amount: true, refundedAmount: true },
-                where: { date: { gte: firstDayOfMonth }, status: { in: ['COMPLETED', 'RETURNED'] } }
+                where: { 
+                    date: { gte: firstDayOfMonth }, 
+                    status: { in: ['COMPLETED', 'RETURNED'] },
+                    gym: { tenantId }
+                }
             }),
             prisma.expense.aggregate({
                 _sum: { amount: true },
-                where: { date: { gte: firstDayOfMonth } }
+                where: { 
+                    date: { gte: firstDayOfMonth },
+                    tenantId
+                }
             }),
             // Expiring
             prisma.member.count({
@@ -187,36 +204,57 @@ const getDashboardStats = async (req, res) => {
                     expiryDate: {
                         lte: new Date(new Date().setDate(new Date().getDate() + 7)),
                         gte: new Date()
-                    }
+                    },
+                    tenantId
                 }
             }),
             // Membership Distribution
             prisma.member.findMany({
-                where: { status: 'ACTIVE' },
+                where: { status: 'ACTIVE', tenantId },
                 select: { plan: { select: { name: true } } }
             }),
             // Legacy / Dashboard Specific (exclude voided)
             prisma.payment.aggregate({
                 _sum: { amount: true, refundedAmount: true },
-                where: { date: { gte: startOfToday }, status: { in: ['COMPLETED', 'RETURNED'] } }
+                where: { 
+                    date: { gte: startOfToday }, 
+                    status: { in: ['COMPLETED', 'RETURNED'] },
+                    gym: { tenantId }
+                }
             }),
             // Breakdowns (exclude voided)
             prisma.payment.aggregate({
                 _sum: { amount: true },
-                where: { date: { gte: queryStart, lte: queryEnd }, type: 'STORE_SALE', status: { in: ['COMPLETED', 'RETURNED'] } }
+                where: { 
+                    date: { gte: queryStart, lte: queryEnd }, 
+                    type: 'STORE_SALE', 
+                    status: { in: ['COMPLETED', 'RETURNED'] },
+                    gym: { tenantId }
+                }
             }),
             prisma.payment.aggregate({
                 _sum: { amount: true },
-                where: { date: { gte: queryStart, lte: queryEnd }, type: 'POS_SALE', status: { in: ['COMPLETED', 'RETURNED'] } }
+                where: { 
+                    date: { gte: queryStart, lte: queryEnd }, 
+                    type: 'POS_SALE', 
+                    status: { in: ['COMPLETED', 'RETURNED'] },
+                    gym: { tenantId }
+                }
             }),
             prisma.payment.aggregate({
                 _sum: { amount: true },
-                where: { date: { gte: queryStart, lte: queryEnd }, type: { in: ['TRAINING', 'SERVICE'] }, status: { in: ['COMPLETED', 'RETURNED'] } }
+                where: { 
+                    date: { gte: queryStart, lte: queryEnd }, 
+                    type: { in: ['TRAINING', 'SERVICE'] }, 
+                    status: { in: ['COMPLETED', 'RETURNED'] },
+                    gym: { tenantId }
+                }
             }),
             prisma.expense.aggregate({
                 _sum: { amount: true },
                 where: {
                     date: { gte: queryStart, lte: queryEnd },
+                    tenantId,
                     OR: [
                         { title: { startsWith: 'Commission:' } },
                         { title: { startsWith: 'Session Material' } }
@@ -225,9 +263,14 @@ const getDashboardStats = async (req, res) => {
             }),
             prisma.payment.aggregate({
                 _sum: { amount: true },
-                where: { date: { gte: queryStart, lte: queryEnd }, type: 'MEMBERSHIP', status: { in: ['COMPLETED', 'RETURNED'] } }
+                where: { 
+                    date: { gte: queryStart, lte: queryEnd }, 
+                    type: 'MEMBERSHIP', 
+                    status: { in: ['COMPLETED', 'RETURNED'] },
+                    gym: { tenantId }
+                }
             }),
-            getRecentActivity(req.user?.gymId || req.gymId),
+            getRecentActivity(req.user?.gymId || req.gymId, tenantId),
             // 6-Month History (exclude voided) - Calculate start range using PHT
             prisma.payment.groupBy({
                 by: ['date'],
@@ -236,7 +279,8 @@ const getDashboardStats = async (req, res) => {
                     date: {
                         gte: new Date(Date.UTC(phtNow.getUTCFullYear(), phtNow.getUTCMonth() - 5, 1, -8))
                     },
-                    status: { in: ['COMPLETED', 'RETURNED'] }
+                    status: { in: ['COMPLETED', 'RETURNED'] },
+                    gym: { tenantId }
                 }
             }),
             prisma.expense.groupBy({
@@ -245,41 +289,64 @@ const getDashboardStats = async (req, res) => {
                 where: {
                     date: {
                         gte: new Date(Date.UTC(phtNow.getUTCFullYear(), phtNow.getUTCMonth() - 5, 1, -8))
-                    }
+                    },
+                    tenantId
                 }
             }),
             // Expense Breakdown by Category
             prisma.expense.groupBy({
                 by: ['category'],
                 _sum: { amount: true },
-                where: { date: { gte: queryStart, lte: queryEnd } }
+                where: { 
+                    date: { gte: queryStart, lte: queryEnd },
+                    tenantId
+                }
             }),
             // Expenses Today
             prisma.expense.aggregate({
                 _sum: { amount: true },
-                where: { date: { gte: startOfToday } }
+                where: { 
+                    date: { gte: startOfToday },
+                    tenantId
+                }
             }),
             // 19. Transactions Today (exclude voided)
             prisma.payment.count({
-                where: { date: { gte: startOfToday }, status: { in: ['COMPLETED', 'RETURNED'] } }
+                where: { 
+                    date: { gte: startOfToday }, 
+                    status: { in: ['COMPLETED', 'RETURNED'] },
+                    gym: { tenantId }
+                }
             }),
             // 20. Low Stock Items (Threshold <= 10)
             prisma.product.count({
-                where: { stock: { lte: 10 } }
+                where: { 
+                    stock: { lte: 10 },
+                    tenantId
+                }
             }),
             prisma.product.findMany({
-                where: { stock: { lte: 10 } },
+                where: { 
+                    stock: { lte: 10 },
+                    tenantId
+                },
                 orderBy: { stock: 'asc' },
                 take: 3,
                 select: { name: true, stock: true }
             }),
             // 21. Pending Payments
             prisma.payment.count({
-                where: { status: 'PENDING' }
+                where: { 
+                    status: 'PENDING',
+                    gym: { tenantId }
+                }
             }),
             // 22. Unpaid Training Sessions
             prisma.trainingSession.count({
-                where: { paymentStatus: 'UNPAID' }
+                where: { 
+                    paymentStatus: 'UNPAID',
+                    tenantId
+                }
             })
         ]);
 
@@ -310,7 +377,7 @@ const getDashboardStats = async (req, res) => {
 
         // Merge Expenses into Trend
         const expensesTrendRaw = await prisma.expense.findMany({
-            where: { date: { gte: queryStart, lte: queryEnd } },
+            where: { date: { gte: queryStart, lte: queryEnd }, tenantId },
             select: { date: true, amount: true }
         });
 
@@ -445,10 +512,15 @@ const getDashboardStats = async (req, res) => {
     }
 };
 
-const getRecentActivity = async (gymId) => {
+const getRecentActivity = async (gymId, tenantId) => {
     // Fetch last 5 payments with member info
     const payments = await prisma.payment.findMany({
-        where: gymId ? { gymId } : undefined,
+        where: {
+            OR: [
+                gymId ? { gymId } : {},
+                tenantId ? { gym: { tenantId } } : {}
+            ]
+        },
         take: 5,
         orderBy: { date: 'desc' },
         include: { member: { select: { firstName: true, lastName: true } } }
@@ -456,6 +528,7 @@ const getRecentActivity = async (gymId) => {
 
     // Fetch last 5 new members
     const newMembers = await prisma.member.findMany({
+        where: tenantId ? { tenantId } : undefined,
         take: 5,
         orderBy: { createdAt: 'desc' },
         select: { firstName: true, lastName: true, createdAt: true }

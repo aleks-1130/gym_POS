@@ -47,7 +47,10 @@ export const usePOSStore = create((set, get) => ({
         method: '',
         gcashReference: '',
         gcashDate: '',
-        gcashTime: '' },
+        gcashTime: '',
+        isSplit: false,
+        collections: [] // Array of { method, amount, reference, date, time }
+    },
     lastTransaction: null,
     collectData: {
         session: null,
@@ -194,7 +197,15 @@ export const usePOSStore = create((set, get) => ({
         const newState = { modals: { ...state.modals, [modalName]: true } };
 
         // Map data to specific store fields if provided
-        if (modalName === 'payment') newState.paymentDetails = { ...state.paymentDetails, amountTendered: '', method: '' };
+        if (modalName === 'payment') {
+            newState.paymentDetails = { 
+                ...state.paymentDetails, 
+                amountTendered: '', 
+                method: '', 
+                isSplit: false, 
+                collections: [] 
+            };
+        }
         if (modalName === 'receiptPreview') newState.lastTransaction = data;
         if (modalName === 'collectCash') newState.collectData = { ...state.collectData, session: data, tendered: '' };
         if (modalName === 'collectPurchase') newState.collectData = { ...state.collectData, purchase: data, tendered: '' };
@@ -210,6 +221,42 @@ export const usePOSStore = create((set, get) => ({
     // Data Setters
     setPaymentField: (field, value) => set((state) => ({
         paymentDetails: { ...state.paymentDetails, [field]: value }
+    })),
+    
+    setSplitPayment: (isSplit) => set((state) => ({
+        paymentDetails: { ...state.paymentDetails, isSplit, collections: isSplit ? [] : state.paymentDetails.collections }
+    })),
+
+    addCollection: (method, amount) => set((state) => ({
+        paymentDetails: {
+            ...state.paymentDetails,
+            collections: [
+                ...state.paymentDetails.collections,
+                { 
+                    method, 
+                    amount: Number(amount), 
+                    reference: '', 
+                    date: new Date().toISOString().split('T')[0], 
+                    time: new Date().toTimeString().slice(0, 5) 
+                }
+            ]
+        }
+    })),
+
+    removeCollection: (index) => set((state) => ({
+        paymentDetails: {
+            ...state.paymentDetails,
+            collections: state.paymentDetails.collections.filter((_, i) => i !== index)
+        }
+    })),
+
+    updateCollection: (index, field, value) => set((state) => ({
+        paymentDetails: {
+            ...state.paymentDetails,
+            collections: state.paymentDetails.collections.map((c, i) => 
+                i === index ? { ...c, [field]: value } : c
+            )
+        }
     })),
 
     setCollectField: (field, value) => set((state) => ({

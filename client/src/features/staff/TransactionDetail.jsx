@@ -238,14 +238,43 @@ export default function TransactionDetail() {
                         <p className="text-[11px] font-bold tracking-widest uppercase text-text-muted">Cashier</p>
                         <p className="text-sm text-white font-semibold mt-1 truncate">{payment.cashier?.name || 'N/A'}</p>
                     </div>
-                    <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
-                        <p className="text-[11px] font-bold tracking-widest uppercase text-text-muted">Cash Tendered</p>
-                        <p className="text-sm text-white font-semibold mt-1">{payment.method === 'CASH' ? formatPrice(payment.cashTendered || 0) : 'N/A'}</p>
-                    </div>
-                    <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
-                        <p className="text-[11px] font-bold tracking-widest uppercase text-text-muted">Change Due</p>
-                        <p className="text-sm text-white font-semibold mt-1">{payment.method === 'CASH' ? formatPrice(payment.changeDue || 0) : 'N/A'}</p>
-                    </div>
+
+                    {/* Single Method Details (Cash) */}
+                    {payment.method === 'CASH' && (
+                        <>
+                            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                                <p className="text-[11px] font-bold tracking-widest uppercase text-text-muted">Cash Tendered</p>
+                                <p className="text-sm text-white font-semibold mt-1">{formatPrice(payment.cashTendered || 0)}</p>
+                            </div>
+                            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                                <p className="text-[11px] font-bold tracking-widest uppercase text-text-muted">Change Due</p>
+                                <p className="text-sm text-white font-semibold mt-1">{formatPrice(payment.changeDue || 0)}</p>
+                            </div>
+                        </>
+                    )}
+
+                    {/* Split Method Details */}
+                    {payment.method === 'SPLIT' && (
+                        <div className="sm:col-span-2 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 overflow-hidden">
+                            <p className="text-[11px] font-bold tracking-widest uppercase text-emerald-400/70 mb-2">Payment Breakdown</p>
+                            <div className="flex flex-wrap gap-x-6 gap-y-1">
+                                {(payment.collections || []).map((col, idx) => (
+                                    <div key={idx} className="flex items-center gap-2">
+                                        <span className="text-[10px] text-text-muted font-bold tracking-tighter uppercase">{col.method}:</span>
+                                        <span className="text-sm text-emerald-300 font-bold">{formatPrice(col.amount)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Other Single Methods */}
+                    {payment.method !== 'CASH' && payment.method !== 'SPLIT' && (
+                        <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                            <p className="text-[11px] font-bold tracking-widest uppercase text-text-muted">Payment Method</p>
+                            <p className="text-sm text-white font-semibold mt-1 uppercase">{payment.method}</p>
+                        </div>
+                    )}
                 </div>
             </header>
 
