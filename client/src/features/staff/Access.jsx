@@ -7,6 +7,7 @@ import axios from 'axios';
 
 export default function Access() {
     const { user } = useAuth();
+    const hideStatusPanels = user?.role === ROLES.ADMIN || user?.role === ROLES.STAFF;
     const [latestLogId, setLatestLogId] = useState(null);
     const [status, setStatus] = useState('ONLINE');
     const [scanning, setScanning] = useState(false);
@@ -274,28 +275,30 @@ export default function Access() {
                 </div>
             </header>
 
-            <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-xl border border-white/10 bg-surface px-3 py-2.5">
-                    <p className="text-[10px] uppercase tracking-widest text-text-muted">Scans (Recent)</p>
-                    <p className="mt-1 text-base font-bold text-white">{accessStats.total}</p>
-                    <p className="text-[10px] text-text-muted">Latest 10 logs</p>
-                </div>
-                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5">
-                    <p className="text-[10px] uppercase tracking-widest text-emerald-300">Allowed</p>
-                    <p className="mt-1 text-base font-bold text-emerald-300">{accessStats.allowed}</p>
-                    <p className="text-[10px] text-emerald-300/80">Successful access</p>
-                </div>
-                <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2.5">
-                    <p className="text-[10px] uppercase tracking-widest text-red-300">Denied</p>
-                    <p className="mt-1 text-base font-bold text-red-300">{accessStats.denied}</p>
-                    <p className="text-[10px] text-red-300/80">Blocked scans</p>
-                </div>
-                <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-3 py-2.5">
-                    <p className="text-[10px] uppercase tracking-widest text-blue-300">Freezed Monitor</p>
-                    <p className="mt-1 text-base font-bold text-blue-300">{accessStats.freezed}</p>
-                    <p className="text-[10px] text-blue-300/80">Denied while frozen</p>
-                </div>
-            </section>
+            {!hideStatusPanels && (
+                <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-xl border border-white/10 bg-surface px-3 py-2.5">
+                        <p className="text-[10px] uppercase tracking-widest text-text-muted">Scans (Recent)</p>
+                        <p className="mt-1 text-base font-bold text-white">{accessStats.total}</p>
+                        <p className="text-[10px] text-text-muted">Latest 10 logs</p>
+                    </div>
+                    <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5">
+                        <p className="text-[10px] uppercase tracking-widest text-emerald-300">Allowed</p>
+                        <p className="mt-1 text-base font-bold text-emerald-300">{accessStats.allowed}</p>
+                        <p className="text-[10px] text-emerald-300/80">Successful access</p>
+                    </div>
+                    <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2.5">
+                        <p className="text-[10px] uppercase tracking-widest text-red-300">Denied</p>
+                        <p className="mt-1 text-base font-bold text-red-300">{accessStats.denied}</p>
+                        <p className="text-[10px] text-red-300/80">Blocked scans</p>
+                    </div>
+                    <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-3 py-2.5">
+                        <p className="text-[10px] uppercase tracking-widest text-blue-300">Freezed Monitor</p>
+                        <p className="mt-1 text-base font-bold text-blue-300">{accessStats.freezed}</p>
+                        <p className="text-[10px] text-blue-300/80">Denied while frozen</p>
+                    </div>
+                </section>
+            )}
 
             <div className="grid lg:grid-cols-[1.4fr_0.6fr] gap-6">
                 {/* Scanner + Result */}
@@ -384,40 +387,55 @@ export default function Access() {
                 </div>
 
                 <div className="space-y-4">
-                    <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4">
-                        <div className="flex items-center gap-2">
-                            <span className="material-icons-round text-blue-300">ac_unit</span>
-                            <p className="text-xs font-bold uppercase tracking-widest text-blue-300">Freezed Membership Monitor</p>
-                        </div>
-                        {latestFreezedLog ? (
-                            <div className="mt-3 rounded-xl border border-blue-400/20 bg-background/40 p-3">
-                                <p className="text-sm font-semibold text-white truncate">
-                                    {latestFreezedLog.member?.firstName} {latestFreezedLog.member?.lastName}
-                                </p>
-                                <p className="mt-1 text-[11px] text-blue-200">
-                                    Last blocked at {new Date(latestFreezedLog.checkIn).toLocaleString()}
-                                </p>
+                    {!hideStatusPanels && (
+                        <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4">
+                            <div className="flex items-center gap-2">
+                                <span className="material-icons-round text-blue-300">ac_unit</span>
+                                <p className="text-xs font-bold uppercase tracking-widest text-blue-300">Freezed Membership Monitor</p>
                             </div>
-                        ) : (
-                            <p className="mt-3 text-xs text-blue-200/80">No recent blocked scans due to freezed status.</p>
-                        )}
-                    </div>
+                            {latestFreezedLog ? (
+                                <div className="mt-3 rounded-xl border border-blue-400/20 bg-background/40 p-3">
+                                    <p className="text-sm font-semibold text-white truncate">
+                                        {latestFreezedLog.member?.firstName} {latestFreezedLog.member?.lastName}
+                                    </p>
+                                    <p className="mt-1 text-[11px] text-blue-200">
+                                        Last blocked at {new Date(latestFreezedLog.checkIn).toLocaleString()}
+                                    </p>
+                                </div>
+                            ) : (
+                                <p className="mt-3 text-xs text-blue-200/80">No recent blocked scans due to freezed status.</p>
+                            )}
+                        </div>
+                    )}
 
                     {/* Live Feed */}
                     <div className="bg-surface rounded-3xl border border-white/5 overflow-hidden shadow-sm">
-                        <div className="p-5 border-b border-white/5 bg-white/5 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
-                                    <span className="material-icons-round text-primary text-xl">sensors</span>
+                        <div className="p-5 border-b border-white/5 bg-white/5 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center shrink-0">
+                                    <span className="material-icons-round text-primary text-xl">qr_code_scanner</span>
                                 </div>
-                                <div>
+                                <div className="min-w-0">
                                     <h2 className="text-lg font-bold text-white">Live Feed</h2>
                                     <p className="text-[10px] text-text-muted uppercase font-bold tracking-widest">Entry History</p>
+                                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                                        <span className="text-[10px] font-bold uppercase tracking-widest text-white/80 border border-white/20 bg-white/10 px-2 py-1 rounded-full">
+                                            Scans {accessStats.total}
+                                        </span>
+                                        <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-300 border border-emerald-500/25 bg-emerald-500/10 px-2 py-1 rounded-full">
+                                            Allowed {accessStats.allowed}
+                                        </span>
+                                        <span className="text-[10px] font-bold uppercase tracking-widest text-red-300 border border-red-500/25 bg-red-500/10 px-2 py-1 rounded-full">
+                                            Denied {accessStats.denied}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
-                                Active
-                            </span>
+                            <div className="shrink-0">
+                                <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
+                                    Active
+                                </span>
+                            </div>
                         </div>
 
                         <div className="max-h-[calc(100vh-360px)] overflow-y-auto p-4 space-y-3">
