@@ -39,9 +39,13 @@ const checkout = async (req, res) => {
             }
         }
 
+        const { tenantId } = req.user;
         const uniqueProductIds = [...new Set(normalizedItems.map((item) => item.productId))];
         const products = await prisma.product.findMany({
-            where: { id: { in: uniqueProductIds } },
+            where: { 
+                id: { in: uniqueProductIds },
+                gym: { tenantId } // Enforce Tenant Isolation
+            },
             select: { 
                 id: true, 
                 name: true, 
@@ -70,8 +74,11 @@ const checkout = async (req, res) => {
                 return res.status(400).json({ error: "Trainer account is not linked" });
             }
 
-            const trainer = await prisma.trainer.findUnique({
-                where: { id: trainerId },
+            const trainer = await prisma.trainer.findFirst({
+                where: { 
+                    id: trainerId,
+                    gym: { tenantId } // Enforce Tenant Isolation
+                },
                 select: { commissionRate: true }
             });
             if (!trainer) {
@@ -132,8 +139,11 @@ const checkout = async (req, res) => {
             if (!Number.isInteger(parsedMethodId) || parsedMethodId <= 0) {
                 return res.status(400).json({ error: "Saved payment method is required for non-cash checkout" });
             }
-            const savedMethod = await prisma.paymentMethod.findUnique({
-                where: { id: parsedMethodId },
+            const savedMethod = await prisma.paymentMethod.findFirst({
+                where: { 
+                    id: parsedMethodId,
+                    member: { gym: { tenantId } } // Enforce Tenant Isolation
+                },
                 select: { id: true, memberId: true, type: true }
             });
             if (!savedMethod || savedMethod.memberId !== Number(memberId)) {
@@ -161,7 +171,8 @@ const checkout = async (req, res) => {
                     pointsAwarded,
                     status,
                     externalRef: ['GCASH', 'PAYMAYA', 'CARD', 'BANK_TRANSFER'].includes(method) ? (gcashReference || null) : null,
-                    externalDate: (['GCASH', 'PAYMAYA', 'CARD', 'BANK_TRANSFER'].includes(method) && gcashDate) ? new Date(gcashDate) : null
+                    externalDate: (['GCASH', 'PAYMAYA', 'CARD', 'BANK_TRANSFER'].includes(method) && gcashDate) ? new Date(gcashDate) : null,
+                    tenantId: req.user.tenantId
                 }
             });
 
@@ -175,7 +186,8 @@ const checkout = async (req, res) => {
                         type: 'PRODUCT',
                         quantity: item.quantity,
                         unitPrice: Number(product.price),
-                        intendedForSessionMaterial
+                        intendedForSessionMaterial,
+                        tenantId: req.user.tenantId
                     }
                 });
 
@@ -186,6 +198,7 @@ const checkout = async (req, res) => {
                         where: {
                             productId: item.productId,
                             gymId,
+                            tenantId: req.user.tenantId,
                             quantity: { gte: item.quantity }
                         },
                         data: { quantity: { decrement: item.quantity } }
@@ -235,14 +248,15 @@ const checkout = async (req, res) => {
     }
 };
 
-// Get Member Orders
 const getMemberOrders = async (req, res) => {
+    const { tenantId } = req.user;
     try {
         if (req.user?.role === 'TRAINER') {
             const trainerPayments = await prisma.payment.findMany({
                 where: {
                     cashierId: Number(req.user.id),
-                    type: { in: ['STORE_SALE', 'IN_APP_PURCHASE'] }
+                    type: { in: ['STORE_SALE', 'IN_APP_PURCHASE'] },
+                    gym: { tenantId } // Enforce Tenant Isolation
                 },
                 include: { items: true },
                 orderBy: { date: 'desc' }
@@ -253,7 +267,8 @@ const getMemberOrders = async (req, res) => {
         const payments = await prisma.payment.findMany({
             where: {
                 memberId: req.user.id,
-                type: { in: ['STORE_SALE', 'IN_APP_PURCHASE'] }
+                type: { in: ['STORE_SALE', 'IN_APP_PURCHASE'] },
+                gym: { tenantId } // Enforce Tenant Isolation
             },
             include: { items: true },
             orderBy: { date: 'desc' }

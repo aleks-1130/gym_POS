@@ -46,8 +46,8 @@ const getNotifications = async (req, res) => {
         });
         res.json(notifs);
     } catch (e) {
-        console.error('[NotificationController] Error:', e);
-        res.status(500).json({ error: "Failed to fetch notifications" });
+        console.error('[NotificationController] Error ==>', e.message, e);
+        res.status(500).json({ error: e.message });
     }
 };
 

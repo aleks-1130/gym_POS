@@ -3,5 +3,6 @@ export const ROLES = {
     ADMIN: 'ADMIN',
     STAFF: 'STAFF',
     MEMBER: 'MEMBER',
-    TRAINER: 'TRAINER'
+    TRAINER: 'TRAINER',
+    SUPERADMIN: 'SUPERADMIN'
 };

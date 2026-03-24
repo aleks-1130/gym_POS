@@ -37,14 +37,24 @@ const normalizePlanInput = (body = {}) => {
     };
 };
 
-const getPlans = async (_req, res) => {
+const getPlans = async (req, res) => {
     try {
+        const { tenantId } = req.user;
         const plans = await prisma.plan.findMany({
+            where: {
+                deletedAt: null,
+                isActive: true,
+                OR: [
+                    { tenantId },
+                    { tenantId: null }
+                ]
+            },
             orderBy: { price: 'asc' }
         });
         res.json(plans);
     } catch (e) {
-        res.status(500).json({ error: "Failed to fetch plans" });
+        console.error('[getPlans] Error ==>', e.message, e);
+        res.status(500).json({ error: e.message });
     }
 };
 
@@ -55,7 +65,17 @@ const createPlan = async (req, res) => {
     }
 
     try {
-        const plan = await prisma.plan.create({ data: parsed.data });
+        const { tenantId, gymId: userGymId } = req.user;
+        const gymId = userGymId || req.gymId;
+        const targetGymId = parsed.data.isGlobal ? null : Number(gymId);
+
+        const plan = await prisma.plan.create({ 
+            data: { 
+                ...parsed.data,
+                tenantId: tenantId,
+                gymId: targetGymId
+            } 
+        });
         res.status(201).json(plan);
     } catch (e) {
         res.status(500).json({ error: "Failed to create plan" });
@@ -74,8 +94,12 @@ const updatePlan = async (req, res) => {
     }
 
     try {
+        const { tenantId } = req.user;
         const updated = await prisma.plan.update({
-            where: { id: planId },
+            where: { 
+                id: planId,
+                tenantId: tenantId // Enforce Tenant Isolation
+            },
             data: parsed.data
         });
         res.json(updated);
@@ -94,6 +118,15 @@ const deletePlan = async (req, res) => {
     }
 
     try {
+        const { tenantId } = req.user;
+        const plan = await prisma.plan.findFirst({
+            where: { id: planId, tenantId }
+        });
+
+        if (!plan) {
+            return res.status(404).json({ error: "Plan not found or unauthorized" });
+        }
+
         const memberCount = await prisma.member.count({
             where: { planId, status: { not: 'DELETED' } }
         });
@@ -103,7 +136,10 @@ const deletePlan = async (req, res) => {
             });
         }
 
-        await prisma.plan.delete({ where: { id: planId } });
+        await prisma.plan.update({ 
+            where: { id: planId },
+            data: { deletedAt: new Date(), isActive: false }
+        });
         res.json({ success: true });
     } catch (e) {
         if (e.code === 'P2025') {
@@ -142,13 +178,22 @@ const normalizePackageInput = (body = {}) => {
     };
 };
 
-const getClassSessionPackages = async (_req, res) => {
+const getClassSessionPackages = async (req, res) => {
     try {
+        const { tenantId } = req.user;
         const packages = await prisma.classSessionPackage.findMany({
+            where: {
+                deletedAt: null,
+                OR: [
+                    { tenantId },
+                    { tenantId: null }
+                ]
+            },
             orderBy: [{ isActive: 'desc' }, { sessions: 'asc' }]
         });
         res.json(packages);
     } catch (e) {
+        console.error('[getClassSessionPackages] Error ==>', e.message, e);
         res.status(500).json({ error: "Failed to fetch class session packages" });
     }
 };
@@ -159,7 +204,17 @@ const createClassSessionPackage = async (req, res) => {
         return res.status(400).json({ error: parsed.error });
     }
     try {
-        const created = await prisma.classSessionPackage.create({ data: parsed.data });
+        const { tenantId, gymId: userGymId } = req.user;
+        const gymId = userGymId || req.gymId;
+        const targetGymId = parsed.data.isGlobal ? null : Number(gymId);
+
+        const created = await prisma.classSessionPackage.create({ 
+            data: { 
+                ...parsed.data,
+                tenantId: tenantId,
+                gymId: targetGymId
+            } 
+        });
         res.status(201).json(created);
     } catch (e) {
         res.status(500).json({ error: "Failed to create class session package" });
@@ -176,8 +231,12 @@ const updateClassSessionPackage = async (req, res) => {
         return res.status(400).json({ error: parsed.error });
     }
     try {
+        const { tenantId } = req.user;
         const updated = await prisma.classSessionPackage.update({
-            where: { id: packageId },
+            where: { 
+                id: packageId,
+                tenantId: tenantId // Enforce Tenant Isolation
+            },
             data: parsed.data
         });
         res.json(updated);
@@ -195,7 +254,19 @@ const deleteClassSessionPackage = async (req, res) => {
         return res.status(400).json({ error: "Invalid package ID" });
     }
     try {
-        await prisma.classSessionPackage.delete({ where: { id: packageId } });
+        const { tenantId } = req.user;
+        const pkg = await prisma.classSessionPackage.findFirst({
+            where: { id: packageId, tenantId }
+        });
+
+        if (!pkg) {
+            return res.status(404).json({ error: "Package not found or unauthorized" });
+        }
+
+        await prisma.classSessionPackage.update({ 
+            where: { id: packageId },
+            data: { deletedAt: new Date(), isActive: false }
+        });
         res.json({ success: true });
     } catch (e) {
         if (e.code === 'P2025') {

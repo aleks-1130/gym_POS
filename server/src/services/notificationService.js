@@ -144,18 +144,33 @@ const notificationService = {
     /**
      * Specifically send a payment receipt
      */
-    async sendReceipt({ memberId, amount, method, items, receiptId, referenceId, gymId = null, taxAmount = 0, discountAmount = 0, subtotal = 0, gymName = null, gymLogo = null, cashierName, cashTendered, changeDue, paymentDate, companyId }) {
+    async sendReceipt(args) {
+        const { memberId, amount, method, items, receiptId, referenceId, gymId = null, taxAmount = 0, discountAmount = 0, subtotal = 0, gymName = null, gymLogo = null, cashierName, cashTendered, changeDue, paymentDate, companyId, collections = [], customerEmail = null, customerName = null } = args;
         try {
-            const member = memberId ? await prisma.member.findUnique({
-                where: { id: parseInt(memberId) },
-                select: { email: true, firstName: true, lastName: true }
-            }) : null;
+            console.log(`\n--- [NOTIFICATION_SERVICE_START] ---`);
+            console.log(`[NotificationService] Processing Receipt: ${receiptId}`);
+            console.log(`[NotificationService] Args:`, JSON.stringify({ memberId, customerEmail, method, amount }, null, 2));
+
+            let member = null;
+            if (memberId) {
+                console.log(`[NotificationService] Fetching Member Data for ID: ${memberId}`);
+                member = await prisma.member.findUnique({
+                    where: { id: parseInt(memberId) },
+                    select: { email: true, firstName: true, lastName: true }
+                });
+                console.log(`[NotificationService] Member found: ${member ? 'YES' : 'NO'} (${member?.email || 'no-email'})`);
+            }
+
+            const targetEmail = (member?.email || customerEmail || '').trim();
+            const targetName = member ? `${member.firstName} ${member.lastName}` : (customerName || 'Walk-in Customer');
+
+            console.log(`[NotificationService] Target: ${targetName} <${targetEmail}>`);
 
             const payload = {
                 eventType: 'PAYMENT_RECEIPT',
-                name: member ? `${member.firstName} ${member.lastName}` : 'Walk-in Customer',
-                email: member?.email || '',
-                amount,
+                name: targetName,
+                email: targetEmail,
+                amount: Number(amount),
                 method,
                 items: Array.isArray(items) ? items : [items],
                 receiptId,
@@ -171,7 +186,8 @@ const notificationService = {
                 paymentDate,
                 companyId,
                 branchName: gymName,
-                heartbeat: 'FINAL_V5'
+                collections,
+                heartbeat: 'FINAL_SPLIT_V3'
             };
 
             console.log('[NotificationService] DISPATCHING TO N8N:', JSON.stringify(payload, null, 2));
@@ -202,13 +218,22 @@ const notificationService = {
             }
 
             if (process.env.N8N_NOTIFICATIONS_WEBHOOK_URL && shouldSendEmail && payload.email) {
-                console.log(`[NotificationService] Dispatching receipt ${receiptId} to webhook for ${payload.email}`);
+                console.log(`[NotificationService] DISPATCHING to: ${process.env.N8N_NOTIFICATIONS_WEBHOOK_URL}`);
                 await sendEmailWebhook(process.env.N8N_NOTIFICATIONS_WEBHOOK_URL, payload);
             } else {
-                console.warn(`[NotificationService] Skipped receipt webhook (URL missing, disabled by user, or no email address provided)`);
+                console.log(`[NotificationService] SKIPPED DISPATCH. Reason:`, { 
+                    urlSet: !!process.env.N8N_NOTIFICATIONS_WEBHOOK_URL, 
+                    shouldSendEmail, 
+                    hasEmail: !!payload.email 
+                });
+                if (!process.env.N8N_NOTIFICATIONS_WEBHOOK_URL) console.warn(`[NotificationService] Skipped: N8N_NOTIFICATIONS_WEBHOOK_URL is not set.`);
+                else if (!shouldSendEmail) console.warn(`[NotificationService] Skipped: emailReceipts is disabled for this user.`);
+                else if (!payload.email) console.warn(`[NotificationService] Skipped: No email address provided for this transaction.`);
             }
+            console.log(`--- [NOTIFICATION_SERVICE_END] ---\n`);
         } catch (error) {
             console.error('[NotificationService] Error sending receipt:', error);
+            console.log(`--- [NOTIFICATION_SERVICE_ERROR] ---\n`);
         }
     }
 };

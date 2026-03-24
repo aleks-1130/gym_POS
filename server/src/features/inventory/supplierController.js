@@ -3,7 +3,9 @@ const { logAudit } = require('../../services/auditService');
 
 const getAllSuppliers = async (req, res) => {
     try {
+        const tenantId = req.tenantId;
         const suppliers = await prisma.supplier.findMany({
+            where: { tenantId },
             include: { _count: { select: { products: true } } },
             orderBy: { name: 'asc' }
         });
@@ -16,8 +18,9 @@ const getAllSuppliers = async (req, res) => {
 const createSupplier = async (req, res) => {
     const { name, contact, email, address, notes } = req.body;
     try {
+        const tenantId = req.tenantId;
         const supplier = await prisma.supplier.create({
-            data: { name, contact, email, address, notes }
+            data: { name, contact, email, address, notes, tenantId }
         });
         await logAudit("CREATE_SUPPLIER", req.user.email, `Supplier: ${supplier.name}`, "Created new supplier");
         res.json(supplier);
@@ -30,8 +33,9 @@ const updateSupplier = async (req, res) => {
     const { id } = req.params;
     const { name, contact, email, address, notes } = req.body;
     try {
+        const tenantId = req.tenantId;
         const supplier = await prisma.supplier.update({
-            where: { id: Number(id) },
+            where: { id: Number(id), tenantId },
             data: { name, contact, email, address, notes }
         });
         await logAudit("UPDATE_SUPPLIER", req.user.email, `Supplier: ${supplier.name}`, "Updated details");
@@ -44,12 +48,26 @@ const updateSupplier = async (req, res) => {
 const deleteSupplier = async (req, res) => {
     const { id } = req.params;
     try {
-        const linkedProducts = await prisma.product.count({ where: { supplierId: Number(id) } });
+        const tenantId = req.tenantId;
+        const supplierId = Number(id);
+
+        const linkedProducts = await prisma.product.count({ 
+            where: { supplierId, tenantId } 
+        });
         if (linkedProducts > 0) {
             return res.status(400).json({ error: "Cannot delete supplier with linked products" });
         }
 
-        await prisma.supplier.delete({ where: { id: Number(id) } });
+        const supplier = await prisma.supplier.findFirst({
+            where: { id: supplierId, tenantId }
+        });
+        if (!supplier) {
+            return res.status(404).json({ error: "Supplier not found" });
+        }
+
+        await prisma.supplier.deleteMany({ 
+            where: { id: supplierId, tenantId } 
+        });
         await logAudit("DELETE_SUPPLIER", req.user.email, `Supplier ID: ${id}`, "Deleted supplier");
         res.json({ message: "Supplier deleted" });
     } catch (e) {

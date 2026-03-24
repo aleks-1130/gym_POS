@@ -166,6 +166,7 @@ const authenticateToken = async (req, res, next) => {
             neonSub: neonUserId,
             sessionVersion: userSessionVersion
         };
+        req.tenantId = req.user.tenantId;
 
         // Cross-gym access for OWNER via header override
         const gymHeader = req.headers['x-gym-id'];
@@ -206,6 +207,7 @@ const authorize = (roles = []) => {
         const userRole = req.user.role;
 
         // Hierarchy Logic
+        if (userRole === 'SUPERADMIN') return next(); // Superadmins pass everything
         if (roles.includes('OWNER') && userRole === 'OWNER') return next();
         if (roles.includes('ADMIN') && (userRole === 'ADMIN' || userRole === 'OWNER')) return next();
         if (roles.includes('STAFF') && (userRole === 'STAFF' || userRole === 'ADMIN' || userRole === 'OWNER')) return next();

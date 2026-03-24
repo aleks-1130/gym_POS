@@ -15,7 +15,7 @@ const getAnalytics = async (req, res) => {
         const prevEnd = new Date(start.getTime() - 1);
         const prevStart = new Date(prevEnd.getTime() - duration);
 
-        // --- FETCH DATA (Parallel for performance) ---
+        const { tenantId } = req.user;
         const [
             payments,
             prevPayments,
@@ -29,7 +29,11 @@ const getAnalytics = async (req, res) => {
         ] = await Promise.all([
             // Current Period Payments (exclude voided)
             prisma.payment.findMany({
-                where: { date: { gte: start, lte: end }, status: { in: ['COMPLETED', 'RETURNED'] } },
+                where: { 
+                    date: { gte: start, lte: end }, 
+                    status: { in: ['COMPLETED', 'RETURNED'] },
+                    gym: { tenantId } // Enforce Tenant Isolation
+                },
                 include: {
                     member: { select: { id: true, firstName: true, lastName: true } },
                     cashier: { select: { id: true, name: true, role: true } },
@@ -39,16 +43,35 @@ const getAnalytics = async (req, res) => {
             }),
             // Previous Period Payments (exclude voided)
             prisma.payment.findMany({
-                where: { date: { gte: prevStart, lte: prevEnd }, status: { in: ['COMPLETED', 'RETURNED'] } },
+                where: { 
+                    date: { gte: prevStart, lte: prevEnd }, 
+                    status: { in: ['COMPLETED', 'RETURNED'] },
+                    gym: { tenantId } // Enforce Tenant Isolation
+                },
                 select: { amount: true, type: true, refundedAmount: true }
             }),
             // Current Expenses
-            prisma.expense.findMany({ where: { date: { gte: start, lte: end } } }),
+            prisma.expense.findMany({ 
+                where: { 
+                    date: { gte: start, lte: end },
+                    tenantId // Enforce Tenant Isolation
+                } 
+            }),
             // Previous Expenses
-            prisma.expense.findMany({ where: { date: { gte: prevStart, lte: prevEnd } }, select: { amount: true } }),
+            prisma.expense.findMany({ 
+                where: { 
+                    date: { gte: prevStart, lte: prevEnd },
+                    tenantId // Enforce Tenant Isolation
+                }, 
+                select: { amount: true } 
+            }),
             // Training Sessions
             prisma.trainingSession.findMany({
-                where: { date: { gte: start, lte: end }, status: 'COMPLETED' },
+                where: { 
+                    date: { gte: start, lte: end }, 
+                    status: 'COMPLETED',
+                    tenantId // Enforce Tenant Isolation
+                },
                 select: {
                     id: true, date: true, price: true, materialsCost: true,
                     member: { select: { id: true, firstName: true, lastName: true } },
@@ -56,13 +79,21 @@ const getAnalytics = async (req, res) => {
                 }
             }),
             // Access Logs
-            prisma.accessLog.findMany({ where: { checkIn: { gte: start, lte: end } } }),
+            prisma.accessLog.findMany({ 
+                where: { 
+                    checkIn: { gte: start, lte: end },
+                    tenantId // Enforce Tenant Isolation
+                } 
+            }),
             // All Products (to get current Stock)
-            prisma.product.findMany(),
+            prisma.product.findMany({ where: { tenantId } }),
             // All Members (allowed to filter active/expired in memory for stats)
-            prisma.member.findMany({ include: { plan: true } }),
+            prisma.member.findMany({ 
+                where: { tenantId },
+                include: { plan: true } 
+            }),
             // All Trainers
-            prisma.trainer.findMany()
+            prisma.trainer.findMany({ where: { tenantId } })
         ]);
 
 

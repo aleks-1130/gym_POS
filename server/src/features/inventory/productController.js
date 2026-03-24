@@ -68,7 +68,8 @@ const getAllProducts = async (req, res) => {
         const limit = Number.parseInt(req.query.limit, 10);
         const category = String(req.query.category || '').trim();
         const search = String(req.query.search || '').trim();
-        const where = {};
+        const tenantId = req.tenantId;
+        const where = { tenantId };
 
         if (category && category !== 'All') {
             where.category = category;
@@ -168,8 +169,10 @@ const getProductById = async (req, res) => {
 
     try {
         const gymId = req.gymId || req.user?.gymId;
-        const product = await prisma.product.findUnique({
-            where: { id },
+        const tenantId = req.tenantId;
+
+        const product = await prisma.product.findFirst({
+            where: { id, tenantId },
             include: { 
                 stocks: { 
                     where: { gymId },
@@ -196,6 +199,7 @@ const createProduct = async (req, res) => {
 
         const created = await prisma.$transaction(async (tx) => {
             const gymId = req.gymId || req.user?.gymId;
+            const tenantId = req.tenantId;
             if (!gymId) throw new Error("Gym context required to manage stock");
 
             const productData = { ...normalized.data };
@@ -206,6 +210,7 @@ const createProduct = async (req, res) => {
                 data: {
                     ...productData,
                     isGlobal,
+                    tenantId,
                     gym: isGlobal ? { disconnect: true } : { connect: { id: gymId } }
                 }
             });
@@ -214,12 +219,13 @@ const createProduct = async (req, res) => {
                 data: {
                     productId: product.id,
                     gymId,
+                    tenantId,
                     ...normalized.stockData
                 }
             });
 
-            return tx.product.findUnique({
-                where: { id: product.id },
+            return tx.product.findFirst({
+                where: { id: product.id, tenantId },
                 include: { 
                     supplier: true,
                     stocks: { where: { gymId } }
@@ -247,14 +253,19 @@ const updateProduct = async (req, res) => {
 
         const updated = await prisma.$transaction(async (tx) => {
             const gymId = req.gymId || req.user?.gymId;
+            const tenantId = req.tenantId;
             if (!gymId) throw new Error("Gym context required to manage stock");
+
+            // Verify ownership
+            const existing = await tx.product.findFirst({ where: { id, tenantId } });
+            if (!existing) throw new Error("Product not found or access denied");
 
             const productData = { ...normalized.data };
             const isGlobal = productData.isGlobal;
             delete productData.isGlobal;
 
-            await tx.product.update({
-                where: { id },
+            await tx.product.updateMany({
+                where: { id, tenantId },
                 data: {
                     ...productData,
                     isGlobal,
@@ -264,16 +275,17 @@ const updateProduct = async (req, res) => {
 
             await tx.productStock.upsert({
                 where: { productId_gymId: { productId: id, gymId } },
-                update: normalized.stockData,
+                update: { ...normalized.stockData, tenantId },
                 create: {
                     productId: id,
                     gymId,
+                    tenantId,
                     ...normalized.stockData
                 }
             });
 
-            return tx.product.findUnique({
-                where: { id },
+            return tx.product.findFirst({
+                where: { id, tenantId },
                 include: { 
                     stocks: { 
                         where: { gymId },
@@ -298,8 +310,13 @@ const deleteProduct = async (req, res) => {
     }
 
     try {
-        const product = await prisma.product.findUnique({ where: { id } });
-        await prisma.product.delete({ where: { id } });
+        const tenantId = req.tenantId;
+        const product = await prisma.product.findFirst({ where: { id, tenantId } });
+        if (!product) return res.status(404).json({ error: "Product not found" });
+
+        await prisma.product.deleteMany({ 
+            where: { id, tenantId } 
+        });
         await logAudit("DELETE_PRODUCT", req.user.email, product?.name, `ID: ${id}`);
         res.json({ message: "Product deleted" });
     } catch (e) {
@@ -321,8 +338,9 @@ const restockProduct = async (req, res) => {
         const gymId = req.gymId || req.user?.gymId;
         if (!gymId) return res.status(403).json({ error: "Missing branch context" });
 
-        const product = await prisma.product.findUnique({ 
-            where: { id: Number(productId) },
+        const tenantId = req.tenantId;
+        const product = await prisma.product.findFirst({ 
+            where: { id: Number(productId), tenantId },
             include: {
                 stocks: { where: { gymId } }
             }
@@ -338,8 +356,8 @@ const restockProduct = async (req, res) => {
         const totalCost = Number(quantity) * costPerUnit;
 
         const updatedStock = await prisma.$transaction(async (tx) => {
-            return tx.productStock.update({
-                where: { id: stockRecord.id },
+            return tx.productStock.updateMany({
+                where: { id: stockRecord.id, tenantId },
                 data: { quantity: { increment: Number(quantity) } }
             });
         });
@@ -352,7 +370,8 @@ const restockProduct = async (req, res) => {
                 date: new Date(),
                 notes: notes || `Restocked ${quantity} units @ ${costPerUnit}/unit (Fixed Cost)`,
                 recordedBy: req.user.id.toString(),
-                supplierId: stockRecord.supplierId
+                supplierId: stockRecord.supplierId,
+                tenantId
             }
         });
 

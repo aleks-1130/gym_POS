@@ -88,4 +88,29 @@ const syncToNeonAuth = async (name, email, password, force = false) => {
     }
 };
 
-module.exports = { syncToNeonAuth };
+/**
+ * Deletes a user from Neon Auth tables using raw SQL.
+ * 
+ * @param {string} email - User's email to delete
+ * @returns {Promise<boolean>} - True if successful
+ */
+const deleteFromNeonAuth = async (email) => {
+    if (!email) return false;
+    const normalizedEmail = String(email).trim().toLowerCase();
+
+    try {
+        console.log(`[NeonAuthSync] Removing ${normalizedEmail} from Neon Auth...`);
+        // Use direct raw SQL to reach into the neon_auth schema
+        await prisma.$executeRaw`DELETE FROM neon_auth.session WHERE "userId" IN (SELECT id FROM neon_auth.user WHERE LOWER(email) = ${normalizedEmail})`;
+        await prisma.$executeRaw`DELETE FROM neon_auth.account WHERE "userId" IN (SELECT id FROM neon_auth.user WHERE LOWER(email) = ${normalizedEmail})`;
+        await prisma.$executeRaw`DELETE FROM neon_auth.user WHERE LOWER(email) = ${normalizedEmail}`;
+        
+        console.log(`[NeonAuthSync] Cleanup of ${normalizedEmail} in Neon Auth tables complete.`);
+        return true;
+    } catch (dbErr) {
+        console.warn(`[NeonAuthSync] Database cleanup failed for ${normalizedEmail}:`, dbErr.message);
+        return false;
+    }
+};
+
+module.exports = { syncToNeonAuth, deleteFromNeonAuth };

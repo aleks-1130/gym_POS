@@ -52,6 +52,11 @@ export default function Members() {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [viewMode, setViewMode] = useState('grid');
+    const [gyms, setGyms] = useState([]);
+    const [branchSearch, setBranchSearch] = useState('');
+    const [selectedGymId, setSelectedGymId] = useState('');
+    const [isBranchDropdownOpen, setIsBranchDropdownOpen] = useState(false);
+    const branchDropdownRef = useRef(null);
 
     const [error, setError] = useState(null);
 
@@ -98,18 +103,36 @@ export default function Members() {
     useEffect(() => {
         const delaySearch = setTimeout(() => {
             setCurrentPage(1); // Reset to page 1 on search
-            fetchData(1, searchTerm);
+            fetchData(1, searchTerm, selectedGymId);
         }, 500);
 
         return () => clearTimeout(delaySearch);
-    }, [searchTerm]);
+    }, [searchTerm, selectedGymId]);
 
-    // Initial Load
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (branchDropdownRef.current && !branchDropdownRef.current.contains(event.target)) {
+                setIsBranchDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
     useEffect(() => {
         // We handle initial load in the debounce effect for search term ''
-        // But we need to fetch plans once
+        // But we need to fetch plans and gyms once
         fetchPlans();
+        fetchGyms();
     }, []);
+
+    const fetchGyms = async () => {
+        try {
+            const res = await axios.get(withApiBase('/api/admin/branches'));
+            setGyms(res.data);
+        } catch {
+            console.error("Failed to fetch gyms");
+        }
+    };
 
     const fetchPlans = async () => {
         try {
@@ -120,11 +143,12 @@ export default function Members() {
         }
     };
 
-    const fetchData = async (page = 1, search = '') => {
+    const fetchData = async (page = 1, search = '', branchId = '') => {
         setLoading(true);
         setError(null);
         try {
-            const res = await axios.get(withApiBase(`/api/members?page=${page}&limit=${LIMIT}&search=${search}`));
+            const url = withApiBase(`/api/members?page=${page}&limit=${LIMIT}&search=${search}${branchId ? `&branchId=${branchId}` : ''}`);
+            const res = await axios.get(url);
             if (res.data.meta) {
                 setMembers(res.data.data);
                 setTotalPages(res.data.meta.totalPages);
@@ -153,7 +177,7 @@ export default function Members() {
     const handlePageChange = (newPage) => {
         if (newPage >= 1 && newPage <= totalPages) {
             setCurrentPage(newPage);
-            fetchData(newPage, searchTerm);
+            fetchData(newPage, searchTerm, selectedGymId);
         }
     };
 
@@ -347,7 +371,7 @@ export default function Members() {
                         </button>
                     </div>
 
-                    <div className="grid gap-3 rounded-2xl border border-white/10 bg-surface px-4 py-3 lg:grid-cols-[minmax(0,1fr),auto,auto] lg:items-center">
+                    <div className="grid gap-3 rounded-2xl border border-white/10 bg-surface px-4 py-3 lg:grid-cols-[minmax(0,1fr),auto,auto,auto] lg:items-center">
                         <label className="relative block">
                             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 material-icons-round text-[18px] text-text-muted">search</span>
                             <input
@@ -358,6 +382,70 @@ export default function Members() {
                                 onChange={(e) => setSearchTerm(e.target.value)}
                             />
                         </label>
+
+                        <div className="relative" id="branch-filter-container" ref={branchDropdownRef}>
+                            <div 
+                                className="flex items-center gap-2 rounded-xl border border-white/10 bg-surfaceHighlight px-3 py-2.5 cursor-pointer hover:border-primary/50 transition-colors w-full lg:w-56"
+                                onClick={() => setIsBranchDropdownOpen(!isBranchDropdownOpen)}
+                            >
+                                <span className="material-icons-round text-text-muted text-[18px]">storefront</span>
+                                <span className="text-sm text-white truncate flex-1">
+                                    {selectedGymId 
+                                        ? gyms.find(g => g.id === Number(selectedGymId))?.name || 'Selected Branch'
+                                        : 'All Branches'
+                                    }
+                                </span>
+                                <span className="material-icons-round text-text-muted text-[18px]">
+                                    {isBranchDropdownOpen ? 'expand_less' : 'expand_more'}
+                                </span>
+                            </div>
+
+                            {isBranchDropdownOpen && (
+                                <div className="absolute top-full left-0 mt-2 w-full lg:w-64 bg-surfaceHighlight border border-white/10 rounded-xl shadow-2xl z-[60] overflow-hidden animate-fade-in">
+                                    <div className="p-2 border-b border-white/5">
+                                        <div className="relative">
+                                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 material-icons-round text-text-muted text-sm">search</span>
+                                            <input
+                                                type="text"
+                                                placeholder="Search branches..."
+                                                className="w-full bg-white/5 border border-white/10 rounded-lg py-1.5 pl-8 pr-3 text-xs text-white outline-none focus:border-primary"
+                                                value={branchSearch}
+                                                onChange={(e) => setBranchSearch(e.target.value)}
+                                                onClick={(e) => e.stopPropagation()}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="max-h-48 overflow-y-auto">
+                                        <button
+                                            className={`w-full text-left px-3 py-2 text-xs transition-colors hover:bg-primary/20 ${!selectedGymId ? 'text-primary font-bold bg-primary/10' : 'text-text-muted'}`}
+                                            onClick={() => {
+                                                setSelectedGymId('');
+                                                setIsBranchDropdownOpen(false);
+                                                setBranchSearch('');
+                                            }}
+                                        >
+                                            All Branches
+                                        </button>
+                                        {gyms
+                                            .filter(gym => gym.name.toLowerCase().includes(branchSearch.toLowerCase()))
+                                            .map(gym => (
+                                                <button
+                                                    key={gym.id}
+                                                    className={`w-full text-left px-3 py-2 text-xs transition-colors hover:bg-primary/20 ${selectedGymId === String(gym.id) ? 'text-primary font-bold bg-primary/10' : 'text-text-muted'}`}
+                                                    onClick={() => {
+                                                        setSelectedGymId(String(gym.id));
+                                                        setIsBranchDropdownOpen(false);
+                                                        setBranchSearch('');
+                                                    }}
+                                                >
+                                                    {gym.name}
+                                                </button>
+                                            ))
+                                        }
+                                    </div>
+                                </div>
+                            )}
+                        </div>
 
                         <div className="inline-flex rounded-xl border border-white/10 bg-surfaceHighlight p-1">
                             <button
@@ -450,6 +538,15 @@ export default function Members() {
                                 accessor: (member) => <span className="text-text-secondary font-medium">{getMemberPlan(member)?.name || "None"}</span>
                             },
                             {
+                                header: 'Branch',
+                                accessor: (member) => (
+                                    <span className="inline-flex items-center gap-1 text-[11px] text-text-secondary bg-white/5 px-2 py-0.5 rounded border border-white/5 font-medium">
+                                        <span className="material-icons-round text-xs opacity-50">storefront</span>
+                                        {member.gym?.name || "Shared"}
+                                    </span>
+                                )
+                            },
+                            {
                                 header: 'Status',
                                 accessor: (member) => (
                                     <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(getResolvedStatus(member))}`}>
@@ -523,9 +620,14 @@ export default function Members() {
                                             </div>
                                         )}
                                         <div className="min-w-0">
-                                            <h3 className="text-base font-bold text-white group-hover:text-primary transition-colors truncate">
-                                                {member.firstName} {member.lastName}
-                                            </h3>
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                <h3 className="text-base font-bold text-white group-hover:text-primary transition-colors truncate">
+                                                    {member.firstName} {member.lastName}
+                                                </h3>
+                                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-[9px] uppercase tracking-tighter text-text-muted font-black" title="Home Branch">
+                                                    {member.gym?.name || "SHARED"}
+                                                </span>
+                                            </div>
                                             <p className="text-xs text-text-muted truncate">{member.email}</p>
                                         </div>
                                     </div>

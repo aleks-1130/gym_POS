@@ -383,14 +383,29 @@ export default function POS() {
     const processPayment = async (method) => {
         setLoading(true);
         try {
-            const { amountTendered, gcashReference, gcashDate, gcashTime } = paymentDetails;
-            const parsedTendered = method === 'CASH' ? Number(amountTendered) : null;
-            if (method === 'CASH' && (!Number.isFinite(parsedTendered) || parsedTendered < effectiveCartTotal)) {
+            const { amountTendered, gcashReference, gcashDate, gcashTime, isSplit, collections } = paymentDetails;
+            
+            // 1. Determine Backend method and payload
+            let finalMethod = method;
+            let finalCollections = [];
+
+            if (method === 'SPLIT' || isSplit) {
+                finalMethod = 'SPLIT';
+                finalCollections = collections.map(col => ({
+                    method: col.method,
+                    amount: parseFloat(col.amount) || 0,
+                    financialInstitutionId: col.reference || null,
+                    externalDate: (col.date && col.time) ? `${col.date}T${col.time}` : null
+                }));
+            }
+
+            const parsedTendered = finalMethod === 'CASH' ? Number(amountTendered) : null;
+            if (finalMethod === 'CASH' && (!Number.isFinite(parsedTendered) || parsedTendered < effectiveCartTotal)) {
                 throw new Error("Cash tendered must be a valid amount and at least equal to the total.");
             }
 
-            const tendered = method === 'CASH' ? parsedTendered : null;
-            const change = method === 'CASH' ? Number((parsedTendered - effectiveCartTotal).toFixed(2)) : null;
+            const tendered = finalMethod === 'CASH' ? parsedTendered : null;
+            const change = finalMethod === 'CASH' ? Number((parsedTendered - effectiveCartTotal).toFixed(2)) : null;
 
             const trainingItems = cart.filter(i => i.type === 'TRAINING');
             const otherItems = cart.filter(i => i.type !== 'TRAINING');
@@ -399,7 +414,7 @@ export default function POS() {
             let mainTransaction = null;
             const externalDate = (gcashDate && gcashTime) ? `${gcashDate}T${gcashTime}` : null;
 
-            // 1. Process Training Items (if any)
+            // 2. Process Training Items (if any)
             if (trainingItems.length > 0) {
                 if (!memberId) throw new Error("Member is required for training sessions");
 
@@ -411,18 +426,19 @@ export default function POS() {
                         time: item.time,
                         duration: item.duration,
                         notes: item.notes,
-                        method,
-                        externalRef: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(method) ? gcashReference : null,
-                        externalDate: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(method) ? externalDate : null
+                        method: finalMethod,
+                        externalRef: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(finalMethod) ? gcashReference : null,
+                        externalDate: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(finalMethod) ? externalDate : null,
+                        collections: finalMethod === 'SPLIT' ? finalCollections : undefined
                     }, { headers: authHeaders() });
 
                     if (!mainTransaction) {
-                        mainTransaction = { id: 'TRAINING', amount: cartTotal, type: 'TRAINING', method };
+                        mainTransaction = { id: 'TRAINING', amount: cartTotal, type: 'TRAINING', method: finalMethod };
                     }
                 }
             }
 
-            // 2. Process Non-Training Items (if any)
+            // 3. Process Non-Training Items (if any)
             if (otherItems.length > 0) {
                 const hasPlan = otherItems.some(item => item.type === 'PLAN');
                 const hasPackage = otherItems.some(item => item.type === 'CLASS_PACKAGE');
@@ -431,7 +447,7 @@ export default function POS() {
                 const res = await axios.post(withApiBase('/api/payments'), {
                     amount: effectiveCartTotal,
                     type: paymentType,
-                    method: method,
+                    method: finalMethod,
                     items: otherItems,
                     discount: discount,
                     couponCode: appliedCoupon ? appliedCoupon.code : undefined,
@@ -440,22 +456,29 @@ export default function POS() {
                     cashTendered: tendered,
                     changeDue: change,
                     sessionId: usePOSStore.getState().sessionId,
-                    externalRef: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(method) ? gcashReference : null,
-                    externalDate: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(method) ? externalDate : null
+                    externalRef: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(finalMethod) ? gcashReference : null,
+                    externalDate: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(finalMethod) ? externalDate : null,
+                    collections: finalMethod === 'SPLIT' ? finalCollections : undefined
                 }, { headers: authHeaders() });
 
                 mainTransaction = res.data;
             }
 
-            // Summary Reciept Data
+            // Summary Receipt Data
             const memberData = members.find(m => m.id === memberId);
             openModal('receiptPreview', {
-                transaction: mainTransaction || { id: 'MIXED', amount: cartTotal, type: 'MIXED', method },
+                transaction: mainTransaction || { id: 'MIXED', amount: cartTotal, type: 'MIXED', method: finalMethod },
                 items: cart,
                 member: memberData,
                 discount: discountAmount,
                 cashierName: user?.name,
-                paymentDetails: { method, tendered, change }
+                paymentDetails: { 
+                    method: finalMethod, 
+                    tendered, 
+                    change,
+                    isSplit: finalMethod === 'SPLIT',
+                    collections: finalCollections 
+                }
             });
 
             closeModal('payment');

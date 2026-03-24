@@ -5,7 +5,11 @@ const { syncToNeonAuth } = require('../../services/neonAuthSync');
 // Get Audit Logs (Owner Only)
 const getAuditLogs = async (req, res) => {
     try {
+        const { tenantId } = req.user;
         const logs = await prisma.auditLog.findMany({
+            where: {
+                gym: { tenantId: tenantId }
+            },
             orderBy: { timestamp: 'desc' },
             take: 100
         });
@@ -25,13 +29,13 @@ const getUsers = async (req, res) => {
     const skip = (pageNum - 1) * limitNum;
 
     try {
-        let where = {};
+        const { tenantId } = req.user;
+        let where = { tenantId: tenantId };
         
         if (userRole === 'OWNER') {
             if (filterGymId) {
+                // Ensure the filtered gym belongs to the owner's tenant
                 where.gymId = Number(filterGymId);
-            } else {
-                where.id = { not: 0 }; 
             }
         } else {
             where.gymId = userGymId;
@@ -80,7 +84,12 @@ const adminCreateUser = async (req, res) => {
     try {
         const { role: creatorRole, gymId: creatorGymId, tenantId } = req.user;
 
-        // Restriction: Admin can only create Staff for their own gym
+        // Restriction: Admin/Owner can only create users for their own tenant
+        const targetGym = await prisma.gym.findUnique({ where: { id: Number(targetGymId) } });
+        if (!targetGym || targetGym.tenantId !== tenantId) {
+            return res.status(403).json({ error: "Access denied: Branch belongs to another organization" });
+        }
+
         if (creatorRole === 'ADMIN') {
             if (role !== 'STAFF') return res.status(403).json({ error: "Admins can only create Staff users" });
             if (Number(targetGymId) !== creatorGymId) return res.status(403).json({ error: "Admins can only create users for their own branch" });
@@ -122,10 +131,15 @@ const adminUpdateUser = async (req, res) => {
     const bcrypt = require('bcryptjs');
 
     try {
-        const { role: creatorRole, gymId: creatorGymId } = req.user;
-        const target = await prisma.user.findUnique({ where: { id: Number(id) } });
+        const { role: creatorRole, gymId: creatorGymId, tenantId } = req.user;
+        const target = await prisma.user.findFirst({ 
+            where: { 
+                id: Number(id),
+                tenantId: tenantId // Critical: Ensure the user belongs to the same tenant
+            } 
+        });
 
-        if (!target) return res.status(404).json({ error: "User not found" });
+        if (!target) return res.status(404).json({ error: "User not found or access denied" });
 
         // Security: Admin can only update users in their own branch
         if (creatorRole === 'ADMIN' && target.gymId !== creatorGymId) {
@@ -189,10 +203,15 @@ const adminDeleteUser = async (req, res) => {
     const { id } = req.params;
 
     try {
-        const { role: creatorRole, gymId: creatorGymId, id: creatorId } = req.user;
-        const target = await prisma.user.findUnique({ where: { id: Number(id) } });
+        const { role: creatorRole, gymId: creatorGymId, id: creatorId, tenantId } = req.user;
+        const target = await prisma.user.findFirst({ 
+            where: { 
+                id: Number(id),
+                tenantId: tenantId // Critical: Ensure the user belongs to the same tenant
+            } 
+        });
 
-        if (!target) return res.status(404).json({ error: "User not found" });
+        if (!target) return res.status(404).json({ error: "User not found or access denied" });
 
         // Security: Cannot delete yourself
         if (Number(id) === creatorId) {
