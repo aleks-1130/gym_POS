@@ -2,7 +2,7 @@ const { PrismaClient } = require('@prisma/client');
 
 const prismaClient = new PrismaClient();
 
-const globalModels = ['Coupon', 'PromoCode', 'Product', 'Plan', 'Category'];
+const globalModels = ['Member', 'Coupon', 'PromoCode', 'Product', 'Plan', 'Category'];
 
 const prisma = prismaClient.$extends({
   query: {
@@ -10,6 +10,7 @@ const prisma = prismaClient.$extends({
       async $allOperations({ model, operation, args, query }) {
         const context = require('../utils/context').gymContext.getStore();
         const gymId = context?.gymId;
+        const tenantId = context?.tenantId;
         const userRole = context?.role;
         
         // Skip filtering for Tenant and Gym models, or if no gymId is in context
@@ -25,10 +26,12 @@ const prisma = prismaClient.$extends({
           if (isGlobalModel) {
             if (operation === 'findUnique') {
               // findUnique does not support OR. Skip injection to avoid Prisma error.
-            } else {
+            } else if (tenantId) {
+              args.where = { ...args.where, tenantId: tenantId };
+            } else if (gymId) {
               args.where = { ...args.where, OR: [{ gymId }, { gymId: null }] };
             }
-          } else {
+          } else if (gymId) {
             // Force gymId UNLESS user is OWNER and already provided an explicit gymId or specific ID
             const isOwnerOverride = userRole === 'OWNER' && (args.where.gymId || args.where.id);
             if (!isOwnerOverride) {
@@ -55,13 +58,15 @@ const prisma = prismaClient.$extends({
               v !== null && typeof v === 'object' && !(v instanceof Date) && !Array.isArray(v)
             );
 
+            const withTenant = tenantId ? { ...data, tenantId: data.tenantId ?? tenantId } : data;
+
             if (hasRelation) {
               if (!data.gym && !data.gymId) {
-                return { ...data, gym: { connect: { id: gymId } } };
+                return { ...withTenant, gym: { connect: { id: gymId } } };
               }
-              return data;
+              return withTenant;
             } else {
-              return { ...data, gymId: data.gymId ?? gymId };
+              return { ...withTenant, gymId: data.gymId ?? gymId };
             }
           };
 
@@ -74,12 +79,16 @@ const prisma = prismaClient.$extends({
 
         // For updates and deletes, ensure they are scoped to the gym
         if (['update', 'updateMany', 'upsert', 'delete', 'deleteMany'].includes(operation)) {
-           if (isGlobalModel) {
-             if (operation === 'update' || operation === 'delete' || operation === 'upsert') {
-               return query(args);
-             }
-             args.where = { ...args.where, OR: [{ gymId }, { gymId: null }] };
-           } else {
+            if (isGlobalModel) {
+              if (operation === 'update' || operation === 'delete' || operation === 'upsert') {
+                return query(args);
+              }
+              if (tenantId) {
+                args.where = { ...args.where, tenantId: tenantId };
+              } else {
+                args.where = { ...args.where, OR: [{ gymId }, { gymId: null }] };
+              }
+            } else if (gymId) {
              // Force gymId UNLESS user is OWNER and already provided an explicit gymId or specific ID
              const isOwnerOverride = userRole === 'OWNER' && (args.where.gymId || args.where.id);
              if (!isOwnerOverride) {

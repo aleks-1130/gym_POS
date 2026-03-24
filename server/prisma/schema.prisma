@@ -241,7 +241,7 @@ model Member {
   trainingSessions       TrainingSession[]
   tenant                 Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@unique([email, gymId])
+  @@unique([email, tenantId])
   @@index([status])
   @@index([createdAt])
   @@index([planId])
@@ -922,7 +922,7 @@ model Coupon {
   member     Member?   @relation(fields: [memberId], references: [id])
   tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@unique([code, gymId])
+  @@unique([code, tenantId])
   @@index([code])
   @@index([memberId])
   @@index([status])

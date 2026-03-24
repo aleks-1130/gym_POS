@@ -178,16 +178,18 @@ const applyPlanClassSessions = async ({ tx, memberId, plan }) => {
 const getMembers = async (req, res) => {
     try {
         const { tenantId } = req.user;
-        const { search, page, limit } = req.query;
+        const { search, page, limit, branchId } = req.query;
         const baseWhere = { 
-            status: { not: 'DELETED' },
-            gym: { tenantId: tenantId } // Enforce Tenant Isolation
+            status: { not: 'DELETED' }
         };
+
+        if (branchId) {
+            baseWhere.gymId = Number(branchId);
+        }
         const where = { ...baseWhere };
 
         if (search) {
             where.AND = [
-                { gym: { tenantId: tenantId } },
                 {
                     OR: [
                         { firstName: { contains: search, mode: 'insensitive' } },
@@ -200,7 +202,10 @@ const getMembers = async (req, res) => {
 
         const queryOptions = {
             where,
-            include: { plan: true },
+            include: { 
+                plan: true,
+                gym: { select: { id: true, name: true } }
+            },
             orderBy: { createdAt: 'desc' }
         };
 
@@ -1747,14 +1752,16 @@ const createMember = async (req, res) => {
             return res.status(400).json({ error: "Invalid payment method" });
         }
 
-        const { tenantId, gymId: userGymId } = req.user;
-        const effectiveGymId = userGymId; // Staff/Admin should create in their own gym
+        const { tenantId, gymId } = req.user;
 
         // Calculate expiry based on plan
         const plan = await prisma.plan.findFirst({ 
             where: { 
                 id: Number(planId),
-                gym: { tenantId } // Enforce Tenant Isolation
+                OR: [
+                    { tenantId: tenantId },
+                    { isGlobal: true }
+                ]
             } 
         });
         if (!plan) return res.status(404).json({ error: "Plan not found or access denied" });
@@ -1785,7 +1792,8 @@ const createMember = async (req, res) => {
 
             const createdMember = await tx.member.create({
                 data: {
-                    gymId: effectiveGymId, // Explicitly set gymId
+                    gymId, // Local branch reference
+                    tenantId: tenantId, // Global organization reference
                     firstName, lastName, email, phone, planId: Number(planId),
                     imageUrl,
                     birthDate: birthDate ? new Date(birthDate) : null,
