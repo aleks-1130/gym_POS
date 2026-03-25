@@ -3,7 +3,9 @@ const crypto = require('crypto');
 
 const getRewards = async (req, res) => {
     try {
-        const rewards = await prisma.loyaltyReward.findMany();
+        const rewards = await prisma.loyaltyReward.findMany({
+            where: { tenantId: Number(req.user.tenantId) }
+        });
         res.json(rewards);
     } catch (e) {
         res.status(500).json({ error: "Failed to fetch rewards" });
@@ -13,6 +15,8 @@ const getRewards = async (req, res) => {
 const createReward = async (req, res) => {
     try {
         const { name, cost, category, description, imageUrl, actionType, actionValue } = req.body;
+        const tenantId = Number(req.user.tenantId);
+        const gymId = Number(req.user.gymId);
         const reward = await prisma.loyaltyReward.create({
             data: {
                 name,
@@ -21,7 +25,9 @@ const createReward = async (req, res) => {
                 description,
                 imageUrl,
                 actionType: actionType || 'NONE',
-                actionValue: actionValue ? parseFloat(actionValue) : null
+                actionValue: actionValue ? parseFloat(actionValue) : null,
+                tenantId,
+                gymId
             }
         });
         res.json(reward);
@@ -35,7 +41,10 @@ const updateReward = async (req, res) => {
         const { id } = req.params;
         const { name, cost, category, description, imageUrl, actionType, actionValue } = req.body;
         const reward = await prisma.loyaltyReward.update({
-            where: { id: Number(id) },
+            where: { 
+                id: Number(id),
+                tenantId: Number(req.user.tenantId)
+            },
             data: { 
                 name, 
                 cost: parseInt(cost) || 0, 
@@ -55,7 +64,12 @@ const updateReward = async (req, res) => {
 const deleteReward = async (req, res) => {
     try {
         const { id } = req.params;
-        await prisma.loyaltyReward.delete({ where: { id: Number(id) } });
+        await prisma.loyaltyReward.delete({ 
+            where: { 
+                id: Number(id),
+                tenantId: Number(req.user.tenantId)
+            } 
+        });
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -65,8 +79,14 @@ const deleteReward = async (req, res) => {
 const managePoints = async (req, res) => {
     const { id } = req.params;
     const { points, type, description, rewardId } = req.body; // type=ADD or REDEEM
+    const tenantId = Number(req.user.tenantId);
     try {
-        const member = await prisma.member.findUnique({ where: { id: Number(id) } });
+        const member = await prisma.member.findUnique({ 
+            where: { 
+                id: Number(id),
+                tenantId 
+            } 
+        });
         if (!member) return res.status(404).json({ error: "Member not found" });
 
         const pointAmount = Number(points);
@@ -76,7 +96,12 @@ const managePoints = async (req, res) => {
 
         let reward = null;
         if (type === 'REDEEM' && rewardId) {
-            reward = await prisma.loyaltyReward.findUnique({ where: { id: Number(rewardId) } });
+            reward = await prisma.loyaltyReward.findUnique({ 
+                where: { 
+                    id: Number(rewardId),
+                    tenantId 
+                } 
+            });
         }
 
         const txResult = await prisma.$transaction(async (tx) => {
@@ -98,7 +123,10 @@ const managePoints = async (req, res) => {
                     if (reward.actionType === 'FREE_CLASS') {
                         const sessionsToAdd = reward.actionValue || 1;
                         await tx.member.update({
-                            where: { id: Number(id) },
+                            where: { 
+                                id: Number(id),
+                                tenantId
+                            },
                             data: { classSessionsRemaining: { increment: sessionsToAdd } }
                         });
                     } else if (reward.actionType === 'FREE_SESSION') {
@@ -109,7 +137,8 @@ const managePoints = async (req, res) => {
                                 memberId: Number(id),
                                 type: 'FREE_SESSION',
                                 value: reward.actionValue || 1,
-                                status: 'ACTIVE'
+                                status: 'ACTIVE',
+                                tenantId
                             }
                         });
                     } else if (reward.actionType === 'DISCOUNT') {
@@ -121,7 +150,8 @@ const managePoints = async (req, res) => {
                                 memberId: Number(id),
                                 type: discountType,
                                 value: reward.actionValue,
-                                status: 'ACTIVE'
+                                status: 'ACTIVE',
+                                tenantId
                             }
                         });
                     }
@@ -135,7 +165,10 @@ const managePoints = async (req, res) => {
 
             // Update Member Points
             const updatedMember = await tx.member.update({
-                where: { id: Number(id) },
+                where: { 
+                    id: Number(id),
+                    tenantId
+                },
                 data: { points: newPoints }
             });
 
@@ -145,7 +178,8 @@ const managePoints = async (req, res) => {
                     memberId: Number(id),
                     points: type === 'REDEEM' ? -pointAmount : pointAmount,
                     type: transactionType,
-                    description: finalDescription
+                    description: finalDescription,
+                    tenantId
                 }
             });
 
@@ -172,7 +206,10 @@ const getHistory = async (req, res) => {
         await loyaltyService.reconcileMemberHistory({ memberId: Number(id) });
 
         const history = await prisma.loyaltyTransaction.findMany({
-            where: { memberId: Number(id) },
+            where: { 
+                memberId: Number(id),
+                tenantId: Number(req.user.tenantId)
+            },
             orderBy: { createdAt: 'desc' }
         });
         res.json(history);
@@ -187,7 +224,11 @@ const getMemberCoupons = async (req, res) => {
     try {
         const { memberId } = req.params;
         const coupons = await prisma.coupon.findMany({
-            where: { memberId: Number(memberId), status: 'ACTIVE' },
+            where: { 
+                memberId: Number(memberId), 
+                status: 'ACTIVE',
+                tenantId: Number(req.user.tenantId)
+            },
             orderBy: { createdAt: 'desc' }
         });
         res.json(coupons);
@@ -202,12 +243,22 @@ const validateCoupon = async (req, res) => {
         const { code, subtotal, memberId } = req.body;
         if (!code) return res.status(400).json({ error: 'Coupon code is required' });
 
-        let coupon = await prisma.coupon.findFirst({ where: { code: code.toUpperCase() } });
+        let coupon = await prisma.coupon.findFirst({ 
+            where: { 
+                code: code.toUpperCase(),
+                tenantId: Number(req.user.tenantId)
+            } 
+        });
         let source = 'LOYALTY';
 
         if (!coupon) {
             // Fallback to global PromoCode
-            coupon = await prisma.promoCode.findFirst({ where: { code: code.toUpperCase() } });
+            coupon = await prisma.promoCode.findFirst({ 
+                where: { 
+                    code: code.toUpperCase(),
+                    tenantId: Number(req.user.tenantId)
+                } 
+            });
             if (!coupon) return res.status(404).json({ error: 'Coupon / Promo code not found' });
             
             if (!coupon.isActive) return res.status(400).json({ error: 'Promo code is inactive' });

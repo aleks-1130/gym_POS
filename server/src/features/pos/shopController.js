@@ -217,12 +217,16 @@ const checkout = async (req, res) => {
                     type: 'EARNED',
                     description: 'Points earned from in-app store purchase',
                     gymId: require('../../utils/context').getGymId(),
+                    tenantId: Number(req.user.tenantId),
                     tx
                 });
             }
             if (!memberId && isTrainer && pointsAwarded > 0) {
                 await tx.user.update({
-                    where: { id: Number(req.user.id) },
+                    where: { 
+                        id: Number(req.user.id),
+                        tenantId: Number(req.user.tenantId)
+                    },
                     data: { loyaltyPoints: { increment: pointsAwarded } }
                 });
             }

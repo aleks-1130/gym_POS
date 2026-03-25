@@ -137,7 +137,10 @@ const requireActiveMembership = async (req, res, next) => {
 
         const memberId = Number(req.user.id);
         const member = await prisma.member.findUnique({
-            where: { id: memberId },
+            where: { 
+                id: memberId,
+                tenantId: Number(req.user.tenantId)
+            },
             select: {
                 id: true,
                 status: true,
@@ -180,11 +183,14 @@ const getMembers = async (req, res) => {
         const { tenantId } = req.user;
         const { search, page, limit, branchId } = req.query;
         const baseWhere = { 
-            status: { not: 'DELETED' }
+            status: { not: 'DELETED' },
+            tenantId: Number(tenantId)
         };
 
         if (branchId) {
             baseWhere.gymId = Number(branchId);
+        } else if (req.user.role !== 'OWNER' && req.user.gymId) {
+            baseWhere.gymId = Number(req.user.gymId);
         }
         const where = { ...baseWhere };
 
@@ -287,11 +293,16 @@ const deleteMember = async (req, res) => {
     try {
         const { tenantId } = req.user;
         const deletedSummary = await prisma.$transaction(async (tx) => {
+            const memberWhere = { 
+                id: memberId,
+                gym: { tenantId }
+            };
+            if (req.user.role !== 'OWNER' && req.user.gymId) {
+                memberWhere.gymId = Number(req.user.gymId);
+            }
+
             const existingMember = await tx.member.findFirst({
-                where: { 
-                    id: memberId,
-                    gym: { tenantId } // Enforce Tenant Isolation
-                },
+                where: memberWhere,
                 select: { id: true }
             });
 
@@ -647,7 +658,12 @@ const cancelBooking = async (req, res) => {
         }
 
         const cancelResult = await prisma.$transaction(async (tx) => {
-            const cls = await tx.class.findUnique({ where: { id: parsedClassId } });
+            const cls = await tx.class.findUnique({ 
+                where: { 
+                    id: parsedClassId,
+                    tenantId: Number(req.user.tenantId)
+                } 
+            });
             if (!cls) {
                 return { error: "Class not found", status: 404 };
             }
@@ -702,7 +718,10 @@ const cancelBooking = async (req, res) => {
             // If member leaves above 24 hours before class start, restore one session credit.
             if (shouldRestoreCredit) {
                 const member = await tx.member.findUnique({
-                    where: { id: memberId },
+                    where: { 
+                        id: memberId,
+                        tenantId: Number(req.user.tenantId)
+                    },
                     select: {
                         id: true,
                         classSessionsUsed: true
@@ -1022,12 +1041,22 @@ const bookTraining = async (req, res) => {
             return res.status(400).json({ error: parsedSlots.error });
         }
 
-        const member = await prisma.member.findUnique({ where: { id: Number(memberId) } });
+        const member = await prisma.member.findUnique({ 
+            where: { 
+                id: Number(memberId),
+                tenantId: Number(req.user.tenantId)
+            } 
+        });
         if (!member) {
             return res.status(404).json({ error: "Member profile not found. Please log in again as a member." });
         }
 
-        const trainer = await prisma.trainer.findUnique({ where: { id: Number(trainerId) } });
+        const trainer = await prisma.trainer.findUnique({ 
+            where: { 
+                id: Number(trainerId),
+                tenantId: Number(req.user.tenantId)
+            } 
+        });
         if (!trainer) return res.status(404).json({ error: "Trainer not found" });
 
         const allowedDurations = (trainer.sessionDurations || '60')
@@ -1160,12 +1189,22 @@ const bookTrainingCash = async (req, res) => {
             return res.status(400).json({ error: parsedSlots.error });
         }
 
-        const member = await prisma.member.findUnique({ where: { id: Number(resolvedMemberId) } });
+        const member = await prisma.member.findUnique({ 
+            where: { 
+                id: Number(resolvedMemberId),
+                tenantId: Number(req.user.tenantId)
+            } 
+        });
         if (!member) {
             return res.status(404).json({ error: "Member profile not found. Please log in again as a member." });
         }
 
-        const trainer = await prisma.trainer.findUnique({ where: { id: Number(trainerId) } });
+        const trainer = await prisma.trainer.findUnique({ 
+            where: { 
+                id: Number(trainerId),
+                tenantId: Number(req.user.tenantId)
+            } 
+        });
         if (!trainer) return res.status(404).json({ error: "Trainer not found" });
 
         const allowedDurations = (trainer.sessionDurations || '60')
@@ -1500,7 +1539,10 @@ const rateTrainingSession = async (req, res) => {
 
         const result = await prisma.$transaction(async (tx) => {
             await tx.trainingSession.update({
-                where: { id: sessionId },
+                where: { 
+                    id: sessionId,
+                    tenantId: Number(req.user.tenantId)
+                },
                 data: {
                     memberRating: rawRating,
                     memberRatingComment: normalizedComment,
@@ -1579,7 +1621,10 @@ const voidTrainingSessionRating = async (req, res) => {
         }
 
         await prisma.trainingSession.update({
-            where: { id: sessionId },
+            where: { 
+                id: sessionId,
+                tenantId: Number(req.user.tenantId)
+            },
             data: {
                 memberRating: null,
                 memberRatingComment: null,
@@ -1671,7 +1716,10 @@ const addPaymentMethod = async (req, res) => {
         const method = await prisma.$transaction(async (tx) => {
             if (makeDefault) {
                 await tx.paymentMethod.updateMany({
-                    where: { memberId },
+                    where: { 
+                        memberId,
+                        tenantId: Number(req.user.tenantId)
+                    },
                     data: { isDefault: false }
                 });
             }
@@ -1683,7 +1731,9 @@ const addPaymentMethod = async (req, res) => {
                     last4: computedLast4,
                     expiry: computedExpiry || null,
                     token: `pm_${Math.random().toString(36).slice(2, 14)}`,
-                    isDefault: makeDefault
+                    isDefault: makeDefault,
+                    tenantId: Number(req.user.tenantId),
+                    gymId: req.user.gymId ? Number(req.user.gymId) : member.gymId
                 }
             });
         });
@@ -1701,7 +1751,12 @@ const updatePaymentMethod = async (req, res) => {
 
     const { isDefault } = req.body;
     try {
-        const method = await prisma.paymentMethod.findUnique({ where: { id: methodId } });
+        const method = await prisma.paymentMethod.findUnique({ 
+            where: { 
+                id: methodId,
+                member: { tenantId: Number(req.user.tenantId) }
+            } 
+        });
         if (!method || method.memberId !== memberId) return res.status(404).json({ error: "Payment method not found" });
 
         if (isDefault) {
@@ -1724,7 +1779,12 @@ const deletePaymentMethod = async (req, res) => {
     if (req.user.role === 'MEMBER' && req.user.id !== memberId) return res.sendStatus(403);
 
     try {
-        const method = await prisma.paymentMethod.findUnique({ where: { id: methodId } });
+        const method = await prisma.paymentMethod.findUnique({ 
+            where: { 
+                id: methodId,
+                member: { tenantId: Number(req.user.tenantId) }
+            } 
+        });
         if (!method || method.memberId !== memberId) return res.status(404).json({ error: "Payment method not found" });
 
         await prisma.paymentMethod.delete({ where: { id: methodId } });
@@ -1846,6 +1906,7 @@ const createMember = async (req, res) => {
                     type: 'EARNED',
                     description: `Points earned from Member Registration (${plan.name})`,
                     gymId,
+                    tenantId: Number(req.user.tenantId),
                     tx
                 });
             }
@@ -1987,7 +2048,10 @@ const renewMembership = async (req, res) => {
         }
 
         const updatedMember = await prisma.member.update({
-            where: { id: Number(id) },
+            where: { 
+                id: Number(id),
+                tenantId: Number(req.user.tenantId)
+            },
             data: updateData
         });
 
@@ -2044,7 +2108,8 @@ const renewMembership = async (req, res) => {
                 points: pointsAwarded,
                 type: 'EARNED',
                 description: `Points earned from Membership Renewal (${planName})`,
-                gymId: member.gymId
+                gymId: member.gymId,
+                tenantId: Number(req.user.tenantId)
             });
         }
 
@@ -2158,7 +2223,10 @@ const purchaseClassSessionPackage = async (req, res) => {
             });
 
             const updatedMember = await tx.member.update({
-                where: { id: memberId },
+                where: { 
+                    id: memberId,
+                    tenantId: Number(req.user.tenantId)
+                },
                 data: {
                     classSessionsRemaining: { increment: Number(packageRecord.sessions) },
                     classSessionsPurchased: { increment: Number(packageRecord.sessions) }
@@ -2173,6 +2241,7 @@ const purchaseClassSessionPackage = async (req, res) => {
                     type: 'EARNED',
                     description: `Points earned from Class Package (${packageRecord.name})`,
                     gymId: require('../../utils/context').getGymId(),
+                    tenantId: Number(req.user.tenantId),
                     tx
                 });
             }
@@ -2341,7 +2410,10 @@ const updateMemberStatus = async (req, res) => {
         }
 
         const member = await prisma.member.update({
-            where: { id: memberId },
+            where: { 
+                id: memberId,
+                tenantId: Number(req.user.tenantId)
+            },
             data: updateData
         });
         res.json(member);
@@ -2398,7 +2470,10 @@ const useGuestPass = async (req, res) => {
         }
 
         const updatedMember = await prisma.member.update({
-            where: { id: memberId },
+            where: { 
+                id: memberId,
+                tenantId: Number(req.user.tenantId)
+            },
             data: {
                 guestPassUsedCount: { increment: requestedCount }
             }
@@ -2443,7 +2518,10 @@ const updateMember = async (req, res) => {
         }
 
         const member = await prisma.member.update({
-            where: { id: Number(id) },
+            where: { 
+                id: Number(id),
+                tenantId: Number(req.user.tenantId)
+            },
             data: {
                 firstName,
                 lastName,
@@ -2470,7 +2548,12 @@ const changePassword = async (req, res) => {
         return res.status(400).json({ error: "Current and new password are required" });
     }
     try {
-        const member = await prisma.member.findUnique({ where: { id: Number(id) } });
+        const member = await prisma.member.findUnique({ 
+            where: { 
+                id: Number(id),
+                tenantId: Number(req.user.tenantId)
+            } 
+        });
         if (!member || !member.password) {
             return res.status(400).json({ error: "Password is not set for this account" });
         }
@@ -2480,7 +2563,10 @@ const changePassword = async (req, res) => {
 
         const hashedPassword = await bcrypt.hash(newPassword, 10);
         await prisma.member.update({
-            where: { id: Number(id) },
+            where: { 
+                id: Number(id),
+                tenantId: Number(req.user.tenantId)
+            },
             data: { password: hashedPassword }
         });
 

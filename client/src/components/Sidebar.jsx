@@ -257,7 +257,7 @@ export default function Sidebar() {
                 </div>
 
                 {/* Navigation */}
-                <nav className={`flex-1 flex flex-col px-3 overflow-y-hidden overflow-x-hidden ${isDenseSidebar ? 'py-2.5 gap-0.5' : 'py-4 gap-1'} ${!isDenseSidebar ? 'no-scrollbar' : ''}`}>
+                <nav className={`flex-1 flex flex-col px-3 overflow-y-auto overflow-x-hidden ${isDenseSidebar ? 'py-2.5 gap-0.5' : 'py-4 gap-1'} ${!isDenseSidebar ? 'no-scrollbar' : ''}`}>
                     <NavItem to="/dashboard" icon="dashboard" label="Dashboard" />
 
                     {currentMenu.map((section, idx) => (

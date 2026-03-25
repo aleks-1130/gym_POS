@@ -6,7 +6,8 @@ const getReservations = async (req, res) => {
         const { sessionId } = req.params;
         if (!sessionId) return res.status(400).json({ error: 'sessionId required' });
 
-        const data = await redisClient.hGetAll(`cart:reserve:${sessionId}`);
+        const tenantId = req.user?.tenantId || 1;
+        const data = await redisClient.hGetAll(`cart:reserve:${tenantId}:${sessionId}`);
         res.json(data);
     } catch (error) {
         console.error('Error fetching reservations:', error);
@@ -27,8 +28,9 @@ const reserveStock = async (req, res) => {
             return res.status(400).json({ error: 'valid quantity required' });
         }
 
-        // Check global stock hold across all carts
-        const allKeys = await redisClient.keys('cart:reserve:*');
+        const tenantId = req.user?.tenantId || 1;
+        // Check global stock hold across all carts FOR THIS TENANT
+        const allKeys = await redisClient.keys(`cart:reserve:${tenantId}:*`);
         let globalHold = 0;
         let myCurrentHold = 0;
 
@@ -37,7 +39,7 @@ const reserveStock = async (req, res) => {
             if (hdata[productId]) {
                 const heldQty = Number(hdata[productId]);
                 globalHold += heldQty;
-                if (key === `cart:reserve:${sessionId}`) {
+                if (key === `cart:reserve:${tenantId}:${sessionId}`) {
                     myCurrentHold = heldQty;
                 }
             }
@@ -45,7 +47,10 @@ const reserveStock = async (req, res) => {
 
         // Product's actual stock in DB
         const product = await prisma.product.findUnique({
-            where: { id: Number(productId) }
+            where: { 
+                id: Number(productId),
+                tenantId: Number(tenantId)
+            }
         });
 
         if (!product) return res.status(404).json({ error: 'Product not found' });
@@ -63,9 +68,9 @@ const reserveStock = async (req, res) => {
         }
 
         // Create or update the reservation mapped to this sessionId
-        await redisClient.hSet(`cart:reserve:${sessionId}`, productId, qty.toString());
+        await redisClient.hSet(`cart:reserve:${tenantId}:${sessionId}`, productId, qty.toString());
         // Auto-expire cart contents dynamically in 15 minutes (900s)
-        await redisClient.expire(`cart:reserve:${sessionId}`, 900);
+        await redisClient.expire(`cart:reserve:${tenantId}:${sessionId}`, 900);
 
         res.json({ message: 'Stock reserved', productId, reservedQuantity: qty });
     } catch (error) {
@@ -78,7 +83,8 @@ const removeReservationItem = async (req, res) => {
     try {
         const { sessionId, productId } = req.params;
         
-        await redisClient.hDel(`cart:reserve:${sessionId}`, productId);
+        const tenantId = req.user?.tenantId || 1;
+        await redisClient.hDel(`cart:reserve:${tenantId}:${sessionId}`, productId);
         
         res.json({ message: 'Item reservation removed' });
     } catch (error) {
@@ -91,7 +97,8 @@ const clearSessionReservations = async (req, res) => {
     try {
         const { sessionId } = req.params;
         
-        await redisClient.del(`cart:reserve:${sessionId}`);
+        const tenantId = req.user?.tenantId || 1;
+        await redisClient.del(`cart:reserve:${tenantId}:${sessionId}`);
         
         res.json({ message: 'Cart reservations cleared' });
     } catch (error) {

@@ -8,7 +8,7 @@ const getNotifications = async (req, res) => {
         
         // Find member associated with user if not provided
         let targetMemberId = memberId;
-        if (!targetMemberId && role === 'MEMBER') {
+        if (role === 'MEMBER') {
             const member = await prisma.member.findFirst({ 
                 where: { 
                     email: { equals: req.user.email, mode: 'insensitive' },
@@ -16,6 +16,13 @@ const getNotifications = async (req, res) => {
                 } 
             });
             targetMemberId = member?.id;
+        } else if (targetMemberId && (role === 'STAFF' || role === 'ADMIN')) {
+            // VERIFY: Staff can only see notifications for members in their branch
+            const member = await prisma.member.findFirst({
+                where: { id: targetMemberId, gymId, tenantId },
+                select: { id: true }
+            });
+            if (!member) return res.status(403).json({ error: "Access denied to member notifications" });
         }
 
         const where = {
@@ -161,10 +168,14 @@ const broadcastAnnouncement = async (req, res) => {
 
 const deleteNotification = async (req, res) => {
     try {
-        const { tenantId } = req.user;
+        const { tenantId, gymId, role } = req.user;
         const { id } = req.params;
+        const where = { id: parseInt(id), tenantId };
+        if (role !== 'OWNER') {
+            where.gymId = gymId;
+        }
         await prisma.notification.deleteMany({
-            where: { id: parseInt(id), tenantId }
+            where: where
         });
         res.json({ success: true, message: "Notification deleted successfully" });
     } catch (e) {

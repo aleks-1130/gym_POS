@@ -1,15 +1,14 @@
 const prisma = require('../../config/prisma');
 
-const executeCommissionPayout = async (tx, { trainerId, sessionIds = [], classHistoryIds = [], recordedBy }) => {
+const executeCommissionPayout = async (tx, { trainerId, sessionIds = [], classHistoryIds = [], recordedBy, tenantId, gymId }) => {
     let totalCommission = 0;
     const notes = [];
 
     const trainer = await tx.trainer.findFirst({
         where: { 
             id: Number(trainerId),
-            // Ensure the trainer belongs to the same tenant (and gym if applicable)
-            // Note: Since this is an internal transaction, we assume trainerId is validated OR
-            // we should pass tenantId explicitly here. To be safe, let's keep it scoped.
+            tenantId,
+            gymId
         },
         include: { user: { select: { id: true } } }
     });
@@ -25,7 +24,9 @@ const executeCommissionPayout = async (tx, { trainerId, sessionIds = [], classHi
                 id: { in: sessionIds.map(Number) },
                 trainerId: Number(trainerId),
                 status: 'COMPLETED',
-                commissionPaid: false
+                commissionPaid: false,
+                tenantId,
+                gymId
             },
             include: { trainer: true, member: true }
         })
@@ -45,7 +46,9 @@ const executeCommissionPayout = async (tx, { trainerId, sessionIds = [], classHi
             where: {
                 id: { in: classHistoryIds.map(Number) },
                 trainerId: Number(trainerId),
-                commissionPaid: false
+                commissionPaid: false,
+                tenantId,
+                gymId
             },
             include: { class: true }
         })
@@ -69,7 +72,9 @@ const executeCommissionPayout = async (tx, { trainerId, sessionIds = [], classHi
                 payment: {
                     cashierId: Number(trainer.user.id),
                     method: 'COMMISSION_DEDUCTION'
-                }
+                },
+                tenantId,
+                gymId
             },
             orderBy: [{ payment: { date: 'asc' } }, { id: 'asc' }]
         })
@@ -392,7 +397,9 @@ const payCommissions = async (req, res) => {
             trainerId: Number(trainerId),
             sessionIds: sessionIds.map(Number),
             classHistoryIds: classHistoryIds.map(Number),
-            recordedBy: req.user.id
+            recordedBy: req.user.id,
+            tenantId: Number(req.user.tenantId),
+            gymId: Number(req.gymId || req.user.gymId)
         }));
 
         res.json({

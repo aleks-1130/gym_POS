@@ -62,11 +62,15 @@ const hasMissingCardImageColumnError = (error) => {
     return message.includes('cardImageUrl');
 };
 
-const getCurrentSnapshot = async (trainerId) => {
+const getCurrentSnapshot = async (trainerId, req) => {
     let trainer = null;
+    const tenantId = Number(req.user.tenantId);
     try {
         trainer = await prisma.trainer.findUnique({
-            where: { id: Number(trainerId) },
+            where: { 
+                id: Number(trainerId),
+                tenantId
+            },
             select: {
                 id: true,
                 name: true,
@@ -83,7 +87,10 @@ const getCurrentSnapshot = async (trainerId) => {
 
         // Backward compatibility if DB has not yet migrated to cardImageUrl.
         const legacyTrainer = await prisma.trainer.findUnique({
-            where: { id: Number(trainerId) },
+            where: { 
+                id: Number(trainerId),
+                tenantId
+            },
             select: {
                 id: true,
                 name: true,
@@ -159,7 +166,7 @@ const createMyProfileChangeRequest = async (req, res) => {
             return res.status(400).json({ error: 'No valid fields to update' });
         }
 
-        const currentSnapshot = await getCurrentSnapshot(trainerId);
+        const currentSnapshot = await getCurrentSnapshot(trainerId, req);
         if (!currentSnapshot) {
             return res.status(404).json({ error: 'Trainer not found' });
         }
@@ -181,7 +188,9 @@ const createMyProfileChangeRequest = async (req, res) => {
                 requestedById: Number(req.user.id),
                 requestType: 'PROFILE_UPDATE',
                 payload: changedPayload,
-                currentData: currentSnapshot
+                currentData: currentSnapshot,
+                tenantId: Number(req.user.tenantId),
+                gymId: Number(req.user.gymId)
             },
             include: {
                 trainer: { select: { id: true, name: true, email: true } },
@@ -277,7 +286,11 @@ const reviewByAdmin = async (req, res) => {
         }
 
         const request = await prisma.trainerChangeRequest.findUnique({
-            where: { id: requestId }
+            where: { 
+                id: requestId,
+                tenantId: Number(req.user.tenantId),
+                gymId: Number(req.user.gymId)
+            }
         });
         if (!request) return res.status(404).json({ error: 'Change request not found' });
         if (!['PENDING_ADMIN', 'PENDING_OWNER'].includes(String(request.status || '').toUpperCase())) {
@@ -289,7 +302,8 @@ const reviewByAdmin = async (req, res) => {
             updated = await applyApprovedRequest({
                 request,
                 adminReviewerId: req.user.id,
-                adminNote: normalizeNullableString(req.body?.note) || null
+                adminNote: normalizeNullableString(req.body?.note) || null,
+                req
             });
         } else {
             updated = await prisma.trainerChangeRequest.update({
@@ -324,7 +338,7 @@ const reviewByAdmin = async (req, res) => {
     }
 };
 
-const applyApprovedRequest = async ({ request, adminReviewerId, adminNote = null }) => {
+const applyApprovedRequest = async ({ request, adminReviewerId, adminNote = null, req }) => {
     const payload = request?.payload && typeof request.payload === 'object' ? request.payload : {};
     const updateData = {};
 
@@ -351,7 +365,10 @@ const applyApprovedRequest = async ({ request, adminReviewerId, adminNote = null
     if (Object.keys(updateData).length > 0) {
         try {
             await prisma.trainer.update({
-                where: { id: Number(request.trainerId) },
+                where: { 
+                    id: Number(request.trainerId),
+                    tenantId: Number(req.user.tenantId)
+                },
                 data: updateData
             });
         } catch (error) {
@@ -366,7 +383,10 @@ const applyApprovedRequest = async ({ request, adminReviewerId, adminNote = null
 
             if (Object.keys(legacyUpdateData).length > 0) {
                 await prisma.trainer.update({
-                    where: { id: Number(request.trainerId) },
+                    where: { 
+                        id: Number(request.trainerId),
+                        tenantId: Number(req.user.tenantId)
+                    },
                     data: legacyUpdateData
                 });
             }
@@ -380,7 +400,10 @@ const applyApprovedRequest = async ({ request, adminReviewerId, adminNote = null
     }
 
     return prisma.trainerChangeRequest.update({
-        where: { id: Number(request.id) },
+        where: { 
+            id: Number(request.id),
+            tenantId: Number(req.user.tenantId)
+        },
         data: {
             status: 'APPLIED',
             adminDecisionBy: Number(adminReviewerId),

@@ -13,13 +13,17 @@ const loyaltyService = {
      * @param {string} params.type - The type of transaction (EARNED, REDEEMED, ADJUSTED, REVERSED).
      * @param {string} params.description - A human-readable description of the transaction.
      * @param {number} params.gymId - The gym ID for scoping.
+     * @param {number} params.tenantId - The tenant ID for scoping.
      */
-    async recordTransaction(tx, { memberId, points, type, description, gymId }) {
+    async recordTransaction(tx, { memberId, points, type, description, gymId, tenantId }) {
         if (!memberId || points === 0) return;
 
         // 1. Update Member Balance
         await tx.member.update({
-            where: { id: Number(memberId) },
+            where: { 
+                id: Number(memberId),
+                tenantId: Number(tenantId)
+            },
             data: { points: { increment: points } }
         });
 
@@ -30,7 +34,8 @@ const loyaltyService = {
                 points: points,
                 type: type,
                 description: description,
-                gymId: gymId
+                gymId: gymId,
+                tenantId: Number(tenantId)
             }
         });
     },
@@ -38,14 +43,14 @@ const loyaltyService = {
     /**
      * Helper to route point recording with or without an existing transaction
      */
-    async recordPoints({ memberId, points, type, description, gymId, tx }) {
+    async recordPoints({ memberId, points, type, description, gymId, tenantId, tx }) {
         if (!memberId || points === 0) return;
         
         if (tx) {
-            return await this.recordTransaction(tx, { memberId, points, type, description, gymId });
+            return await this.recordTransaction(tx, { memberId, points, type, description, gymId, tenantId });
         } else {
             return await prisma.$transaction(async (newTx) => {
-                return await this.recordTransaction(newTx, { memberId, points, type, description, gymId });
+                return await this.recordTransaction(newTx, { memberId, points, type, description, gymId, tenantId });
             });
         }
     },

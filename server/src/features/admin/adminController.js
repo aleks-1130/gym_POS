@@ -88,7 +88,12 @@ const adminCreateUser = async (req, res) => {
         const { role: creatorRole, gymId: creatorGymId, tenantId } = req.user;
 
         // Restriction: Admin/Owner can only create users for their own tenant
-        const targetGym = await prisma.gym.findUnique({ where: { id: Number(targetGymId) } });
+        const targetGym = await prisma.gym.findFirst({ 
+            where: { 
+                id: Number(targetGymId),
+                tenantId: tenantId
+            } 
+        });
         if (!targetGym || targetGym.tenantId !== tenantId) {
             return res.status(403).json({ error: "Access denied: Branch belongs to another organization" });
         }

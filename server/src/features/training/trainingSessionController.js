@@ -139,6 +139,8 @@ const checkBookingConflict = async (trainerId, startDateTime, durationMinutes, e
                 lt: endOfDay
             },
             status: { notIn: FINALIZED_SESSION_STATUSES },
+            tenantId: Number(req.user?.tenantId || 1),
+            gymId: Number(req.user?.gymId || 1),
             ...(excludeSessionId ? { id: { not: Number(excludeSessionId) } } : {})
         }
     });
@@ -176,7 +178,10 @@ const shouldTemporarilyOpenTrainerForDate = async ({ trainerId, date, now = new 
 const getTrainerUserId = async (trainerId) => {
     if (!Number.isInteger(Number(trainerId))) return null;
     const trainerUser = await prisma.user.findFirst({
-        where: { trainerId: Number(trainerId) },
+        where: { 
+            trainerId: Number(trainerId),
+            tenantId: Number(req.user?.tenantId || 1)
+        },
         select: { id: true }
     });
     return trainerUser ? Number(trainerUser.id) : null;
@@ -220,7 +225,8 @@ const getSessionById = async (req, res) => {
         const session = await prisma.trainingSession.findUnique({
             where: { 
                 id: Number(req.params.id),
-                tenantId: Number(req.user.tenantId)
+                tenantId: Number(req.user.tenantId),
+                gymId: req.user.role === 'OWNER' ? undefined : Number(req.user.gymId)
             },
             select: {
                 id: true,
@@ -261,7 +267,8 @@ const completeSession = async (req, res) => {
         const session = await prisma.trainingSession.findUnique({
             where: { 
                 id: Number(id),
-                tenantId: Number(req.user.tenantId)
+                tenantId: Number(req.user.tenantId),
+                gymId: req.user.role === 'OWNER' ? undefined : Number(req.user.gymId)
             },
             include: { trainer: true }
         });
@@ -362,13 +369,15 @@ const completeSession = async (req, res) => {
                     // 1. Record Session Material Link
                     await tx.sessionMaterial.create({
                         data: {
-                            sessionId: session.id,
+                            session: { connect: { id: session.id } },
                             productId: resolvedProductId,
                             name: resolvedName,
                             category: resolvedCategory,
                             quantity: requestedQty,
                             costPerUnit: resolvedCostPerUnit || 0,
-                            totalCost: itemCost
+                            totalCost: itemCost,
+                            gym: session.gymId ? { connect: { id: session.gymId } } : undefined,
+                            tenant: { connect: { id: Number(req.user.tenantId) } }
                         }
                     });
 
@@ -394,8 +403,8 @@ const completeSession = async (req, res) => {
                             date: new Date(),
                             notes: `Used in session #${session.id} with ${session.trainer.name}`,
                             recordedBy: req.user.id.toString(),
-                            gymId: session.gymId || req.user.gymId,
-                            tenantId: session.tenantId || req.user.tenantId
+                            gym: (session.gymId || req.user.gymId) ? { connect: { id: session.gymId || req.user.gymId } } : undefined,
+                            tenant: { connect: { id: Number(session.tenantId || req.user.tenantId) } }
                         }
                     });
                 }
@@ -409,8 +418,8 @@ const completeSession = async (req, res) => {
                         date: new Date(),
                         notes: `Used in session #${session.id} (Manual Entry)`,
                         recordedBy: req.user.id.toString(),
-                        gymId: session.gymId || req.user.gymId,
-                        tenantId: session.tenantId || req.user.tenantId
+                        gym: (session.gymId || req.user.gymId) ? { connect: { id: session.gymId || req.user.gymId } } : undefined,
+                        tenant: { connect: { id: Number(session.tenantId || req.user.tenantId) } }
                     }
                 });
             }
@@ -443,7 +452,8 @@ const updateSession = async (req, res) => {
         const session = await prisma.trainingSession.findUnique({ 
             where: { 
                 id: sessionId,
-                tenantId: Number(req.user.tenantId)
+                tenantId: Number(req.user.tenantId),
+                gymId: req.user.role === 'OWNER' ? undefined : Number(req.user.gymId)
             } 
         });
         if (!session) return res.status(404).json({ error: "Session not found" });
@@ -555,7 +565,10 @@ const getMySessions = async (req, res) => {
         const trainerId = req.user.trainerId;
         if (!trainerId) return res.status(400).json({ error: "Trainer account is not linked" });
         const sessions = await prisma.trainingSession.findMany({
-            where: { trainerId: Number(trainerId) },
+            where: { 
+                trainerId: Number(trainerId),
+                tenantId: Number(req.user.tenantId)
+            },
             include: { member: true },
             orderBy: { date: 'asc' }
         });
@@ -573,7 +586,8 @@ const cancelSession = async (req, res) => {
         const session = await prisma.trainingSession.findUnique({
             where: { 
                 id: sessionId,
-                tenantId: Number(req.user.tenantId)
+                tenantId: Number(req.user.tenantId),
+                gymId: req.user.role === 'OWNER' ? undefined : Number(req.user.gymId)
             }
         });
 
@@ -621,7 +635,10 @@ const cancelSession = async (req, res) => {
 
         // 3. Update Status
         await prisma.trainingSession.update({
-            where: { id: sessionId },
+            where: { 
+                id: sessionId,
+                tenantId: Number(req.user.tenantId)
+            },
             data: { status: 'CANCELLED' }
         });
 
@@ -647,7 +664,8 @@ const declineSession = async (req, res) => {
         const session = await prisma.trainingSession.findUnique({
             where: { 
                 id: sessionId,
-                tenantId: Number(req.user.tenantId)
+                tenantId: Number(req.user.tenantId),
+                gymId: req.user.role === 'OWNER' ? undefined : Number(req.user.gymId)
             }
         });
 
@@ -656,7 +674,10 @@ const declineSession = async (req, res) => {
         }
 
         const updated = await prisma.trainingSession.update({
-            where: { id: sessionId },
+            where: { 
+                id: sessionId,
+                tenantId: Number(req.user.tenantId)
+            },
             data: {
                 status: 'DECLINED',
                 notes: reason ? `Declined: ${reason}` : session.notes
@@ -680,7 +701,8 @@ const getSessionMaterialCandidates = async (req, res) => {
         const session = await prisma.trainingSession.findUnique({
             where: { 
                 id: sessionId,
-                tenantId: Number(req.user.tenantId)
+                tenantId: Number(req.user.tenantId),
+                gymId: req.user.role === 'OWNER' ? undefined : Number(req.user.gymId)
             },
             select: { id: true, trainerId: true }
         });
@@ -746,7 +768,7 @@ const getSessionMaterialCandidates = async (req, res) => {
 
         return res.json(candidates);
     } catch (e) {
-        return res.status(500).json({ error: "Failed to fetch material candidates", detail: e?.message });
+        return res.status(500).json({ error: "Failed to fetch material candidates" });
     }
 };
 
@@ -760,7 +782,10 @@ const memberRescheduleSession = async (req, res) => {
 
     try {
         const session = await prisma.trainingSession.findUnique({
-            where: { id: sessionId }
+            where: { 
+                id: sessionId,
+                tenantId: Number(req.user.tenantId)
+            }
         });
         if (!session) {
             return res.status(404).json({ error: "Session not found" });

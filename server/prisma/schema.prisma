@@ -16,6 +16,7 @@ model Tenant {
   isActive             Boolean               @default(true)
   deletedAt            DateTime?
   accessLogs           AccessLog[]
+  auditLogs            AuditLog[]
   categories           Category[]
   classSessionPackages ClassSessionPackage[]
   expenses             Expense[]
@@ -53,6 +54,9 @@ model Tenant {
   memberNotes          MemberNote[]
   gymProfiles          GymProfile[]
   notificationPreferences NotificationPreference[]
+  financialInstitutions   FinancialInstitution[]
+  paymentCollections      PaymentCollection[]
+  paymentMethods          PaymentMethod[]
 }
 
 model Gym {
@@ -127,9 +131,12 @@ model FinancialInstitution {
   isActive               Boolean  @default(true)
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
+  tenantId               Int      @default(1)
   gym                    Gym      @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  tenant                 Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([gymId, method])
+  @@index([tenantId])
 }
 
 model PaymentCollection {
@@ -140,11 +147,14 @@ model PaymentCollection {
   method                 String
   createdAt              DateTime @default(now())
   gymId                  Int?
+  tenantId               Int      @default(1)
   gym                    Gym?     @relation(fields: [gymId], references: [id])
   payment                Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  tenant                 Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([paymentId])
   @@index([gymId])
+  @@index([tenantId])
 }
 
 model User {
@@ -397,8 +407,12 @@ model PaymentMethod {
   isDefault Boolean  @default(false)
   createdAt DateTime @default(now())
   gymId     Int?
+  tenantId  Int      @default(1)
   gym       Gym?     @relation(fields: [gymId], references: [id])
   member    Member   @relation(fields: [memberId], references: [id])
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
 model Plan {

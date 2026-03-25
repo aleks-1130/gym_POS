@@ -40,17 +40,23 @@ const normalizeDiscountPresets = (rawPresets) => {
     });
 };
 
-const getStoredDiscountPresets = async (gymId) => {
+const getStoredDiscountPresets = async (gymId, tenantId) => {
     // We can use Prisma Client since we added gymId to PosConfig
     const config = await prisma.posConfig.findFirst({
-        where: { gymId: Number(gymId) }
+        where: { 
+            gymId: Number(gymId),
+            tenantId: Number(tenantId)
+        }
     });
     return normalizeDiscountPresets(config?.discountPresets);
 };
 
-const saveDiscountPresets = async (gymId, presets) => {
+const saveDiscountPresets = async (gymId, presets, tenantId) => {
     const config = await prisma.posConfig.findFirst({
-        where: { gymId: Number(gymId) }
+        where: { 
+            gymId: Number(gymId),
+            tenantId: Number(tenantId)
+        }
     });
     if (config) {
         await prisma.posConfig.update({
@@ -668,7 +674,10 @@ const createPayment = async (req, res) => {
 
                         const sessionsToAdd = Number(classPackage.sessions) * Number(item.quantity);
                         await tx.member.update({
-                            where: { id: Number(resolvedMemberId) },
+                            where: { 
+                                id: Number(resolvedMemberId),
+                                tenantId: Number(req.user.tenantId)
+                            },
                             data: {
                                 classSessionsRemaining: { increment: sessionsToAdd },
                                 classSessionsPurchased: { increment: sessionsToAdd }
@@ -686,6 +695,7 @@ const createPayment = async (req, res) => {
                     type: 'EARNED',
                     description: `Points earned from purchase (Ref: ${referenceId || 'N/A'})`,
                     gymId: gym.id,
+                    tenantId: Number(req.user.tenantId),
                     transactionId: createdPayment.id,
                     tx
                 });
@@ -694,12 +704,18 @@ const createPayment = async (req, res) => {
             // Mark coupon as used or increment promo use count
             if (appliedCoupon) {
                 await tx.coupon.update({
-                    where: { id: appliedCoupon.id },
+                    where: { 
+                        id: appliedCoupon.id,
+                        tenantId: Number(req.user.tenantId)
+                    },
                     data: { status: 'USED' }
                 });
             } else if (appliedPromo) {
                 await tx.promoCode.update({
-                    where: { id: appliedPromo.id },
+                    where: { 
+                        id: appliedPromo.id,
+                        tenantId: Number(req.user.tenantId)
+                    },
                     data: { usedCount: { increment: 1 } }
                 });
             }
@@ -712,7 +728,7 @@ const createPayment = async (req, res) => {
                         amount: col.amount,
                         method: col.method,
                         financialInstitutionId: col.financialInstitutionId || 'N/A',
-                        tenantId: req.user.tenantId,
+                        tenant: { connect: { id: req.user.tenantId } },
                         gym: (req.user.gymId || gym.id) ? { connect: { id: req.user.gymId || gym.id } } : undefined
                     }
                 });
@@ -840,6 +856,7 @@ const getAllPayments = async (req, res) => {
     if (req.user.role === 'STAFF') {
         const payments = await prisma.payment.findMany({
             where: {
+                gymId: req.user.gymId,
                 gym: { tenantId }, // Enforce Tenant Isolation
                 OR: [
                     { cashierId: req.user.id },
@@ -862,6 +879,7 @@ const getAllPayments = async (req, res) => {
     // Staff/Admin: see all
     const { startDate, endDate, page, limit } = req.query;
     const where = {
+        gymId: req.user.gymId,
         gym: { tenantId } // Enforce Tenant Isolation
     };
     if (startDate || endDate) {
@@ -932,6 +950,7 @@ const getRefunds = async (req, res) => {
         const targetStatuses = normalizedType === 'ALL' ? ['VOIDED', 'RETURNED'] : [normalizedType];
         const where = {
             status: { in: targetStatuses },
+            gymId: req.user.gymId,
             gym: { tenantId: req.user.tenantId } // Enforce Tenant Isolation
         };
 
@@ -1123,7 +1142,7 @@ const voidPayment = async (req, res) => {
     const paymentId = Number(req.params.id);
 
     try {
-        const config = await getPosConfig(req.user.gymId);
+        const config = await getPosConfig(req.user.gymId, req.user.tenantId);
         if (!config.voidPinHash) {
             return res.status(400).json({ error: "Void PIN is not configured" });
         }
@@ -1219,10 +1238,10 @@ const voidPayment = async (req, res) => {
 const getPosSettings = async (req, res) => {
     try {
         const [config, receiptSettings] = await Promise.all([
-            getPosConfig(req.user.gymId),
+            getPosConfig(req.user.gymId, req.user.tenantId),
             getReceiptSettings(req.user.gymId, req.user.tenantId)
         ]);
-        const discountPresets = await getStoredDiscountPresets(req.user.gymId);
+        const discountPresets = await getStoredDiscountPresets(req.user.gymId, req.user.tenantId);
         res.json({
             hasVoidPin: Boolean(config.voidPinHash),
             hasReturnPin: Boolean(config.returnPinHash),
@@ -1253,7 +1272,7 @@ const updatePosSettings = async (req, res) => {
                 hasVoidPin: Boolean(config.voidPinHash),
                 hasReturnPin: Boolean(config.returnPinHash),
                 receiptSettings: currentReceiptSettings,
-                discountPresets: await getStoredDiscountPresets(config.id)
+                discountPresets: await getStoredDiscountPresets(config.gymId, config.tenantId)
             });
         }
 
@@ -1298,7 +1317,7 @@ const updatePosSettings = async (req, res) => {
         }
 
         if (hasDiscountPresetsInput) {
-            await saveDiscountPresets(req.user.gymId, normalizedDiscountPresets);
+            await saveDiscountPresets(req.user.gymId, normalizedDiscountPresets, req.user.tenantId);
         }
 
         let savedReceiptSettings = null;
@@ -1328,7 +1347,7 @@ const getPosReceiptSettings = async (req, res) => {
 
 const getPosDiscountOptions = async (req, res) => {
     try {
-        const discountPresets = await getStoredDiscountPresets(req.user.gymId);
+        const discountPresets = await getStoredDiscountPresets(req.user.gymId, req.user.tenantId);
         res.json(discountPresets);
     } catch (e) {
         res.status(500).json({ error: "Failed to load discount presets" });

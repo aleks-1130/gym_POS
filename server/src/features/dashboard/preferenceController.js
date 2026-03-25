@@ -7,7 +7,10 @@ const getPreferences = async (req, res) => {
         let where = {};
         if (role === 'MEMBER') {
             const member = await prisma.member.findFirst({ 
-                where: { email: { equals: req.user.email, mode: 'insensitive' } } 
+                where: { 
+                    email: { equals: req.user.email, mode: 'insensitive' },
+                    tenantId: Number(req.user.tenantId)
+                } 
             });
             if (!member) return res.status(404).json({ error: "Member not found" });
             where = { memberId: member.id };
@@ -24,6 +27,7 @@ const getPreferences = async (req, res) => {
             preferences = await prisma.notificationPreference.create({
                 data: {
                     ...where,
+                    tenantId: Number(req.user.tenantId),
                     emailAnnouncements: true,
                     emailReminders: true,
                     emailReceipts: true,
@@ -62,7 +66,10 @@ const updatePreferences = async (req, res) => {
         let where = {};
         if (role === 'MEMBER') {
             const member = await prisma.member.findFirst({ 
-                where: { email: { equals: req.user.email, mode: 'insensitive' } } 
+                where: { 
+                    email: { equals: req.user.email, mode: 'insensitive' },
+                    tenantId: Number(req.user.tenantId)
+                } 
             });
             if (!member) return res.status(404).json({ error: "Member not found" });
             where = { memberId: member.id };
@@ -75,7 +82,8 @@ const updatePreferences = async (req, res) => {
             update: data,
             create: {
                 ...where,
-                ...data
+                ...data,
+                tenantId: Number(req.user.tenantId)
             }
         });
 

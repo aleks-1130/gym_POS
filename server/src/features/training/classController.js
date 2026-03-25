@@ -408,7 +408,11 @@ const getClassParticipants = async (req, res) => {
         const { tenantId } = req.user;
         const classId = Number(req.params.id);
         const cls = await prisma.class.findFirst({ 
-            where: { id: classId, tenantId: Number(tenantId) } 
+            where: { 
+                id: classId, 
+                tenantId: Number(tenantId),
+                gymId: req.user.role === 'OWNER' ? undefined : Number(req.user.gymId)
+            } 
         });
 
         if (!cls) return res.status(404).json({ error: 'Class not found' });
@@ -491,7 +495,11 @@ const updateClass = async (req, res) => {
     const { tenantId } = req.user;
     try {
         const existing = await prisma.class.findFirst({ 
-            where: { id: classId, tenantId: Number(tenantId) } 
+            where: { 
+                id: classId, 
+                tenantId: Number(tenantId),
+                gymId: req.user.role === 'OWNER' ? undefined : Number(req.user.gymId)
+            } 
         });
 
         if (!existing) {
@@ -539,7 +547,10 @@ const updateClass = async (req, res) => {
             : undefined;
 
         const gymClass = await prisma.class.update({
-            where: { id: classId },
+            where: { 
+                id: classId,
+                tenantId: Number(tenantId)
+            },
             data: {
                 name,
                 scheduleType: scheduleMeta.scheduleType,
@@ -566,7 +577,11 @@ const deleteClass = async (req, res) => {
     const { tenantId } = req.user;
     try {
         const existing = await prisma.class.findFirst({ 
-            where: { id: classId, tenantId: Number(tenantId) } 
+            where: { 
+                id: classId, 
+                tenantId: Number(tenantId),
+                gymId: req.user.role === 'OWNER' ? undefined : Number(req.user.gymId)
+            } 
         });
         if (req.user.role === 'TRAINER') {
             if (!existing || existing.trainerId !== Number(req.user.trainerId)) {
@@ -603,7 +618,11 @@ const updateAttendeeStatus = async (req, res) => {
         }
 
         const cls = await prisma.class.findFirst({ 
-            where: { id: classId, tenantId: Number(tenantId) } 
+            where: { 
+                id: classId, 
+                tenantId: Number(tenantId),
+                gymId: req.user.role === 'OWNER' ? undefined : Number(req.user.gymId)
+            } 
         });
         if (!cls || cls.trainerId !== Number(trainerId)) {
             return res.status(403).json({ error: 'Access denied' });
@@ -701,7 +720,11 @@ const startClassSession = async (req, res) => {
 
     try {
         const cls = await prisma.class.findFirst({
-            where: { id: classId, tenantId: Number(tenantId) },
+            where: { 
+                id: classId, 
+                tenantId: Number(tenantId),
+                gymId: req.user.role === 'OWNER' ? undefined : Number(req.user.gymId)
+            },
             include: { trainer: true }
         });
 
@@ -796,7 +819,11 @@ const completeClass = async (req, res) => {
 
     try {
         const cls = await prisma.class.findFirst({
-            where: { id: classId, tenantId: Number(tenantId) },
+            where: { 
+                id: classId, 
+                tenantId: Number(tenantId),
+                gymId: req.user.role === 'OWNER' ? undefined : Number(req.user.gymId)
+            },
             include: { trainer: true }
         });
 

@@ -227,8 +227,12 @@ const getTrainerReviews = async (req, res) => {
     }
 
     try {
-        const trainer = await prisma.trainer.findUnique({
-            where: { id: trainerId },
+        const trainer = await prisma.trainer.findFirst({
+            where: { 
+                id: trainerId,
+                tenantId: Number(req.user.tenantId),
+                gymId: Number(req.user.gymId)
+            },
             select: { id: true, name: true }
         });
         if (!trainer) {
@@ -241,7 +245,9 @@ const getTrainerReviews = async (req, res) => {
                     trainerId,
                     status: 'COMPLETED',
                     memberRating: { not: null },
-                    memberRatingVoided: false
+                    memberRatingVoided: false,
+                    tenantId: Number(req.user.tenantId),
+                    gymId: Number(req.user.gymId)
                 },
                 _avg: { memberRating: true },
                 _count: { memberRating: true }
@@ -251,7 +257,9 @@ const getTrainerReviews = async (req, res) => {
                     trainerId,
                     status: 'COMPLETED',
                     memberRating: { not: null },
-                    memberRatingVoided: false
+                    memberRatingVoided: false,
+                    tenantId: Number(req.user.tenantId),
+                    gymId: Number(req.user.gymId)
                 },
                 select: {
                     id: true,
@@ -724,7 +732,7 @@ const createTrainer = async (req, res) => {
                 commissionRate: commissionRate !== '' && commissionRate !== undefined ? Number(commissionRate) : 0.0,
                 baseSalary: baseSalary !== '' && baseSalary !== undefined ? Number(baseSalary) : 0.0,
                 gymId: gymId ? Number(gymId) : null,
-                tenantId: tenantId ? Number(tenantId) : 1
+                tenantId: Number(req.user.tenantId)
             }
         });
 
@@ -813,8 +821,12 @@ const updateTrainer = async (req, res) => {
             }
         }
 
-        const trainer = await prisma.trainer.update({
-            where: { id: trainerId },
+        const trainer = await prisma.trainer.updateMany({
+            where: { 
+                id: trainerId,
+                tenantId: Number(req.user.tenantId),
+                gymId: Number(req.user.gymId)
+            },
             data: {
                 ...(name !== undefined ? { name: String(name).trim() } : {}),
                 ...(type !== undefined ? { type } : {}),
@@ -845,6 +857,15 @@ const updateTrainer = async (req, res) => {
 const deleteTrainer = async (req, res) => {
     const trainerId = Number(req.params.id);
     try {
+        const trainer = await prisma.trainer.findFirst({
+            where: { 
+                id: trainerId,
+                tenantId: Number(req.user.tenantId),
+                gymId: Number(req.user.gymId)
+            }
+        });
+        if (!trainer) return res.status(404).json({ error: 'Trainer not found' });
+
         await prisma.trainer.delete({ where: { id: trainerId } });
         await removeTrainerAvailability(trainerId);
         res.json({ message: 'Trainer deleted' });
@@ -864,7 +885,13 @@ const createTrainerLogin = async (req, res) => {
         return res.status(400).json({ error: 'Trainer email is required to create a login' });
     }
     try {
-        const trainer = await prisma.trainer.findUnique({ where: { id: trainerId } });
+        const trainer = await prisma.trainer.findFirst({ 
+            where: { 
+                id: trainerId,
+                tenantId: Number(req.user.tenantId),
+                gymId: Number(req.user.gymId)
+            } 
+        });
         if (!trainer) return res.status(404).json({ error: 'Trainer not found' });
 
         const existingUser = await prisma.user.findFirst({

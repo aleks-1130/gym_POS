@@ -54,8 +54,8 @@ const createExpense = async (req, res) => {
                 recordedBy: req.user.id.toString(),
                 trainerId: req.body.trainerId ? Number(req.body.trainerId) : null,
                 staffId: req.body.staffId ? Number(req.body.staffId) : null,
-                gymId: Number(gymId),
-                tenantId
+                gym: { connect: { id: Number(gymId) } },
+                tenant: { connect: { id: Number(tenantId) } }
             }
         });
         await logAudit("CREATE_EXPENSE", req.user.email, `Expense: ${expense.title}`, `Recorded ${expense.amount} in ${expense.category}`, gymId, tenantId);

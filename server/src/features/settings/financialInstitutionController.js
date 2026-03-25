@@ -3,7 +3,10 @@ const prisma = require('../../config/prisma');
 const getFinancialInstitutions = async (req, res) => {
     try {
         const institutions = await prisma.financialInstitution.findMany({
-            where: { gymId: req.gymId }
+            where: { 
+                gymId: req.gymId,
+                tenantId: Number(req.user.tenantId)
+            }
         });
         res.json(institutions);
     } catch (error) {
@@ -24,7 +27,10 @@ const updateFinancialInstitutions = async (req, res) => {
         await prisma.$transaction(async (tx) => {
             // Delete existing ones
             await tx.financialInstitution.deleteMany({
-                where: { gymId }
+                where: { 
+                    gymId,
+                    tenantId: Number(req.user.tenantId)
+                }
             });
 
             // Create new ones
@@ -35,14 +41,18 @@ const updateFinancialInstitutions = async (req, res) => {
                         method: inst.method,
                         financialInstitutionId: inst.financialInstitutionId,
                         label: inst.label,
-                        isActive: inst.isActive !== undefined ? inst.isActive : true
+                        isActive: inst.isActive !== undefined ? inst.isActive : true,
+                        tenantId: Number(req.user.tenantId)
                     }))
                 });
             }
         });
 
         const updated = await prisma.financialInstitution.findMany({
-            where: { gymId }
+            where: { 
+                gymId,
+                tenantId: Number(req.user.tenantId)
+            }
         });
         res.json(updated);
     } catch (error) {

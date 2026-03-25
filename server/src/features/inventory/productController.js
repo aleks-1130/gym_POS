@@ -89,7 +89,7 @@ const getAllProducts = async (req, res) => {
         if (redisClient.isOpen && redisClient.isReady) {
             console.log("[DEBUG] Fetching Redis holds...");
             try {
-                const allKeys = await redisClient.keys('cart:reserve:*');
+                const allKeys = await redisClient.keys(`cart:reserve:${tenantId}:*`);
                 console.log(`[DEBUG] Found ${allKeys.length} hold keys`);
                 for (const key of allKeys) {
                     const hdata = await redisClient.hGetAll(key);
@@ -279,7 +279,15 @@ const updateProduct = async (req, res) => {
             if (!gymId) throw new Error("Gym context required to manage stock");
 
             // Verify ownership
-            const existing = await tx.product.findFirst({ where: { id, tenantId } });
+            const productWhere = { id, tenantId };
+            if (req.user.role !== 'OWNER' && req.user.gymId) {
+                productWhere.OR = [
+                    { isGlobal: true },
+                    { gymId: Number(req.user.gymId) }
+                ];
+            }
+
+            const existing = await tx.product.findFirst({ where: productWhere });
             if (!existing) throw new Error("Product not found or access denied");
 
             const productData = { ...normalized.data };
@@ -333,7 +341,15 @@ const deleteProduct = async (req, res) => {
 
     try {
         const tenantId = req.tenantId;
-        const product = await prisma.product.findFirst({ where: { id, tenantId } });
+        const productWhere = { id, tenantId };
+        if (req.user.role !== 'OWNER' && req.user.gymId) {
+            productWhere.OR = [
+                { isGlobal: true },
+                { gymId: Number(req.user.gymId) }
+            ];
+        }
+
+        const product = await prisma.product.findFirst({ where: productWhere });
         if (!product) return res.status(404).json({ error: "Product not found" });
 
         await prisma.product.deleteMany({ 

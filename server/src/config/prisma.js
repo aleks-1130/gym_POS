@@ -51,16 +51,22 @@ const prisma = prismaClient.$extends({
             }
 
             if (operation === 'createMany') {
-              return { ...data, gymId: data.gymId ?? gymId };
+              return { ...data, gymId: data.gymId ?? gymId, tenantId: data.tenantId ?? tenantId };
             }
 
+            // Check if there are any nested relations
             const hasRelation = Object.values(data).some(v => 
               v !== null && typeof v === 'object' && !(v instanceof Date) && !Array.isArray(v)
             );
 
-            const withTenant = tenantId ? { ...data, tenantId: data.tenantId ?? tenantId } : data;
+            // Use 'tenant: { connect: { id: tenantId } }' instead of scalar 'tenantId'
+            // to avoid "Unknown argument" errors on models that don't expose tenantId as a scalar input.
+            let withTenant = data;
+            if (tenantId && !data.tenant && !data.tenantId) {
+                withTenant = { ...data, tenant: { connect: { id: tenantId } } };
+            }
 
-            if (hasRelation) {
+            if (hasRelation || (withTenant.tenant)) {
               if (!data.gym && !data.gymId) {
                 return { ...withTenant, gym: { connect: { id: gymId } } };
               }

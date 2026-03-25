@@ -179,12 +179,15 @@ const parseRequestTarget = (rawId) => {
 
 const toClassBookingRequestId = (bookingId) => `${CLASS_BOOKING_ID_PREFIX}${Number(bookingId)}`;
 
-const restoreMemberClassSessionCredit = async (tx, memberId) => {
+const restoreMemberClassSessionCredit = async (tx, memberId, tenantId) => {
     const normalizedMemberId = Number(memberId);
     if (!Number.isInteger(normalizedMemberId) || normalizedMemberId <= 0) return;
 
     const member = await tx.member.findUnique({
-        where: { id: normalizedMemberId },
+        where: { 
+            id: normalizedMemberId,
+            tenantId: Number(tenantId)
+        },
         select: {
             classSessionsRemaining: true,
             classSessionsUsed: true
@@ -194,7 +197,10 @@ const restoreMemberClassSessionCredit = async (tx, memberId) => {
 
     const usedCount = Math.max(0, Number(member.classSessionsUsed || 0));
     await tx.member.update({
-        where: { id: normalizedMemberId },
+        where: { 
+            id: normalizedMemberId,
+            tenantId: Number(tenantId)
+        },
         data: {
             classSessionsRemaining: { increment: 1 },
             ...(usedCount > 0 ? { classSessionsUsed: { decrement: 1 } } : {})
@@ -509,8 +515,12 @@ const collectSessionPayment = async (req, res) => {
     }
 
     try {
-        const session = await prisma.trainingSession.findUnique({
-            where: { id: sessionId },
+        const session = await prisma.trainingSession.findFirst({
+            where: { 
+                id: sessionId,
+                tenantId: Number(req.user.tenantId),
+                gymId: Number(req.user.gymId)
+            },
             include: { member: true }
         });
         if (!session) return res.status(404).json({ error: "Training session not found" });
@@ -572,7 +582,11 @@ const collectSessionBatchPayment = async (req, res) => {
 
     try {
         const sessions = await prisma.trainingSession.findMany({
-            where: { id: { in: sessionIds } },
+            where: { 
+                id: { in: sessionIds },
+                tenantId: Number(req.user.tenantId),
+                gymId: Number(req.user.gymId)
+            },
             include: { member: true }
         });
         if (sessions.length !== sessionIds.length) {
@@ -648,8 +662,12 @@ const declineSessionBooking = async (req, res) => {
     }
 
     try {
-        const session = await prisma.trainingSession.findUnique({
-            where: { id: sessionId }
+        const session = await prisma.trainingSession.findFirst({
+            where: { 
+                id: sessionId,
+                tenantId: Number(req.user.tenantId),
+                gymId: Number(req.user.gymId)
+            }
         });
         if (!session) return res.status(404).json({ error: "Training session not found" });
         if (session.paymentStatus === 'PAID') {
@@ -686,14 +704,18 @@ const getRefundExceptionRequests = async (req, res) => {
         const [sessions, classBookings] = await Promise.all([
             prisma.trainingSession.findMany({
                 where: {
-                    notes: { contains: 'REFUND_EXCEPTION_REQUESTED' }
+                    notes: { contains: 'REFUND_EXCEPTION_REQUESTED' },
+                    tenantId: Number(req.user.tenantId),
+                    gymId: Number(req.user.gymId)
                 },
                 include: { member: true, trainer: true },
                 orderBy: { updatedAt: 'desc' }
             }),
             prisma.booking.findMany({
                 where: {
-                    status: { in: CLASS_REFUND_REQUEST_STATUSES }
+                    status: { in: CLASS_REFUND_REQUEST_STATUSES },
+                    tenantId: Number(req.user.tenantId),
+                    gymId: Number(req.user.gymId)
                 },
                 include: {
                     member: true,
@@ -789,8 +811,12 @@ const resolveRefundException = async (req, res) => {
         }
 
         if (target.entity === 'CLASS_BOOKING') {
-            const booking = await prisma.booking.findUnique({
-                where: { id: target.id }
+            const booking = await prisma.booking.findFirst({
+                where: { 
+                    id: target.id,
+                    tenantId: Number(req.user.tenantId),
+                    gymId: Number(req.user.gymId)
+                }
             });
             if (!booking) {
                 return res.status(404).json({ error: "Class booking request not found" });
@@ -813,7 +839,7 @@ const resolveRefundException = async (req, res) => {
                     data: { status: nextStatus }
                 });
                 if (decision === 'APPROVE') {
-                    await restoreMemberClassSessionCredit(tx, saved.memberId);
+                    await restoreMemberClassSessionCredit(tx, saved.memberId, Number(req.user.tenantId));
                 }
                 return saved;
             });
@@ -824,8 +850,12 @@ const resolveRefundException = async (req, res) => {
             });
         }
 
-        const session = await prisma.trainingSession.findUnique({
-            where: { id: target.id },
+        const session = await prisma.trainingSession.findFirst({
+            where: { 
+                id: target.id,
+                tenantId: Number(req.user.tenantId),
+                gymId: Number(req.user.gymId)
+            },
             include: {
                 trainer: {
                     select: {
@@ -1029,8 +1059,12 @@ const resolveTrainerChangeRequest = async (req, res) => {
 
     try {
         if (target.entity === 'CLASS_BOOKING') {
-            const booking = await prisma.booking.findUnique({
-                where: { id: target.id }
+            const booking = await prisma.booking.findFirst({
+                where: { 
+                    id: target.id,
+                    tenantId: Number(req.user.tenantId),
+                    gymId: Number(req.user.gymId)
+                }
             });
             if (!booking) {
                 return res.status(404).json({ error: "Class booking request not found" });
@@ -1059,7 +1093,7 @@ const resolveTrainerChangeRequest = async (req, res) => {
                     data: { status: nextStatus }
                 });
                 if (shouldApprove) {
-                    await restoreMemberClassSessionCredit(tx, saved.memberId);
+                    await restoreMemberClassSessionCredit(tx, saved.memberId, Number(req.user.tenantId));
                 }
                 return saved;
             });
@@ -1070,8 +1104,12 @@ const resolveTrainerChangeRequest = async (req, res) => {
             });
         }
 
-        const session = await prisma.trainingSession.findUnique({
-            where: { id: target.id }
+        const session = await prisma.trainingSession.findFirst({
+            where: { 
+                id: target.id,
+                tenantId: Number(req.user.tenantId),
+                gymId: Number(req.user.gymId)
+            }
         });
         if (!session) return res.status(404).json({ error: "Training session not found" });
 

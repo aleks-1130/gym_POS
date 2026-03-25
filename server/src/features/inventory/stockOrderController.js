@@ -91,7 +91,8 @@ const listStockOrders = async (req, res) => {
         const status = String(req.query.status || '').trim().toUpperCase();
 
         const where = {
-            tenantId: req.user.tenantId
+            tenantId: req.user.tenantId,
+            gymId: req.user.gymId
         };
         if (status) {
             where.status = status;
@@ -136,7 +137,8 @@ const getStockOrderById = async (req, res) => {
         const order = await prisma.stockOrder.findFirst({
             where: { 
                 id,
-                tenantId: req.user.tenantId
+                tenantId: req.user.tenantId,
+                gymId: req.user.gymId
             },
             include: {
                 supplier: { select: { name: true } },
@@ -210,7 +212,8 @@ const createStockOrder = async (req, res) => {
                     subtotal: summary.subtotal,
                     totalQuantity: summary.totalQuantity,
                     totalLineItems: summary.totalLineItems,
-                    tenantId: req.user.tenantId
+                    tenantId: req.user.tenantId,
+                    gymId: req.user.gymId
                 }
             });
 
@@ -230,7 +233,8 @@ const createStockOrder = async (req, res) => {
                     category: item.category,
                     quantity: item.quantity,
                     cost: item.cost,
-                    tenantId: req.user.tenantId
+                    tenantId: req.user.tenantId,
+                    gymId: req.user.gymId
                 }))
             });
 
@@ -283,7 +287,8 @@ const updateStockOrder = async (req, res) => {
         const existingOrder = await prisma.stockOrder.findFirst({
             where: { 
                 id,
-                tenantId: req.user.tenantId
+                tenantId: req.user.tenantId,
+                gymId: req.user.gymId
             },
             include: {
                 supplier: { select: { name: true } },
@@ -403,7 +408,8 @@ const markStockOrderReceived = async (req, res) => {
         const order = await prisma.stockOrder.findFirst({
             where: { 
                 id,
-                tenantId: req.user.tenantId
+                tenantId: req.user.tenantId,
+                gymId: req.user.gymId
             },
             include: {
                 supplier: { select: { name: true } },
@@ -487,7 +493,8 @@ const cancelStockOrder = async (req, res) => {
         const order = await prisma.stockOrder.findFirst({
             where: { 
                 id,
-                tenantId: req.user.tenantId
+                tenantId: req.user.tenantId,
+                gymId: req.user.gymId
             },
             include: {
                 supplier: { select: { name: true } },
