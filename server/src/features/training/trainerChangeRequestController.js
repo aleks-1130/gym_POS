@@ -193,7 +193,9 @@ const createMyProfileChangeRequest = async (req, res) => {
             'TRAINER_PROFILE_CHANGE_REQUESTED',
             req.user.email || `user:${req.user.id}`,
             `trainer:${trainerId}`,
-            JSON.stringify({ requestId: request.id, payload: changedPayload })
+            JSON.stringify({ requestId: request.id, payload: changedPayload }),
+            req.user.gymId,
+            req.user.tenantId
         );
 
         return res.status(201).json(sanitizeForResponse(request));
@@ -210,7 +212,10 @@ const getMyProfileChangeRequests = async (req, res) => {
         }
 
         const requests = await prisma.trainerChangeRequest.findMany({
-            where: { trainerId },
+            where: { 
+                trainerId,
+                tenantId: Number(req.user.tenantId)
+            },
             include: {
                 trainer: { select: { id: true, name: true, email: true } },
                 requestedBy: { select: { id: true, name: true, email: true } },
@@ -232,12 +237,13 @@ const listChangeRequests = async (req, res) => {
             return res.status(403).json({ error: 'Only admin can review trainer profile change requests' });
         }
 
-        const statusFilterRaw = String(req.query?.status || '').trim();
-        const statuses = statusFilterRaw
-            ? statusFilterRaw.split(',').map((value) => value.trim().toUpperCase()).filter(Boolean)
-            : [];
-
-        const where = statuses.length ? { status: { in: statuses } } : {};
+        const where = {
+            tenantId: Number(req.user.tenantId),
+            gymId: Number(req.user.gymId)
+        };
+        if (statuses.length) {
+            where.status = { in: statuses };
+        }
 
         const requests = await prisma.trainerChangeRequest.findMany({
             where,
@@ -307,7 +313,9 @@ const reviewByAdmin = async (req, res) => {
             action === 'APPROVE' ? 'TRAINER_PROFILE_CHANGE_APPROVED_BY_ADMIN' : 'TRAINER_PROFILE_CHANGE_REJECTED_BY_ADMIN',
             req.user.email || `user:${req.user.id}`,
             `trainerChangeRequest:${requestId}`,
-            JSON.stringify({ action, status: updated.status })
+            JSON.stringify({ action, status: updated.status }),
+            req.user.gymId,
+            req.user.tenantId
         );
 
         return res.json(sanitizeForResponse(updated));

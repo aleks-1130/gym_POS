@@ -192,15 +192,22 @@ const resolveClassMetaFromPayload = ({ payload, existing }) => {
 };
 
 const getAllClasses = async (req, res) => {
-    const where = req.user.role === 'TRAINER' ? { trainerId: Number(req.user.trainerId) } : {};
-    const now = new Date();
-
     try {
+        const getGymId = () => Number(req.gymId || req.user?.gymId);
+        const tenantId = Number(req.tenantId);
+        const currentGymId = getGymId();
+        const baseWhere = req.user.role === 'TRAINER' ? { trainerId: Number(req.user.trainerId) } : {};
+        
         const classes = await prisma.class.findMany({
-            where,
+            where: {
+                ...baseWhere,
+                tenantId,
+                gymId: currentGymId
+            },
             include: { trainer: true },
             orderBy: { dayOfWeek: 'asc' }
         });
+        const now = new Date();
 
         const resolvedSessionByClassId = {};
         classes.forEach((cls) => {
@@ -256,6 +263,8 @@ const getAllClasses = async (req, res) => {
         const todayCompletions = todayBounds
             ? await prisma.classHistory.findMany({
                 where: {
+                    tenantId,
+                    gymId: currentGymId,
                     date: { gte: todayBounds.start, lt: todayBounds.end }
                 },
                 select: { classId: true, attendeeCount: true, commissionAmount: true }
@@ -284,6 +293,7 @@ const getAllClasses = async (req, res) => {
                 ? await prisma.booking.findMany({
                     where: {
                         classId: cls.id,
+                        tenantId,
                         sessionDate: sessionDate
                     },
                     include: { member: true },
@@ -324,8 +334,13 @@ const getMyClassHistory = async (req, res) => {
         const limitRaw = Number.parseInt(req.query?.limit, 10);
         const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 500) : 200;
 
+        const { tenantId, gymId } = req.user;
         const history = await prisma.classHistory.findMany({
-            where: { trainerId },
+            where: { 
+                trainerId,
+                tenantId: Number(tenantId),
+                gymId: Number(gymId)
+            },
             include: {
                 class: {
                     select: {
@@ -350,6 +365,7 @@ const getMyClassHistory = async (req, res) => {
             const participants = await prisma.booking.findMany({
                 where: {
                     classId: entry.classId,
+                    tenantId: Number(tenantId),
                     sessionDate: {
                         gte: sessionDayStart,
                         lt: sessionDayEnd
@@ -389,8 +405,12 @@ const getMyClassHistory = async (req, res) => {
 
 const getClassParticipants = async (req, res) => {
     try {
+        const { tenantId } = req.user;
         const classId = Number(req.params.id);
-        const cls = await prisma.class.findUnique({ where: { id: classId } });
+        const cls = await prisma.class.findFirst({ 
+            where: { id: classId, tenantId: Number(tenantId) } 
+        });
+
         if (!cls) return res.status(404).json({ error: 'Class not found' });
 
         if (req.user.role === 'TRAINER' && cls.trainerId !== Number(req.user.trainerId)) {
@@ -412,6 +432,7 @@ const getClassParticipants = async (req, res) => {
         const participants = await prisma.booking.findMany({
             where: {
                 classId,
+                tenantId: Number(tenantId),
                 sessionDate: resolvedSessionDate
             },
             include: { member: true },
@@ -436,6 +457,9 @@ const createClass = async (req, res) => {
         const schedule = resolveScheduleFromPayload({ time, duration, startTime, endTime });
         if (schedule.error) return res.status(400).json({ error: schedule.error });
 
+        const gymId = req.gymId || req.user?.gymId;
+        const tenantId = req.tenantId;
+
         const gymClass = await prisma.class.create({
             data: {
                 name,
@@ -450,7 +474,9 @@ const createClass = async (req, res) => {
                 imageUrl: imageUrl !== undefined && String(imageUrl).trim() !== '' ? String(imageUrl).trim() : null,
                 daysOfWeek: scheduleMeta.daysOfWeek,
                 startDate: scheduleMeta.startDate,
-                endDate: scheduleMeta.endDate
+                endDate: scheduleMeta.endDate,
+                gymId: gymId ? Number(gymId) : null,
+                tenantId: tenantId ? Number(tenantId) : 1
             }
         });
         res.json(gymClass);
@@ -462,8 +488,12 @@ const createClass = async (req, res) => {
 const updateClass = async (req, res) => {
     const classId = Number(req.params.id);
     const { name, trainerId, time, duration, startTime, endTime, capacity, basePay, imageUrl } = req.body;
+    const { tenantId } = req.user;
     try {
-        const existing = await prisma.class.findUnique({ where: { id: classId } });
+        const existing = await prisma.class.findFirst({ 
+            where: { id: classId, tenantId: Number(tenantId) } 
+        });
+
         if (!existing) {
             return res.status(404).json({ error: 'Class not found' });
         }
@@ -533,20 +563,26 @@ const updateClass = async (req, res) => {
 
 const deleteClass = async (req, res) => {
     const classId = Number(req.params.id);
+    const { tenantId } = req.user;
     try {
+        const existing = await prisma.class.findFirst({ 
+            where: { id: classId, tenantId: Number(tenantId) } 
+        });
         if (req.user.role === 'TRAINER') {
-            const existing = await prisma.class.findUnique({ where: { id: classId } });
             if (!existing || existing.trainerId !== Number(req.user.trainerId)) {
                 return res.status(403).json({ error: 'Access denied' });
             }
         }
 
+        if (!existing) return res.status(404).json({ error: 'Class not found' });
+
         await prisma.$transaction(async (tx) => {
-            await tx.booking.deleteMany({ where: { classId } });
-            await tx.classHistory.deleteMany({ where: { classId } });
-            await tx.classSession.deleteMany({ where: { classId } });
-            await tx.class.delete({ where: { id: classId } });
+            await tx.booking.deleteMany({ where: { classId, tenantId: Number(tenantId) } });
+            await tx.classHistory.deleteMany({ where: { classId, tenantId: Number(tenantId) } });
+            await tx.classSession.deleteMany({ where: { classId, tenantId: Number(tenantId) } });
+            await tx.class.deleteMany({ where: { id: classId, tenantId: Number(tenantId) } });
         });
+
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ error: 'Failed to delete class', detail: e?.message });
@@ -557,6 +593,7 @@ const updateAttendeeStatus = async (req, res) => {
     try {
         const trainerId = req.user.trainerId;
         if (!trainerId) return res.status(400).json({ error: 'Trainer account is not linked' });
+        const { tenantId } = req.user;
         const classId = Number(req.params.classId);
         const bookingId = Number(req.params.bookingId);
         const normalizedStatus = String(req.body?.status || '').toUpperCase();
@@ -565,12 +602,17 @@ const updateAttendeeStatus = async (req, res) => {
             return res.status(400).json({ error: 'Invalid status. Allowed values: ATTENDED, NO_SHOW' });
         }
 
-        const cls = await prisma.class.findUnique({ where: { id: classId } });
+        const cls = await prisma.class.findFirst({ 
+            where: { id: classId, tenantId: Number(tenantId) } 
+        });
         if (!cls || cls.trainerId !== Number(trainerId)) {
             return res.status(403).json({ error: 'Access denied' });
         }
 
-        const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+        const booking = await prisma.booking.findFirst({ 
+            where: { id: bookingId, tenantId: Number(tenantId) } 
+        });
+
         if (!booking || booking.classId !== classId) {
             return res.status(404).json({ error: 'Booking not found' });
         }
@@ -591,12 +633,11 @@ const updateAttendeeStatus = async (req, res) => {
             return res.status(409).json({ error: 'Attendance can only be updated on the scheduled class day.' });
         }
 
-        const sessionRuntime = await prisma.classSession.findUnique({
+        const sessionRuntime = await prisma.classSession.findFirst({
             where: {
-                classId_sessionDate: {
-                    classId,
-                    sessionDate: bookingSessionDate
-                }
+                classId,
+                sessionDate: bookingSessionDate,
+                tenantId: Number(tenantId)
             }
         });
 
@@ -656,10 +697,11 @@ const startClassSession = async (req, res) => {
     const classId = Number(req.params.id);
     const requestedSessionDate = req.body?.sessionDate || req.query?.sessionDate;
     const now = new Date();
+    const { tenantId } = req.user;
 
     try {
-        const cls = await prisma.class.findUnique({
-            where: { id: classId },
+        const cls = await prisma.class.findFirst({
+            where: { id: classId, tenantId: Number(tenantId) },
             include: { trainer: true }
         });
 
@@ -692,6 +734,7 @@ const startClassSession = async (req, res) => {
         const existingCompletion = await prisma.classHistory.findFirst({
             where: {
                 classId,
+                tenantId: Number(tenantId),
                 date: { gte: sessionBounds.start, lt: sessionBounds.end }
             }
         });
@@ -700,12 +743,11 @@ const startClassSession = async (req, res) => {
             return res.status(409).json({ error: 'This class has already been completed for this session date' });
         }
 
-        const existingSessionRuntime = await prisma.classSession.findUnique({
+        const existingSessionRuntime = await prisma.classSession.findFirst({
             where: {
-                classId_sessionDate: {
-                    classId,
-                    sessionDate
-                }
+                classId,
+                sessionDate,
+                tenantId: Number(tenantId)
             }
         });
 
@@ -733,7 +775,9 @@ const startClassSession = async (req, res) => {
                 status: CLASS_SESSION_STATUS.IN_PROGRESS,
                 startedAt: now,
                 isAutoStarted: false,
-                startedByRole: req.user.role
+                startedByRole: req.user.role,
+                gymId: req.gymId || req.user.gymId ? Number(req.gymId || req.user.gymId) : null,
+                tenantId: Number(tenantId)
             }
         });
 
@@ -748,15 +792,17 @@ const completeClass = async (req, res) => {
     const classId = Number(req.params.id);
     const requestedSessionDate = req.body?.sessionDate;
     const now = new Date();
+    const { tenantId } = req.user;
 
     try {
-        const cls = await prisma.class.findUnique({
-            where: { id: classId },
+        const cls = await prisma.class.findFirst({
+            where: { id: classId, tenantId: Number(tenantId) },
             include: { trainer: true }
         });
 
         if (!cls) return res.status(404).json({ error: 'Class not found' });
-        if (req.user.role === 'TRAINER' && Number(cls.trainerId) !== Number(req.user.trainerId)) {
+
+        if (req.user.role === 'TRAINER' && cls.trainerId !== Number(req.user.trainerId)) {
             return res.status(403).json({ error: 'Access denied' });
         }
 
@@ -766,35 +812,20 @@ const completeClass = async (req, res) => {
             preferToday: true,
             includePastOneTime: true
         });
+
         if (!sessionDate) {
-            return res.status(400).json({ error: 'No valid class session found to complete.' });
-        }
-
-        if (!isSameDay(now, sessionDate)) {
-            return res.status(409).json({
-                error: 'Class can only be completed on its scheduled session day.'
-            });
-        }
-
-        const timeline = resolveSessionTimeline(cls, sessionDate);
-        if (!timeline) {
-            return res.status(400).json({ error: 'Invalid class session timeline.' });
-        }
-        const completionReadyAt = new Date(timeline.end.getTime() + (CLASS_COMPLETE_GRACE_MINUTES * 60000));
-        if (now < completionReadyAt) {
-            return res.status(409).json({
-                error: `Class can be completed only after class end (+${CLASS_COMPLETE_GRACE_MINUTES} min grace period).`
-            });
+            return res.status(400).json({ error: 'Could not resolve a valid session date for completion.' });
         }
 
         const sessionBounds = getDayBounds(sessionDate);
         if (!sessionBounds) {
-            return res.status(400).json({ error: 'Invalid session date' });
+            return res.status(400).json({ error: 'Could not determine session day bounds.' });
         }
 
         const existingCompletion = await prisma.classHistory.findFirst({
             where: {
                 classId,
+                tenantId: Number(tenantId),
                 date: { gte: sessionBounds.start, lt: sessionBounds.end }
             }
         });
@@ -803,12 +834,11 @@ const completeClass = async (req, res) => {
             return res.status(409).json({ error: 'This class has already been completed for this session date' });
         }
 
-        let existingSessionRuntime = await prisma.classSession.findUnique({
+        let existingSessionRuntime = await prisma.classSession.findFirst({
             where: {
-                classId_sessionDate: {
-                    classId,
-                    sessionDate
-                }
+                classId,
+                sessionDate,
+                tenantId: Number(tenantId)
             }
         });
 
@@ -838,7 +868,9 @@ const completeClass = async (req, res) => {
                     status: CLASS_SESSION_STATUS.IN_PROGRESS,
                     startedAt: now,
                     isAutoStarted: true,
-                    startedByRole: 'SYSTEM'
+                    startedByRole: 'SYSTEM',
+                    gymId: req.gymId || req.user.gymId ? Number(req.gymId || req.user.gymId) : null,
+                    tenantId: Number(tenantId)
                 }
             });
         }
@@ -846,6 +878,7 @@ const completeClass = async (req, res) => {
         const attendees = await prisma.booking.count({
             where: {
                 classId,
+                tenantId: Number(tenantId),
                 sessionDate,
                 status: { in: COMPLETION_ATTENDEE_STATUSES }
             }
@@ -859,7 +892,9 @@ const completeClass = async (req, res) => {
                     date: sessionDate,
                     attendeeCount: attendees,
                     commissionAmount: cls.basePay ?? 0,
-                    commissionPaid: false
+                    commissionPaid: false,
+                    gymId: req.gymId || req.user.gymId ? Number(req.gymId || req.user.gymId) : null,
+                    tenantId: Number(tenantId)
                 }
             }),
             prisma.classSession.upsert({
@@ -883,7 +918,9 @@ const completeClass = async (req, res) => {
                     completedAt: now,
                     isAutoStarted: true,
                     startedByRole: 'SYSTEM',
-                    completedByRole: req.user.role
+                    completedByRole: req.user.role,
+                    gymId: req.gymId || req.user.gymId ? Number(req.gymId || req.user.gymId) : null,
+                    tenantId: Number(tenantId)
                 }
             })
         ]);
@@ -900,36 +937,44 @@ const overrideCompleteClass = async (req, res) => {
     const requestedSessionDate = req.body?.sessionDate;
     const overrideReason = String(req.body?.reason || '').trim();
     const now = new Date();
+    const { tenantId } = req.user;
 
     try {
-        const cls = await prisma.class.findUnique({
-            where: { id: classId },
+        const cls = await prisma.class.findFirst({
+            where: { id: classId, tenantId: Number(tenantId) },
             include: { trainer: true }
         });
 
         if (!cls) return res.status(404).json({ error: 'Class not found' });
 
+        if (req.user.role === 'TRAINER' && cls.trainerId !== Number(req.user.trainerId)) {
+            return res.status(403).json({ error: 'Access denied' });
+        }
+
+        if (!overrideReason) {
+            return res.status(400).json({ error: 'Override reason is required' });
+        }
+
         const sessionDate = resolveClassSessionStart(cls, {
             now,
             requestedSessionDate,
-            preferToday: false,
+            preferToday: true,
             includePastOneTime: true
         });
+
         if (!sessionDate) {
-            return res.status(400).json({ error: 'No valid class session found to override complete.' });
-        }
-        if (sessionDate > now) {
-            return res.status(400).json({ error: 'Cannot override-complete a future class session.' });
+            return res.status(400).json({ error: 'Could not resolve a valid session date for completion.' });
         }
 
         const sessionBounds = getDayBounds(sessionDate);
         if (!sessionBounds) {
-            return res.status(400).json({ error: 'Invalid session date' });
+            return res.status(400).json({ error: 'Could not determine session day bounds.' });
         }
 
         const existingCompletion = await prisma.classHistory.findFirst({
             where: {
                 classId,
+                tenantId: Number(tenantId),
                 date: { gte: sessionBounds.start, lt: sessionBounds.end }
             }
         });
@@ -941,6 +986,7 @@ const overrideCompleteClass = async (req, res) => {
         const attendees = await prisma.booking.count({
             where: {
                 classId,
+                tenantId: Number(tenantId),
                 sessionDate,
                 status: { in: COMPLETION_ATTENDEE_STATUSES }
             }
@@ -954,7 +1000,11 @@ const overrideCompleteClass = async (req, res) => {
                     date: sessionDate,
                     attendeeCount: attendees,
                     commissionAmount: cls.basePay ?? 0,
-                    commissionPaid: false
+                    commissionPaid: false,
+                    gymId: req.gymId || req.user.gymId ? Number(req.gymId || req.user.gymId) : null,
+                    tenantId: Number(tenantId),
+                    overrideReason: overrideReason,
+                    overriddenByRole: req.user.role
                 }
             }),
             prisma.classSession.upsert({
@@ -966,12 +1016,10 @@ const overrideCompleteClass = async (req, res) => {
                 },
                 update: {
                     status: CLASS_SESSION_STATUS.COMPLETED,
-                    startedAt: now,
                     completedAt: now,
-                    isAutoStarted: true,
-                    startedByRole: 'SYSTEM',
                     completedByRole: req.user.role,
-                    completionNote: overrideReason || 'Admin override completion'
+                    overrideReason: overrideReason,
+                    overriddenByRole: req.user.role
                 },
                 create: {
                     classId,
@@ -983,15 +1031,18 @@ const overrideCompleteClass = async (req, res) => {
                     isAutoStarted: true,
                     startedByRole: 'SYSTEM',
                     completedByRole: req.user.role,
-                    completionNote: overrideReason || 'Admin override completion'
+                    gymId: req.gymId || req.user.gymId ? Number(req.gymId || req.user.gymId) : null,
+                    tenantId: Number(tenantId),
+                    overrideReason: overrideReason,
+                    overriddenByRole: req.user.role
                 }
             })
         ]);
 
-        res.json({ ...history, sessionDate, session: runtime, override: true });
+        res.json({ ...history, sessionDate, session: runtime });
     } catch (e) {
         console.error('Override Complete Class Error:', e);
-        res.status(500).json({ error: 'Failed to override-complete class' });
+        res.status(500).json({ error: 'Failed to override complete class' });
     }
 };
 

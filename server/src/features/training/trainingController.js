@@ -139,7 +139,7 @@ const validateStaffVoidPin = async (req) => {
         };
     }
 
-    const config = await getPosConfig();
+    const config = await getPosConfig(req.user.gymId, req.user.tenantId);
     if (!config?.voidPinHash) {
         return {
             ok: false,
@@ -447,7 +447,9 @@ const bookTraining = async (req, res) => {
                     paymentStatus: 'PAID',
                     paymentMethod: method,
                     paidAt: new Date(),
-                    notes: notes || null
+                    notes: notes || null,
+                    gymId: Number(req.user.gymId),
+                    tenantId: Number(req.user.tenantId)
                 }
             });
 
@@ -458,6 +460,8 @@ const bookTraining = async (req, res) => {
                 status: 'COMPLETED',
                 memberId: Number(memberId),
                 cashierId: req.user.id,
+                gymId: Number(req.user.gymId),
+                tenantId: Number(req.user.tenantId),
                 externalRef: ['GCASH', 'PAYMAYA', 'CARD', 'BANK_TRANSFER'].includes(method) ? (externalRef || null) : null,
                 externalDate: (['GCASH', 'PAYMAYA', 'CARD', 'BANK_TRANSFER'].includes(method) && externalDate) ? new Date(externalDate) : null
             });
@@ -474,9 +478,15 @@ const bookTraining = async (req, res) => {
 const getTrainingSessions = async (req, res) => {
     const { status } = req.query; // paymentStatus filter: UNPAID/PAID
     try {
+        const getGymId = () => Number(req.gymId || req.user?.gymId);
+        const tenantId = Number(req.user.tenantId);
+        const currentGymId = Number(req.user.gymId);
+        
         const where = {
             ...(status ? { paymentStatus: String(status).toUpperCase() } : {}),
-            status: { not: 'CANCELLED' }
+            status: { not: 'CANCELLED' },
+            gymId: currentGymId,
+            tenantId
         };
         const sessions = await prisma.trainingSession.findMany({
             where,
@@ -870,7 +880,9 @@ const resolveRefundException = async (req, res) => {
                                 date: new Date(),
                                 notes: `Auto reversal for refunded training session #${session.id}`,
                                 recordedBy: `${req.user.role}#${req.user.id}`,
-                                trainerId: Number(session.trainerId)
+                                trainerId: Number(session.trainerId),
+                                gymId: session.gymId || req.user.gymId,
+                                tenantId: session.tenantId || req.user.tenantId
                             }
                         });
                     }

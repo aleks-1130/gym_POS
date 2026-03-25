@@ -114,12 +114,19 @@ const getAllProducts = async (req, res) => {
         if (!isPaginated) {
             console.log("[DEBUG] Fetching products from DB (non-paginated)...");
             const startDb = Date.now();
-            const getGymId = () => req.gymId || req.user?.gymId;
+            const getGymId = () => Number(req.gymId || req.user?.gymId);
+            const currentGymId = getGymId();
             const products = await prisma.product.findMany({
-                where,
+                where: {
+                    ...where,
+                    OR: [
+                        { isGlobal: true },
+                        { gymId: currentGymId }
+                    ]
+                },
                 include: { 
                     stocks: { 
-                        where: { gymId: getGymId() },
+                        where: { gymId: currentGymId },
                         include: { supplier: true }
                     }
                 },
@@ -129,14 +136,29 @@ const getAllProducts = async (req, res) => {
             return res.json(products.map(mapWithStock));
         }
 
-        const getGymId = () => req.gymId || req.user?.gymId;
+        const getGymId = () => Number(req.gymId || req.user?.gymId);
+        const currentGymId = getGymId();
         const [total, rows] = await Promise.all([
-            prisma.product.count({ where }),
+            prisma.product.count({ 
+                where: {
+                    ...where,
+                    OR: [
+                        { isGlobal: true },
+                        { gymId: currentGymId }
+                    ]
+                }
+            }),
             prisma.product.findMany({
-                where,
+                where: {
+                    ...where,
+                    OR: [
+                        { isGlobal: true },
+                        { gymId: currentGymId }
+                    ]
+                },
                 include: { 
                     stocks: { 
-                        where: { gymId: getGymId() },
+                        where: { gymId: currentGymId },
                         include: { supplier: true }
                     }
                 },
@@ -233,7 +255,7 @@ const createProduct = async (req, res) => {
             });
         });
 
-        await logAudit("CREATE_PRODUCT", req.user.email, `Product: ${created.name}`, "Created new product");
+        await logAudit("CREATE_PRODUCT", req.user.email, `Product: ${created.name}`, "Created new product", gymId, tenantId);
         res.status(201).json(serializeProduct(created));
     } catch (e) {
         console.error("Create Product Error:", e);
@@ -295,7 +317,7 @@ const updateProduct = async (req, res) => {
             });
         });
 
-        await logAudit("UPDATE_PRODUCT", req.user.email, `Product: ${updated.name}`, "Updated details");
+        await logAudit("UPDATE_PRODUCT", req.user.email, `Product: ${updated.name}`, "Updated details", gymId, tenantId);
         res.json(serializeProduct(updated));
     } catch (e) {
         console.error("Update Product Error:", e);
@@ -317,7 +339,7 @@ const deleteProduct = async (req, res) => {
         await prisma.product.deleteMany({ 
             where: { id, tenantId } 
         });
-        await logAudit("DELETE_PRODUCT", req.user.email, product?.name, `ID: ${id}`);
+        await logAudit("DELETE_PRODUCT", req.user.email, product?.name, `ID: ${id}`, req.user.gymId, req.user.tenantId);
         res.json({ message: "Product deleted" });
     } catch (e) {
         res.status(500).json({ error: "Failed to delete product" });
@@ -371,7 +393,8 @@ const restockProduct = async (req, res) => {
                 notes: notes || `Restocked ${quantity} units @ ${costPerUnit}/unit (Fixed Cost)`,
                 recordedBy: req.user.id.toString(),
                 supplierId: stockRecord.supplierId,
-                tenantId
+                gymId: Number(gymId),
+                tenantId: Number(tenantId)
             }
         });
 
@@ -379,7 +402,9 @@ const restockProduct = async (req, res) => {
             "RESTOCK_INVENTORY",
             req.user.email,
             `Product: ${product.name}`,
-            `Added ${quantity} units. Fixed Cost: ${totalCost}`
+            `Added ${quantity} units. Fixed Cost: ${totalCost}`,
+            gymId,
+            tenantId
         );
 
         res.json({

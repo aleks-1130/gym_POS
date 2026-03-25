@@ -499,6 +499,7 @@ const createPayment = async (req, res) => {
                 discount: normalizedDiscount,
                 couponCode: appliedCoupon ? appliedCoupon.code : appliedPromo ? appliedPromo.code : null,
                 couponDiscount: Number(couponDiscountValue.toFixed(2)),
+                gymId: req.user.gymId,
                 tenantId: req.user.tenantId
             };
 
@@ -609,6 +610,7 @@ const createPayment = async (req, res) => {
                                 : item.type === 'CLASS_PACKAGE'
                                     ? Number(classPackage.price)
                                     : (parseFloat(item.price) || 0),
+                        gymId: req.user.gymId,
                         tenantId: req.user.tenantId
                     };
                 });
@@ -997,7 +999,7 @@ const returnPaymentItems = async (req, res) => {
     }
 
     try {
-        const config = await getPosConfig();
+        const config = await getPosConfig(req.user.gymId, req.user.tenantId);
         if (!config.returnPinHash) {
             return res.status(400).json({ error: "Return PIN is not configured" });
         }
@@ -1218,7 +1220,7 @@ const getPosSettings = async (req, res) => {
     try {
         const [config, receiptSettings] = await Promise.all([
             getPosConfig(req.user.gymId),
-            getReceiptSettings(req.user.gymId)
+            getReceiptSettings(req.user.gymId, req.user.tenantId)
         ]);
         const discountPresets = await getStoredDiscountPresets(req.user.gymId);
         res.json({
@@ -1244,7 +1246,7 @@ const updatePosSettings = async (req, res) => {
         if (!hasVoidPinInput && !hasReturnPinInput && !hasReceiptSettingsInput && !hasDiscountPresetsInput) {
             const [config, currentReceiptSettings] = await Promise.all([
                 getPosConfig(req.user.gymId),
-                getReceiptSettings(req.user.gymId)
+                getReceiptSettings(req.user.gymId, req.user.tenantId)
             ]);
             return res.json({
                 message: "No changes submitted",
@@ -1286,7 +1288,7 @@ const updatePosSettings = async (req, res) => {
             }
         }
 
-        const config = await getPosConfig();
+        const config = await getPosConfig(req.user.gymId, req.user.tenantId);
 
         if (Object.keys(data).length > 0) {
             await prisma.posConfig.update({
@@ -1301,7 +1303,7 @@ const updatePosSettings = async (req, res) => {
 
         let savedReceiptSettings = null;
         if (hasReceiptSettingsInput) {
-            savedReceiptSettings = await saveReceiptSettings(req.user.gymId, receiptSettings || {});
+            savedReceiptSettings = await saveReceiptSettings(req.user.gymId, receiptSettings || {}, req.user.tenantId);
         }
 
         res.json({
@@ -1317,7 +1319,7 @@ const updatePosSettings = async (req, res) => {
 
 const getPosReceiptSettings = async (req, res) => {
     try {
-        const settings = await getReceiptSettings(req.user.gymId);
+        const settings = await getReceiptSettings(req.user.gymId, req.user.tenantId);
         res.json(settings);
     } catch (e) {
         res.status(500).json({ error: "Failed to load receipt settings" });

@@ -9,7 +9,7 @@ const notificationService = {
     /**
      * Send a notification to a specific member or broadcast to all
      */
-    async send({ memberId, title, message, type = 'INFO', isAnnouncement = false, eventData = {}, excludeEmail = false, gymId = null }) {
+    async send({ memberId, title, message, type = 'INFO', isAnnouncement = false, eventData = {}, excludeEmail = false, gymId = null, tenantId = 1 }) {
         try {
             // 0. Fetch Preferences (if applicable)
             let prefs = null;
@@ -39,7 +39,8 @@ const notificationService = {
                         isAnnouncement,
                         targetGroup: memberId ? 'PRIVATE' : (eventData.targetGroup || 'ALL'),
                         memberId: memberId ? parseInt(memberId) : null,
-                        gymId: gymId || null
+                        gymId: gymId || null,
+                        tenantId: Number(tenantId)
                     }
                 });
             }
@@ -77,22 +78,41 @@ const notificationService = {
 
                     if (targetGroup === 'ALL') {
                         recipients = await prisma.member.findMany({
-                            where: { status: 'ACTIVE', email: { not: null } },
+                            where: { 
+                                tenantId: Number(tenantId),
+                                gymId: gymId ? Number(gymId) : undefined,
+                                status: 'ACTIVE', 
+                                email: { not: null } 
+                            },
                             select: { email: true, firstName: true, lastName: true }
                         });
                     } else if (targetGroup === 'STAFF') {
                         recipients = await prisma.user.findMany({
-                            where: { status: 'ACTIVE', role: { in: ['ADMIN', 'STAFF', 'OWNER'] } },
+                            where: { 
+                                tenantId: Number(tenantId),
+                                gymId: gymId ? Number(gymId) : undefined,
+                                status: 'ACTIVE', 
+                                role: { in: ['ADMIN', 'STAFF', 'OWNER'] } 
+                            },
                             select: { email: true, name: true }
                         });
                     } else if (targetGroup === 'TRAINER') {
                         recipients = await prisma.user.findMany({
-                            where: { status: 'ACTIVE', role: 'TRAINER' },
+                            where: { 
+                                tenantId: Number(tenantId),
+                                gymId: gymId ? Number(gymId) : undefined,
+                                status: 'ACTIVE', 
+                                role: 'TRAINER' 
+                            },
                             select: { email: true, name: true }
                         });
                     } else if (targetGroup === 'CLASS' && eventData.targetId) {
                         const bookings = await prisma.booking.findMany({
-                            where: { classId: eventData.targetId, status: 'CONFIRMED' },
+                            where: { 
+                                classId: eventData.targetId, 
+                                status: 'CONFIRMED',
+                                tenantId: Number(tenantId)
+                            },
                             include: { member: { select: { email: true, firstName: true, lastName: true } } }
                         });
                         recipients = bookings.map(b => b.member).filter(m => m && m.email);
@@ -212,7 +232,8 @@ const notificationService = {
                         type: 'PAYMENT_RECEIPT',
                         targetGroup: 'PRIVATE',
                         memberId: parseInt(memberId),
-                        gymId: gymId || null
+                        gymId: gymId || null,
+                        tenantId: args.tenantId ? Number(args.tenantId) : 1
                     }
                 });
             }

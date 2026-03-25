@@ -47,16 +47,20 @@ const mergeWithDefaults = (value) => sanitizeReceiptSettings({
     ...(value || {})
 });
 
-async function getReceiptSettings(gymId) {
+async function getReceiptSettings(gymId, tenantId) {
     if (!gymId) return mergeWithDefaults();
     const record = await prisma.receiptSettings.findFirst({
-        where: { gymId: Number(gymId) }
+        where: { 
+            gymId: Number(gymId),
+            tenantId: tenantId ? Number(tenantId) : undefined
+        }
     });
     if (!record) {
         const defaults = mergeWithDefaults();
         await prisma.receiptSettings.create({
             data: {
                 gymId: Number(gymId),
+                tenantId: tenantId ? Number(tenantId) : 1,
                 settings: defaults
             }
         });
@@ -65,22 +69,29 @@ async function getReceiptSettings(gymId) {
     return mergeWithDefaults(record.settings || {});
 }
 
-async function saveReceiptSettings(gymId, settings) {
+async function saveReceiptSettings(gymId, settings, tenantId) {
     if (!gymId) throw new Error("Gym ID required to save settings");
     const merged = mergeWithDefaults(settings);
     const existing = await prisma.receiptSettings.findFirst({
-        where: { gymId: Number(gymId) }
+        where: { 
+            gymId: Number(gymId),
+            tenantId: tenantId ? Number(tenantId) : undefined
+        }
     });
     
     if (existing) {
         await prisma.receiptSettings.update({
             where: { id: existing.id },
-            data: { settings: merged }
+            data: { 
+                settings: merged,
+                tenantId: tenantId ? Number(tenantId) : undefined
+            }
         });
     } else {
         await prisma.receiptSettings.create({
             data: { 
                 gymId: Number(gymId),
+                tenantId: tenantId ? Number(tenantId) : 1,
                 settings: merged 
             }
         });

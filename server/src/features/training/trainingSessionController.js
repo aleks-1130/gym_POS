@@ -186,6 +186,10 @@ const getAllSessions = async (req, res) => {
     try {
         const sessions = await prisma.trainingSession.findMany({
             orderBy: { date: 'desc' },
+            where: {
+                tenantId: Number(req.user.tenantId),
+                gymId: req.user.role === 'OWNER' ? undefined : Number(req.gymId || req.user.gymId)
+            },
             take: 200,
             select: {
                 id: true,
@@ -214,7 +218,10 @@ const getAllSessions = async (req, res) => {
 const getSessionById = async (req, res) => {
     try {
         const session = await prisma.trainingSession.findUnique({
-            where: { id: Number(req.params.id) },
+            where: { 
+                id: Number(req.params.id),
+                tenantId: Number(req.user.tenantId)
+            },
             select: {
                 id: true,
                 date: true,
@@ -252,7 +259,10 @@ const completeSession = async (req, res) => {
 
     try {
         const session = await prisma.trainingSession.findUnique({
-            where: { id: Number(id) },
+            where: { 
+                id: Number(id),
+                tenantId: Number(req.user.tenantId)
+            },
             include: { trainer: true }
         });
         if (!session) {
@@ -383,7 +393,9 @@ const completeSession = async (req, res) => {
                             category: 'SESSION_MATERIAL',
                             date: new Date(),
                             notes: `Used in session #${session.id} with ${session.trainer.name}`,
-                            recordedBy: req.user.id.toString()
+                            recordedBy: req.user.id.toString(),
+                            gymId: session.gymId || req.user.gymId,
+                            tenantId: session.tenantId || req.user.tenantId
                         }
                     });
                 }
@@ -396,7 +408,9 @@ const completeSession = async (req, res) => {
                         category: 'SESSION_MATERIAL',
                         date: new Date(),
                         notes: `Used in session #${session.id} (Manual Entry)`,
-                        recordedBy: req.user.id.toString()
+                        recordedBy: req.user.id.toString(),
+                        gymId: session.gymId || req.user.gymId,
+                        tenantId: session.tenantId || req.user.tenantId
                     }
                 });
             }
@@ -426,7 +440,12 @@ const updateSession = async (req, res) => {
         const sessionId = Number(req.params.id);
         const { date, time, duration, notes } = req.body;
 
-        const session = await prisma.trainingSession.findUnique({ where: { id: sessionId } });
+        const session = await prisma.trainingSession.findUnique({ 
+            where: { 
+                id: sessionId,
+                tenantId: Number(req.user.tenantId)
+            } 
+        });
         if (!session) return res.status(404).json({ error: "Session not found" });
 
         // Authorization check if Trainer
@@ -503,7 +522,10 @@ const updateSession = async (req, res) => {
 const getTrainerSessions = async (req, res) => {
     try {
         const sessions = await prisma.trainingSession.findMany({
-            where: { trainerId: Number(req.params.id) },
+            where: { 
+                trainerId: Number(req.params.id),
+                tenantId: Number(req.user.tenantId)
+            },
             orderBy: { date: 'desc' },
             select: {
                 id: true,
@@ -549,7 +571,10 @@ const cancelSession = async (req, res) => {
 
     try {
         const session = await prisma.trainingSession.findUnique({
-            where: { id: sessionId }
+            where: { 
+                id: sessionId,
+                tenantId: Number(req.user.tenantId)
+            }
         });
 
         if (!session) {
@@ -620,7 +645,10 @@ const declineSession = async (req, res) => {
 
     try {
         const session = await prisma.trainingSession.findUnique({
-            where: { id: sessionId }
+            where: { 
+                id: sessionId,
+                tenantId: Number(req.user.tenantId)
+            }
         });
 
         if (!session) {
@@ -650,7 +678,10 @@ const getSessionMaterialCandidates = async (req, res) => {
 
     try {
         const session = await prisma.trainingSession.findUnique({
-            where: { id: sessionId },
+            where: { 
+                id: sessionId,
+                tenantId: Number(req.user.tenantId)
+            },
             select: { id: true, trainerId: true }
         });
         if (!session) {

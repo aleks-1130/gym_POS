@@ -3,9 +3,12 @@ const { logAudit } = require('../../services/auditService');
 
 const getExpenses = async (req, res) => {
     try {
-        const { tenantId } = req.user;
+        const { tenantId, gymId } = req.user;
         const expenses = await prisma.expense.findMany({
-            where: { tenantId },
+            where: { 
+                tenantId,
+                gymId: Number(gymId)
+            },
             orderBy: { date: 'desc' }
         });
         res.json(expenses);
@@ -40,7 +43,7 @@ const createExpense = async (req, res) => {
     }
 
     try {
-        const { tenantId } = req.user;
+        const { tenantId, gymId } = req.user;
         const expense = await prisma.expense.create({
             data: {
                 title,
@@ -51,10 +54,11 @@ const createExpense = async (req, res) => {
                 recordedBy: req.user.id.toString(),
                 trainerId: req.body.trainerId ? Number(req.body.trainerId) : null,
                 staffId: req.body.staffId ? Number(req.body.staffId) : null,
+                gymId: Number(gymId),
                 tenantId
             }
         });
-        await logAudit("CREATE_EXPENSE", req.user.email, `Expense: ${expense.title}`, `Recorded ${expense.amount} in ${expense.category}`);
+        await logAudit("CREATE_EXPENSE", req.user.email, `Expense: ${expense.title}`, `Recorded ${expense.amount} in ${expense.category}`, gymId, tenantId);
         res.json(expense);
     } catch (e) {
         console.error("Create Expense Error:", e);
@@ -66,9 +70,9 @@ const updateExpense = async (req, res) => {
     const { id } = req.params;
     const { title, amount, category, date, notes } = req.body;
     try {
-        const { tenantId } = req.user;
+        const { tenantId, gymId } = req.user;
         const expense = await prisma.expense.updateMany({
-            where: { id: Number(id), tenantId },
+            where: { id: Number(id), tenantId, gymId: Number(gymId) },
             data: {
                 title,
                 amount: parseFloat(amount),
@@ -79,7 +83,7 @@ const updateExpense = async (req, res) => {
         });
         if (expense.count === 0) return res.status(404).json({ error: "Expense not found" });
         
-        await logAudit("UPDATE_EXPENSE", req.user.email, `Expense ID: ${id}`, `Updated details`);
+        await logAudit("UPDATE_EXPENSE", req.user.email, `Expense ID: ${id}`, `Updated details`, req.user.gymId, req.user.tenantId);
         res.json({ message: "Expense updated" });
     } catch (e) {
         if (e.code === 'P2025') {
@@ -92,13 +96,14 @@ const updateExpense = async (req, res) => {
 
 const deleteExpense = async (req, res) => {
     try {
-        const { tenantId } = req.user;
+        const { id } = req.params;
+        const { tenantId, gymId } = req.user;
         const deleted = await prisma.expense.deleteMany({ 
-            where: { id: Number(id), tenantId } 
+            where: { id: Number(id), tenantId, gymId: Number(gymId) } 
         });
         if (deleted.count === 0) return res.status(404).json({ error: "Expense not found" });
 
-        await logAudit("DELETE_EXPENSE", req.user.email, `Expense ID: ${id}`, "Deleted expense record");
+        await logAudit("DELETE_EXPENSE", req.user.email, `Expense ID: ${id}`, "Deleted expense record", req.user.gymId, req.user.tenantId);
         res.json({ message: "Expense deleted" });
     } catch (e) {
         res.status(500).json({ error: "Failed to delete expense" });

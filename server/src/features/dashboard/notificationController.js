@@ -3,35 +3,39 @@ const notificationService = require('../../services/notificationService');
 
 const getNotifications = async (req, res) => {
     try {
-        const { id: userId, role } = req.user;
+        const { tenantId, gymId, role } = req.user;
         const memberId = req.query.memberId ? parseInt(req.query.memberId) : null;
         
         // Find member associated with user if not provided
         let targetMemberId = memberId;
         if (!targetMemberId && role === 'MEMBER') {
             const member = await prisma.member.findFirst({ 
-                where: { email: { equals: req.user.email, mode: 'insensitive' } } 
+                where: { 
+                    email: { equals: req.user.email, mode: 'insensitive' },
+                    tenantId: tenantId
+                } 
             });
             targetMemberId = member?.id;
         }
 
         const where = {
+            tenantId,
             OR: [
-                { targetGroup: 'ALL', memberId: null },
-                { isAnnouncement: true, targetGroup: 'ALL' },
+                { targetGroup: 'ALL', memberId: null, gymId: (role === 'OWNER' ? undefined : gymId) },
+                { isAnnouncement: true, targetGroup: 'ALL', gymId: (role === 'OWNER' ? undefined : gymId) },
                 // Role-based targeting
                 ...(role === 'ADMIN' || role === 'OWNER' || role === 'STAFF' 
-                    ? [{ targetGroup: 'STAFF' }] 
+                    ? [{ targetGroup: 'STAFF', gymId: (role === 'OWNER' ? undefined : gymId) }] 
                     : []),
-                ...(role === 'TRAINER' ? [{ targetGroup: 'TRAINER' }] : []),
-                // Direct member notifications (Only visible to the specific member)
+                ...(role === 'TRAINER' ? [{ targetGroup: 'TRAINER', gymId }] : []),
+                // Direct member notifications
                 ...(targetMemberId ? [{ memberId: targetMemberId }] : []),
-                // Class-based targeting (if member is in that class)
+                // Class-based targeting
                 ...(targetMemberId ? [{
                     targetGroup: 'CLASS',
                     targetId: {
                         in: (await prisma.booking.findMany({
-                            where: { memberId: targetMemberId, status: 'CONFIRMED' },
+                            where: { memberId: targetMemberId, status: 'CONFIRMED', tenantId },
                             select: { classId: true }
                         })).map(b => b.classId)
                     }
@@ -40,7 +44,7 @@ const getNotifications = async (req, res) => {
         };
 
         const notifs = await prisma.notification.findMany({
-            where: (role === 'ADMIN' || role === 'OWNER') && !memberId ? {} : where,
+            where,
             orderBy: { createdAt: 'desc' },
             take: 50
         });
@@ -53,8 +57,18 @@ const getNotifications = async (req, res) => {
 
 const markAsRead = async (req, res) => {
     try {
+        const { tenantId, gymId, role } = req.user;
         const { id } = req.params;
-        console.log(`[DEBUG] Marking notification as read. ID: ${id}`);
+        
+        // Ownership check
+        const existing = await prisma.notification.findFirst({
+            where: { id: parseInt(id), tenantId }
+        });
+        if (!existing) return res.status(404).json({ error: "Notification not found" });
+        if (role !== 'OWNER' && existing.gymId && existing.gymId !== gymId) {
+             return res.status(403).json({ error: "Access denied" });
+        }
+
         await prisma.notification.update({
             where: { id: parseInt(id) },
             data: { isRead: true }
@@ -69,38 +83,36 @@ const markAsRead = async (req, res) => {
 
 const markAllAsRead = async (req, res) => {
     try {
-        const { id: userId, role } = req.user;
+        const { tenantId, gymId, role } = req.user;
         
         let targetMemberId = null;
         if (role === 'MEMBER') {
             const member = await prisma.member.findFirst({ 
-                where: { email: { equals: req.user.email, mode: 'insensitive' } } 
+                where: { 
+                    email: { equals: req.user.email, mode: 'insensitive' },
+                    tenantId
+                } 
             });
             targetMemberId = member?.id;
         }
 
-        // We mark as read using the same logic as getNotifications visibility
         const where = {
+            tenantId,
+            isRead: false,
             OR: [
-                { targetGroup: 'ALL', memberId: null },
-                { isAnnouncement: true, targetGroup: 'ALL' },
+                { targetGroup: 'ALL', memberId: null, gymId: (role === 'OWNER' ? undefined : gymId) },
+                { isAnnouncement: true, targetGroup: 'ALL', gymId: (role === 'OWNER' ? undefined : gymId) },
                 ...(role === 'ADMIN' || role === 'OWNER' || role === 'STAFF' 
-                    ? [{ targetGroup: 'STAFF' }] 
+                    ? [{ targetGroup: 'STAFF', gymId: (role === 'OWNER' ? undefined : gymId) }] 
                     : []),
-                ...(role === 'TRAINER' ? [{ targetGroup: 'TRAINER' }] : []),
+                ...(role === 'TRAINER' ? [{ targetGroup: 'TRAINER', gymId }] : []),
                 ...(targetMemberId ? [{ memberId: targetMemberId }] : []),
-                // Class-based targeting (simple version for updateMany)
-                ...(targetMemberId ? [{
-                    targetGroup: 'CLASS'
-                }] : [])
-            ],
-            isRead: false
+                ...(targetMemberId ? [{ targetGroup: 'CLASS' }] : [])
+            ]
         };
 
-        const finalWhere = (role === 'ADMIN' || role === 'OWNER') ? { isRead: false } : where;
-
         const result = await prisma.notification.updateMany({
-            where: finalWhere,
+            where: where,
             data: { isRead: true }
         });
 
@@ -114,12 +126,15 @@ const markAllAsRead = async (req, res) => {
 
 const broadcastAnnouncement = async (req, res) => {
     try {
+        const { tenantId, gymId } = req.user;
         const { title, message, type = 'ANNOUNCEMENT', targetGroup = 'ALL', targetId = null } = req.body;
         const notification = await notificationService.send({
             title,
             message,
             type,
             isAnnouncement: true,
+            tenantId,
+            gymId, // Broadcast from current branch
             eventData: {
                 targetGroup,
                 targetId: targetId ? parseInt(targetId) : null
@@ -146,9 +161,10 @@ const broadcastAnnouncement = async (req, res) => {
 
 const deleteNotification = async (req, res) => {
     try {
+        const { tenantId } = req.user;
         const { id } = req.params;
-        await prisma.notification.delete({
-            where: { id: parseInt(id) }
+        await prisma.notification.deleteMany({
+            where: { id: parseInt(id), tenantId }
         });
         res.json({ success: true, message: "Notification deleted successfully" });
     } catch (e) {

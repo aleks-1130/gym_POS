@@ -106,19 +106,26 @@ const getAllTrainers = async (req, res) => {
     try {
         const now = new Date();
         const todayIso = toLocalIsoDate(now);
-        const [trainers, trainerRatingCounts] = await Promise.all([
-            prisma.trainer.findMany({
-                include: {
-                    classes: true,
-                    trainingSessions: {
-                        where: {
-                            date: { gte: now },
-                            status: { not: 'CANCELLED' }
-                        },
-                    }
-                },
-                orderBy: { name: 'asc' }
-            }),
+            const getGymId = () => Number(req.gymId || req.user?.gymId);
+            const tenantId = Number(req.tenantId);
+            const currentGymId = getGymId();
+            const [trainers, trainerRatingCounts] = await Promise.all([
+                prisma.trainer.findMany({
+                    where: {
+                        tenantId,
+                        gymId: currentGymId
+                    },
+                    include: {
+                        classes: true,
+                        trainingSessions: {
+                            where: {
+                                date: { gte: now },
+                                status: { not: 'CANCELLED' }
+                            },
+                        }
+                    },
+                    orderBy: { name: 'asc' }
+                }),
             prisma.trainingSession.groupBy({
                 by: ['trainerId'],
                 where: {
@@ -177,8 +184,15 @@ const getAllTrainers = async (req, res) => {
 
 const getTrainerById = async (req, res) => {
     try {
-        const trainer = await prisma.trainer.findUnique({
-            where: { id: Number(req.params.id) },
+        const getGymId = () => Number(req.gymId || req.user?.gymId);
+        const tenantId = Number(req.tenantId);
+        const currentGymId = getGymId();
+        const trainer = await prisma.trainer.findFirst({
+            where: { 
+                id: Number(req.params.id),
+                tenantId,
+                gymId: currentGymId
+            },
             include: {
                 classes: true,
                 trainingSessions: {
@@ -685,6 +699,9 @@ const createTrainer = async (req, res) => {
             }
         }
 
+        const gymId = req.gymId || req.user?.gymId;
+        const tenantId = req.tenantId;
+
         const trainer = await prisma.trainer.create({
             data: {
                 name: String(name).trim(),
@@ -705,7 +722,9 @@ const createTrainer = async (req, res) => {
                 availableSlots: availableSlots !== '' && availableSlots !== undefined ? Number(availableSlots) : null,
                 specialties: specialties ? String(specialties) : null,
                 commissionRate: commissionRate !== '' && commissionRate !== undefined ? Number(commissionRate) : 0.0,
-                baseSalary: baseSalary !== '' && baseSalary !== undefined ? Number(baseSalary) : 0.0
+                baseSalary: baseSalary !== '' && baseSalary !== undefined ? Number(baseSalary) : 0.0,
+                gymId: gymId ? Number(gymId) : null,
+                tenantId: tenantId ? Number(tenantId) : 1
             }
         });
 

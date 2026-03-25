@@ -6,8 +6,8 @@ const getSettings = async (req, res) => {
     if (!gymId) return res.status(400).json({ error: "Gym context missing" });
 
     try {
-        const gym = await prisma.gym.findUnique({
-            where: { id: gymId }
+        const gym = await prisma.gym.findFirst({
+            where: { id: gymId, tenantId: req.user.tenantId }
         });
         
         if (!gym) {
@@ -35,7 +35,7 @@ const updateSettings = async (req, res) => {
         } = req.body;
 
         const updatedGym = await prisma.gym.update({
-            where: { id: gymId },
+            where: { id: gymId, tenantId: req.user.tenantId },
             data: { 
                 name, address, phone, email, website,
                 currency, 

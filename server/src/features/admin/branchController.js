@@ -50,6 +50,7 @@ const createBranch = async (req, res) => {
                 referencePrefix: referencePrefix || 'A321',
                 receiptSettings: {
                     create: {
+                        tenantId: Number(tenantId),
                         settings: {
                             ...DEFAULT_RECEIPT_SETTINGS,
                             businessName: name,
@@ -59,6 +60,7 @@ const createBranch = async (req, res) => {
                 },
                 posConfigs: {
                     create: {
+                        tenantId: Number(tenantId),
                         discountPresets: DEFAULT_DISCOUNT_PRESETS
                     }
                 }

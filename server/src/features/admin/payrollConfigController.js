@@ -2,12 +2,22 @@ const prisma = require('../../config/prisma');
 
 const getPayrollConfig = async (req, res) => {
     try {
-        let config = await prisma.payrollConfig.findUnique({ where: { id: 1 } });
+        const gymId = req.gymId || req.user?.gymId;
+        const tenantId = req.tenantId;
+        if (!gymId) return res.status(400).json({ error: "Gym context required" });
+
+        let config = await prisma.payrollConfig.findFirst({ 
+            where: { 
+                gymId: Number(gymId),
+                tenantId: Number(tenantId)
+            } 
+        });
         if (!config) {
             // Create default if not exists
             config = await prisma.payrollConfig.create({
                 data: {
-                    id: 1,
+                    gymId: Number(gymId),
+                    tenantId: Number(tenantId),
                     classBasePay: 350.0,
                     classBonusPerStudent: 30.0,
                     classBonusThreshold: 5
@@ -24,22 +34,41 @@ const getPayrollConfig = async (req, res) => {
 const updatePayrollConfig = async (req, res) => {
     const { classBasePay, classBonusPerStudent, classBonusThreshold } = req.body;
     try {
-        const config = await prisma.payrollConfig.upsert({
-            where: { id: 1 },
-            update: {
-                classBasePay: parseFloat(classBasePay),
-                classBonusPerStudent: parseFloat(classBonusPerStudent),
-                classBonusThreshold: parseInt(classBonusThreshold),
-                lastUpdatedBy: req.user.id
-            },
-            create: {
-                id: 1,
-                classBasePay: parseFloat(classBasePay),
-                classBonusPerStudent: parseFloat(classBonusPerStudent),
-                classBonusThreshold: parseInt(classBonusThreshold),
-                lastUpdatedBy: req.user.id
+        const gymId = req.gymId || req.user?.gymId;
+        const tenantId = req.tenantId;
+        if (!gymId) return res.status(400).json({ error: "Gym context required" });
+
+        const existing = await prisma.payrollConfig.findFirst({
+            where: { 
+                gymId: Number(gymId),
+                tenantId: Number(tenantId)
             }
         });
+
+        let config;
+        if (existing) {
+            config = await prisma.payrollConfig.update({
+                where: { id: existing.id },
+                data: {
+                    classBasePay: parseFloat(classBasePay),
+                    classBonusPerStudent: parseFloat(classBonusPerStudent),
+                    classBonusThreshold: parseInt(classBonusThreshold),
+                    lastUpdatedBy: req.user.id,
+                    tenantId: Number(tenantId)
+                }
+            });
+        } else {
+            config = await prisma.payrollConfig.create({
+                data: {
+                    gymId: Number(gymId),
+                    tenantId: Number(tenantId),
+                    classBasePay: parseFloat(classBasePay),
+                    classBonusPerStudent: parseFloat(classBonusPerStudent),
+                    classBonusThreshold: parseInt(classBonusThreshold),
+                    lastUpdatedBy: req.user.id
+                }
+            });
+        }
         res.json(config);
     } catch (error) {
         console.error("Update Payroll Config Error:", error);

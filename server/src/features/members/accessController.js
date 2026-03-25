@@ -103,7 +103,7 @@ const resolveIdsFromQrToken = (rawToken) => {
 const createMemberAccessLog = async (parsedMemberId) => {
     const member = await prisma.member.findUnique({
         where: { id: parsedMemberId },
-        select: { id: true, status: true, expiryDate: true, freezeStartDate: true, freezeEndDate: true }
+        select: { id: true, status: true, expiryDate: true, freezeStartDate: true, freezeEndDate: true, gymId: true, tenantId: true }
     });
     if (!member) {
         return { error: { status: 404, payload: { error: "Member not found" } } };
@@ -119,7 +119,9 @@ const createMemberAccessLog = async (parsedMemberId) => {
         data: {
             memberId: parsedMemberId,
             status: isAllowed ? 'ALLOWED' : 'DENIED',
-            checkIn: new Date()
+            checkIn: new Date(),
+            gymId: member.gymId,
+            tenantId: member.tenantId
         },
         include: accessLogInclude
     });
@@ -151,7 +153,7 @@ const createMemberAccessLog = async (parsedMemberId) => {
 const createTrainerAccessLog = async (parsedTrainerId) => {
     const trainer = await prisma.trainer.findUnique({
         where: { id: parsedTrainerId },
-        select: { id: true }
+        select: { id: true, gymId: true, tenantId: true }
     });
     if (!trainer) {
         return { error: { status: 404, payload: { error: "Trainer not found" } } };
@@ -161,7 +163,9 @@ const createTrainerAccessLog = async (parsedTrainerId) => {
         data: {
             trainerId: parsedTrainerId,
             status: 'ALLOWED',
-            checkIn: new Date()
+            checkIn: new Date(),
+            gymId: trainer.gymId,
+            tenantId: trainer.tenantId
         },
         include: accessLogInclude
     });
@@ -299,6 +303,11 @@ const getAccessLogs = async (req, res) => {
             where.trainerId = trainerId;
         }
 
+        if (req.user?.role !== 'OWNER') {
+            where.tenantId = Number(req.user.tenantId);
+            where.gymId = Number(req.gymId || req.user.gymId);
+        }
+
         if (date) {
             const start = new Date(date);
             start.setHours(0, 0, 0, 0);
@@ -363,6 +372,11 @@ const getTrafficStats = async (req, res) => {
                 lte: requestedEnd
             }
         };
+
+        if (req.user.role !== 'OWNER') {
+            where.tenantId = Number(req.user.tenantId);
+            where.gymId = Number(req.gymId || req.user.gymId);
+        }
 
         const logs = await prisma.accessLog.findMany({
             where,

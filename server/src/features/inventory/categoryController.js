@@ -85,7 +85,7 @@ const createCategory = async (req, res) => {
             }
         });
 
-        await logAudit('CREATE_CATEGORY', req.user.email, `Category: ${name}`, 'Created inventory category');
+        await logAudit('CREATE_CATEGORY', req.user.email, `Category: ${name}`, 'Created inventory category', req.user.gymId, req.user.tenantId);
         res.status(201).json({ ...created, description: created.description || '', productCount: 0 });
     } catch (error) {
         res.status(500).json({ error: 'Failed to create category' });
@@ -147,7 +147,9 @@ const updateCategory = async (req, res) => {
             'UPDATE_CATEGORY',
             req.user.email,
             `Category: ${previousName}`,
-            `Updated to ${name}`
+            `Updated to ${name}`,
+            req.user.gymId,
+            req.user.tenantId
         );
 
         const response = await buildCategoryResponse([updated], tenantId);
@@ -188,7 +190,9 @@ const deleteCategory = async (req, res) => {
             'DELETE_CATEGORY',
             req.user.email,
             `Category: ${category.name}`,
-            'Deleted inventory category'
+            'Deleted inventory category',
+            req.user.gymId,
+            req.user.tenantId
         );
 
         res.json({ message: 'Category deleted' });

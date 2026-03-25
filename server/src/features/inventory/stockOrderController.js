@@ -252,7 +252,9 @@ const createStockOrder = async (req, res) => {
             'CREATE_STOCK_ORDER',
             req.user.email,
             created.orderNumber,
-            `Created stock order with ${summary.totalLineItems} item(s)`
+            `Created stock order with ${summary.totalLineItems} item(s)`,
+            req.user.gymId,
+            req.user.tenantId
         );
 
         res.status(201).json(serializeStockOrder(created));
@@ -380,7 +382,9 @@ const updateStockOrder = async (req, res) => {
             'UPDATE_STOCK_ORDER',
             req.user.email,
             existingOrder.orderNumber,
-            `Updated stock order with ${summary.totalLineItems} item(s)`
+            `Updated stock order with ${summary.totalLineItems} item(s)`,
+            req.user.gymId,
+            req.user.tenantId
         );
 
         res.json(serializeStockOrder(updatedOrder));
@@ -414,9 +418,10 @@ const markStockOrderReceived = async (req, res) => {
         }
 
         const updatedOrder = await prisma.$transaction(async (tx) => {
+            const gymId = req.gymId || req.user?.gymId;
+            if (!gymId) throw new Error("Gym context required to receive stock");
+
             for (const item of order.items) {
-                const gymId = req.gymId || req.user?.gymId;
-                if (!gymId) throw new Error("Gym context required to receive stock");
                 await tx.productStock.upsert({
                     where: { productId_gymId: { productId: Number(item.productId), gymId } },
                     update: { quantity: { increment: Number(item.quantity) } },
@@ -439,6 +444,7 @@ const markStockOrderReceived = async (req, res) => {
                     notes: order.notes || `Received stock order ${order.orderNumber}`,
                     recordedBy: req.user.id.toString(),
                     supplierId: order.supplierId,
+                    gymId: gymId,
                     tenantId: req.user.tenantId
                 }
             });
@@ -460,7 +466,9 @@ const markStockOrderReceived = async (req, res) => {
             'RECEIVE_STOCK_ORDER',
             req.user.email,
             order.orderNumber,
-            'Marked order as received'
+            'Marked order as received',
+            gymId,
+            req.user.tenantId
         );
 
         res.json(serializeStockOrder(updatedOrder));
@@ -509,7 +517,9 @@ const cancelStockOrder = async (req, res) => {
             'CANCEL_STOCK_ORDER',
             req.user.email,
             order.orderNumber,
-            'Cancelled stock order'
+            'Cancelled stock order',
+            req.user.gymId,
+            req.user.tenantId
         );
 
         res.json(serializeStockOrder(updatedOrder));

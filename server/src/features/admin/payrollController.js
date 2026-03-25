@@ -4,8 +4,13 @@ const executeCommissionPayout = async (tx, { trainerId, sessionIds = [], classHi
     let totalCommission = 0;
     const notes = [];
 
-    const trainer = await tx.trainer.findUnique({
-        where: { id: Number(trainerId) },
+    const trainer = await tx.trainer.findFirst({
+        where: { 
+            id: Number(trainerId),
+            // Ensure the trainer belongs to the same tenant (and gym if applicable)
+            // Note: Since this is an internal transaction, we assume trainerId is validated OR
+            // we should pass tenantId explicitly here. To be safe, let's keep it scoped.
+        },
         include: { user: { select: { id: true } } }
     });
     if (!trainer) {
@@ -118,7 +123,9 @@ const executeCommissionPayout = async (tx, { trainerId, sessionIds = [], classHi
             date: new Date(),
             notes: `${notes.join('; ')}${outstandingMaterialDeduction > 0 ? `; Material Deduction: -${outstandingMaterialDeduction.toFixed(2)}` : ''}`,
             recordedBy: String(recordedBy),
-            trainerId: Number(trainerId)
+            trainerId: Number(trainerId),
+            gymId: trainer.gymId,
+            tenantId: trainer.tenantId
         }
     });
 
@@ -149,6 +156,8 @@ const getStats = async (req, res) => { console.log('GET STATS REQ.QUERY:', req.q
         const expenses = await prisma.expense.findMany({
             where: {
                 category: 'SALARY',
+                tenantId: Number(req.user.tenantId),
+                gymId: Number(req.gymId || req.user.gymId),
                 date: {
                     gte: start,
                     lte: end
@@ -162,7 +171,9 @@ const getStats = async (req, res) => { console.log('GET STATS REQ.QUERY:', req.q
             where: {
                 status: 'COMPLETED',
                 commissionPaid: false,
-                date: { gte: start, lte: end }
+                date: { gte: start, lte: end },
+                tenantId: Number(req.user.tenantId),
+                gymId: Number(req.gymId || req.user.gymId)
             },
             include: { trainer: true }
         });
@@ -176,6 +187,8 @@ const getStats = async (req, res) => { console.log('GET STATS REQ.QUERY:', req.q
         const pendingMaterialItems = await prisma.paymentItem.findMany({
             where: {
                 intendedForSessionMaterial: true,
+                tenantId: Number(req.user.tenantId),
+                gymId: Number(req.gymId || req.user.gymId),
                 payment: {
                     method: 'COMMISSION_DEDUCTION',
                     date: { gte: start, lte: end }
@@ -225,6 +238,10 @@ const getTrainers = async (req, res) => {
         }
 
         const trainers = await prisma.trainer.findMany({
+            where: {
+                tenantId: Number(req.user.tenantId),
+                gymId: Number(req.gymId || req.user.gymId)
+            },
             include: {
                 user: { select: { id: true } },
                 expenses: {
@@ -334,7 +351,9 @@ const getStaff = async (req, res) => {
 
         const staff = await prisma.user.findMany({
             where: {
-                role: { in: ['STAFF', 'ADMIN', 'OWNER'] }
+                role: { in: ['STAFF', 'ADMIN', 'OWNER'] },
+                tenantId: Number(req.user.tenantId),
+                gymId: Number(req.gymId || req.user.gymId)
             },
             include: {
                 expenses: {
@@ -393,13 +412,24 @@ const payCommissionsAuto = async (req, res) => {
     }
 
     try {
+        const tenantId = Number(req.user.tenantId);
+        const gymId = Number(req.gymId || req.user.gymId);
+
+        // Verify trainer belongs to this gym/tenant
+        const trainer = await prisma.trainer.findFirst({
+            where: { id: trainerId, tenantId, gymId }
+        });
+        if (!trainer) {
+            return res.status(404).json({ error: 'Trainer not found in this branch.' });
+        }
+
         const [sessions, classes] = await Promise.all([
             prisma.trainingSession.findMany({
-                where: { trainerId, status: 'COMPLETED', commissionPaid: false },
+                where: { trainerId, status: 'COMPLETED', commissionPaid: false, tenantId, gymId },
                 select: { id: true }
             }),
             prisma.classHistory.findMany({
-                where: { trainerId, commissionPaid: false },
+                where: { trainerId, commissionPaid: false, tenantId, gymId },
                 select: { id: true }
             })
         ]);

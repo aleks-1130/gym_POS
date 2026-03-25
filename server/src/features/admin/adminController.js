@@ -5,11 +5,14 @@ const { syncToNeonAuth } = require('../../services/neonAuthSync');
 // Get Audit Logs (Owner Only)
 const getAuditLogs = async (req, res) => {
     try {
-        const { tenantId } = req.user;
+        const { tenantId, role, gymId } = req.user;
+        const where = { tenantId };
+        if (role !== 'OWNER') {
+            where.gymId = gymId;
+        }
+
         const logs = await prisma.auditLog.findMany({
-            where: {
-                gym: { tenantId: tenantId }
-            },
+            where,
             orderBy: { timestamp: 'desc' },
             take: 100
         });
@@ -108,7 +111,7 @@ const adminCreateUser = async (req, res) => {
             }
         });
 
-        await logAudit("USER_CREATE", req.user.email, newUser.email, `Created ${role} for branch ${targetGymId}`);
+        await logAudit("USER_CREATE", req.user.email, newUser.email, `Created ${role} for branch ${targetGymId}`, Number(targetGymId), tenantId);
 
         // Sync to Neon Auth
         try {
@@ -191,7 +194,7 @@ const adminUpdateUser = async (req, res) => {
             }
         }
 
-        await logAudit("USER_UPDATE", req.user.email, updatedUser.email, `Updated user details`);
+        await logAudit("USER_UPDATE", req.user.email, updatedUser.email, `Updated user details`, updatedUser.gymId, tenantId);
         res.json({ message: "User updated successfully" });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -241,7 +244,7 @@ const adminDeleteUser = async (req, res) => {
             console.error("Neon Auth Delete Sync Warning:", syncErr.message);
         }
 
-        await logAudit("USER_DELETE", req.user.email, target.email, `Deleted user`);
+        await logAudit("USER_DELETE", req.user.email, target.email, `Deleted user`, target.gymId, tenantId);
         res.json({ message: "User deleted successfully" });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -264,7 +267,7 @@ const changeUserRole = async (req, res) => {
             data: { role: newRole }
         });
 
-        await logAudit("ROLE_CHANGE", req.user.email, target.email, `Changed role to ${newRole}`);
+        await logAudit("ROLE_CHANGE", req.user.email, target.email, `Changed role to ${newRole}`, target.gymId, req.user.tenantId);
         res.json({ message: `User role updated to ${newRole}` });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -292,7 +295,7 @@ const transferOwnership = async (req, res) => {
             })
         ]);
 
-        await logAudit("OWNERSHIP_TRANSFER", req.user.email, `User ID ${newOwnerId}`, "Transferred system ownership");
+        await logAudit("OWNERSHIP_TRANSFER", req.user.email, `User ID ${newOwnerId}`, "Transferred system ownership", req.user.gymId, req.user.tenantId);
         res.json({ message: "Ownership transferred successfully. Please log in again." });
     } catch (e) {
         console.error(e);

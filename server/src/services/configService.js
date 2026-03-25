@@ -7,15 +7,19 @@ const DEFAULT_DISCOUNT_PRESETS = [
     { id: 'preset_promo', name: 'PROMO', rate: 5, icon: 'local_offer' }
 ];
 
-async function getPosConfig(gymId) {
+async function getPosConfig(gymId, tenantId) {
     if (!gymId) return null;
     let config = await prisma.posConfig.findFirst({
-        where: { gymId: Number(gymId) }
+        where: { 
+            gymId: Number(gymId),
+            tenantId: tenantId ? Number(tenantId) : undefined
+        }
     });
     if (!config) {
         config = await prisma.posConfig.create({ 
             data: {
                 gymId: Number(gymId),
+                tenantId: tenantId ? Number(tenantId) : 1,
                 discountPresets: DEFAULT_DISCOUNT_PRESETS
             } 
         });
