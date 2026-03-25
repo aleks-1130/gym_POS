@@ -13,7 +13,7 @@ const {
 const { authenticateToken, authorize } = require('../../middleware/authMiddleware');
 
 router.get('/', authenticateToken, getPlans);
-router.post('/', authenticateToken, authorize(['OWNER']), createPlan);
+router.post('/', authenticateToken, authorize(['OWNER', 'ADMIN']), createPlan);
 router.put('/:id', authenticateToken, authorize(['OWNER']), updatePlan);
 router.delete('/:id', authenticateToken, authorize(['OWNER']), deletePlan);
 

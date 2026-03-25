@@ -641,6 +641,7 @@ const createPayment = async (req, res) => {
                                 status: 'ACTIVE',
                                 planId,
                                 freezeUsedCount: 0,
+                                guestPassUsedCount: 0,
                                 ...(getPlanClassSessions(plan) > 0
                                     ? { classSessionsRemaining: { increment: getPlanClassSessions(plan) } }
                                     : {})

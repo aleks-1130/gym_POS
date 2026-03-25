@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -265,6 +265,8 @@ const ActiveMembershipGate = ({ children }) => {
 
 export default function AppRoutes() {
     const { user } = useAuth();
+    const globalScanBufferRef = useRef('');
+    const globalScanTimerRef = useRef(null);
     const isStandaloneApp = typeof window !== 'undefined'
         && (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true);
     const rootElement = user
@@ -274,6 +276,89 @@ export default function AppRoutes() {
         : isStandaloneApp
             ? <Navigate to="/login" replace />
             : <Landing />;
+
+    useEffect(() => {
+        const role = String(user?.role || '').toUpperCase();
+        const enableGlobalScanner = role === ROLES.ADMIN || role === ROLES.STAFF || role === ROLES.OWNER;
+
+        if (!enableGlobalScanner) return;
+
+        const processGlobalScan = async (raw) => {
+            const payloadRaw = String(raw || '').trim();
+            if (!payloadRaw) return;
+
+            const accessTokenMatch = payloadRaw.match(/^access\s*:\s*(.+)$/i);
+            if (accessTokenMatch?.[1]) {
+                try {
+                    const res = await axios.post('/api/access/checkin', { qrToken: accessTokenMatch[1].trim() });
+                    window.dispatchEvent(new CustomEvent('global-access-scan', { detail: { ok: true, log: res.data } }));
+                } catch (error) {
+                    window.dispatchEvent(new CustomEvent('global-access-scan', { detail: { ok: false, error } }));
+                }
+                return;
+            }
+
+            const memberMatch = payloadRaw.match(/member\s*:\s*(\d+)/i);
+            const trainerMatch = payloadRaw.match(/trainer\s*:\s*(\d+)/i);
+            const genericMatch = payloadRaw.match(/(\d+)/);
+
+            if (!memberMatch && !trainerMatch && !genericMatch) return;
+
+            const payload = trainerMatch
+                ? { trainerId: Number(trainerMatch[1]) }
+                : { memberId: Number((memberMatch || genericMatch)[1]) };
+
+            if ((!payload.memberId && !payload.trainerId) || payload.memberId === 0 || payload.trainerId === 0) return;
+
+            try {
+                const res = await axios.post('/api/access/checkin', payload);
+                window.dispatchEvent(new CustomEvent('global-access-scan', { detail: { ok: true, log: res.data } }));
+            } catch (error) {
+                window.dispatchEvent(new CustomEvent('global-access-scan', { detail: { ok: false, error } }));
+            }
+        };
+
+        const handleGlobalKeyDown = (e) => {
+            const target = e.target;
+            const isTyping =
+                target?.tagName === 'INPUT'
+                || target?.tagName === 'TEXTAREA'
+                || target?.isContentEditable;
+            if (isTyping) return;
+
+            if (globalScanTimerRef.current) {
+                clearTimeout(globalScanTimerRef.current);
+            }
+
+            if (e.key === 'Enter') {
+                const raw = globalScanBufferRef.current.trim();
+                globalScanBufferRef.current = '';
+                if (raw) processGlobalScan(raw);
+                return;
+            }
+
+            if (e.key.length === 1) {
+                globalScanBufferRef.current += e.key;
+                globalScanTimerRef.current = setTimeout(() => {
+                    const raw = globalScanBufferRef.current.trim();
+                    globalScanBufferRef.current = '';
+                    if (raw) processGlobalScan(raw);
+                }, 300);
+            }
+        };
+
+        window.__globalAccessScannerEnabled = true;
+        window.addEventListener('keydown', handleGlobalKeyDown);
+
+        return () => {
+            window.removeEventListener('keydown', handleGlobalKeyDown);
+            if (globalScanTimerRef.current) {
+                clearTimeout(globalScanTimerRef.current);
+            }
+            globalScanBufferRef.current = '';
+            window.__globalAccessScannerEnabled = false;
+        };
+    }, [user?.role]);
 
     return (
         <div className="flex-1 w-full bg-background overflow-auto relative">

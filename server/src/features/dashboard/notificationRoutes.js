@@ -7,8 +7,8 @@ const { authenticateToken, authorize } = require('../../middleware/authMiddlewar
 router.get('/', authenticateToken, notificationController.getNotifications);
 router.patch('/read-all', authenticateToken, notificationController.markAllAsRead);
 router.patch('/:id/read', authenticateToken, notificationController.markAsRead);
-router.post('/broadcast', authenticateToken, authorize(['ADMIN', 'OWNER']), notificationController.broadcastAnnouncement);
-router.delete('/:id', authenticateToken, authorize(['ADMIN', 'OWNER']), notificationController.deleteNotification);
+router.post('/broadcast', authenticateToken, authorize(['STAFF']), notificationController.broadcastAnnouncement);
+router.delete('/:id', authenticateToken, authorize(['STAFF']), notificationController.deleteNotification);
 
 // Preferences
 router.get('/preferences', authenticateToken, preferenceController.getPreferences);

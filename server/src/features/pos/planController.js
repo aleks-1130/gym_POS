@@ -7,6 +7,10 @@ const normalizePlanInput = (body = {}) => {
     const includesClasses = body.includesClasses === true || String(body.includesClasses).toLowerCase() === 'true';
     const includedClassSessions = includesClasses ? Number(body.includedClassSessions || 0) : 0;
     const freezeLimitCount = Number(body.freezeLimitCount ?? 0);
+    const guestPassEnabled = body.guestPassEnabled === true || String(body.guestPassEnabled).toLowerCase() === 'true';
+    const guestPassLimitCount = guestPassEnabled
+        ? Number(body.guestPassLimitCount ?? 0)
+        : 0;
 
     if (!name) {
         return { error: "Plan name is required" };
@@ -23,6 +27,12 @@ const normalizePlanInput = (body = {}) => {
     if (!Number.isInteger(freezeLimitCount) || freezeLimitCount < 0) {
         return { error: "Freeze limit count must be 0 or greater" };
     }
+    if (!Number.isInteger(guestPassLimitCount) || guestPassLimitCount < 0) {
+        return { error: "Guest pass limit count must be 0 or greater" };
+    }
+    if (guestPassEnabled && guestPassLimitCount <= 0) {
+        return { error: "Guest pass limit count must be greater than 0 when guest pass is enabled" };
+    }
 
     return {
         data: {
@@ -32,6 +42,8 @@ const normalizePlanInput = (body = {}) => {
             includesClasses,
             includedClassSessions,
             freezeLimitCount,
+            guestPassEnabled,
+            guestPassLimitCount,
             isGlobal: (body.isGlobal === true || String(body.isGlobal).toLowerCase() === 'true')
         }
     };
@@ -65,13 +77,16 @@ const createPlan = async (req, res) => {
     }
 
     try {
-        const { tenantId, gymId: userGymId } = req.user;
+        const { tenantId, gymId: userGymId, role } = req.user;
         const gymId = userGymId || req.gymId;
-        const targetGymId = parsed.data.isGlobal ? null : Number(gymId);
+        const isOwner = String(role || '').toUpperCase() === 'OWNER';
+        const isGlobalPlan = isOwner && parsed.data.isGlobal === true;
+        const targetGymId = isGlobalPlan ? null : Number(gymId);
 
         const plan = await prisma.plan.create({ 
             data: { 
                 ...parsed.data,
+                isGlobal: isGlobalPlan,
                 tenantId: tenantId,
                 gymId: targetGymId
             } 

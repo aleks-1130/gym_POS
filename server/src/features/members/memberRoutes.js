@@ -42,6 +42,7 @@ router.post('/:id/class-session-packages', authenticateToken, authorize(['OWNER'
 router.get('/:id/payments', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.getMemberPayments);
 router.get('/:id/notes', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.getMemberNotes);
 router.post('/:id/notes', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.addMemberNote);
+router.post('/:id/guest-pass/use', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.useGuestPass);
 router.post('/:id/status', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.updateMemberStatus);
 router.put('/:id', authenticateToken, authorize(['ADMIN', 'STAFF', 'MEMBER']), memberController.updateMember);
 router.delete('/:id', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.deleteMember);

@@ -55,14 +55,9 @@ export default function Login() {
                 </div>
 
                 <div className="space-y-2.5">
-                    <div className="flex items-center justify-between">
-                        <label htmlFor={`${idPrefix}-password`} className="text-xs font-medium uppercase tracking-[0.12em] text-text-muted">
-                            Password
-                        </label>
-                        <Link to="/forgot-password" className="text-xs font-medium text-primary hover:text-orange-400 transition-colors">
-                            Forgot password?
-                        </Link>
-                    </div>
+                    <label htmlFor={`${idPrefix}-password`} className="text-xs font-medium uppercase tracking-[0.12em] text-text-muted">
+                        Password
+                    </label>
                     <div className="relative">
                         <input
                             id={`${idPrefix}-password`}
@@ -84,6 +79,11 @@ export default function Login() {
                                 {showPassword ? 'visibility_off' : 'visibility'}
                             </span>
                         </button>
+                    </div>
+                    <div className="flex justify-end">
+                        <Link to="/forgot-password" className="text-xs font-medium text-primary hover:text-orange-400 transition-colors">
+                            Forgot password?
+                        </Link>
                     </div>
                 </div>
 

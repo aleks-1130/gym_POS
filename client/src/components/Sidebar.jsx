@@ -10,6 +10,7 @@ export default function Sidebar() {
     const { isSidebarCollapsed: isCollapsed, toggleSidebar } = useUIStore();
     const [isMobileOpen, setIsMobileOpen] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
+    const isDenseSidebar = user?.role === ROLES.ADMIN;
 
     React.useEffect(() => {
         if (!user) return;
@@ -33,7 +34,7 @@ export default function Sidebar() {
             to={to}
             onClick={() => setIsMobileOpen(false)}
             className={({ isActive }) => `
-                relative group flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200
+                relative group flex items-center ${isDenseSidebar ? 'gap-3 px-3 py-1.5 rounded-lg' : 'gap-3 px-3 py-2.5 rounded-xl'} transition-all duration-200
                 ${isActive
                     ? 'bg-primary text-white shadow-lg shadow-primary/25'
                     : 'text-text-secondary hover:bg-white/5 hover:text-white'
@@ -42,8 +43,8 @@ export default function Sidebar() {
         >
             {({ isActive }) => (
                 <>
-                    <span className="material-icons-round text-[19px] flex-shrink-0">{icon}</span>
-                    <span className={`font-semibold text-[13px] whitespace-nowrap transition-all duration-300 ${isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'}`}>
+                    <span className={`material-icons-round flex-shrink-0 ${isDenseSidebar ? 'text-[20px]' : 'text-[19px]'}`}>{icon}</span>
+                    <span className={`font-semibold ${isDenseSidebar ? 'text-[13px]' : 'text-[13px]'} whitespace-nowrap transition-all duration-300 ${isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'}`}>
                         {label}
                     </span>
                     {(label === 'Announcements' || label === 'Broadcast') && unreadCount > 0 && (
@@ -67,7 +68,7 @@ export default function Sidebar() {
             to={to}
             onClick={() => setIsMobileOpen(false)}
             className={({ isActive }) => `
-                relative group flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200
+                relative group flex items-center ${isDenseSidebar ? 'gap-2.5 px-2.5 py-1.5 rounded-lg' : 'gap-3 px-3 py-2 rounded-xl'} transition-all duration-200
                 ${tone === 'default'
                     ? (isActive
                         ? 'bg-primary/20 border border-primary/30 text-white'
@@ -77,19 +78,19 @@ export default function Sidebar() {
                 ${isCollapsed ? 'lg:justify-center' : ''}
             `}
         >
-            <span className="material-icons-round text-[19px] flex-shrink-0">{icon}</span>
-            <span className={`font-semibold text-[13px] whitespace-nowrap transition-all duration-300 ${isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'}`}>
+            <span className={`material-icons-round flex-shrink-0 ${isDenseSidebar ? 'text-[19px]' : 'text-[19px]'}`}>{icon}</span>
+            <span className={`font-semibold ${isDenseSidebar ? 'text-[12px]' : 'text-[13px]'} whitespace-nowrap transition-all duration-300 ${isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'}`}>
                 {label}
             </span>
         </NavLink>
     );
 
     const SectionDivider = ({ label }) => (
-        <div className="px-3 mt-4 mb-1.5">
+        <div className={`px-3 ${isDenseSidebar ? 'mt-2 mb-1' : 'mt-4 mb-1.5'}`}>
             <div className={`flex items-center gap-2 transition-all duration-300 ${isCollapsed ? 'lg:justify-center' : ''}`}>
                 {!isCollapsed && (
                     <>
-                        <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider hidden lg:inline">
+                        <span className={`font-bold text-text-muted uppercase tracking-wider hidden lg:inline ${isDenseSidebar ? 'text-[9px]' : 'text-[10px]'}`}>
                             {label}
                         </span>
                         <div className="flex-1 h-px bg-white/5 hidden lg:block"></div>
@@ -229,7 +230,7 @@ export default function Sidebar() {
                 ${isCollapsed ? 'lg:w-20' : 'lg:w-64'}
             `}>
                 {/* Header */}
-                <div className="flex items-center justify-between px-4 py-5 border-b border-white/5">
+                <div className={`flex items-center justify-between px-4 border-b border-white/5 ${isDenseSidebar ? 'py-4' : 'py-5'}`}>
                     <div className="flex items-center gap-3 min-w-0">
                         <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20 flex-shrink-0">
                             <span className="material-icons-round text-white text-xl">fitness_center</span>
@@ -256,7 +257,7 @@ export default function Sidebar() {
                 </div>
 
                 {/* Navigation */}
-                <nav className="flex-1 flex flex-col px-3 py-4 gap-1 overflow-y-visible overflow-x-hidden no-scrollbar">
+                <nav className={`flex-1 flex flex-col px-3 overflow-y-hidden overflow-x-hidden ${isDenseSidebar ? 'py-2.5 gap-0.5' : 'py-4 gap-1'} ${!isDenseSidebar ? 'no-scrollbar' : ''}`}>
                     <NavItem to="/dashboard" icon="dashboard" label="Dashboard" />
 
                     {currentMenu.map((section, idx) => (
@@ -270,11 +271,11 @@ export default function Sidebar() {
                 </nav>
 
                 {/* User Profile & Logout */}
-                <div className="border-t border-white/5 p-3 space-y-2">
+                <div className={`border-t border-white/5 ${isDenseSidebar ? 'p-2.5 space-y-2' : 'p-3 space-y-2'}`}>
                     {footerSettingsLinks.length > 0 && (
-                        <div className="space-y-1.5 pb-2">
+                        <div className={`${isDenseSidebar ? 'space-y-1.5 pb-2' : 'space-y-1.5 pb-2'}`}>
                             {!isCollapsed && (
-                                <p className="px-3 text-[10px] font-bold text-text-muted uppercase tracking-wider">
+                                <p className={`${isDenseSidebar ? 'px-2.5 text-[10px]' : 'px-3 text-[10px]'} font-bold text-text-muted uppercase tracking-wider`}>
                                     Settings
                                 </p>
                             )}
@@ -285,17 +286,17 @@ export default function Sidebar() {
                     )}
 
                     {/* User Info */}
-                    <div className={`flex items-center gap-3 px-3 py-2 rounded-xl bg-white/5 transition-all duration-300 ${isCollapsed ? 'lg:justify-center' : ''}`}>
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-orange-600 flex items-center justify-center flex-shrink-0 shadow-md">
-                            <span className="text-white text-xs font-bold">
+                    <div className={`flex items-center ${isDenseSidebar ? 'gap-2.5 px-2.5 py-2 rounded-lg' : 'gap-3 px-3 py-2 rounded-xl'} bg-white/5 transition-all duration-300 ${isCollapsed ? 'lg:justify-center' : ''}`}>
+                        <div className={`${isDenseSidebar ? 'w-8 h-8' : 'w-8 h-8'} rounded-full bg-gradient-to-br from-primary to-orange-600 flex items-center justify-center flex-shrink-0 shadow-md`}>
+                            <span className={`${isDenseSidebar ? 'text-xs' : 'text-xs'} text-white font-bold`}>
                                 {user?.username?.charAt(0).toUpperCase() || 'U'}
                             </span>
                         </div>
                         <div className={`min-w-0 transition-all duration-300 ${isCollapsed ? 'lg:w-0 lg:opacity-0 lg:overflow-hidden' : 'w-auto opacity-100'}`}>
-                            <p className="text-white text-sm font-semibold truncate">
+                            <p className={`${isDenseSidebar ? 'text-sm' : 'text-sm'} text-white font-semibold truncate`}>
                                 {user?.username || 'User'}
                             </p>
-                            <p className="text-text-muted text-xs truncate capitalize">
+                            <p className={`${isDenseSidebar ? 'text-[11px]' : 'text-xs'} text-text-muted truncate capitalize`}>
                                 {user?.role?.toLowerCase() || 'Guest'}
                             </p>
                         </div>
@@ -304,12 +305,12 @@ export default function Sidebar() {
                     {/* Logout Button */}
                     <button
                         onClick={logout}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-text-secondary hover:bg-red-500/10 hover:text-red-400 transition-all group ${isCollapsed ? 'lg:justify-center' : ''}`}
+                        className={`w-full flex items-center ${isDenseSidebar ? 'gap-2.5 px-2.5 py-2 rounded-lg' : 'gap-3 px-3 py-2.5 rounded-xl'} text-text-secondary hover:bg-red-500/10 hover:text-red-400 transition-all group ${isCollapsed ? 'lg:justify-center' : ''}`}
                     >
-                        <span className="material-icons-round text-[19px] flex-shrink-0 group-hover:rotate-12 transition-transform">
+                        <span className={`material-icons-round flex-shrink-0 group-hover:rotate-12 transition-transform ${isDenseSidebar ? 'text-[19px]' : 'text-[19px]'}`}>
                             logout
                         </span>
-                        <span className={`font-semibold text-sm transition-all duration-300 ${isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'}`}>
+                        <span className={`font-semibold ${isDenseSidebar ? 'text-[13px]' : 'text-sm'} transition-all duration-300 ${isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'}`}>
                             Sign Out
                         </span>
                     </button>

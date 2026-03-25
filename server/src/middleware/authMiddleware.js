@@ -204,18 +204,19 @@ const authorize = (roles = []) => {
     return (req, res, next) => {
         if (!req.user) return res.sendStatus(401);
 
-        const userRole = req.user.role;
+        const userRole = String(req.user.role || '').toUpperCase();
+        const normalizedRoles = roles.map((role) => String(role || '').toUpperCase());
 
         // Hierarchy Logic
         if (userRole === 'SUPERADMIN') return next(); // Superadmins pass everything
-        if (roles.includes('OWNER') && userRole === 'OWNER') return next();
-        if (roles.includes('ADMIN') && (userRole === 'ADMIN' || userRole === 'OWNER')) return next();
-        if (roles.includes('STAFF') && (userRole === 'STAFF' || userRole === 'ADMIN' || userRole === 'OWNER')) return next();
+        if (normalizedRoles.includes('OWNER') && userRole === 'OWNER') return next();
+        if (normalizedRoles.includes('ADMIN') && (userRole === 'ADMIN' || userRole === 'OWNER')) return next();
+        if (normalizedRoles.includes('STAFF') && (userRole === 'STAFF' || userRole === 'ADMIN' || userRole === 'OWNER')) return next();
 
         // Exact match
-        if (roles.includes(userRole)) return next();
+        if (normalizedRoles.includes(userRole)) return next();
 
-        console.log(`[DEBUG] Access denied for role: ${userRole}. Required roles: ${roles.join(',')}`);
+        console.log(`[DEBUG] Access denied for role: ${userRole}. Required roles: ${normalizedRoles.join(',')}`);
         return res.status(403).json({ error: 'Access denied' });
     };
 };

@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { useReactToPrint } from 'react-to-print';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useConfirm } from '../../context/ConfirmContext';
-
-import TabNavigation from '../../components/common/TabNavigation';
 
 // Custom Hooks
 import { useMemberStats } from '../../hooks/useMemberStats';
@@ -47,6 +46,8 @@ export default function MemberDetail() {
     const [showNotesModal, setShowNotesModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
     const [showMoreActions, setShowMoreActions] = useState(false);
+    const [showGuestPassCountModal, setShowGuestPassCountModal] = useState(false);
+    const [showGuestPassTermsModal, setShowGuestPassTermsModal] = useState(false);
 
     // Form Data
     const [freezeData, setFreezeData] = useState({
@@ -59,12 +60,25 @@ export default function MemberDetail() {
     const [payments, setPayments] = useState([]);
     const [loadingPayments, setLoadingPayments] = useState(false);
     const [editFormData, setEditFormData] = useState();
+    const [guestPassCountInput, setGuestPassCountInput] = useState('1');
+    const [guestPassCount, setGuestPassCount] = useState(1);
+    const [guestPassAgreementPrinted, setGuestPassAgreementPrinted] = useState(false);
+    const [submittingGuestPass, setSubmittingGuestPass] = useState(false);
 
     // Photo Capture
     const [isCameraOpen, setIsCameraOpen] = useState(false);
     const [submittingPhoto, setSubmittingPhoto] = useState(false);
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
+    const guestPassPrintRef = useRef(null);
+    const handlePrintGuestPassTerms = useReactToPrint({
+        contentRef: guestPassPrintRef,
+        documentTitle: `Guest_Pass_Terms_Member_${id || 'member'}`
+    });
+    const triggerGuestPassPrint = useCallback(() => {
+        handlePrintGuestPassTerms?.();
+        setGuestPassAgreementPrinted(true);
+    }, [handlePrintGuestPassTerms]);
 
     // Activity Filter
     const [activityFilter, setActivityFilter] = useState(ACTIVITY_FILTERS.ALL);
@@ -239,10 +253,17 @@ export default function MemberDetail() {
     const freezeLimitCount = Math.max(0, Number(currentPlan?.freezeLimitCount || 0));
     const freezeUsedCount = Math.max(0, Number(member?.freezeUsedCount || 0));
     const freezeRemainingCount = Math.max(0, freezeLimitCount - freezeUsedCount);
-    const freezeUsageLabel = freezeLimitCount > 0
-        ? `${freezeUsedCount}/${freezeLimitCount} used`
-        : 'Not available';
     const canUseFreezeNow = freezeLimitCount > 0 && freezeRemainingCount > 0;
+    const guestPassEnabled = Boolean(currentPlan?.guestPassEnabled) || Number(currentPlan?.guestPassLimitCount || 0) > 0;
+    const guestPassLimitCount = guestPassEnabled
+        ? Math.max(0, Number(currentPlan?.guestPassLimitCount || 0))
+        : 0;
+    const guestPassUsedCount = Math.max(0, Number(member?.guestPassUsedCount || 0));
+    const guestPassRemainingCount = Math.max(0, guestPassLimitCount - guestPassUsedCount);
+    const canUseGuestPassNow = guestPassLimitCount > 0 && guestPassRemainingCount > 0;
+    const guestPassProgressPct = guestPassLimitCount > 0
+        ? Math.min(100, Math.max(0, (guestPassUsedCount / guestPassLimitCount) * 100))
+        : 0;
     const isMembershipExpiredForClassPackages = useMemo(() => {
         const statusExpired = String(member?.status || '').toUpperCase() === 'EXPIRED';
         if (statusExpired) return true;
@@ -255,6 +276,93 @@ export default function MemberDetail() {
         todayStart.setHours(0, 0, 0, 0);
         return expiryDate < todayStart;
     }, [member?.status, member?.expiryDate]);
+    const resetGuestPassWorkflow = useCallback(() => {
+        setShowGuestPassCountModal(false);
+        setShowGuestPassTermsModal(false);
+        setGuestPassCountInput('1');
+        setGuestPassCount(1);
+        setGuestPassAgreementPrinted(false);
+    }, []);
+    const openGuestPassCountModal = useCallback(() => {
+        if (!canUseGuestPassNow) {
+            showAlert({
+                title: 'Guest Pass Unavailable',
+                message: guestPassLimitCount <= 0
+                    ? 'This plan does not include guest passes.'
+                    : 'Guest pass usage limit reached for this membership.',
+                type: 'warning'
+            });
+            return;
+        }
+        setGuestPassCountInput('1');
+        setShowGuestPassCountModal(true);
+    }, [canUseGuestPassNow, guestPassLimitCount, showAlert]);
+    const handleGuestPassCountSubmit = useCallback((e) => {
+        e.preventDefault();
+        const requestedCount = Number(guestPassCountInput);
+        if (!Number.isInteger(requestedCount) || requestedCount <= 0) {
+            showAlert({
+                title: 'Invalid Count',
+                message: 'Guest count must be a whole number greater than 0.',
+                type: 'warning'
+            });
+            return;
+        }
+        if (requestedCount > guestPassRemainingCount) {
+            showAlert({
+                title: 'Not Enough Guest Pass',
+                message: `Only ${guestPassRemainingCount} guest pass${guestPassRemainingCount > 1 ? 'es are' : ' is'} remaining.`,
+                type: 'warning'
+            });
+            return;
+        }
+        setGuestPassCount(requestedCount);
+        setGuestPassAgreementPrinted(false);
+        setShowGuestPassCountModal(false);
+        setShowGuestPassTermsModal(true);
+    }, [guestPassCountInput, guestPassRemainingCount, showAlert]);
+    const handleConfirmGuestPassUsage = useCallback(async () => {
+        if (guestPassCount <= 0) {
+            showAlert({
+                title: 'Invalid Count',
+                message: 'Guest count is required before recording usage.',
+                type: 'warning'
+            });
+            return;
+        }
+        if (!guestPassAgreementPrinted) {
+            showAlert({
+                title: 'Print Required',
+                message: 'Please print the guest pass agreement before confirming usage.',
+                type: 'warning'
+            });
+            return;
+        }
+
+        setSubmittingGuestPass(true);
+        try {
+            const result = await memberService.useGuestPass(id, guestPassCount);
+            await fetchMember();
+            const remaining = Number(result?.usage?.remainingCount);
+            const hasRemaining = Number.isFinite(remaining);
+            resetGuestPassWorkflow();
+            showAlert({
+                title: 'Guest Pass Used',
+                message: hasRemaining
+                    ? `Recorded ${guestPassCount} guest pass usage. Remaining: ${remaining} of ${guestPassLimitCount}.`
+                    : `Recorded ${guestPassCount} guest pass usage.`,
+                type: 'success'
+            });
+        } catch (error) {
+            showAlert({
+                title: 'Guest Pass Error',
+                message: error?.response?.data?.error || 'Failed to record guest pass usage.',
+                type: 'danger'
+            });
+        } finally {
+            setSubmittingGuestPass(false);
+        }
+    }, [fetchMember, guestPassAgreementPrinted, guestPassCount, guestPassLimitCount, id, resetGuestPassWorkflow, showAlert]);
 
 
     if (loading) return (
@@ -279,6 +387,42 @@ export default function MemberDetail() {
             : 'text-red-400';
     const riskLevel = stats.isExpired ? 'High' : stats.isExpiringSoon ? 'Medium' : 'Low';
     const paymentRows = payments.length ? payments : (member.payments || []);
+    const totalPointsFromPayments = paymentRows.reduce(
+        (sum, pay) => sum + Math.max(0, Number(pay?.pointsAwarded || 0)),
+        0
+    );
+    const latestPaymentDate = paymentRows.length > 0
+        ? new Date(paymentRows[0].date).toLocaleDateString()
+        : 'No payments yet';
+    const loyaltyTransactions = Array.isArray(member?.loyaltyTransactions) ? member.loyaltyTransactions : [];
+    const latestLoyaltyDate = loyaltyTransactions.length > 0
+        ? new Date(loyaltyTransactions[0].createdAt).toLocaleDateString()
+        : 'No rewards activity';
+    const latestNoteDate = notes.length > 0
+        ? new Date(notes[0].createdAt).toLocaleDateString()
+        : 'No notes yet';
+    const accessLogs = Array.isArray(member?.accessLogs) ? member.accessLogs : [];
+    const visitsLast7Days = accessLogs.filter((log) => {
+        const checkIn = new Date(log?.checkIn);
+        if (Number.isNaN(checkIn.getTime())) return false;
+        return (Date.now() - checkIn.getTime()) <= (7 * MS_PER_DAY);
+    }).length;
+    const visitsLast30Days = accessLogs.filter((log) => {
+        const checkIn = new Date(log?.checkIn);
+        if (Number.isNaN(checkIn.getTime())) return false;
+        return (Date.now() - checkIn.getTime()) <= (30 * MS_PER_DAY);
+    }).length;
+    const latestAccessDate = accessLogs.length > 0
+        ? new Date(
+            Math.max(
+                ...accessLogs.map((log) => {
+                    const checkIn = new Date(log?.checkIn);
+                    return Number.isNaN(checkIn.getTime()) ? 0 : checkIn.getTime();
+                })
+            )
+        ).toLocaleDateString()
+        : 'No visits yet';
+    const checkInLogs = accessLogs.filter((log) => String(log?.status || '').toUpperCase() === 'ALLOWED');
     const progressPct = Math.min(100, Math.max(0, Number(stats.progress || 0)));
     const freezeStartDate = member.freezeStartDate ? new Date(member.freezeStartDate) : null;
     const freezeEndDate = member.freezeEndDate ? new Date(member.freezeEndDate) : null;
@@ -325,77 +469,125 @@ export default function MemberDetail() {
                 ? `${freezeRemainingDays} day${freezeRemainingDays > 1 ? 's' : ''} remaining`
                 : `Completed ${freezeEndDate.toLocaleDateString()}`
         : 'No freeze period recorded';
+    const freezeTrackerStatusLabel = freezeLimitCount <= 0
+        ? 'Not included'
+        : freezeRemainingCount <= 0
+            ? 'Limit reached'
+            : 'Available';
+    const guestTrackerStatusLabel = guestPassLimitCount <= 0
+        ? 'Not included'
+        : guestPassRemainingCount <= 0
+            ? 'Limit reached'
+            : 'Available';
+    const progressStatusLabel = stats.isExpired
+        ? 'Expired'
+        : stats.isExpiringSoon
+            ? 'Expiring soon'
+            : 'On track';
+    const progressStatusTone = stats.isExpired
+        ? 'text-red-400'
+        : stats.isExpiringSoon
+            ? 'text-amber-400'
+            : 'text-emerald-400';
+    const freezeSlotDisplayLimit = 12;
+    const freezeUseSlotDisplay = freezeLimitCount > 0 && freezeLimitCount <= freezeSlotDisplayLimit;
+    const freezeSlots = freezeUseSlotDisplay
+        ? Array.from({ length: freezeLimitCount }, (_, index) => index < freezeUsedCount)
+        : [];
+    const freezeAllowanceProgressPct = freezeLimitCount > 0
+        ? Math.min(100, Math.max(0, (freezeUsedCount / freezeLimitCount) * 100))
+        : 0;
+    const freezeUtilizationPct = Math.round(freezeAllowanceProgressPct);
+    const guestPassSlotDisplayLimit = 12;
+    const guestPassUseSlotDisplay = guestPassLimitCount > 0 && guestPassLimitCount <= guestPassSlotDisplayLimit;
+    const guestPassSlots = guestPassUseSlotDisplay
+        ? Array.from({ length: guestPassLimitCount }, (_, index) => index < guestPassUsedCount)
+        : [];
+    const guestPassUtilizationPct = guestPassLimitCount > 0
+        ? Math.round((guestPassUsedCount / guestPassLimitCount) * 100)
+        : 0;
+    const classSessionsRemaining = Math.max(0, Number(member?.classSessionsRemaining || 0));
+    const classSessionsUsed = Math.max(0, Number(member?.classSessionsUsed || 0));
+    const classSessionsPurchased = Math.max(0, Number(member?.classSessionsPurchased || 0));
+    const classSessionsIncluded = currentPlan?.includesClasses
+        ? Math.max(0, Number(currentPlan?.includedClassSessions || 0))
+        : 0;
+    const classSessionsTotal = Math.max(0, classSessionsRemaining + classSessionsUsed);
+    const classSessionsProgressPct = classSessionsTotal > 0
+        ? Math.min(100, Math.max(0, (classSessionsUsed / classSessionsTotal) * 100))
+        : 0;
+    const classSessionsUtilizationPct = Math.round(classSessionsProgressPct);
+    const classSessionsStatusLabel = classSessionsTotal <= 0
+        ? 'Not included'
+        : classSessionsRemaining <= 0
+            ? 'Depleted'
+            : 'Available';
+    const planAppliedLabel = `${stats.combinedPlanLabel || 'No plan'}${currentPlan?.duration ? ` (${currentPlan.duration} days)` : ''}`;
+    const memberSinceLabel = member.startDate ? new Date(member.startDate).toLocaleDateString() : 'Not provided';
+    const expiryDateLabel = member.expiryDate ? new Date(member.expiryDate).toLocaleDateString() : 'Not provided';
+    const birthDateLabel = member.birthDate ? new Date(member.birthDate).toLocaleDateString() : 'Not provided';
 
 
     return (
-        <div className="space-y-4 animate-fade-in pb-10">
-            <div className="flex items-center gap-3 min-w-0 px-1">
-                <button
-                    type="button"
-                    onClick={() => navigate('/members')}
-                    className="h-9 w-9 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-white flex items-center justify-center"
-                    aria-label="Back to members"
-                >
-                    <span className="material-icons-round text-base">arrow_back</span>
-                </button>
-                <div className="min-w-0">
-                    <h2 className="text-sm sm:text-base font-bold text-white truncate">Member Details</h2>
-                    <p className="text-[11px] text-text-muted truncate">{member.firstName} {member.lastName} • Member ID #{member.id}</p>
+        <div className="animate-fade-in pb-10">
+            <div className="space-y-4">
+                <div className="flex items-center gap-3 min-w-0 px-1">
+                    <button
+                        type="button"
+                        onClick={() => navigate('/members')}
+                        className="h-9 w-9 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-white flex items-center justify-center"
+                        aria-label="Back to members"
+                    >
+                        <span className="material-icons-round text-base">arrow_back</span>
+                    </button>
+                    <div className="min-w-0">
+                        <h2 className="text-sm sm:text-base font-bold text-white truncate">Member Details</h2>
+                        <p className="text-[11px] text-text-muted truncate">Profile, activity, membership and operations</p>
+                    </div>
                 </div>
-            </div>
 
-            <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
-                <div className="px-5 py-4 sm:px-6 border-b border-white/10">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                        <div className="flex items-center gap-4 min-w-0">
+                <section className="rounded-2xl border border-white/10 bg-surface p-4 sm:p-5">
+                    <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                        <div className="flex items-start gap-4 min-w-0">
                             <div className="relative shrink-0">
-                                <div className="h-16 w-16 rounded-xl overflow-hidden border border-white/10 bg-gradient-to-br from-primary to-orange-600 flex items-center justify-center text-white text-xl font-bold">
+                                <div className="h-[72px] w-[72px] rounded-full overflow-hidden border-2 border-primary/70 bg-primary/25 flex items-center justify-center text-lg font-bold text-white">
                                     {member.imageUrl ? <img src={member.imageUrl} className="w-full h-full object-cover" alt="" /> : initials}
                                 </div>
-                                <button onClick={() => setShowPhotoModal(true)} className="absolute -bottom-2 -right-2 h-7 w-7 rounded-md bg-primary text-white hover:bg-orange-600 transition-colors">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPhotoModal(true)}
+                                    className="absolute -bottom-1 -right-1 h-7 w-7 rounded-full bg-primary text-white hover:bg-orange-600 transition-colors flex items-center justify-center"
+                                >
                                     <span className="material-icons-round text-xs">photo_camera</span>
                                 </button>
                             </div>
-
                             <div className="min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                    <h1 className="text-xl sm:text-2xl font-bold text-white truncate">{member.firstName} {member.lastName}</h1>
+                                <h1 className="text-2xl sm:text-3xl font-black tracking-wide text-white uppercase leading-none">
+                                    {member.firstName} {member.lastName}
+                                </h1>
+                                <p className="text-[11px] text-text-muted uppercase tracking-wider mt-1">
+                                    Member ID #{member.id} | Since {memberSinceLabel}
+                                </p>
+                                <div className="flex flex-wrap gap-1.5 mt-2">
                                     <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${statusTone}`}>{member.status}</span>
+                                    <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-primary/15 text-primary border border-primary/30">{stats.combinedPlanLabel || 'No plan'}</span>
+                                    <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-yellow-500/15 text-yellow-300 border border-yellow-500/30">{member?.points || 0} pts</span>
+                                    {normalizedStatus === 'FREEZED' && (
+                                        <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">Frozen</span>
+                                    )}
                                 </div>
-                                <p className="text-xs text-text-muted mt-1">Member ID #{member.id} • Last active {stats.lastActive}</p>
-                                {hasFreezeWindow && (
-                                    <p className="text-[11px] text-text-muted mt-1">
-                                        {normalizedStatus === 'FREEZED' ? 'Current freeze' : 'Last freeze'}: {freezeWindowLabel} ({freezeDurationLabel})
-                                    </p>
-                                )}
-                                <p className="text-[11px] text-blue-300/90 mt-1">Freeze usage: {freezeUsageLabel}</p>
                             </div>
                         </div>
 
-                        <div className="flex flex-wrap gap-2">
-                            <button onClick={() => redirectToPosForMember('MEMBERSHIP')} className="px-3.5 py-2 rounded-lg bg-primary hover:bg-orange-600 text-white text-sm font-semibold transition-colors">Renew</button>
-                            <button
-                                onClick={() => {
-                                    if (isMembershipExpiredForClassPackages) {
-                                        showAlert({
-                                            title: 'Membership Expired',
-                                            message: 'Cannot add class sessions for expired membership. Renew membership first.',
-                                            type: 'warning'
-                                        });
-                                        return;
-                                    }
-                                    redirectToPosForMember('PACKAGES');
-                                }}
-                                className="px-3.5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold transition-colors"
-                            >
-                                Add Sessions
-                            </button>
+                        <div className="flex flex-wrap gap-2 shrink-0">
+                            <button onClick={handleEditClick} className="px-4 py-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-white text-sm font-medium">Edit</button>
+                            <button onClick={() => redirectToPosForMember('MEMBERSHIP')} className="px-4 py-2 rounded-lg bg-primary hover:bg-orange-600 text-white text-sm font-semibold">Renew</button>
                             <div className="relative">
                                 <button
                                     onClick={() => setShowMoreActions((prev) => !prev)}
-                                    className="px-3.5 py-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-white text-sm font-semibold transition-colors"
+                                    className="px-4 py-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-white text-sm font-semibold"
                                 >
-                                    More
+                                    Actions
                                 </button>
                                 {showMoreActions && (
                                     <div className="absolute right-0 mt-2 w-44 rounded-lg border border-white/10 bg-surface shadow-2xl z-20">
@@ -414,109 +606,515 @@ export default function MemberDetail() {
                                                 Freeze Member
                                             </button>
                                         )}
+                                        <button
+                                            onClick={() => {
+                                                if (!canUseGuestPassNow) return;
+                                                openGuestPassCountModal();
+                                                setShowMoreActions(false);
+                                            }}
+                                            disabled={!canUseGuestPassNow}
+                                            className={`w-full text-left px-3 py-2.5 text-sm hover:bg-white/5 ${canUseGuestPassNow ? 'text-emerald-300' : 'text-text-muted cursor-not-allowed opacity-60'}`}
+                                        >
+                                            Use Guest Pass
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                if (isMembershipExpiredForClassPackages) {
+                                                    showAlert({
+                                                        title: 'Membership Expired',
+                                                        message: 'Cannot add class sessions for expired membership. Renew membership first.',
+                                                        type: 'warning'
+                                                    });
+                                                    return;
+                                                }
+                                                redirectToPosForMember('PACKAGES');
+                                                setShowMoreActions(false);
+                                            }}
+                                            className="w-full text-left px-3 py-2.5 text-sm text-text-secondary hover:bg-white/5"
+                                        >
+                                            Add Sessions
+                                        </button>
                                         <button onClick={() => { setShowPasswordModal(true); setShowMoreActions(false); }} className="w-full text-left px-3 py-2.5 text-sm text-text-secondary hover:bg-white/5">Reset Password</button>
-                                        <button onClick={() => { handleEditClick(); setShowMoreActions(false); }} className="w-full text-left px-3 py-2.5 text-sm text-text-secondary hover:bg-white/5">Edit Profile</button>
                                     </div>
                                 )}
                             </div>
                         </div>
                     </div>
+                </section>
+
+                <section className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2.5">
+                    <article className="rounded-xl border border-white/10 bg-surface px-3.5 py-3">
+                        <p className="text-[10px] uppercase tracking-wider text-text-muted">Check-ins</p>
+                        <p className="text-xl font-semibold text-white leading-none mt-1">{accessLogs.length}</p>
+                        <p className="text-[11px] text-text-muted mt-1">{visitsLast30Days} in last 30 days</p>
+                    </article>
+                    <article className="rounded-xl border border-white/10 bg-surface px-3.5 py-3">
+                        <p className="text-[10px] uppercase tracking-wider text-text-muted">Class Sessions</p>
+                        <p className="text-xl font-semibold text-white leading-none mt-1">{classSessionsUsed}</p>
+                        <p className="text-[11px] text-text-muted mt-1">{classSessionsRemaining} remaining</p>
+                    </article>
+                    <article className="rounded-xl border border-white/10 bg-surface px-3.5 py-3">
+                        <p className="text-[10px] uppercase tracking-wider text-text-muted">Guest Passes</p>
+                        <p className="text-xl font-semibold text-white leading-none mt-1">{guestPassUsedCount} / {guestPassLimitCount}</p>
+                        <p className="text-[11px] text-text-muted mt-1">Used this cycle</p>
+                    </article>
+                    <article className="rounded-xl border border-white/10 bg-surface px-3.5 py-3">
+                        <p className="text-[10px] uppercase tracking-wider text-text-muted">Days Until Renewal</p>
+                        <p className="text-xl font-semibold text-white leading-none mt-1">{Math.max(0, stats.daysRemaining)}</p>
+                        <p className="text-[11px] text-text-muted mt-1">{expiryDateLabel}</p>
+                    </article>
+                    <article className="rounded-xl border border-white/10 bg-surface px-3.5 py-3">
+                        <p className="text-[10px] uppercase tracking-wider text-text-muted">Loyalty Points</p>
+                        <p className="text-xl font-semibold text-yellow-300 leading-none mt-1">{member?.points || 0}</p>
+                        <p className="text-[11px] text-text-muted mt-1">{latestLoyaltyDate}</p>
+                    </article>
+                </section>
+
+                <div className="flex items-center gap-1 overflow-x-auto border-b border-white/10">
+                    {TABS.map((tab) => (
+                        <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${activeTab === tab.id
+                                ? 'text-primary border-primary'
+                                : 'text-text-muted border-transparent hover:text-white'
+                                }`}
+                        >
+                            {tab.id === 'payments' ? 'Payments-History' : tab.label}
+                        </button>
+                    ))}
                 </div>
 
-                <div className="px-5 py-3 sm:px-6 bg-background/20">
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                        <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
-                            <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Plan</p>
-                            <p className="text-sm font-semibold text-white mt-1 truncate">{stats.combinedPlanLabel}</p>
-                            <p className="text-xs text-text-muted">{formatPrice(currentPlan?.price || 0)} / {currentPlan?.duration || 0} days</p>
-                            <p className="text-xs text-blue-300/90 mt-1">Freeze: {freezeUsageLabel}</p>
-                        </div>
-                        <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
-                            <div className="flex items-center justify-between">
-                                <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Progress</p>
-                                <p className="text-xs font-semibold text-white">{Math.round(progressPct)}%</p>
-                            </div>
-                            <div className="h-1.5 rounded-full bg-white/10 overflow-hidden mt-2">
-                                <div className={`h-full ${progressPct > 90 ? 'bg-red-500' : 'bg-primary'}`} style={{ width: `${progressPct}%` }} />
-                            </div>
-                            <p className="text-xs text-text-muted mt-1">{Math.max(0, stats.daysRemaining)} days left</p>
-                        </div>
-                        {hasFreezeWindow ? (
-                            <div className="relative overflow-hidden rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2.5">
-                                <div className="flex items-center justify-between">
-                                    <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Freeze Progress</p>
-                                    <p className="text-xs font-semibold text-white">{Math.round(freezeProgressPct)}%</p>
-                                </div>
-                                <div className="h-1.5 rounded-full bg-white/10 overflow-hidden mt-2">
-                                    <div className="h-full bg-blue-400" style={{ width: `${freezeProgressPct}%` }} />
-                                </div>
-                                <p className="text-xs text-text-muted mt-1">{`${freezeElapsedDays}/${freezeTotalDays} days used`}</p>
-                                <p className="text-xs mt-1 text-blue-200/90">Allowances: {freezeUsageLabel}</p>
-                                <p className="text-xs mt-1 text-blue-300">{freezeStatusLabel}</p>
-                            </div>
-                        ) : (
-                            <div className="relative overflow-hidden rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
-                                <div className="flex items-center justify-between">
-                                    <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Freeze Progress</p>
-                                    <p className="text-xs font-semibold text-white/80">{Math.round(freezeProgressPct)}%</p>
-                                </div>
-                                <div className="h-1.5 rounded-full bg-white/10 overflow-hidden mt-2">
-                                    <div className="h-full bg-blue-400/70" style={{ width: `${freezeProgressPct}%` }} />
-                                </div>
-                                <p className="text-xs text-text-muted mt-1">0/0 days used</p>
-                                <p className="text-xs mt-1 text-text-muted">Allowances: {freezeUsageLabel}</p>
-                                <p className="text-xs mt-1 text-text-muted">{freezeStatusLabel}</p>
-                                <div className="absolute inset-0 bg-black/15" />
-                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                    <span className="w-full text-center text-sm font-semibold tracking-[0.28em] text-white/65">NOT USED</span>
-                                </div>
-                            </div>
-                        )}
-                        <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
-                            <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Expiry</p>
-                            <p className="text-sm font-semibold text-white mt-1">{member.expiryDate ? new Date(member.expiryDate).toLocaleDateString() : 'Not set'}</p>
-                            <p className={`text-xs mt-1 ${riskLevel === 'High' ? 'text-red-400' : riskLevel === 'Medium' ? 'text-amber-400' : 'text-emerald-400'}`}>Risk: {riskLevel}</p>
-                        </div>
-                        <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2.5">
-                            <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Ledger Snapshot</p>
-                            <p className="text-xs text-text-muted mt-1">Spent: <span className="text-white font-semibold">{formatPrice(totalSpent)}</span></p>
-                            <p className="text-xs text-text-muted">Visits: <span className="text-white font-semibold">{member.accessLogs?.length || 0}</span></p>
-                            <p className="text-xs text-text-muted">Sessions: <span className={`${(member.classSessionsRemaining || 0) > 0 ? 'text-emerald-400' : 'text-red-400'} font-semibold`}>{member.classSessionsRemaining || 0}</span></p>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <TabNavigation tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
-
-            {/* Tab Content */}
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px] items-start">
+                {/* Tab Content */}
                 <div className="space-y-4">
             {activeTab === 'overview' && (
+                <section className="grid gap-3 xl:grid-cols-2">
+                    <div className="space-y-3">
+                        <h3 className="text-sm font-bold uppercase tracking-widest text-white/90">Member Credentials</h3>
+                        <article className="rounded-2xl border border-white/10 bg-surface p-4">
+                            <div className="flex items-center justify-between mb-3">
+                                <p className="text-sm font-semibold text-white">Personal Info</p>
+                                <span className="h-8 w-8 rounded-lg bg-blue-500/15 text-blue-300 flex items-center justify-center">
+                                    <span className="material-icons-round text-base">person</span>
+                                </span>
+                            </div>
+                            <div className="space-y-2 text-sm">
+                                <div className="flex items-center justify-between border-b border-white/10 pb-2"><span className="text-text-muted">Full Name</span><span className="text-white font-semibold">{member.firstName} {member.lastName}</span></div>
+                                <div className="flex items-center justify-between border-b border-white/10 pb-2"><span className="text-text-muted">Date of Birth</span><span className="text-white font-semibold">{birthDateLabel}</span></div>
+                                <div className="flex items-center justify-between border-b border-white/10 pb-2"><span className="text-text-muted">Gender</span><span className="text-white font-semibold">{member.sex || 'Not specified'}</span></div>
+                                <div className="flex items-center justify-between border-b border-white/10 pb-2"><span className="text-text-muted">Phone</span><span className="text-primary font-semibold">{member.phone || 'Not provided'}</span></div>
+                                <div className="flex items-center justify-between"><span className="text-text-muted">Email</span><span className="text-white font-semibold text-right">{member.email || 'Not provided'}</span></div>
+                            </div>
+                        </article>
+
+                        <h3 className="text-sm font-bold uppercase tracking-widest text-white/90">Membership Plan</h3>
+                        <article className="rounded-2xl border border-white/10 bg-surface p-4">
+                            <div className="flex items-center justify-between mb-3">
+                                <p className="text-sm font-semibold text-white">{stats.combinedPlanLabel || 'No active plan'}</p>
+                                <span className="h-8 w-8 rounded-lg bg-primary/15 text-primary flex items-center justify-center">
+                                    <span className="material-icons-round text-base">credit_card</span>
+                                </span>
+                            </div>
+                            <div className="space-y-2 text-sm">
+                                <div className="flex items-center justify-between border-b border-white/10 pb-2"><span className="text-text-muted">Plan Type</span><span className="text-white font-semibold">{planAppliedLabel}</span></div>
+                                <div className="flex items-center justify-between border-b border-white/10 pb-2"><span className="text-text-muted">Start Date</span><span className="text-white font-semibold">{memberSinceLabel}</span></div>
+                                <div className="flex items-center justify-between border-b border-white/10 pb-2"><span className="text-text-muted">Renewal Date</span><span className="text-white font-semibold">{expiryDateLabel}</span></div>
+                                <div className="flex items-center justify-between border-b border-white/10 pb-2"><span className="text-text-muted">Status</span><span className={`font-semibold ${progressStatusTone}`}>{progressStatusLabel}</span></div>
+                                <div className="flex items-center justify-between"><span className="text-text-muted">Freeze Window</span><span className="text-white font-semibold text-right">{freezeWindowLabel} ({freezeDurationLabel})</span></div>
+                            </div>
+                            <div className="mt-3">
+                                <div className="flex items-center justify-between text-[11px] text-text-muted">
+                                    <span>Plan Progress</span>
+                                    <span>{Math.round(progressPct)}%</span>
+                                </div>
+                                <div className="mt-1 h-2 rounded-full bg-white/10 overflow-hidden">
+                                    <div className={`h-full ${progressPct > 90 ? 'bg-red-500' : progressPct > 70 ? 'bg-amber-400' : 'bg-emerald-500'}`} style={{ width: `${progressPct}%` }} />
+                                </div>
+                                <div className="mt-1 flex items-center justify-between text-[11px] text-text-muted">
+                                    <span>{memberSinceLabel}</span>
+                                    <span>{Math.max(0, stats.daysRemaining)} days left</span>
+                                </div>
+                            </div>
+                        </article>
+                    </div>
+
+                    <div className="space-y-3">
+                        <h3 className="text-sm font-bold uppercase tracking-widest text-white/90">Guest Passes</h3>
+                        <article className="rounded-2xl border border-white/10 bg-surface p-4">
+                            <div className="flex items-center justify-between mb-3">
+                                <p className="text-sm font-semibold text-white">Pass Usage ({guestPassLimitCount} total)</p>
+                                <span className="h-8 w-8 rounded-lg bg-emerald-500/15 text-emerald-300 flex items-center justify-center">
+                                    <span className="material-icons-round text-base">confirmation_number</span>
+                                </span>
+                            </div>
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[11px] text-text-muted">
+                                    <span>Used</span>
+                                    <span>{guestPassUsedCount} / {guestPassLimitCount}</span>
+                                </div>
+                                <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                                    <div className="h-full bg-emerald-500" style={{ width: `${guestPassProgressPct}%` }} />
+                                </div>
+                            </div>
+                            <p className="mt-2 text-xs text-text-muted">Remaining: {guestPassRemainingCount}</p>
+                            <button
+                                type="button"
+                                onClick={openGuestPassCountModal}
+                                disabled={!canUseGuestPassNow}
+                                className="mt-3 w-full px-3 py-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-medium"
+                            >
+                                Issue Guest Pass
+                            </button>
+                        </article>
+
+                        <h3 className="text-sm font-bold uppercase tracking-widest text-white/90">Class Sessions</h3>
+                        <article className="rounded-2xl border border-white/10 bg-surface p-4">
+                            <div className="flex items-center justify-between mb-3">
+                                <p className="text-sm font-semibold text-white">Session Utilization</p>
+                                <span className="h-8 w-8 rounded-lg bg-amber-500/15 text-amber-300 flex items-center justify-center">
+                                    <span className="material-icons-round text-base">fitness_center</span>
+                                </span>
+                            </div>
+                            <div className="h-2.5 rounded-full bg-white/10 overflow-hidden">
+                                <div className="h-full bg-amber-400" style={{ width: `${classSessionsProgressPct}%` }} />
+                            </div>
+                            <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                                <div className="rounded-lg bg-black/20 px-3 py-2"><p className="text-[11px] text-text-muted">Used</p><p className="text-white font-semibold">{classSessionsUsed}</p></div>
+                                <div className="rounded-lg bg-black/20 px-3 py-2"><p className="text-[11px] text-text-muted">Remaining</p><p className="text-white font-semibold">{classSessionsRemaining}</p></div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (isMembershipExpiredForClassPackages) {
+                                        showAlert({
+                                            title: 'Membership Expired',
+                                            message: 'Cannot add class sessions for expired membership. Renew membership first.',
+                                            type: 'warning'
+                                        });
+                                        return;
+                                    }
+                                    redirectToPosForMember('PACKAGES');
+                                }}
+                                className="mt-3 w-full px-3 py-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-white text-sm font-medium"
+                            >
+                                Book / Add Class Session
+                            </button>
+                        </article>
+                    </div>
+                </section>
+            )}
+
+            {activeTab === '__legacy_overview' && (
                 <>
                     <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
-                        <div className="px-5 py-3 border-b border-white/10">
-                            <h3 className="text-white font-semibold">Member Profile</h3>
-                        </div>
-                        <div className="px-5 py-1">
-                                {[
-                                    { label: 'Email', value: member.email || 'Not provided' },
-                                    { label: 'Phone', value: member.phone || 'Not provided' },
-                                    { label: 'Birth Date', value: member.birthDate ? new Date(member.birthDate).toLocaleDateString() : 'Not provided' },
-                                    { label: 'Gender', value: member.sex || 'Not specified' },
-                                    { label: 'Member Since', value: member.startDate ? new Date(member.startDate).toLocaleDateString() : 'Not provided' },
-                                    { label: 'Expiry Date', value: member.expiryDate ? new Date(member.expiryDate).toLocaleDateString() : 'Not provided' },
-                                    { label: 'Freeze Period', value: freezeWindowLabel },
-                                    { label: 'Freeze Duration', value: freezeDurationLabel },
-                                    { label: 'Freeze Allowance', value: freezeLimitCount > 0 ? `${freezeLimitCount} time${freezeLimitCount > 1 ? 's' : ''}` : 'Not allowed' },
-                                    { label: 'Freeze Remaining', value: freezeLimitCount > 0 ? `${freezeRemainingCount} time${freezeRemainingCount > 1 ? 's' : ''}` : 'Not allowed' },
-                                    { label: 'Freeze Progress', value: hasFreezeWindow ? `${Math.round(freezeProgressPct)}% (${freezeElapsedDays}/${freezeTotalDays} days)` : 'NOT USED' }
-                                ].map((row) => (
-                                <div key={row.label} className="grid grid-cols-[150px_minmax(0,1fr)] gap-3 py-3 border-b border-white/5 last:border-b-0">
-                                    <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">{row.label}</p>
-                                    <p className="text-sm text-white break-words">{row.value}</p>
+                        <div className="px-5 py-3 sm:px-6 bg-background/20">
+                            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 mb-3">
+                                <div>
+                                    <h3 className="text-sm font-semibold text-white">Operational Overview</h3>
+                                    <p className="text-xs text-text-muted">Core membership performance, allowances, and action readiness.</p>
                                 </div>
-                            ))}
+                                <p className="text-[11px] text-text-muted">Updated from live member usage</p>
+                            </div>
+                            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4 mb-3">
+                                <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                                    <p className="text-[10px] uppercase tracking-wide text-text-muted font-semibold">Progress</p>
+                                    <p className="text-sm font-semibold text-white mt-1">{Math.round(progressPct)}%</p>
+                                </div>
+                                <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                                    <p className="text-[10px] uppercase tracking-wide text-text-muted font-semibold">Days Remaining</p>
+                                    <p className="text-sm font-semibold text-white mt-1">{Math.max(0, stats.daysRemaining)}</p>
+                                </div>
+                                <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                                    <p className="text-[10px] uppercase tracking-wide text-text-muted font-semibold">Freeze Left</p>
+                                    <p className="text-sm font-semibold text-white mt-1">{freezeRemainingCount}</p>
+                                </div>
+                                <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                                    <p className="text-[10px] uppercase tracking-wide text-text-muted font-semibold">Guest Pass Left</p>
+                                    <p className="text-sm font-semibold text-white mt-1">{guestPassRemainingCount}</p>
+                                </div>
+                            </div>
+                            <div className="grid gap-3 xl:grid-cols-12">
+                                <article className="rounded-xl border border-white/10 bg-white/5 p-4 xl:col-span-12">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div>
+                                            <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Membership Progress</p>
+                                            <p className={`text-sm font-semibold mt-1 ${progressStatusTone}`}>{progressStatusLabel}</p>
+                                            <p className="text-xs text-text-muted mt-1">
+                                                Plan Applied: <span className="text-white font-semibold">{planAppliedLabel}</span>
+                                            </p>
+                                        </div>
+                                        <p className="text-xl font-black text-white">{Math.round(progressPct)}%</p>
+                                    </div>
+                                    <div className="mt-3 space-y-1.5">
+                                        <div className="relative h-2.5 rounded-full bg-white/10 overflow-hidden">
+                                            <div className={`h-full transition-all ${progressPct > 90 ? 'bg-red-500' : 'bg-primary'}`} style={{ width: `${progressPct}%` }} />
+                                        </div>
+                                        <div className="flex items-center justify-between text-[10px] text-text-muted">
+                                            <span>0%</span>
+                                            <span>50%</span>
+                                            <span>100%</span>
+                                        </div>
+                                    </div>
+                                    <div className="mt-2 flex items-center justify-between text-xs text-text-muted">
+                                        <span>Start: {member.startDate ? new Date(member.startDate).toLocaleDateString() : 'N/A'}</span>
+                                        <span>{Math.max(0, stats.daysRemaining)} day{Math.max(0, stats.daysRemaining) === 1 ? '' : 's'} left</span>
+                                        <span>Expiry: {member.expiryDate ? new Date(member.expiryDate).toLocaleDateString() : 'N/A'}</span>
+                                    </div>
+                                    <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
+                                        <div className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-2">
+                                            <p className="text-text-muted">Attendance</p>
+                                            <p className={`font-semibold mt-1 ${attendanceTone}`}>{stats.attendanceScore.label}</p>
+                                        </div>
+                                        <div className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-2">
+                                            <p className="text-text-muted">Visits</p>
+                                            <p className="font-semibold mt-1 text-white">{member.accessLogs?.length || 0}</p>
+                                        </div>
+                                        <div className="rounded-lg border border-white/10 bg-black/20 px-2.5 py-2">
+                                            <p className="text-text-muted">Risk</p>
+                                            <p className={`font-semibold mt-1 ${riskLevel === 'High' ? 'text-red-400' : riskLevel === 'Medium' ? 'text-amber-400' : 'text-emerald-400'}`}>{riskLevel}</p>
+                                        </div>
+                                    </div>
+                                </article>
+
+                                <article className="rounded-xl border border-white/10 bg-white/5 p-4 xl:col-span-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Freeze Tracker</p>
+                                            <p className="text-[10px] text-text-muted/80 mt-1">Allowance utilization</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <span className={`text-[11px] font-semibold ${freezeLimitCount <= 0 ? 'text-text-muted' : freezeRemainingCount <= 0 ? 'text-red-400' : 'text-blue-300'}`}>
+                                                {freezeTrackerStatusLabel}
+                                            </span>
+                                            <p className="text-[11px] text-white mt-1">{freezeUtilizationPct}% used</p>
+                                        </div>
+                                    </div>
+                                    <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-2.5">
+                                        {freezeUseSlotDisplay ? (
+                                            <div
+                                                className="grid gap-1.5"
+                                                style={{ gridTemplateColumns: `repeat(${Math.min(6, Math.max(1, freezeLimitCount))}, minmax(0, 1fr))` }}
+                                            >
+                                                {freezeSlots.map((isUsed, idx) => (
+                                                    <span
+                                                        key={`freeze-slot-${idx}`}
+                                                        className={`h-2.5 rounded-sm border ${isUsed ? 'bg-blue-400 border-blue-300/70' : 'bg-white/10 border-white/15'}`}
+                                                    />
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                                                <div className="h-full bg-blue-400" style={{ width: `${freezeAllowanceProgressPct}%` }} />
+                                            </div>
+                                        )}
+                                        <div className="mt-2 flex items-center gap-3 text-[10px] text-text-muted">
+                                            <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-blue-400" />Used</span>
+                                            <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-white/30" />Available</span>
+                                        </div>
+                                    </div>
+                                    <p className="text-[11px] text-text-muted mt-2">
+                                        Used {freezeUsedCount} of {freezeLimitCount} | Remaining {freezeRemainingCount}
+                                    </p>
+                                    <p className="text-[11px] text-text-muted mt-1">{freezeStatusLabel}</p>
+                                    {hasFreezeWindow && (
+                                        <p className="text-[11px] text-blue-200/90 mt-1">
+                                            Freeze window progress: {Math.round(freezeProgressPct)}%
+                                        </p>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (normalizedStatus === 'FREEZED') {
+                                                handleStatusChange('ACTIVE');
+                                                return;
+                                            }
+                                            if (canUseFreezeNow) setShowFreezeModal(true);
+                                        }}
+                                        disabled={normalizedStatus !== 'FREEZED' && !canUseFreezeNow}
+                                        className="mt-3 w-full px-3 py-2 rounded-lg text-xs font-semibold border border-white/10 bg-white/5 hover:bg-white/10 disabled:opacity-60 disabled:cursor-not-allowed text-white transition-colors"
+                                    >
+                                        {normalizedStatus === 'FREEZED' ? 'Unfreeze Now' : 'Use Freeze'}
+                                    </button>
+                                </article>
+
+                                <article className="rounded-xl border border-white/10 bg-white/5 p-4 xl:col-span-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Guest Pass Tracker</p>
+                                            <p className="text-[10px] text-text-muted/80 mt-1">Discrete pass consumption</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <span className={`text-[11px] font-semibold ${guestPassLimitCount <= 0 ? 'text-text-muted' : guestPassRemainingCount <= 0 ? 'text-red-400' : 'text-emerald-300'}`}>
+                                                {guestTrackerStatusLabel}
+                                            </span>
+                                            <p className="text-[11px] text-white mt-1">{guestPassUtilizationPct}% used</p>
+                                        </div>
+                                    </div>
+                                    <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-2.5">
+                                        {guestPassUseSlotDisplay ? (
+                                            <div
+                                                className="grid gap-1.5"
+                                                style={{ gridTemplateColumns: `repeat(${Math.min(6, Math.max(1, guestPassLimitCount))}, minmax(0, 1fr))` }}
+                                            >
+                                                {guestPassSlots.map((isUsed, idx) => (
+                                                    <span
+                                                        key={`guest-pass-slot-${idx}`}
+                                                        className={`h-2.5 rounded-sm border ${isUsed ? 'bg-emerald-400 border-emerald-300/70' : 'bg-white/10 border-white/15'}`}
+                                                    />
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                                                <div className="h-full bg-emerald-400" style={{ width: `${guestPassProgressPct}%` }} />
+                                            </div>
+                                        )}
+                                        <div className="mt-2 flex items-center gap-3 text-[10px] text-text-muted">
+                                            <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-400" />Used</span>
+                                            <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-white/30" />Available</span>
+                                        </div>
+                                    </div>
+                                    <p className="text-[11px] text-text-muted mt-2">
+                                        Used {guestPassUsedCount} of {guestPassLimitCount} | Remaining {guestPassRemainingCount}
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={openGuestPassCountModal}
+                                        disabled={!canUseGuestPassNow}
+                                        className="mt-3 w-full px-3 py-2 rounded-lg text-xs font-semibold border border-white/10 bg-white/5 hover:bg-white/10 disabled:opacity-60 disabled:cursor-not-allowed text-white transition-colors"
+                                    >
+                                        Use Guest Pass
+                                    </button>
+                                </article>
+
+                                <article className="rounded-xl border border-white/10 bg-white/5 p-4 xl:col-span-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Class Session Tracker</p>
+                                            <p className="text-[10px] text-text-muted/80 mt-1">Stacked usage distribution</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <span className={`text-[11px] font-semibold ${classSessionsStatusLabel === 'Available' ? 'text-orange-300' : classSessionsStatusLabel === 'Depleted' ? 'text-red-400' : 'text-text-muted'}`}>
+                                                {classSessionsStatusLabel}
+                                            </span>
+                                            <p className="text-[11px] text-white mt-1">{classSessionsUtilizationPct}% used</p>
+                                        </div>
+                                    </div>
+                                    <div className="mt-3 rounded-lg border border-white/10 bg-black/20 p-2.5">
+                                        <div className="h-3 rounded-full bg-white/10 overflow-hidden flex">
+                                            <div
+                                                className="h-full bg-orange-400"
+                                                style={{ width: `${classSessionsTotal > 0 ? classSessionsProgressPct : 0}%` }}
+                                            />
+                                            <div
+                                                className={`h-full ${classSessionsTotal > 0 ? 'bg-emerald-400/80' : 'bg-white/10'}`}
+                                                style={{ width: `${classSessionsTotal > 0 ? 100 - classSessionsProgressPct : 100}%` }}
+                                            />
+                                        </div>
+                                        <div className="mt-2 flex items-center gap-3 text-[10px] text-text-muted">
+                                            <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-orange-400" />Used</span>
+                                            <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-400/80" />Remaining</span>
+                                        </div>
+                                        <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                                            <p className="text-text-muted">Used: <span className="text-white font-semibold">{classSessionsUsed}</span></p>
+                                            <p className="text-text-muted">Remaining: <span className="text-white font-semibold">{classSessionsRemaining}</span></p>
+                                        </div>
+                                    </div>
+                                    <p className="text-[11px] text-text-muted mt-2">
+                                        Included {classSessionsIncluded} | Purchased {classSessionsPurchased} | Total {classSessionsTotal}
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (isMembershipExpiredForClassPackages) {
+                                                showAlert({
+                                                    title: 'Membership Expired',
+                                                    message: 'Cannot add class sessions for expired membership. Renew membership first.',
+                                                    type: 'warning'
+                                                });
+                                                return;
+                                            }
+                                            redirectToPosForMember('PACKAGES');
+                                        }}
+                                        className="mt-3 w-full px-3 py-2 rounded-lg text-xs font-semibold border border-white/10 bg-white/5 hover:bg-white/10 text-white transition-colors"
+                                    >
+                                        Add Sessions
+                                    </button>
+                                </article>
+
+                                <article className="rounded-xl border border-white/10 bg-white/5 p-4 xl:col-span-12">
+                                    <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Account Snapshot</p>
+                                    <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                                        <p className="text-text-muted">Total Spent: <span className="text-white font-semibold">{formatPrice(totalSpent)}</span></p>
+                                        <p className="text-text-muted">Points: <span className="text-white font-semibold">{member.points || 0}</span></p>
+                                        <p className="text-text-muted">Current Status: <span className="text-white font-semibold">{member.status}</span></p>
+                                        <p className="text-text-muted">Last Payment: <span className="text-white font-semibold">{latestPaymentDate}</span></p>
+                                    </div>
+                                </article>
+
+                                <article className="rounded-xl border border-white/10 bg-white/5 p-4 xl:col-span-12">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <div>
+                                            <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">Department Snapshot</p>
+                                            <p className="text-xs text-text-muted mt-1">Cross-tab summary for payments, activity, notes, and rewards.</p>
+                                        </div>
+                                    </div>
+                                    <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                                        <article className="rounded-lg border border-white/10 bg-black/20 p-3">
+                                            <p className="text-[10px] uppercase tracking-wide text-text-muted font-semibold">Payments</p>
+                                            <p className="text-sm font-semibold text-white mt-1">{formatPrice(totalSpent)}</p>
+                                            <p className="text-[11px] text-text-muted mt-1">{paymentRows.length} transaction{paymentRows.length === 1 ? '' : 's'}</p>
+                                            <p className="text-[11px] text-text-muted">Last: {latestPaymentDate}</p>
+                                            <button
+                                                type="button"
+                                                onClick={() => setActiveTab('payments')}
+                                                className="mt-2 text-[11px] text-primary hover:underline font-semibold"
+                                            >
+                                                View All
+                                            </button>
+                                        </article>
+                                        <article className="rounded-lg border border-white/10 bg-black/20 p-3">
+                                            <p className="text-[10px] uppercase tracking-wide text-text-muted font-semibold">Activity</p>
+                                            <p className="text-sm font-semibold text-white mt-1">{accessLogs.length} visits</p>
+                                            <p className="text-[11px] text-text-muted mt-1">7 days: {visitsLast7Days}</p>
+                                            <p className="text-[11px] text-text-muted">30 days: {visitsLast30Days}</p>
+                                            <button
+                                                type="button"
+                                                onClick={() => setActiveTab('activity')}
+                                                className="mt-2 text-[11px] text-primary hover:underline font-semibold"
+                                            >
+                                                View All
+                                            </button>
+                                        </article>
+                                        <article className="rounded-lg border border-white/10 bg-black/20 p-3">
+                                            <p className="text-[10px] uppercase tracking-wide text-text-muted font-semibold">Notes</p>
+                                            <p className="text-sm font-semibold text-white mt-1">{notes.length} note{notes.length === 1 ? '' : 's'}</p>
+                                            <p className="text-[11px] text-text-muted mt-1">Latest: {latestNoteDate}</p>
+                                            <p className="text-[11px] text-text-muted">Owner: Staff Team</p>
+                                            <button
+                                                type="button"
+                                                onClick={() => setActiveTab('notes')}
+                                                className="mt-2 text-[11px] text-primary hover:underline font-semibold"
+                                            >
+                                                View All
+                                            </button>
+                                        </article>
+                                        <article className="rounded-lg border border-white/10 bg-black/20 p-3">
+                                            <p className="text-[10px] uppercase tracking-wide text-text-muted font-semibold">Rewards</p>
+                                            <p className="text-sm font-semibold text-white mt-1">{member?.points || 0} pts</p>
+                                            <p className="text-[11px] text-text-muted mt-1">{loyaltyTransactions.length} transaction{loyaltyTransactions.length === 1 ? '' : 's'}</p>
+                                            <p className="text-[11px] text-text-muted">Latest: {latestLoyaltyDate}</p>
+                                            <button
+                                                type="button"
+                                                onClick={() => setActiveTab('history')}
+                                                className="mt-2 text-[11px] text-primary hover:underline font-semibold"
+                                            >
+                                                View All
+                                            </button>
+                                        </article>
+                                    </div>
+                                </article>
+                            </div>
                         </div>
                     </section>
 
@@ -555,6 +1153,46 @@ export default function MemberDetail() {
             )}
 
             {activeTab === 'activity' && (
+                <section className="rounded-2xl border border-white/10 bg-surface p-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                        <div>
+                            <h3 className="text-sm font-bold uppercase tracking-widest text-white/90">Recent Activity</h3>
+                            <p className="text-xs text-text-muted mt-1">Member check-ins and access events.</p>
+                        </div>
+                        <div className="flex gap-1.5">
+                            {['7days', '30days', 'all'].map(period => (
+                                <button
+                                    key={period}
+                                    type="button"
+                                    onClick={() => setActivityFilter(period)}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${activityFilter === period ? 'bg-primary text-white' : 'bg-white/5 text-text-muted hover:text-white'}`}
+                                >
+                                    {period === 'all' ? 'All Time' : period === '30days' ? '30 Days' : '7 Days'}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="space-y-0">
+                        {filteredLogs.map((log) => (
+                            <article key={`feed-${log.id}`} className="flex items-start gap-3 py-3 border-b border-white/10 last:border-b-0">
+                                <span className={`mt-1.5 h-2 w-2 rounded-full ${log.status === 'ALLOWED' ? 'bg-emerald-400' : 'bg-red-400'}`} />
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium text-white">{log.status === 'ALLOWED' ? 'Checked in at gym' : 'Access denied'}</p>
+                                    <p className="text-xs text-text-muted mt-1">{new Date(log.checkIn).toLocaleString()}</p>
+                                </div>
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${log.status === 'ALLOWED' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-red-500/20 text-red-300'}`}>
+                                    {log.status === 'ALLOWED' ? 'Done' : 'Denied'}
+                                </span>
+                            </article>
+                        ))}
+                        {filteredLogs.length === 0 && (
+                            <p className="text-sm text-text-muted py-4 text-center">No activity found for this filter.</p>
+                        )}
+                    </div>
+                </section>
+            )}
+
+            {activeTab === '__legacy_activity' && (
                 <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
                     <div className="px-5 py-3 border-b border-white/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                         <h3 className="text-white font-semibold">Activity Ledger</h3>
@@ -564,6 +1202,20 @@ export default function MemberDetail() {
                                     {period === 'all' ? 'All Time' : period === '30days' ? '30 Days' : '7 Days'}
                                 </button>
                             ))}
+                        </div>
+                    </div>
+                    <div className="px-5 py-3 border-b border-white/5 grid gap-2 sm:grid-cols-3 bg-black/10">
+                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                            <p className="text-[10px] uppercase tracking-wide text-text-muted">Total Visits</p>
+                            <p className="text-sm font-semibold text-white mt-1">{accessLogs.length}</p>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                            <p className="text-[10px] uppercase tracking-wide text-text-muted">Last Visit</p>
+                            <p className="text-sm font-semibold text-white mt-1">{latestAccessDate}</p>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                            <p className="text-[10px] uppercase tracking-wide text-text-muted">Filter</p>
+                            <p className="text-sm font-semibold text-white mt-1">{activityFilter === 'all' ? 'All Time' : activityFilter === '30days' ? '30 Days' : '7 Days'}</p>
                         </div>
                     </div>
                     <div className="overflow-x-auto max-h-[680px]">
@@ -595,10 +1247,68 @@ export default function MemberDetail() {
             )}
 
             {activeTab === 'payments' && (
+                <section className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                        <article className="rounded-xl border border-white/10 bg-surface px-3.5 py-3">
+                            <p className="text-[10px] uppercase tracking-wider text-text-muted">Total Paid</p>
+                            <p className="text-xl font-semibold text-white leading-none mt-1">{formatPrice(totalSpent)}</p>
+                            <p className="text-[11px] text-text-muted mt-1">{paymentRows.length} transactions</p>
+                        </article>
+                        <article className="rounded-xl border border-white/10 bg-surface px-3.5 py-3">
+                            <p className="text-[10px] uppercase tracking-wider text-text-muted">Latest Payment</p>
+                            <p className="text-xl font-semibold text-white leading-none mt-1">{latestPaymentDate}</p>
+                            <p className="text-[11px] text-text-muted mt-1">{loadingPayments ? 'Refreshing records...' : 'From member ledger'}</p>
+                        </article>
+                        <article className="rounded-xl border border-white/10 bg-surface px-3.5 py-3">
+                            <p className="text-[10px] uppercase tracking-wider text-text-muted">Loyalty Points</p>
+                            <p className="text-xl font-semibold text-yellow-300 leading-none mt-1">{member?.points || 0}</p>
+                            <p className="text-[11px] text-text-muted mt-1">From payments: +{totalPointsFromPayments} pts</p>
+                        </article>
+                    </div>
+                    <section className="rounded-2xl border border-white/10 bg-surface p-4">
+                        <h3 className="text-sm font-bold uppercase tracking-widest text-white/90 mb-2">Payments-History</h3>
+                        <div className="space-y-0">
+                            {paymentRows.map((pay) => (
+                                <div key={`pay-row-${pay.id}`} className="py-3 border-b border-white/10 last:border-b-0 flex items-center justify-between gap-3">
+                                    <div>
+                                        <p className="text-sm font-medium text-white">{String(pay.type || 'Payment').replace(/_/g, ' ')}</p>
+                                        <p className="text-[11px] text-text-muted">{new Date(pay.date).toLocaleString()} | {pay.method || 'N/A'}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className={`text-sm font-semibold ${Number(pay.amount || 0) >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+                                            {formatPrice(pay.amount || 0)}
+                                        </p>
+                                        <p className="text-[11px] text-yellow-300 font-semibold">
+                                            +{Math.max(0, Number(pay?.pointsAwarded || 0))} pts
+                                        </p>
+                                    </div>
+                                </div>
+                            ))}
+                            {paymentRows.length === 0 && <p className="text-sm text-text-muted py-4 text-center">No payment history yet.</p>}
+                        </div>
+                    </section>
+                </section>
+            )}
+
+            {activeTab === '__legacy_payments' && (
                 <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
                     <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
                         <h3 className="text-white font-bold flex items-center gap-2"><span className="material-icons-round text-primary text-base">receipt_long</span> Payment History</h3>
                         <span className="text-xs text-text-muted">{loadingPayments ? 'Loading...' : `${paymentRows.length} records`}</span>
+                    </div>
+                    <div className="px-5 py-3 border-b border-white/5 grid gap-2 sm:grid-cols-3 bg-black/10">
+                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                            <p className="text-[10px] uppercase tracking-wide text-text-muted">Total Value</p>
+                            <p className="text-sm font-semibold text-white mt-1">{formatPrice(totalSpent)}</p>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                            <p className="text-[10px] uppercase tracking-wide text-text-muted">Transactions</p>
+                            <p className="text-sm font-semibold text-white mt-1">{paymentRows.length}</p>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                            <p className="text-[10px] uppercase tracking-wide text-text-muted">Latest Payment</p>
+                            <p className="text-sm font-semibold text-white mt-1">{latestPaymentDate}</p>
+                        </div>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full min-w-[640px]">
@@ -631,6 +1341,33 @@ export default function MemberDetail() {
             )}
 
             {activeTab === 'notes' && (
+                <section className="rounded-2xl border border-white/10 bg-surface p-4">
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                        <h3 className="text-sm font-bold uppercase tracking-widest text-white/90">Staff Notes</h3>
+                        <button
+                            type="button"
+                            onClick={() => setShowNotesModal(true)}
+                            className="bg-primary hover:bg-orange-600 text-white px-3.5 py-2 rounded-lg text-sm font-semibold"
+                        >
+                            Add Note
+                        </button>
+                    </div>
+                    <div className="space-y-2">
+                        {notes.map((note, idx) => (
+                            <article
+                                key={`note-card-${note.id}`}
+                                className={`rounded-xl bg-black/20 p-3.5 border-l-4 ${idx === 0 ? 'border-primary' : idx === 1 ? 'border-amber-400' : 'border-blue-400'}`}
+                            >
+                                <p className="text-sm text-white whitespace-pre-wrap">{note.content}</p>
+                                <p className="text-[11px] text-text-muted mt-2">{note.author?.name || 'Staff'} | {new Date(note.createdAt).toLocaleString()}</p>
+                            </article>
+                        ))}
+                        {notes.length === 0 && <p className="text-sm text-text-muted py-4 text-center">No staff notes available.</p>}
+                    </div>
+                </section>
+            )}
+
+            {activeTab === '__legacy_notes' && (
                 <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
                     <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
                         <h3 className="text-white font-bold flex items-center gap-2"><span className="material-icons-round text-primary text-base">description</span> Staff Notes</h3>
@@ -638,10 +1375,24 @@ export default function MemberDetail() {
                             <span className="material-icons-round text-sm">add</span> Add Note
                         </button>
                     </div>
+                    <div className="px-5 py-3 border-b border-white/5 grid gap-2 sm:grid-cols-3 bg-black/10">
+                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                            <p className="text-[10px] uppercase tracking-wide text-text-muted">Total Notes</p>
+                            <p className="text-sm font-semibold text-white mt-1">{notes.length}</p>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                            <p className="text-[10px] uppercase tracking-wide text-text-muted">Latest Note</p>
+                            <p className="text-sm font-semibold text-white mt-1">{latestNoteDate}</p>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                            <p className="text-[10px] uppercase tracking-wide text-text-muted">Managed By</p>
+                            <p className="text-sm font-semibold text-white mt-1">Staff Team</p>
+                        </div>
+                    </div>
                     <div className="p-5 space-y-3 max-h-[620px] overflow-y-auto">
                         {notes.map(note => (
                             <article key={note.id} className="rounded-xl border border-white/10 bg-black/20 p-4">
-                                <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">{note.author?.name || 'Staff'} • {new Date(note.createdAt).toLocaleString()}</p>
+                                <p className="text-[11px] uppercase tracking-wide text-text-muted font-semibold">{note.author?.name || 'Staff'} | {new Date(note.createdAt).toLocaleString()}</p>
                                 <p className="mt-2 text-sm text-white whitespace-pre-wrap">{note.content}</p>
                             </article>
                         ))}
@@ -651,6 +1402,46 @@ export default function MemberDetail() {
             )}
 
             {activeTab === 'history' && (
+                <section className="space-y-3">
+                    <section className="rounded-2xl border border-white/10 bg-surface p-4 overflow-x-auto">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                            <h3 className="text-sm font-bold uppercase tracking-widest text-white/90">Check-in History</h3>
+                            <span className="text-xs text-text-muted">{checkInLogs.length} records</span>
+                        </div>
+                        <table className="w-full min-w-[720px] text-sm">
+                            <thead>
+                                <tr className="text-left border-b border-white/10">
+                                    <th className="py-2 text-[11px] uppercase tracking-wider text-text-muted font-medium">Date</th>
+                                    <th className="py-2 text-[11px] uppercase tracking-wider text-text-muted font-medium">Time</th>
+                                    <th className="py-2 text-[11px] uppercase tracking-wider text-text-muted font-medium">Activity</th>
+                                    <th className="py-2 text-[11px] uppercase tracking-wider text-text-muted font-medium">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {checkInLogs.map((log) => (
+                                    <tr key={`history-access-${log.id}`} className="border-b border-white/10 last:border-b-0">
+                                        <td className="py-2.5 text-white">{new Date(log.checkIn).toLocaleDateString()}</td>
+                                        <td className="py-2.5 text-text-secondary">{new Date(log.checkIn).toLocaleTimeString()}</td>
+                                        <td className="py-2.5 text-text-secondary">Gym Check-in</td>
+                                        <td className="py-2.5">
+                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-300">
+                                                ALLOWED
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))}
+                                {checkInLogs.length === 0 && (
+                                    <tr>
+                                        <td colSpan="4" className="py-6 text-center text-text-muted">No check-in history yet.</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </section>
+                </section>
+            )}
+
+            {activeTab === '__legacy_history' && (
                 <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
                     <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
                         <div>
@@ -663,6 +1454,20 @@ export default function MemberDetail() {
                         <div className="text-right">
                             <span className="text-xl font-bold text-yellow-400">{member?.points || 0}</span>
                             <p className="text-[10px] uppercase tracking-wider text-text-muted mt-0.5">Total Points</p>
+                        </div>
+                    </div>
+                    <div className="px-5 py-3 border-b border-white/5 grid gap-2 sm:grid-cols-3 bg-black/10">
+                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                            <p className="text-[10px] uppercase tracking-wide text-text-muted">Current Points</p>
+                            <p className="text-sm font-semibold text-white mt-1">{member?.points || 0}</p>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                            <p className="text-[10px] uppercase tracking-wide text-text-muted">Transactions</p>
+                            <p className="text-sm font-semibold text-white mt-1">{loyaltyTransactions.length}</p>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                            <p className="text-[10px] uppercase tracking-wide text-text-muted">Latest Reward Entry</p>
+                            <p className="text-sm font-semibold text-white mt-1">{latestLoyaltyDate}</p>
                         </div>
                     </div>
                     <div className="overflow-x-auto max-h-[620px]">
@@ -710,35 +1515,152 @@ export default function MemberDetail() {
 
                 </div>
 
-                <aside className="space-y-4 xl:sticky xl:top-4">
-                    <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
-                        <div className="px-4 py-3 border-b border-white/10">
-                            <h3 className="text-white text-sm font-semibold">Quick Metrics</h3>
-                        </div>
-                        <div className="p-4 space-y-3 text-sm">
-                            <div className="flex items-center justify-between"><span className="text-text-muted">Attendance</span><span className={`font-semibold ${attendanceTone}`}>{stats.attendanceScore.label}</span></div>
-                            <div className="flex items-center justify-between"><span className="text-text-muted">Visits</span><span className="font-semibold text-white">{member.accessLogs?.length || 0}</span></div>
-                            <div className="flex items-center justify-between"><span className="text-text-muted">Points</span><span className="font-semibold text-white">{member.points || 0}</span></div>
-                            <div className="flex items-center justify-between"><span className="text-text-muted">Total Spent</span><span className="font-semibold text-white">{formatPrice(totalSpent)}</span></div>
-                        </div>
-                    </section>
-
-                    <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
-                        <div className="px-4 py-3 border-b border-white/10">
-                            <h3 className="text-white text-sm font-semibold">Class Sessions</h3>
-                        </div>
-                        <div className="p-4 space-y-3 text-sm">
-                            <div className="flex items-center justify-between"><span className="text-text-muted">Remaining</span><span className={`${(member.classSessionsRemaining || 0) > 0 ? 'text-emerald-400' : 'text-red-400'} font-semibold`}>{member.classSessionsRemaining || 0}</span></div>
-                            <div className="flex items-center justify-between"><span className="text-text-muted">Used</span><span className="text-white font-semibold">{member.classSessionsUsed || 0}</span></div>
-                            <div className="flex items-center justify-between"><span className="text-text-muted">Purchased</span><span className="text-white font-semibold">{member.classSessionsPurchased || 0}</span></div>
-                            <div className="flex items-center justify-between"><span className="text-text-muted">Plan Included</span><span className="text-white font-semibold">{currentPlan?.includesClasses ? (currentPlan?.includedClassSessions || 0) : 0}</span></div>
-                        </div>
-                    </section>
-
-                </aside>
             </div>
 
             {/* Modals */}
+
+            {showGuestPassCountModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                    <div className="bg-surface p-8 rounded-[32px] w-full max-w-sm border border-white/10 shadow-2xl">
+                        <h3 className="text-xl font-bold text-white mb-2">Guest Pass Usage</h3>
+                        <p className="text-sm text-text-muted mb-6">
+                            Remaining guest pass: {guestPassRemainingCount} of {guestPassLimitCount}
+                        </p>
+                        <form onSubmit={handleGuestPassCountSubmit} className="space-y-4">
+                            <div>
+                                <label className="text-text-muted text-sm mb-2 block">How many guests will use the pass?</label>
+                                <input
+                                    required
+                                    type="number"
+                                    min="1"
+                                    max={Math.max(1, guestPassRemainingCount)}
+                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white outline-none"
+                                    value={guestPassCountInput}
+                                    onChange={(e) => setGuestPassCountInput(e.target.value)}
+                                />
+                            </div>
+                            <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+                                A printable guest pass agreement will be shown next.
+                            </div>
+                            <div className="flex justify-end gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowGuestPassCountModal(false)}
+                                    className="text-text-muted"
+                                >
+                                    Cancel
+                                </button>
+                                <button type="submit" className="bg-primary text-white font-bold px-8 py-2.5 rounded-2xl">
+                                    Continue
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {showGuestPassTermsModal && (
+                <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
+                    <div className="bg-surface border border-white/10 rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col">
+                        <div className="p-5 border-b border-white/10 flex items-center justify-between bg-white/5">
+                            <div>
+                                <h3 className="text-xl font-bold text-white">Guest Pass Agreement</h3>
+                                <p className="text-xs text-text-muted mt-1">Print agreement, then confirm guest pass usage.</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={resetGuestPassWorkflow}
+                                className="text-text-muted hover:text-white transition-colors"
+                            >
+                                <span className="material-icons-round">close</span>
+                            </button>
+                        </div>
+
+                        <div className="p-6 overflow-y-auto max-h-[72vh] bg-white text-black" ref={guestPassPrintRef}>
+                            <div className="text-center mb-8">
+                                <h1 className="text-3xl font-black uppercase tracking-widest border-b-2 border-black pb-2 mb-1">Guest Pass Agreement</h1>
+                                <p className="text-sm italic">Temporary Access, Waiver, and Conduct Terms</p>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
+                                <div className="border border-black p-3 rounded">
+                                    <p className="font-bold border-b border-black mb-1">MEMBER SPONSOR</p>
+                                    <p><strong>Name:</strong> {member.firstName} {member.lastName}</p>
+                                    <p><strong>Member ID:</strong> #{member.id}</p>
+                                    <p><strong>Plan:</strong> {stats.combinedPlanLabel || 'N/A'}</p>
+                                </div>
+                                <div className="border border-black p-3 rounded">
+                                    <p className="font-bold border-b border-black mb-1">GUEST PASS DETAILS</p>
+                                    <p><strong>Guests Covered:</strong> {guestPassCount}</p>
+                                    <p><strong>Date:</strong> {new Date().toLocaleDateString()}</p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4 mb-8 text-xs leading-relaxed">
+                                <section>
+                                    <p className="font-bold uppercase mb-1">1. Assumption of Risk</p>
+                                    <p>Guest understands gym activities involve physical risk and voluntarily assumes all related risks while using facilities.</p>
+                                </section>
+                                <section>
+                                    <p className="font-bold uppercase mb-1">2. Facility Rules</p>
+                                    <p>Guest agrees to follow all gym rules, proper equipment use, and staff instructions at all times.</p>
+                                </section>
+                                <section>
+                                    <p className="font-bold uppercase mb-1">3. Liability Waiver</p>
+                                    <p>Guest and sponsoring member release the gym and staff from liability for injuries, losses, or damages arising from facility use.</p>
+                                </section>
+                                <section>
+                                    <p className="font-bold uppercase mb-1">4. Conduct and Accountability</p>
+                                    <p>Guest acknowledges that violations may result in denied access. Sponsoring member accepts accountability for guest conduct.</p>
+                                </section>
+                            </div>
+
+                            <div className="border border-black rounded p-4">
+                                <p className="font-bold text-sm border-b border-black pb-1 mb-3">GUEST SIGNATURE SHEET</p>
+                                <div className="space-y-3 text-xs">
+                                    {Array.from({ length: guestPassCount }).map((_, index) => (
+                                        <div key={`guest-pass-line-${index}`} className="grid grid-cols-12 gap-2">
+                                            <p className="col-span-1">{index + 1}.</p>
+                                            <p className="col-span-5 border-b border-black min-h-[18px]">Name</p>
+                                            <p className="col-span-4 border-b border-black min-h-[18px]">Signature</p>
+                                            <p className="col-span-2 border-b border-black min-h-[18px]">Time In</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="p-5 border-t border-white/10 bg-white/5 flex flex-wrap justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowGuestPassTermsModal(false);
+                                    setShowGuestPassCountModal(true);
+                                }}
+                                className="px-4 py-2 rounded-xl text-text-muted hover:text-white hover:bg-white/10 transition-colors"
+                            >
+                                Back
+                            </button>
+                            <button
+                                type="button"
+                                onClick={triggerGuestPassPrint}
+                                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors flex items-center gap-2"
+                            >
+                                <span className="material-icons-round text-base">print</span>
+                                Print Agreement
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleConfirmGuestPassUsage}
+                                disabled={submittingGuestPass}
+                                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold transition-colors"
+                            >
+                                {submittingGuestPass ? 'Recording...' : `Confirm ${guestPassCount} Guest Pass`}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {showPasswordModal && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -835,6 +1757,8 @@ export default function MemberDetail() {
         </div>
     );
 }
+
+
 
 
 

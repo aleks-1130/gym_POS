@@ -121,6 +121,8 @@ const createTenant = async (req, res) => {
                         includedClassSessions: p.includedClassSessions,
                         includesClasses: p.includesClasses,
                         freezeLimitCount: p.freezeLimitCount,
+                        guestPassEnabled: p.guestPassEnabled,
+                        guestPassLimitCount: p.guestPassLimitCount,
                         tenantId: tenant.id,
                         gymId: gym.id,
                         isGlobal: false,

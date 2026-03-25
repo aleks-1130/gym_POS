@@ -337,6 +337,11 @@ export default function Members() {
 
     const selectedPlan = plans.find(plan => plan.id === Number(formData.planId));
     const getMemberPlan = (member) => member?.plan || plans.find(plan => plan.id === Number(member?.planId));
+    const selectedPlanFreezeLimit = Math.max(0, Number(selectedPlan?.freezeLimitCount || 0));
+    const selectedPlanGuestPassEnabled = Boolean(selectedPlan?.guestPassEnabled) || Number(selectedPlan?.guestPassLimitCount || 0) > 0;
+    const selectedPlanGuestPassLimit = selectedPlanGuestPassEnabled
+        ? Math.max(0, Number(selectedPlan?.guestPassLimitCount || 0))
+        : 0;
     const planPrice = selectedPlan ? selectedPlan.price : 0;
     const cashTenderedValue = parseFloat(amountTendered) || 0;
     const amountDueLocal = planPrice;
@@ -841,6 +846,20 @@ export default function Members() {
                                         </select>
                                         <span className="material-icons-round absolute right-4 top-3 text-text-muted pointer-events-none text-sm">expand_more</span>
                                     </div>
+                                    {selectedPlan && (
+                                        <div className="mt-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xs text-text-muted">
+                                            <p>
+                                                Freeze: {selectedPlanFreezeLimit > 0
+                                                    ? `${selectedPlanFreezeLimit} time${selectedPlanFreezeLimit > 1 ? 's' : ''}`
+                                                    : 'Not included'}
+                                            </p>
+                                            <p className="mt-1">
+                                                Guest Pass: {selectedPlanGuestPassLimit > 0
+                                                    ? `${selectedPlanGuestPassLimit} time${selectedPlanGuestPassLimit > 1 ? 's' : ''}`
+                                                    : 'Not included'}
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="block text-xs font-medium text-text-secondary mb-1.5 uppercase tracking-wider">Payment Method</label>

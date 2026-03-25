@@ -54,6 +54,17 @@ export const memberService = {
     },
 
     /**
+     * Consume one guest pass from member allowance
+     * @param {number} id - Member ID
+     * @param {number} count - Number of guest passes to consume
+     * @returns {Promise<Object>} Updated member usage payload
+     */
+    async useGuestPass(id, count = 1) {
+        const response = await axios.post(withApiBase(`/api/members/${id}/guest-pass/use`), { count });
+        return response.data;
+    },
+
+    /**
      * Set member password
      * @param {string} email - Member email
      * @param {string} password - New password

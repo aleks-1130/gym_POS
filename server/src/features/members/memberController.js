@@ -1801,6 +1801,7 @@ const createMember = async (req, res) => {
                     status: 'PENDING_ACTIVATION',
                     startDate,
                     expiryDate,
+                    guestPassUsedCount: 0,
                     activationToken,
                     activationExpires
                 }
@@ -1970,6 +1971,7 @@ const renewMembership = async (req, res) => {
             expiryDate: newExpiry,
             status: 'ACTIVE',
             freezeUsedCount: 0,
+            guestPassUsedCount: 0,
             ...(planId ? { planId: Number(planId) } : {}),
             ...(getPlanClassSessions(selectedPlan) > 0
                 ? { classSessionsRemaining: { increment: getPlanClassSessions(selectedPlan) } }
@@ -2348,6 +2350,77 @@ const updateMemberStatus = async (req, res) => {
     }
 };
 
+const useGuestPass = async (req, res) => {
+    const { id } = req.params;
+    const memberId = Number(id);
+    const { tenantId } = req.user;
+    const requestedCount = Number(req.body?.count ?? 1);
+
+    if (!Number.isInteger(memberId) || memberId <= 0) {
+        return res.status(400).json({ error: "Invalid member id" });
+    }
+    if (!Number.isInteger(requestedCount) || requestedCount <= 0) {
+        return res.status(400).json({ error: "Guest pass count must be a whole number greater than 0" });
+    }
+
+    try {
+        const existingMember = await prisma.member.findFirst({
+            where: {
+                id: memberId,
+                gym: { tenantId }
+            },
+            select: {
+                id: true,
+                guestPassUsedCount: true,
+                plan: {
+                    select: {
+                        id: true,
+                        guestPassEnabled: true,
+                        guestPassLimitCount: true
+                    }
+                }
+            }
+        });
+
+        if (!existingMember) {
+            return res.status(404).json({ error: "Member not found" });
+        }
+
+        const guestPassLimitCount = Math.max(0, Number(existingMember.plan?.guestPassLimitCount || 0));
+        const guestPassAllowed = Boolean(existingMember.plan?.guestPassEnabled) || guestPassLimitCount > 0;
+        const guestPassUsedCount = Math.max(0, Number(existingMember.guestPassUsedCount || 0));
+
+        if (!guestPassAllowed || guestPassLimitCount <= 0) {
+            return res.status(400).json({ error: "Guest pass is not allowed for this membership plan" });
+        }
+        if (guestPassUsedCount + requestedCount > guestPassLimitCount) {
+            return res.status(400).json({ error: "Guest pass limit reached for this membership plan" });
+        }
+
+        const updatedMember = await prisma.member.update({
+            where: { id: memberId },
+            data: {
+                guestPassUsedCount: { increment: requestedCount }
+            }
+        });
+
+        const updatedUsedCount = Math.max(0, Number(updatedMember.guestPassUsedCount || 0));
+        const remainingCount = Math.max(0, guestPassLimitCount - updatedUsedCount);
+
+        res.json({
+            member: updatedMember,
+            usage: {
+                consumedCount: requestedCount,
+                usedCount: updatedUsedCount,
+                limitCount: guestPassLimitCount,
+                remainingCount
+            }
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+};
+
 const updateMember = async (req, res) => {
     const { id } = req.params;
     const { firstName, lastName, email, phone, imageUrl, birthDate, sex, expiryDate, startDate } = req.body;
@@ -2450,6 +2523,7 @@ module.exports = {
     getMemberNotes,
     addMemberNote,
     updateMemberStatus,
+    useGuestPass,
     updateMember,
     changePassword,
     deleteMember

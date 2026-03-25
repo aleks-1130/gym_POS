@@ -40,6 +40,8 @@ const defaultPreferences = {
     appReceipts: true
 };
 
+const ANNOUNCEMENT_TYPES = new Set(['INFO', 'ALERT', 'PROMO', 'ANNOUNCEMENT']);
+
 const formatDateTime = (value) => {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return 'Unknown date';
@@ -50,6 +52,12 @@ const formatDateTime = (value) => {
         hour: 'numeric',
         minute: '2-digit'
     });
+};
+
+const isBroadcastAnnouncement = (item) => {
+    const type = String(item?.type || '').toUpperCase();
+    const targetGroup = String(item?.targetGroup || '').toUpperCase();
+    return Boolean(item?.isAnnouncement) && ANNOUNCEMENT_TYPES.has(type) && targetGroup !== 'PRIVATE';
 };
 
 export default function MemberAnnouncements() {
@@ -98,6 +106,7 @@ export default function MemberAnnouncements() {
 
     const filteredAnnouncements = useMemo(() => (
         announcements
+            .filter((announcement) => isBroadcastAnnouncement(announcement))
             .filter((announcement) => filter === 'ALL' || String(announcement?.type || '').toUpperCase() === filter)
             .sort((a, b) => new Date(b?.date || b?.createdAt || 0) - new Date(a?.date || a?.createdAt || 0))
     ), [announcements, filter]);

@@ -104,6 +104,7 @@ export default function Access() {
 
     useEffect(() => {
         if (!user || user.role === ROLES.MEMBER) return;
+        if (typeof window !== 'undefined' && window.__globalAccessScannerEnabled) return;
 
         const handleKeyDown = (e) => {
             const target = e.target;
@@ -137,6 +138,37 @@ export default function Access() {
             window.removeEventListener('keydown', handleKeyDown);
             if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
         };
+    }, [user]);
+
+    useEffect(() => {
+        if (!user || user.role === ROLES.MEMBER) return;
+
+        const handleGlobalScan = (event) => {
+            const detail = event?.detail || {};
+            if (detail?.ok && detail?.log?.id) {
+                setScanError('');
+                setScanning(true);
+                setTimeout(() => {
+                    setLatestLogId(detail.log.id);
+                    lastScanId.current = detail.log.id;
+                    setHistory((prev) => [detail.log, ...prev].slice(0, 10));
+                    setScanning(false);
+                }, 800);
+                return;
+            }
+
+            const error = detail?.error;
+            const message =
+                error?.response?.data?.error
+                || error?.response?.data?.reason
+                || 'Access denied.';
+            setScanError(message);
+            setLatestLogId(null);
+            setScanning(false);
+        };
+
+        window.addEventListener('global-access-scan', handleGlobalScan);
+        return () => window.removeEventListener('global-access-scan', handleGlobalScan);
     }, [user]);
 
     const simulateScan = async () => {

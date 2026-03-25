@@ -56,7 +56,7 @@ const schedulingService = {
                     title: 'Upcoming Class Reminder 🔔',
                     message: `Reminder: You have the class "${booking.class.name}" with ${booking.class.trainer?.name || 'your trainer'} scheduled for ${dayLabel}.`,
                     type: 'CLASS_REMINDER',
-                    isAnnouncement: true, // Show on News & Broadcasts
+                    isAnnouncement: false,
                     eventData: {
                         className: booking.class.name,
                         trainerName: booking.class.trainer?.name || 'Staff',
@@ -95,7 +95,7 @@ const schedulingService = {
                     title: 'Final Call! 🚀',
                     message: `Your class "${booking.class.name}" starts in about an hour! See you at ${booking.class.time}.`,
                     type: 'CLASS_REMINDER',
-                    isAnnouncement: true,
+                    isAnnouncement: false,
                     excludeEmail: true, // App only for 1-hour out
                     eventData: {
                         className: booking.class.name,
@@ -149,7 +149,7 @@ const schedulingService = {
                     title: 'Personal Training Reminder 💪',
                     message: `Reminder: Your session with Coach ${session.trainer?.name || 'Staff'} is scheduled for ${dayLabel} at ${sessionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`,
                     type: 'TRAINING_REMINDER',
-                    isAnnouncement: true, // Show on News & Broadcasts
+                    isAnnouncement: false,
                     eventData: {
                         className: 'Personal Training',
                         trainerName: session.trainer?.name || 'Staff',
@@ -185,7 +185,7 @@ const schedulingService = {
                     title: 'Training Starting Soon! 💪',
                     message: `Get ready! Your session with Coach ${session.trainer?.name || 'Staff'} starts in about an hour (${sessionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}).`,
                     type: 'TRAINING_REMINDER',
-                    isAnnouncement: true,
+                    isAnnouncement: false,
                     excludeEmail: true,
                     eventData: {
                         trainerName: session.trainer?.name || 'Staff',

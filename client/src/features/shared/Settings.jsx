@@ -37,6 +37,8 @@ export default function Settings() {
         price: '',
         duration: '',
         freezeLimitCount: '',
+        guestPassEnabled: false,
+        guestPassLimitCount: '',
         includesClasses: false,
         includedClassSessions: '',
         isGlobal: false
@@ -60,6 +62,8 @@ export default function Settings() {
         price: '',
         duration: '',
         freezeLimitCount: '',
+        guestPassEnabled: false,
+        guestPassLimitCount: '',
         includesClasses: false,
         includedClassSessions: '',
         isGlobal: false
@@ -141,6 +145,9 @@ export default function Settings() {
             price: plan.price ?? '',
             duration: plan.duration ?? '',
             freezeLimitCount: plan.freezeLimitCount ?? 0,
+            guestPassEnabled: Boolean(plan.guestPassEnabled) || Number(plan.guestPassLimitCount || 0) > 0,
+            guestPassLimitCount: plan.guestPassLimitCount ?? 0,
+            includesClasses: Boolean(plan.includesClasses),
             includedClassSessions: plan.includedClassSessions ?? '',
             isGlobal: plan.gymId === null
         });
@@ -154,6 +161,9 @@ export default function Settings() {
             price: '',
             duration: '',
             freezeLimitCount: '',
+            guestPassEnabled: false,
+            guestPassLimitCount: '',
+            includesClasses: false,
             includedClassSessions: '',
             isGlobal: false
         });
@@ -166,7 +176,11 @@ export default function Settings() {
                 name: editPlanData.name,
                 price: Number(editPlanData.price),
                 duration: Number(editPlanData.duration),
+                freezeLimitCount: Number(editPlanData.freezeLimitCount || 0),
+                includesClasses: editPlanData.includesClasses,
                 includedClassSessions: editPlanData.includesClasses ? Number(editPlanData.includedClassSessions || 0) : 0,
+                guestPassEnabled: editPlanData.guestPassEnabled,
+                guestPassLimitCount: editPlanData.guestPassEnabled ? Number(editPlanData.guestPassLimitCount || 0) : 0,
                 isGlobal: editPlanData.isGlobal
             });
             handleCancelEditPlan();
@@ -187,7 +201,11 @@ export default function Settings() {
                 name: planFormData.name,
                 price: Number(planFormData.price),
                 duration: Number(planFormData.duration),
+                freezeLimitCount: Number(planFormData.freezeLimitCount || 0),
+                includesClasses: planFormData.includesClasses,
                 includedClassSessions: planFormData.includesClasses ? Number(planFormData.includedClassSessions || 0) : 0,
+                guestPassEnabled: planFormData.guestPassEnabled,
+                guestPassLimitCount: planFormData.guestPassEnabled ? Number(planFormData.guestPassLimitCount || 0) : 0,
                 isGlobal: planFormData.isGlobal
             });
             setPlanFormData({
@@ -195,6 +213,9 @@ export default function Settings() {
                 price: '',
                 duration: '',
                 freezeLimitCount: '',
+                guestPassEnabled: false,
+                guestPassLimitCount: '',
+                includesClasses: false,
                 includedClassSessions: '',
                 isGlobal: false
             });
@@ -393,18 +414,43 @@ export default function Settings() {
                                                     placeholder="Included class sessions"
                                                 />
                                             )}
-                                            <div className="flex items-center gap-3 bg-background/40 border border-white/10 rounded-xl px-3 py-2">
-                                                <label className="relative flex items-center cursor-pointer">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={editPlanData.isGlobal}
-                                                        onChange={(e) => setEditPlanData(prev => ({ ...prev, isGlobal: e.target.checked }))}
-                                                        className="sr-only peer"
-                                                    />
-                                                    <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
-                                                    <span className="ms-3 text-xs font-medium text-white">Global Plan</span>
-                                                </label>
-                                            </div>
+                                            <label className="flex items-center gap-2 text-xs text-white">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={editPlanData.guestPassEnabled}
+                                                    onChange={e => setEditPlanData({
+                                                        ...editPlanData,
+                                                        guestPassEnabled: e.target.checked,
+                                                        guestPassLimitCount: e.target.checked ? editPlanData.guestPassLimitCount : ''
+                                                    })}
+                                                    className="accent-primary"
+                                                />
+                                                Enable guest pass allowance
+                                            </label>
+                                            {editPlanData.guestPassEnabled && (
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    className="w-full bg-background/40 border border-white/10 rounded-xl px-3 py-2 text-white text-sm"
+                                                    value={editPlanData.guestPassLimitCount}
+                                                    onChange={e => setEditPlanData({ ...editPlanData, guestPassLimitCount: e.target.value })}
+                                                    placeholder="Guest pass count"
+                                                />
+                                            )}
+                                            {isOwner && (
+                                                <div className="flex items-center gap-3 bg-background/40 border border-white/10 rounded-xl px-3 py-2">
+                                                    <label className="relative flex items-center cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={editPlanData.isGlobal}
+                                                            onChange={(e) => setEditPlanData(prev => ({ ...prev, isGlobal: e.target.checked }))}
+                                                            className="sr-only peer"
+                                                        />
+                                                        <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+                                                        <span className="ms-3 text-xs font-medium text-white">Global Plan</span>
+                                                    </label>
+                                                </div>
+                                            )}
                                             <div className="flex items-center justify-end gap-2">
                                                 <button
                                                     onClick={handleCancelEditPlan}
@@ -437,6 +483,11 @@ export default function Settings() {
                                                     {Number(plan.freezeLimitCount || 0) > 0
                                                         ? `Freeze allowed: ${plan.freezeLimitCount} time${Number(plan.freezeLimitCount) > 1 ? 's' : ''}`
                                                         : 'Freeze not included'}
+                                                </p>
+                                                <p className="text-xs mt-1 text-emerald-300/90">
+                                                    {(Boolean(plan.guestPassEnabled) || Number(plan.guestPassLimitCount || 0) > 0)
+                                                        ? `Guest pass allowed: ${Number(plan.guestPassLimitCount || 0)} time${Number(plan.guestPassLimitCount || 0) > 1 ? 's' : ''}`
+                                                        : 'Guest pass not included'}
                                                 </p>
                                             </div>
                                             <div className="flex items-center gap-2">
@@ -534,19 +585,50 @@ export default function Settings() {
                                 </div>
                             )}
 
-                            <div className="flex items-center gap-3 bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3">
-                                <label className="relative flex items-center cursor-pointer">
+                            <label className="flex items-center gap-3 bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3">
+                                <input
+                                    type="checkbox"
+                                    checked={planFormData.guestPassEnabled}
+                                    onChange={e => setPlanFormData({
+                                        ...planFormData,
+                                        guestPassEnabled: e.target.checked,
+                                        guestPassLimitCount: e.target.checked ? planFormData.guestPassLimitCount : ''
+                                    })}
+                                    className="accent-primary"
+                                />
+                                <span className="text-sm text-white font-medium">Enable guest pass for this plan</span>
+                            </label>
+
+                            {planFormData.guestPassEnabled && (
+                                <div>
+                                    <label className="block text-xs text-text-secondary font-bold mb-1">Guest Pass Count</label>
                                     <input
-                                        type="checkbox"
-                                        checked={planFormData.isGlobal}
-                                        onChange={(e) => setPlanFormData(prev => ({ ...prev, isGlobal: e.target.checked }))}
-                                        className="sr-only peer"
+                                        required
+                                        type="number"
+                                        min="1"
+                                        className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white"
+                                        placeholder="2"
+                                        value={planFormData.guestPassLimitCount}
+                                        onChange={e => setPlanFormData({ ...planFormData, guestPassLimitCount: e.target.value })}
                                     />
-                                    <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                                    <span className="ms-3 text-sm font-medium text-white">Global Plan</span>
-                                </label>
-                                <span className="material-icons-round text-text-muted text-sm" title="Global plans are shared across all branches.">help_outline</span>
-                            </div>
+                                </div>
+                            )}
+
+                            {isOwner && (
+                                <div className="flex items-center gap-3 bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3">
+                                    <label className="relative flex items-center cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={planFormData.isGlobal}
+                                            onChange={(e) => setPlanFormData(prev => ({ ...prev, isGlobal: e.target.checked }))}
+                                            className="sr-only peer"
+                                        />
+                                        <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                                        <span className="ms-3 text-sm font-medium text-white">Global Plan</span>
+                                    </label>
+                                    <span className="material-icons-round text-text-muted text-sm" title="Global plans are shared across all branches.">help_outline</span>
+                                </div>
+                            )}
 
                             <button disabled={loadingPlan} type="submit" className="w-full bg-primary hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-colors disabled:opacity-50">
                                 {loadingPlan ? 'Creating...' : 'Create Plan'}

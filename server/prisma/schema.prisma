@@ -223,6 +223,7 @@ model Member {
   resetPasswordToken     String?                 @unique
   sessionVersion         Int                     @default(0)
   freezeUsedCount        Int                     @default(0)
+  guestPassUsedCount     Int                     @default(0)
   gymId                  Int?
   tenantId               Int @default(1)
   accessLogs             AccessLog[]
@@ -405,6 +406,8 @@ model Plan {
   includedClassSessions Int                @default(0)
   includesClasses       Boolean            @default(false)
   freezeLimitCount      Int                @default(0)
+  guestPassEnabled      Boolean            @default(false)
+  guestPassLimitCount   Int                @default(0)
   gymId                 Int?
   tenantId              Int?
   isGlobal              Boolean            @default(false)
