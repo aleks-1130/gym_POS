@@ -191,14 +191,14 @@ export default function Profile() {
     };
 
     const settingsItems = [
-        { key: 'password', label: 'Change Password', description: 'Update your account password', icon: 'lock', onClick: () => setShowPasswordModal(true) }
+        { key: 'password', label: 'Update Security', description: 'Update your account password', icon: 'lock', onClick: () => setShowPasswordModal(true) }
     ];
 
     const handleLogout = async () => {
         const confirmed = await showConfirm({
-            title: 'Log Out',
-            message: 'Log out from this device only?',
-            confirmLabel: 'Log Out',
+            title: 'Sign Out',
+            message: 'Sign out from this device only?',
+            confirmLabel: 'Sign Out',
             cancelLabel: 'Cancel',
             type: 'danger'
         });
@@ -239,7 +239,7 @@ export default function Profile() {
                             <span className="material-icons-round text-base text-white/80">manage_accounts</span>
                         </div>
                         <div className="min-w-0">
-                            <h1 className="text-base font-bold text-white truncate">Profile Settings</h1>
+                            <h1 className="text-base font-bold text-white truncate">My Account & Settings</h1>
                             <p className="text-[11px] text-text-muted">Member Account</p>
                         </div>
                     </div>
@@ -289,7 +289,7 @@ export default function Profile() {
 
                 <div className="rounded-xl border border-white/10 bg-white/5 p-2.5 mt-2.5">
                     <div className="flex items-center justify-between mb-2">
-                        <span className="text-[10px] uppercase tracking-wider text-text-muted">Plan Progress</span>
+                        <span className="text-[10px] uppercase tracking-wider text-text-muted">My Journey Progress</span>
                         <span className="text-[11px] font-bold text-white">{progressPercent}%</span>
                     </div>
                     <div className="h-2 bg-white/10 rounded-full overflow-hidden">
@@ -378,7 +378,7 @@ export default function Profile() {
 
             <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
                 <div className="px-3 py-2.5 border-b border-white/10">
-                    <h3 className="text-sm font-bold text-white">Notification Preferences</h3>
+                    <h3 className="text-sm font-bold text-white">How I Stay Updated</h3>
                     <p className="text-xs text-text-muted mt-0.5">Control app and email alerts</p>
                 </div>
                 <div className="divide-y divide-white/5">
@@ -480,7 +480,7 @@ export default function Profile() {
                         onClick={handleLogout}
                         className="w-full rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-xs font-bold text-red-300 hover:bg-red-500/20"
                     >
-                        Log Out
+                        Sign Out
                     </button>
                     <button
                         type="button"

@@ -5,11 +5,14 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 // Configure global axios default to send httpOnly cookies automatically
 axios.defaults.withCredentials = true;
 
-// Add x-gym-id interceptor for Owners/Admins to switch branch context
+// Add x-tenant-id interceptor for Owners/Admins to switch branch context
 axios.interceptors.request.use(config => {
-    const gymId = localStorage.getItem('activeGymId');
-    if (gymId) {
-        config.headers['x-gym-id'] = gymId;
+    // Only add the header if the request is going to our API BASE URL or is a relative path
+    const isInternal = !config.url || config.url.startsWith('/') || config.url.startsWith(API_BASE_URL);
+    if (isInternal) {
+        // Fallback to FITOS_GYM_001 as the default tenant for internal requests
+        const tenantId = localStorage.getItem('activeGymId') || 'FITOS_GYM_001';
+        config.headers['x-tenant-id'] = tenantId;
     }
     return config;
 }, error => {

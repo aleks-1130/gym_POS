@@ -244,8 +244,6 @@ export default function TrainerBooking() {
     const [trainers, setTrainers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedTrainer, setSelectedTrainer] = useState(null);
-    const [showTrainerDetail, setShowTrainerDetail] = useState(false);
-    const [showBookingModal, setShowBookingModal] = useState(false);
     const [bookingData, setBookingData] = useState({
         duration: 60,
         notes: '',
@@ -285,12 +283,15 @@ export default function TrainerBooking() {
         return new Date(now.getFullYear(), now.getMonth(), 1);
     });
     const [showSuccessModal, setShowSuccessModal] = useState(false);
+    const [showBookingModal, setShowBookingModal] = useState(false);
+    const [showTrainerDetail, setShowTrainerDetail] = useState(false);
     const [bookingResult, setBookingResult] = useState(null);
     const [ratingSelections, setRatingSelections] = useState({});
     const [ratingComments, setRatingComments] = useState({});
     const [ratingSubmittingId, setRatingSubmittingId] = useState(null);
     const [ratingVoidingId, setRatingVoidingId] = useState(null);
     const [trainerReviewsById, setTrainerReviewsById] = useState({});
+    const [bookingStep, setBookingStep] = useState(1); // 1: Discover, 2: Schedule, 3: Confirm
 
     useEffect(() => {
         fetchTrainers();
@@ -330,10 +331,9 @@ export default function TrainerBooking() {
 
     // Prevent body scroll when modal is open (PWA best practice)
     useEffect(() => {
-        const hasOpenModal = showBookingModal || showTrainerDetail || Boolean(rescheduleSession);
+        const hasOpenModal = Boolean(rescheduleSession) || showSuccessModal;
         if (hasOpenModal) {
             document.body.style.overflow = 'hidden';
-            // Add safe area insets for iOS
             document.body.style.position = 'fixed';
             document.body.style.width = '100%';
         } else {
@@ -346,7 +346,7 @@ export default function TrainerBooking() {
             document.body.style.position = '';
             document.body.style.width = '';
         };
-    }, [showBookingModal, showTrainerDetail, rescheduleSession]);
+    }, [rescheduleSession, showSuccessModal]);
 
     const fetchTrainers = async () => {
         try {
@@ -527,8 +527,8 @@ export default function TrainerBooking() {
         }
     };
 
-    const handleBookSession = async (e) => {
-        e.preventDefault();
+    const handleCreateBooking = async (e) => {
+        if (e && e.preventDefault) e.preventDefault();
         if (!selectedTrainer || selectedDates.length === 0) {
             await showAlert({ title: 'Missing Info', message: 'Please fill in all required fields', type: 'warning' });
             return;
@@ -589,16 +589,17 @@ export default function TrainerBooking() {
             setSelectedTrainer(null);
             setBookingData({ duration: 60, notes: '', paymentMethod: 'CASH' });
             setSelectedDates([]);
-            setSelectedTimesByDate();
+            setSelectedTimesByDate({});
             fetchTrainers();
             fetchMemberSessions();
             setActiveTab('bookings'); // Auto-switch to bookings tab
+            setBookingStep(1); // Reset flow
         } catch (error) {
             const errorMessage = error.response?.data?.error || error.response?.data?.message || "Failed to book training session";
             const errorDetail = error.response?.data?.detail;
             if (error?.response?.status === 409) {
                 setActiveTab('bookings');
-                closeModal();
+                setBookingStep(1);
             }
             await showAlert({ title: 'Booking Failed', message: errorDetail ? `${errorMessage}\n\nDetails: ${errorDetail}` : errorMessage, type: 'danger' });
         } finally {
@@ -612,7 +613,7 @@ export default function TrainerBooking() {
         setSelectedTrainer(null);
         setBookingData({ duration: 60, notes: '', paymentMethod: 'CASH' });
         setSelectedDates([]);
-        setSelectedTimesByDate();
+        setSelectedTimesByDate({});
         setSelectedMethodId('');
         setPaymentSelection('CASH');
         setCalendarMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
@@ -897,15 +898,9 @@ export default function TrainerBooking() {
 
     const handleOpenTrainerDetail = useCallback((trainer) => {
         primeBookingForTrainer(trainer);
-        setShowTrainerDetail(true);
-        setShowBookingModal(false);
+        setActiveTab('trainers');
+        setBookingStep(2); // Jump to scheduling for this specific trainer
     }, [primeBookingForTrainer]);
-
-    const handleOpenBookingModal = useCallback(() => {
-        if (!selectedTrainer) return;
-        setShowTrainerDetail(false);
-        setShowBookingModal(true);
-    }, [selectedTrainer]);
 
     useEffect(() => {
         if (!showTrainerDetail || !selectedTrainer?.id) return;
@@ -1157,6 +1152,97 @@ export default function TrainerBooking() {
             message: bookingPolicyNote,
             type: 'info'
         });
+    };
+
+    const renderCalendar = (month, setMonth, selected, setSelected, isDateAvailable) => {
+        const start = new Date(month.getFullYear(), month.getMonth(), 1);
+        const end = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+        const leading = start.getDay();
+        const cells = [];
+        for (let i = 0; i < leading; i += 1) cells.push(null);
+        for (let d = 1; d <= end.getDate(); d += 1) {
+            cells.push(new Date(month.getFullYear(), month.getMonth(), d));
+        }
+        while (cells.length % 7 !== 0) cells.push(null);
+
+        return (
+            <div className="bg-white/5 backdrop-blur-md rounded-3xl p-6 border border-white/10 shadow-2xl">
+                <div className="flex items-center justify-between mb-8">
+                    <button
+                        type="button"
+                        onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}
+                        className="w-12 h-12 rounded-2xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white transition-all active:scale-95 border border-white/5"
+                    >
+                        <span className="material-icons-round">chevron_left</span>
+                    </button>
+                    <div className="text-center">
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/60 mb-1">Select Date</p>
+                        <p className="text-lg font-black text-white px-4">
+                            {month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}
+                        className="w-12 h-12 rounded-2xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white transition-all active:scale-95 border border-white/5"
+                    >
+                        <span className="material-icons-round">chevron_right</span>
+                    </button>
+                </div>
+                
+                <div className="grid grid-cols-7 gap-2 mb-4 text-center">
+                    {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+                        <div key={i} className="text-xs font-black text-white/40 uppercase tracking-widest">{d}</div>
+                    ))}
+                </div>
+
+                <div className="grid grid-cols-7 gap-2">
+                    {cells.map((day, idx) => {
+                        if (!day) return <div key={`blank-${idx}`} className="aspect-square" />;
+                        const iso = toIsoDate(day);
+                        const todayIso = toIsoDate(new Date());
+                        const isPast = iso < todayIso;
+                        const isAvailable = isDateAvailable ? isDateAvailable(iso) : true;
+                        const isSelected = selected.includes(iso);
+                        
+                        return (
+                            <button
+                                key={iso}
+                                type="button"
+                                onClick={() => {
+                                    if (isPast || !isAvailable) return;
+                                    setSelected((prev) => {
+                                        if (prev.includes(iso)) {
+                                            const next = prev.filter((d) => d !== iso);
+                                            setSelectedTimesByDate((timesPrev) => {
+                                                const copy = { ...timesPrev };
+                                                delete copy[iso];
+                                                return copy;
+                                            });
+                                            return next;
+                                        }
+                                        return [...prev, iso].sort();
+                                    });
+                                }}
+                                disabled={isPast || !isAvailable}
+                                    className={`aspect-square rounded-2xl text-lg font-black transition-all duration-300 relative group ${
+                                    isSelected
+                                        ? 'bg-primary text-background shadow-lg shadow-primary/30 scale-110 z-10'
+                                        : (isPast || !isAvailable)
+                                            ? 'text-white/20 cursor-not-allowed opacity-60 bg-white/[0.02] border border-white/5'
+                                            : 'bg-white/5 text-white hover:bg-white/10 hover:border-white/20 border border-white/10 shadow-sm'
+                                }`}
+                            >
+                                {day.getDate()}
+                                {isAvailable && !isPast && !isSelected && (
+                                    <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-emerald-500/50" />
+                                )}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+        );
     };
 
     const calendarCells = useMemo(() => {
@@ -2057,794 +2143,258 @@ export default function TrainerBooking() {
                         )}
                     </div>
                 </section>
-            ) : (
-                filteredTrainers.length === 0 ? (
-                    <div className="text-center py-12 px-4">
-                        <span className="material-icons-round text-5xl text-text-muted opacity-50 block mb-3">person_off</span>
-                        <p className="text-text-muted text-base">No trainers match your filter</p>
-                        <button
-                            onClick={() => setFilterView('all')}
-                            className="mt-4 px-4 py-2 bg-primary text-background rounded-lg font-medium text-sm"
-                        >
-                            Show All Trainers
-                        </button>
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
-                        {filteredTrainers.map((trainer) => {
-                            const specialties = getTrainerSpecialties(trainer);
-                            const availableDays = trainer.availabilityByDay ? Object.keys(trainer.availabilityByDay).length : 0;
-                            const todayIso = toIsoDate(new Date());
-                            const todayWindow = getTrainerDateWindow(trainer, todayIso);
-                            const bookingStatusLabel = String(trainer.bookingStatus || 'OPEN').toUpperCase();
-                            const sessionDurations = getTrainerDurations(trainer);
-                            const isTrainerOpen = bookingStatusLabel === 'OPEN' || isTrainerTemporarilyOpenForDate(trainer, todayIso);
-
-                            return (
-                                <article key={trainer.id} className="bg-surface/95 rounded-2xl border border-white/10 overflow-hidden hover:border-primary/30 transition-all group flex flex-col shadow-lg shadow-black/15">
-                                    <div className="aspect-[16/9] bg-white/5 overflow-hidden relative">
-                                        {trainer.cardImageUrl ? (
-                                            <img
-                                                src={trainer.cardImageUrl}
-                                                alt={trainer.name}
-                                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                                loading="lazy"
-                                                onError={handleTrainerImageError}
-                                            />
-                                        ) : (
-                                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-primary/5">
-                                                <span className="material-icons-round text-6xl text-primary/30">person</span>
-                                            </div>
-                                        )}
-                                        <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/80 via-black/40 to-transparent">
-                                            <div className="flex items-center justify-between">
-                                                <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${isTrainerOpen
-                                                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                                                    : 'bg-red-500/10 border-red-500/30 text-red-300'
-                                                    }`}>
-                                                    {isTrainerOpen ? 'Open for booking' : 'Closed'}
-                                                </span>
-                                                <span className="rounded-full bg-black/70 backdrop-blur-md px-2 py-1 flex items-center gap-1">
-                                                    <span className="material-icons-round text-xs text-yellow-400">star</span>
-                                                    <span className="text-white font-bold text-xs">{Number(trainer.rating || 0).toFixed(1)}</span>
-                                                    <span className="text-[10px] text-white/70">({Number(trainer.ratingCount || 0)})</span>
-                                                </span>
-                                            </div>
-                                        </div>
+            ) : activeTab === 'trainers' ? (
+                <div className="space-y-6">
+                    {/* Stepper Indicator */}
+                    <div className="flex items-center justify-between max-w-sm mx-auto mb-8 px-4">
+                        {[1, 2, 3].map((step) => (
+                            <React.Fragment key={step}>
+                                <div className="flex flex-col items-center gap-2">
+                                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-black transition-all duration-500 ${
+                                        bookingStep === step
+                                            ? 'bg-primary text-background scale-110 shadow-lg shadow-primary/30'
+                                            : bookingStep > step
+                                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                                : 'bg-white/5 text-white/20 border border-white/10'
+                                    }`}>
+                                        {bookingStep > step ? (
+                                            <span className="material-icons-round text-lg">check</span>
+                                        ) : step}
                                     </div>
-
-                                    <div className="p-4 flex flex-col flex-1">
-                                        <div className="flex items-start justify-between gap-2">
-                                            <div className="min-w-0">
-                                                <h3 className="font-bold text-white text-base leading-tight truncate">{trainer.name}</h3>
-                                                <p className="text-text-muted text-xs mt-1 truncate">{trainer.specialization || 'Personal Trainer'}</p>
-                                            </div>
-                                            {trainer.experience && (
-                                                <span className="shrink-0 text-[10px] font-semibold text-text-secondary rounded-md border border-white/15 bg-white/5 px-2 py-1">
-                                                    {trainer.experience}y exp
-                                                </span>
-                                            )}
-                                        </div>
-
-                                        {specialties.length > 0 && (
-                                            <div className="mt-3 flex flex-wrap gap-1.5">
-                                                {specialties.slice(0, 3).map((specialty, idx) => (
-                                                    <span key={idx} className="bg-white/10 text-text-secondary px-2 py-0.5 rounded-md text-[10px] font-medium">
-                                                        {specialty}
-                                                    </span>
-                                                ))}
-                                                {specialties.length > 3 && (
-                                                    <span className="text-text-muted text-[10px] py-0.5 px-1">+{specialties.length - 3} more</span>
-                                                )}
-                                            </div>
-                                        )}
-
-                                        <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-2.5 space-y-1.5">
-                                            <div className="flex items-center justify-between text-[11px]">
-                                                <span className="text-text-muted">Session Price</span>
-                                                <span className="text-primary font-extrabold">{formatPrice(trainer.sessionPrice ?? 300)}</span>
-                                            </div>
-                                            <div className="flex items-center justify-between text-[11px]">
-                                                <span className="text-text-muted">Durations</span>
-                                                <span className="text-white font-medium">{sessionDurations.join(', ')} min</span>
-                                            </div>
-                                            <div className="flex items-center justify-between text-[11px]">
-                                                <span className="text-text-muted">Availability</span>
-                                                <span className={`${availableDays > 0 ? 'text-emerald-300' : 'text-amber-300'} font-medium`}>
-                                                    {availableDays > 0 ? `${availableDays} day(s)` : 'Not set'}
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center justify-between text-[11px]">
-                                                <span className="text-text-muted">Today</span>
-                                                <span className="text-white/90 font-medium">
-                                                    {todayWindow ? `${formatTimeLabel(todayWindow.start)} - ${formatTimeLabel(todayWindow.end)}` : 'Unavailable'}
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        {trainer.statusDescription && (
-                                            <p className="mt-2.5 text-[11px] text-white/70 line-clamp-2">{trainer.statusDescription}</p>
-                                        )}
-
-                                        <div className="mt-auto pt-3">
-                                            <button
-                                                onClick={() => handleOpenTrainerDetail(trainer)}
-                                                className="w-full py-2.5 rounded-xl font-bold text-sm transition-all active:scale-95 flex items-center justify-center gap-1.5 touch-manipulation bg-primary text-background hover:brightness-110 shadow-lg shadow-primary/25"
-                                            >
-                                                <span className="material-icons-round text-base">fitness_center</span>
-                                                View Details & Book
-                                            </button>
-                                        </div>
-                                    </div>
-                                </article>
-                            );
-                        })}
+                                    <span className={`text-[9px] font-bold uppercase tracking-[0.2em] ${bookingStep === step ? 'text-primary' : 'text-white/20'}`}>
+                                        {step === 1 ? 'Find' : step === 2 ? 'Schedule' : 'Confirm'}
+                                    </span>
+                                </div>
+                                {step < 3 && (
+                                    <div className={`flex-1 h-[2px] mx-2 rounded-full transition-colors duration-500 ${bookingStep > step ? 'bg-emerald-500/30' : 'bg-white/5'}`} />
+                                )}
+                            </React.Fragment>
+                        ))}
                     </div>
-                )
-            )}
 
-            {showTrainerDetail && selectedTrainer && (
-                <div
-                    className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center sm:justify-center"
-                    onClick={closeModal}
-                    style={{
-                        paddingBottom: 'env(safe-area-inset-bottom)',
-                        paddingTop: 'env(safe-area-inset-top)'
-                    }}
-                >
-                    <div
-                        className="w-full sm:max-w-2xl bg-surface rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 flex flex-col max-h-[90vh] overflow-hidden animate-slide-up sm:animate-none"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <div className="flex items-start justify-between p-5 border-b border-white/10">
-                            <div>
-                                <p className="text-[10px] uppercase tracking-[0.18em] text-primary/90 font-bold">Trainer Profile</p>
-                                <h2 className="text-xl font-bold text-white mt-1">Review Before Booking</h2>
+                    {bookingStep === 1 && (
+                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            <div className="flex items-center justify-between px-1">
+                                <h3 className="text-[11px] font-black uppercase tracking-[0.3em] text-white/30">Available Trainers</h3>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => setFilterView(filterView === 'all' ? 'top-rated' : 'all')}
+                                        className={`px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider border transition-all ${
+                                            filterView === 'top-rated'
+                                                ? 'bg-yellow-500/20 border-yellow-500/30 text-yellow-300'
+                                                : 'bg-white/5 border-white/10 text-white/40 hover:text-white'
+                                        }`}
+                                    >
+                                        <span className="material-icons-round text-sm mr-1">stars</span>
+                                        Top Rated
+                                    </button>
+                                </div>
                             </div>
-                            <button
-                                onClick={closeModal}
-                                className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors"
-                                aria-label="Close trainer details"
-                            >
-                                <span className="material-icons-round text-white text-2xl">close</span>
-                            </button>
+
+                            {filteredTrainers.length === 0 ? (
+                                <div className="text-center py-20 bg-surface/30 rounded-[2rem] border border-dashed border-white/10">
+                                    <span className="material-icons-round text-5xl text-white/10 mb-4">person_search</span>
+                                    <p className="text-white/30 font-bold uppercase tracking-widest text-xs">No trainers found matching your search</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {filteredTrainers.map((trainer) => (
+                                        <article
+                                            key={trainer.id}
+                                            className="group relative bg-[#1e293b]/50 backdrop-blur-xl rounded-[2.5rem] border border-white/5 overflow-hidden transition-all duration-500 hover:border-primary/30 hover:shadow-2xl hover:shadow-primary/5 active:scale-[0.98]"
+                                        >
+                                            <div className="aspect-[4/3] relative overflow-hidden">
+                                                <div className="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-transparent to-transparent z-10" />
+                                                { (trainer.imageUrl || trainer.cardImageUrl) ? (
+                                                    <img
+                                                        src={trainer.imageUrl || trainer.cardImageUrl}
+                                                        alt={trainer.name}
+                                                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                                                        loading="lazy"
+                                                        onError={handleTrainerImageError}
+                                                    />
+                                                ) : (
+                                                    <div className="w-full h-full bg-[#0f172a] flex items-center justify-center">
+                                                        <span className="material-icons-round text-6xl text-white/5">person</span>
+                                                    </div>
+                                                )}
+
+                                                <div className="absolute top-4 right-4 z-20 flex flex-col gap-2 scale-90 group-hover:scale-100 transition-transform">
+                                                    <div className="bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-2xl border border-white/10 flex items-center gap-1.5 shadow-xl">
+                                                        <span className="material-icons-round text-yellow-400 text-sm">star</span>
+                                                        <span className="text-sm font-black text-white">{Number(trainer.rating || 0).toFixed(1)}</span>
+                                                    </div>
+                                                    <div className="bg-primary/20 backdrop-blur-md px-3 py-1.5 rounded-2xl border border-primary/30 flex items-center gap-1.5 shadow-xl">
+                                                        <span className="material-icons-round text-primary text-sm">payments</span>
+                                                        <span className="text-sm font-black text-white">{formatPrice(trainer.sessionPrice ?? 300)}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="p-6 relative z-10 -mt-12">
+                                                <div className="mb-4">
+                                                    <h4 className="text-xl font-black text-white leading-tight group-hover:text-primary transition-colors truncate">{trainer.name}</h4>
+                                                    <p className="text-xs font-bold text-white/40 uppercase tracking-widest mt-1 truncate">{trainer.specialization || 'Performance Coach'}</p>
+                                                </div>
+
+                                                <div className="flex flex-wrap gap-2 mb-6">
+                                                    {getTrainerSpecialties(trainer).slice(0, 2).map((s, i) => (
+                                                        <span key={i} className="text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg bg-white/5 text-white/50 border border-white/5">{s}</span>
+                                                    ))}
+                                                </div>
+
+                                                <button
+                                                    onClick={() => {
+                                                        setSelectedTrainer(trainer);
+                                                        setBookingStep(2);
+                                                    }}
+                                                    className="w-full py-4 rounded-2xl bg-white text-background font-black text-xs uppercase tracking-[0.2em] transition-all duration-300 hover:bg-primary shadow-xl group-hover:shadow-primary/20 flex items-center justify-center gap-2"
+                                                >
+                                                    Select Coach
+                                                    <span className="material-icons-round text-base">arrow_forward</span>
+                                                </button>
+                                            </div>
+                                        </article>
+                                    ))}
+                                </div>
+                            )}
                         </div>
+                    )}
 
-                        <div className="flex-1 overflow-y-auto p-5 space-y-4">
-                            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                                <div className="flex gap-4">
-                                    <div className="w-20 h-20 rounded-2xl overflow-hidden bg-white/10 flex items-center justify-center shrink-0">
-                                        {selectedTrainer.cardImageUrl ? (
-                                            <img src={selectedTrainer.cardImageUrl} alt={selectedTrainer.name} className="w-full h-full object-cover" onError={handleTrainerImageError} />
-                                        ) : (
-                                            <span className="material-icons-round text-text-muted text-3xl">person</span>
-                                        )}
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                        <h3 className="text-lg font-bold text-white truncate">{selectedTrainer.name}</h3>
-                                        <p className="text-xs text-text-muted mt-0.5 truncate">{selectedTrainer.specialization || 'Personal Trainer'}</p>
-                                        {selectedTrainer.statusDescription && (
-                                            <p className="text-xs text-white/70 mt-2 leading-relaxed">
-                                                {selectedTrainer.statusDescription}
-                                            </p>
-                                        )}
+                    {bookingStep === 2 && selectedTrainer && (
+                        <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
+                             <div className="flex items-center justify-between px-1">
+                                <div className="flex items-center gap-4">
+                                    <button
+                                        onClick={() => setBookingStep(1)}
+                                        className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 transition-all"
+                                    >
+                                        <span className="material-icons-round">arrow_back</span>
+                                    </button>
+                                    <div>
+                                        <h3 className="text-[11px] font-black uppercase tracking-[0.3em] text-white/30">Step 2: Scheduling</h3>
+                                        <p className="text-sm font-bold text-white">Pick a slot with {selectedTrainer.name}</p>
                                     </div>
                                 </div>
+                            </div>
 
-                                <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                    <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">
-                                        <p className="text-[10px] uppercase tracking-wide text-text-muted">Rating</p>
-                                        <p className="mt-1 text-sm font-bold text-white inline-flex items-center gap-1">
-                                            {Number(selectedTrainer.rating || 0).toFixed(1)}
-                                            <span className="material-icons-round text-sm text-yellow-400">star</span>
-                                        </p>
-                                        <p className="mt-1 text-[11px] text-text-muted">
-                                            {Number(selectedTrainerReviewState?.summary?.ratingCount ?? selectedTrainer.ratingCount ?? 0)} member ratings
-                                        </p>
+                            <div className="bg-[#1e293b]/50 backdrop-blur-xl rounded-[2.5rem] border border-white/5 p-6 shadow-2xl">
+                                {/* Integrated Scheduling Logic (Calendar + Times) */}
+                                <div className="space-y-8">
+                                    <div className="bg-white/5 rounded-3xl p-2 border border-white/5">
+                                        {/* Reuse existing Calendar UI but styled SOFT */}
+                                        {renderCalendar(calendarMonth, setCalendarMonth, selectedDates, setSelectedDates, (date) => isTrainerDateAvailable(selectedTrainer, date))}
                                     </div>
-                                    <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">
-                                        <p className="text-[10px] uppercase tracking-wide text-text-muted">Experience</p>
-                                        <p className="mt-1 text-sm font-bold text-white">
-                                            {selectedTrainer.experience ? `${selectedTrainer.experience} years` : 'N/A'}
-                                        </p>
-                                    </div>
-                                    <div className="rounded-xl border border-primary/20 bg-primary/10 px-3 py-2.5">
-                                        <p className="text-[10px] uppercase tracking-wide text-primary/80">Rate</p>
-                                        <p className="mt-1 text-sm font-bold text-white">{formatPrice(selectedTrainer.sessionPrice ?? 300)}</p>
-                                    </div>
-                                    <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">
-                                        <p className="text-[10px] uppercase tracking-wide text-text-muted">Durations</p>
-                                        <p className="mt-1 text-sm font-bold text-white">
-                                            {getTrainerDurations(selectedTrainer).join(', ')} min
-                                        </p>
-                                    </div>
-                                </div>
 
-                                <div className="mt-3">
-                                    <p className="text-[11px] font-bold uppercase tracking-wide text-text-muted mb-2">Specialties</p>
-                                    {getTrainerSpecialties(selectedTrainer).length > 0 ? (
-                                        <div className="flex flex-wrap gap-1.5">
-                                            {getTrainerSpecialties(selectedTrainer).map((specialty, idx) => (
-                                                <span key={`${specialty}-${idx}`} className="bg-white/10 text-text-secondary px-2 py-1 rounded-md text-[11px] font-medium">
-                                                    {specialty}
-                                                </span>
-                                            ))}
+                                    {selectedDates.length > 0 && (
+                                        <div className="space-y-4 animate-in fade-in slide-in-from-top-4">
+                                            <h4 className="text-[10px] font-black uppercase tracking-widest text-primary px-2">Pick Your Time</h4>
+                                            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                                                {selectedDates.map(dateIso => {
+                                                    const slots = getAvailableTimeSlots(dateIso);
+                                                    return slots.map(slot => (
+                                                        <button
+                                                            key={`${dateIso}-${slot}`}
+                                                            onClick={() => {
+                                                                setSelectedTimesByDate({ [dateIso]: slot });
+                                                                setBookingStep(3);
+                                                            }}
+                                                            className="py-3 rounded-xl bg-white/5 border border-white/5 text-xs font-black text-white hover:border-primary/50 hover:bg-primary/10 transition-all"
+                                                        >
+                                                            {formatTimeLabel(slot)}
+                                                        </button>
+                                                    ));
+                                                })}
+                                            </div>
                                         </div>
-                                    ) : (
-                                        <p className="text-xs text-text-muted">No specialties listed yet.</p>
                                     )}
                                 </div>
                             </div>
+                        </div>
+                    )}
 
-                            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                                <div className="flex items-center justify-between mb-2">
-                                    <p className="text-[11px] font-bold uppercase tracking-wide text-text-muted">Quick Availability</p>
-                                    <span className={`text-[10px] font-bold uppercase tracking-wide ${String(selectedTrainer.bookingStatus || 'OPEN').toUpperCase() === 'CLOSED' && !selectedTrainer.temporarilyOpenToday
-                                        ? 'text-red-300'
-                                        : 'text-emerald-300'
-                                        }`}>
-                                        {String(selectedTrainer.bookingStatus || 'OPEN').toUpperCase() === 'CLOSED' && !selectedTrainer.temporarilyOpenToday ? 'Closed' : 'Open'}
-                                    </span>
-                                </div>
-                                <div className="space-y-2">
-                                    {(() => {
-                                        const rows = [];
-                                        const today = new Date();
-                                        for (let offset = 0; offset < 10 && rows.length < 4; offset += 1) {
-                                            const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset);
-                                            const iso = toIsoDate(date);
-                                            if (!isTrainerDateAvailable(selectedTrainer, iso)) continue;
-                                            const slots = getAvailableTimeSlots(iso).slice(0, 3);
-                                            rows.push({ date, slots });
-                                        }
-                                        if (rows.length === 0) {
-                                            return (
-                                                <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-xs text-text-muted">
-                                                    No open dates found in the next 10 days.
-                                                </div>
-                                            );
-                                        }
-                                        return rows.map((row) => (
-                                            <div key={row.date.toISOString()} className="rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">
-                                                <div className="flex items-center justify-between gap-2">
-                                                    <span className="text-sm font-semibold text-white">
-                                                        {row.date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-                                                    </span>
-                                                    <span className="text-[11px] text-text-muted">
-                                                        {row.slots.length > 0 ? `${row.slots.length}+ open slot(s)` : 'No open slot'}
-                                                    </span>
-                                                </div>
-                                                {row.slots.length > 0 && (
-                                                    <div className="mt-2 flex flex-wrap gap-1.5">
-                                                        {row.slots.map((slot) => (
-                                                            <span key={`${row.date.toISOString()}-${slot}`} className="rounded-md bg-primary/10 border border-primary/25 px-2 py-1 text-[10px] font-semibold text-primary">
-                                                                {formatTimeLabel(slot)}
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ));
-                                    })()}
-                                </div>
-                            </div>
-
-                            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                                <div className="flex items-start justify-between gap-3 mb-3">
-                                    <div>
-                                        <p className="text-[11px] font-bold uppercase tracking-wide text-text-muted">Member Reviews</p>
-                                        <p className="text-xs text-text-muted mt-0.5">Latest verified feedback from completed sessions</p>
-                                    </div>
+                    {bookingStep === 3 && selectedTrainer && (
+                        <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
+                             <div className="flex items-center justify-between px-1">
+                                <div className="flex items-center gap-4">
                                     <button
-                                        type="button"
-                                        onClick={() => fetchTrainerReviews(selectedTrainer.id, { force: true })}
-                                        className="h-8 px-3 rounded-lg border border-white/15 bg-black/20 text-[11px] font-semibold text-primary hover:bg-black/30"
-                                        disabled={Boolean(selectedTrainerReviewState?.loading)}
+                                        onClick={() => setBookingStep(2)}
+                                        className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 transition-all"
                                     >
-                                        {selectedTrainerReviewState?.loading ? 'Refreshing...' : 'Refresh'}
+                                        <span className="material-icons-round">arrow_back</span>
                                     </button>
-                                </div>
-
-                                <div className="mb-3 grid grid-cols-2 gap-2">
-                                    <div className="rounded-xl border border-primary/20 bg-primary/10 px-3 py-2.5">
-                                        <p className="text-[10px] uppercase tracking-wide text-primary/80">Average Rating</p>
-                                        <div className="mt-1 flex items-center gap-1.5">
-                                            <span className="text-lg font-extrabold text-white">
-                                                {Number(selectedTrainerReviewState?.summary?.rating ?? selectedTrainer.rating ?? 0).toFixed(1)}
-                                            </span>
-                                            <span className="material-icons-round text-base text-yellow-400">star</span>
-                                        </div>
-                                    </div>
-                                    <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">
-                                        <p className="text-[10px] uppercase tracking-wide text-text-muted">Total Reviews</p>
-                                        <p className="mt-1 text-lg font-bold text-white">
-                                            {Number(selectedTrainerReviewState?.summary?.ratingCount || 0)}
-                                        </p>
+                                    <div>
+                                        <h3 className="text-[11px] font-black uppercase tracking-[0.3em] text-white/30">Step 3: Final Step</h3>
+                                        <p className="text-sm font-bold text-white">Review & Confirm Booking</p>
                                     </div>
                                 </div>
-
-                                {selectedTrainerReviewState?.loading ? (
-                                    <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-xs text-text-muted">
-                                        Loading member feedback...
-                                    </div>
-                                ) : selectedTrainerReviewState?.error ? (
-                                    <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-3 text-xs text-red-300">
-                                        {selectedTrainerReviewState.error}
-                                    </div>
-                                ) : Array.isArray(selectedTrainerReviewState?.reviews) && selectedTrainerReviewState.reviews.length > 0 ? (
-                                    <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
-                                        {selectedTrainerReviewState.reviews.map((review) => {
-                                            const normalizedRating = Number(review.rating || 0);
-                                            const initials = getMemberInitials(review.memberName);
-                                            return (
-                                                <article key={`trainer-review-${review.id}`} className="rounded-xl border border-white/10 bg-black/20 p-3.5">
-                                                    <div className="flex items-start gap-3">
-                                                        <div className="w-11 h-11 rounded-full overflow-hidden border border-white/15 bg-slate-700/50 shrink-0 flex items-center justify-center">
-                                                            {review.memberImageUrl ? (
-                                                                <img
-                                                                    src={review.memberImageUrl}
-                                                                    alt={review.memberName || 'Gym Member'}
-                                                                    className="w-full h-full object-cover"
-                                                                    onError={handleMemberAvatarError}
-                                                                />
-                                                            ) : (
-                                                                <span className="text-[11px] font-bold tracking-wide text-white">{initials}</span>
-                                                            )}
-                                                        </div>
-                                                        <div className="min-w-0 flex-1">
-                                                            <div className="flex flex-wrap items-center justify-between gap-2">
-                                                                <div className="min-w-0">
-                                                                    <p className="text-sm font-semibold text-white truncate">{review.memberName || 'Gym Member'}</p>
-                                                                    <p className="text-[11px] text-text-muted">{formatReviewDateLabel(review.date)}</p>
-                                                                </div>
-                                                                <div className="shrink-0">
-                                                                    <div className="flex items-center gap-0.5">
-                                                                        {[1, 2, 3, 4, 5].map((score) => (
-                                                                            <span
-                                                                                key={`review-${review.id}-star-${score}`}
-                                                                                className={`material-icons-round text-sm ${score <= normalizedRating ? 'text-yellow-400' : 'text-white/25'}`}
-                                                                            >
-                                                                                star
-                                                                            </span>
-                                                                        ))}
-                                                                    </div>
-                                                                    <p className="mt-0.5 text-[10px] text-right text-text-muted">{normalizedRating}/5</p>
-                                                                </div>
-                                                            </div>
-                                                            <div className="mt-2 rounded-lg border border-white/10 bg-slate-900/40 px-3 py-2.5">
-                                                                <p className="text-xs text-text-secondary leading-relaxed">
-                                                                    {review.comment ? review.comment : 'Member left a star-only rating without a written comment.'}
-                                                                </p>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </article>
-                                            );
-                                        })}
-                                    </div>
-                                ) : (
-                                    <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-xs text-text-muted">
-                                        No published reviews yet for this trainer.
-                                    </div>
-                                )}
                             </div>
 
-                        </div>
+                            <div className="bg-[#1e293b]/50 backdrop-blur-xl rounded-[2.5rem] border border-white/10 p-8 shadow-2xl relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 blur-[100px] -mr-32 -mt-32 rounded-full" />
 
-                        <div className="border-t border-white/10 p-5 bg-surface space-y-2">
-                            <button
-                                type="button"
-                                onClick={handleOpenBookingModal}
-                                className="w-full py-3.5 rounded-xl font-bold bg-primary text-background hover:brightness-110 transition-all"
-                            >
-                                Continue Booking
-                            </button>
-                            <button
-                                type="button"
-                                onClick={closeModal}
-                                className="w-full py-3 rounded-xl font-medium bg-white/5 text-white hover:bg-white/10 transition-colors"
-                            >
-                                Close
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Booking Modal - Mobile Optimized */}
-            {
-                showBookingModal && selectedTrainer && (
-                    <div
-                        className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center sm:justify-center"
-                        onClick={closeModal}
-                        style={{
-                            paddingBottom: 'env(safe-area-inset-bottom)',
-                            paddingTop: 'env(safe-area-inset-top)'
-                        }}
-                    >
-                        <div
-                            className="w-full sm:max-w-lg bg-surface rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 flex flex-col max-h-[90vh] sm:max-h-[85vh] overflow-hidden animate-slide-up sm:animate-none"
-                            onClick={e => e.stopPropagation()}
-                        >
-                            {/* Modal Header - Sticky */}
-                            <div className="flex items-center justify-between p-5 sm:p-6 border-b border-white/10 bg-surface sticky top-0 z-10">
-                                <div className="flex-1 min-w-0 pr-4">
-                                    <h2 className="text-xl sm:text-2xl font-bold text-white truncate">Book Session</h2>
-                                    <p className="text-text-muted text-sm mt-0.5 truncate">with {selectedTrainer.name}</p>
-                                </div>
-                                <button
-                                    onClick={closeModal}
-                                    className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors flex-shrink-0 touch-manipulation"
-                                    aria-label="Close modal"
-                                >
-                                    <span className="material-icons-round text-white text-2xl">close</span>
-                                </button>
-                            </div>
-
-                            {/* Booking Form - Scrollable */}
-                            <div className="flex-1 overflow-y-auto overscroll-contain">
-                                <form onSubmit={handleBookSession} className="p-5 sm:p-6 space-y-6">
-                                    {/* Trainer Info Card */}
-                                    <div className="bg-white/5 rounded-xl p-4 border border-white/5 flex gap-4">
-                                        <div className="w-16 h-16 sm:w-14 sm:h-14 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                <div className="relative space-y-8">
+                                    <div className="flex items-center gap-6">
+                                        <div className="w-20 h-20 rounded-[1.5rem] overflow-hidden border-2 border-primary/20 bg-[#0f172a] shadow-inner shrink-0">
                                             {selectedTrainer.cardImageUrl ? (
-                                                <img src={selectedTrainer.cardImageUrl} alt={selectedTrainer.name} className="w-full h-full object-cover" />
+                                                <img src={selectedTrainer.cardImageUrl} alt="" className="w-full h-full object-cover" />
                                             ) : (
-                                                <span className="material-icons-round text-text-muted text-2xl">person</span>
+                                                <div className="w-full h-full flex items-center justify-center text-white/10">
+                                                    <span className="material-icons-round text-3xl">person</span>
+                                                </div>
                                             )}
                                         </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="font-bold text-white text-base truncate">{selectedTrainer.name}</p>
-                                            <p className="text-text-muted text-sm truncate">{selectedTrainer.specialization}</p>
-                                            <p className="text-primary font-bold text-lg mt-1">{formatPrice(selectedTrainer.sessionPrice ?? 300)}/session</p>
-                                            {selectedTrainer.statusDescription && (
-                                                <p className="text-xs text-white/70 mt-1 line-clamp-2">{selectedTrainer.statusDescription}</p>
-                                            )}
+                                        <div>
+                                            <h4 className="text-2xl font-black text-white">{selectedTrainer.name}</h4>
+                                            <p className="text-xs font-bold text-white/40 uppercase tracking-widest">{selectedTrainer.specialization}</p>
                                         </div>
                                     </div>
 
-                                    <div className="pt-1">
-                                        <h3 className="text-sm font-bold text-white">Step 1: Schedule</h3>
-                                        <p className="text-xs text-text-muted mt-0.5">Select dates, choose duration, then assign a time for each date</p>
-                                    </div>
-
-                                    {/* Calendar Date Picker */}
-                                    <div>
-                                        <label className="block text-sm font-bold text-white mb-2">Session Dates *</label>
-                                        <div className="bg-white/5 border border-white/10 rounded-xl p-3">
-                                            <div className="flex items-center justify-between mb-3">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
-                                                    className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-white"
-                                                >
-                                                    <span className="material-icons-round text-base">chevron_left</span>
-                                                </button>
-                                                <p className="text-sm font-semibold text-white">
-                                                    {calendarMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
-                                                </p>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
-                                                    className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-white"
-                                                >
-                                                    <span className="material-icons-round text-base">chevron_right</span>
-                                                </button>
-                                            </div>
-                                            <div className="grid grid-cols-7 gap-1 mb-2">
-                                                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-                                                    <div key={d} className="text-[10px] text-center uppercase tracking-wide text-text-muted font-semibold">{d}</div>
-                                                ))}
-                                            </div>
-                                            <div className="grid grid-cols-7 gap-1">
-                                                {calendarCells.map((day, idx) => {
-                                                    if (!day) return <div key={`blank-${idx}`} className="h-9" />;
-                                                    const iso = toIsoDate(day);
-                                                    const todayIso = toIsoDate(new Date());
-                                                    const isPast = iso < todayIso;
-                                                    const unavailableDay = !isTrainerDateAvailable(selectedTrainer, iso);
-                                                    const selected = selectedDates.includes(iso);
-                                                    return (
-                                                        <button
-                                                            key={iso}
-                                                            type="button"
-                                                            onClick={() => {
-                                                                if (isPast || unavailableDay) return;
-                                                                setSelectedDates((prev) => {
-                                                                    if (prev.includes(iso)) {
-                                                                        const next = prev.filter((d) => d !== iso);
-                                                                        setSelectedTimesByDate((timesPrev) => {
-                                                                            const copy = { ...timesPrev };
-                                                                            delete copy[iso];
-                                                                            return copy;
-                                                                        });
-                                                                        return next;
-                                                                    }
-                                                                    return [...prev, iso].sort();
-                                                                });
-                                                            }}
-                                                            disabled={isPast || unavailableDay}
-                                                            className={`h-9 rounded-lg text-xs font-semibold transition-all ${selected
-                                                                ? 'bg-primary text-background'
-                                                                : (isPast || unavailableDay)
-                                                                    ? 'bg-white/5 text-text-muted/40 cursor-not-allowed'
-                                                                    : 'bg-white/5 text-white hover:bg-white/10'
-                                                                }`}
-                                                        >
-                                                            {day.getDate()}
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="bg-white/5 rounded-2xl border border-white/5 p-4">
+                                            <span className="text-[9px] font-black uppercase tracking-widest text-white/30 block mb-1">Date</span>
+                                            <p className="text-sm font-black text-white">
+                                                {selectedDates[0] ? new Date(selectedDates[0]).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }) : 'Ready'}
+                                            </p>
+                                        </div>
+                                        <div className="bg-white/5 rounded-2xl border border-white/5 p-4">
+                                            <span className="text-[9px] font-black uppercase tracking-widest text-white/30 block mb-1">Time</span>
+                                            <p className="text-sm font-black text-white">
+                                                {selectedDates[0] && selectedTimesByDate[selectedDates[0]] ? formatTimeLabel(selectedTimesByDate[selectedDates[0]]) : 'Pronto'}
+                                            </p>
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-3 gap-2">
-                                        <div className="bg-white/5 border border-white/10 rounded-lg p-2">
-                                            <p className="text-[10px] uppercase tracking-wide text-text-muted">Dates</p>
-                                            <p className="text-xs font-semibold text-white truncate">{selectedDates.length} selected</p>
-                                        </div>
-                                        <div className="bg-white/5 border border-white/10 rounded-lg p-2">
-                                            <p className="text-[10px] uppercase tracking-wide text-text-muted">Times</p>
-                                            <p className="text-xs font-semibold text-white truncate">{Object.keys(selectedTimesByDate || {}).length}/{selectedDates.length}</p>
-                                        </div>
-                                        <div className="bg-white/5 border border-white/10 rounded-lg p-2">
-                                            <p className="text-[10px] uppercase tracking-wide text-text-muted">Duration</p>
-                                            <p className="text-xs font-semibold text-white truncate">{bookingData.duration} min</p>
-                                        </div>
-                                    </div>
-
-                                    {/* Duration - Touch Optimized */}
-                                    <div>
-                                        <label className="block text-sm font-bold text-white mb-2">Session Duration</label>
-                                        <div className="grid grid-cols-3 gap-2">
-                                            {getTrainerDurations(selectedTrainer).map((duration) => (
-                                                <button
-                                                    key={duration}
-                                                    type="button"
-                                                    onClick={() => setBookingData({ ...bookingData, duration })}
-                                                    className={`px-3 py-2 rounded-xl text-sm font-semibold border transition-all ${bookingData.duration === duration
-                                                        ? 'bg-primary/15 text-primary border-primary/40'
-                                                        : 'bg-white/5 text-text-muted border-white/10 hover:text-white'
-                                                        }`}
-                                                >
-                                                    {duration} min
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-sm font-bold text-white mb-2">Session Times *</label>
-                                        {selectedDates.length === 0 ? (
-                                            <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-text-muted">
-                                                Select one or more dates first, then choose a time for each date.
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-3">
-                                                {selectedDates.map((isoDate) => {
-                                                    const slots = getAvailableTimeSlots(isoDate);
-                                                    const selectedTime = selectedTimesByDate[isoDate];
-                                                    return (
-                                                        <div key={isoDate} className="bg-white/5 border border-white/10 rounded-xl p-3">
-                                                            <p className="text-sm font-semibold text-white mb-2">
-                                                                {new Date(`${isoDate}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-                                                            </p>
-                                                            {slots.length === 0 ? (
-                                                                <p className="text-xs text-red-400">No available times for this day.</p>
-                                                            ) : (
-                                                                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                                                                    {slots.map((slot) => (
-                                                                        <button
-                                                                            key={`${isoDate}-${slot}`}
-                                                                            type="button"
-                                                                            onClick={() => setSelectedTimesByDate((prev) => ({ ...prev, [isoDate]: slot }))}
-                                                                            className={`px-2 py-2 rounded-lg text-xs font-semibold border transition-all ${selectedTime === slot
-                                                                                ? 'bg-primary/15 text-primary border-primary/40'
-                                                                                : 'bg-white/5 text-text-muted border-white/10 hover:text-white'
-                                                                                }`}
-                                                                        >
-                                                                            {formatTimeLabel(slot)}
-                                                                        </button>
-                                                                    ))}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div className="pt-1">
-                                        <h3 className="text-sm font-bold text-white">Step 2: Payment</h3>
-                                        <p className="text-xs text-text-muted mt-0.5">Choose how you want to pay for this booking</p>
-                                    </div>
-
-                                    <div className="bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 space-y-3">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <label className="block text-sm font-bold text-white">Payment Method *</label>
-                                            <button
-                                                type="button"
-                                                onClick={() => window.location.assign('/payment-methods')}
-                                                className="text-primary text-xs font-semibold underline"
-                                            >
-                                                Manage methods
-                                            </button>
+                                    <div className="pt-4 border-t border-white/5">
+                                        <div className="flex items-center justify-between mb-6">
+                                            <span className="text-xs font-bold text-white/40 uppercase tracking-[0.2em]">Total Investment</span>
+                                            <span className="text-2xl font-black text-primary">{formatPrice(selectedTrainer.sessionPrice ?? 300)}</span>
                                         </div>
 
-                                        <div className="flex gap-2 p-1 bg-white/5 rounded-xl border border-white/10">
-                                            {['CASH', 'E_WALLET', 'CARD'].map((type) => (
-                                                <button
-                                                    key={type}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setPaymentSelection(type);
-                                                        if (type === 'CASH') {
-                                                            setSelectedMethodId('');
-                                                            setBookingData((prev) => ({ ...prev, paymentMethod: 'CASH' }));
-                                                            return;
-                                                        }
-                                                        const source = type === 'E_WALLET' ? walletPaymentMethods : cardPaymentMethods;
-                                                        const preferred = source.find((m) => m.isDefault) || source[0] || null;
-                                                        if (!preferred) {
-                                                            setSelectedMethodId('');
-                                                            setBookingData((prev) => ({ ...prev, paymentMethod: type === 'E_WALLET' ? 'GCASH' : 'CARD' }));
-                                                            return;
-                                                        }
-                                                        const selectedType = String(preferred.type || '').toUpperCase();
-                                                        setSelectedMethodId(preferred.id);
-                                                        setBookingData((prev) => ({
-                                                            ...prev,
-                                                            paymentMethod: type === 'E_WALLET' ? selectedType : 'CARD'
-                                                        }));
-                                                    }}
-                                                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${paymentSelection === type
-                                                        ? 'bg-primary text-background'
-                                                        : 'text-text-muted hover:text-white hover:bg-white/5'
-                                                        }`}
-                                                >
-                                                    {type === 'E_WALLET' ? 'E-Wallet' : type === 'CARD' ? 'Card' : 'Cash'}
-                                                </button>
-                                            ))}
-                                        </div>
-
-                                        {paymentSelection === 'CASH' && (
-                                            <div className="text-xs text-text-muted bg-black/20 border border-white/5 rounded-xl px-3 py-3 mt-2">
-                                                This booking will be marked as unpaid. Please settle the amount at the front desk.
-                                            </div>
-                                        )}
-
-                                        {paymentSelection !== 'CASH' && (
-                                            (paymentSelection === 'E_WALLET' ? walletPaymentMethods.length === 0 : cardPaymentMethods.length === 0) ? (
-                                                <div className="bg-black/20 border border-white/5 rounded-xl p-4 text-sm text-text-muted mt-2">
-                                                    No saved {paymentSelection === 'E_WALLET' ? 'e-wallet' : 'card'} methods. Please add one first.
-                                                    <div className="mt-3">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => window.location.assign('/payment-methods')}
-                                                            className="px-3 py-2 rounded-lg bg-primary text-background text-xs font-bold"
-                                                        >
-                                                            Add Payment Method
-                                                        </button>
-                                                    </div>
-                                                </div>
+                                        <button
+                                            onClick={handleCreateBooking}
+                                            disabled={bookingLoading}
+                                            className="w-full py-5 rounded-[1.5rem] bg-primary text-background font-black text-sm uppercase tracking-[0.2em] transition-all duration-300 hover:brightness-110 shadow-2xl shadow-primary/20 flex items-center justify-center gap-3"
+                                        >
+                                            {bookingLoading ? (
+                                                <div className="w-5 h-5 border-2 border-background border-t-transparent rounded-full animate-spin" />
                                             ) : (
-                                                <div className="space-y-2 mt-2">
-                                                    {(paymentSelection === 'E_WALLET' ? walletPaymentMethods : cardPaymentMethods).map((method) => (
-                                                        <label
-                                                            key={method.id}
-                                                            className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${selectedMethodId === method.id
-                                                                ? 'bg-primary/10 border-primary/40'
-                                                                : 'bg-black/20 border-white/5 hover:border-white/15'
-                                                                }`}
-                                                        >
-                                                            <input
-                                                                type="radio"
-                                                                name="trainerPaymentMethod"
-                                                                checked={selectedMethodId === method.id}
-                                                                onChange={() => {
-                                                                    const methodType = String(method.type || '').toUpperCase();
-                                                                    setSelectedMethodId(method.id);
-                                                                    setBookingData((prev) => ({
-                                                                        ...prev,
-                                                                        paymentMethod: paymentSelection === 'E_WALLET' ? methodType : 'CARD'
-                                                                    }));
-                                                                }}
-                                                                className="accent-orange-500"
-                                                            />
-                                                            <div className="flex-1 min-w-0">
-                                                                <p className="text-white text-sm font-semibold truncate">
-                                                                    {method.label}
-                                                                    {method.isDefault && (
-                                                                        <span className="ml-2 text-[10px] uppercase tracking-wider text-emerald-400 font-bold">Default</span>
-                                                                    )}
-                                                                </p>
-                                                                <p className="text-text-muted text-xs">
-                                                                    {['GCASH', 'MAYA'].includes(String(method.type || '').toUpperCase())
-                                                                        ? `${String(method.type || '').toUpperCase() === 'MAYA' ? 'Maya' : 'GCash'} - ${method.phone}`
-                                                                        : `${method.brand || 'Card'} - **** ${method.last4} - ${method.expMonth}/${method.expYear}`}
-                                                                </p>
-                                                            </div>
-                                                        </label>
-                                                    ))}
-                                                </div>
-                                            )
-                                        )}
+                                                <>
+                                                    <span className="material-icons-round">verified</span>
+                                                    Confirm Booking
+                                                </>
+                                            )}
+                                        </button>
                                     </div>
-
-                                    <div className="pt-1">
-                                        <h3 className="text-sm font-bold text-white">Step 3: Notes (Optional)</h3>
-                                        <p className="text-xs text-text-muted mt-0.5">Optional details to help your trainer prepare</p>
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-sm font-bold text-white mb-2">Notes (optional)</label>
-                                        <textarea
-                                            value={bookingData.notes}
-                                            onChange={(e) => setBookingData({ ...bookingData, notes: e.target.value })}
-                                            placeholder="Any specific goals or preferences?"
-                                            rows="4"
-                                            className="w-full px-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-text-muted focus:outline-none focus:border-primary text-base resize-none touch-manipulation"
-                                        />
-                                    </div>
-
-                                    {/* Booking Summary */}
-                                    <div className="bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 space-y-3">
-                                        <h4 className="text-sm font-bold text-white">Step 4: Order Details</h4>
-                                        <div className="space-y-2 text-sm">
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-text-muted">Dates</span>
-                                                <span className="text-white font-medium">{selectedDates.length}</span>
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-text-muted">Times Selected</span>
-                                                <span className="text-white font-medium">{Object.keys(selectedTimesByDate || {}).length}/{selectedDates.length}</span>
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-text-muted">Duration</span>
-                                                <span className="text-white font-medium">{bookingData.duration} min</span>
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-text-muted">Payment</span>
-                                                <span className="text-white font-medium">
-                                                    {bookingData.paymentMethod === 'CASH'
-                                                        ? 'Cash at front desk'
-                                                        : `${bookingData.paymentMethod}${selectedMethodId ? ' (saved method)' : ''}`}
-                                                </span>
-                                            </div>
-                                        </div>
-                                        <div className="border-t border-white/10 pt-3 flex items-center justify-between">
-                                            <span className="text-text-muted text-sm">Total ({selectedDates.length} session{selectedDates.length > 1 ? 's' : ''})</span>
-                                            <span className="text-primary font-bold text-2xl">
-                                                {formatPrice((((selectedTrainer.sessionPrice ?? 300) / 60) * bookingData.duration) * Math.max(selectedDates.length, 1))}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </form>
-                            </div>
-
-                            {/* Modal Footer - Sticky */}
-                            <div className="border-t border-white/10 p-5 sm:p-6 bg-surface sticky bottom-0 space-y-3">
-                                <button
-                                    onClick={handleBookSession}
-                                    disabled={bookingLoading || selectedDates.length === 0 || Object.keys(selectedTimesByDate).length !== selectedDates.length || (!selectedMethodId && bookingData.paymentMethod !== 'CASH')}
-                                    className="w-full py-4 bg-primary text-background rounded-xl font-bold text-base hover:brightness-110 active:scale-95 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
-                                >
-                                    <span className="material-icons-round text-xl">check_circle</span>
-                                    {bookingLoading ? 'Booking...' : 'Confirm Booking'}
-                                </button>
-                                <button
-                                    onClick={closeModal}
-                                    className="w-full py-3 bg-white/5 text-white rounded-xl font-medium text-sm hover:bg-white/10 transition-colors touch-manipulation"
-                                >
-                                    Cancel
-                                </button>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                )
-            }
+                    )}
+                </div>
+            ) : null}
+
+
+
 
             {rescheduleSession && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center sm:justify-center p-0 sm:p-4">
@@ -2890,62 +2440,14 @@ export default function TrainerBooking() {
                             </div>
 
                             <div>
-                                <label className="block text-sm font-bold text-white mb-2">New Date *</label>
-                                <div className="bg-white/5 border border-white/10 rounded-xl p-3">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <button
-                                            type="button"
-                                            onClick={() => setRescheduleCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
-                                            className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-white"
-                                        >
-                                            <span className="material-icons-round text-base">chevron_left</span>
-                                        </button>
-                                        <p className="text-sm font-semibold text-white">
-                                            {rescheduleCalendarMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
-                                        </p>
-                                        <button
-                                            type="button"
-                                            onClick={() => setRescheduleCalendarMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
-                                            className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 text-white"
-                                        >
-                                            <span className="material-icons-round text-base">chevron_right</span>
-                                        </button>
-                                    </div>
-                                    <div className="grid grid-cols-7 gap-1 mb-2">
-                                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-                                            <div key={d} className="text-[10px] text-center uppercase tracking-wide text-text-muted font-semibold">{d}</div>
-                                        ))}
-                                    </div>
-                                    <div className="grid grid-cols-7 gap-1">
-                                        {rescheduleCalendarCells.map((day, idx) => {
-                                            if (!day) return <div key={`reschedule-blank-${idx}`} className="h-9" />;
-                                            const iso = toIsoDate(day);
-                                            const todayIso = toIsoDate(new Date());
-                                            const isPast = iso < todayIso;
-                                            const unavailableDay = !isTrainerDateAvailable(rescheduleTrainer, iso);
-                                            const selected = rescheduleForm.date === iso;
-                                            return (
-                                                <button
-                                                    key={iso}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        if (isPast || unavailableDay) return;
-                                                        setRescheduleForm((prev) => ({ ...prev, date: iso, time: '' }));
-                                                    }}
-                                                    disabled={isPast || unavailableDay}
-                                                    className={`h-9 rounded-lg text-xs font-semibold transition-all ${selected
-                                                        ? 'bg-primary text-background'
-                                                        : (isPast || unavailableDay)
-                                                            ? 'bg-white/5 text-text-muted/40 cursor-not-allowed'
-                                                            : 'bg-white/5 text-white hover:bg-white/10'
-                                                        }`}
-                                                >
-                                                    {day.getDate()}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
+                                <label className="block text-[11px] font-black uppercase tracking-widest text-primary/60 mb-3">Choose New Date</label>
+                                {renderCalendar(
+                                    rescheduleCalendarMonth,
+                                    setRescheduleCalendarMonth,
+                                    rescheduleForm.date ? [rescheduleForm.date] : [],
+                                    (iso) => setRescheduleForm((prev) => ({ ...prev, date: iso, time: '' })),
+                                    (iso) => isTrainerDateAvailable(rescheduleTrainer, iso)
+                                )}
                             </div>
 
                             <div>
@@ -3072,6 +2574,6 @@ export default function TrainerBooking() {
                     </div>
                 </div>
             )}
-        </div >
+        </div>
     );
 }

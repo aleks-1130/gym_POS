@@ -72,21 +72,29 @@ export const AuthProvider = ({ children }) => {
                 throw new Error("Authentication failed to provide token");
             }
 
-            const backendLoginRes = await axios.post(withApiBase('/api/auth/login'), { email, password });
-            const backendUser = backendLoginRes.data.user;
+            try {
+                const backendLoginRes = await axios.post(withApiBase('/api/auth/login'), { 
+                    email, 
+                    password,
+                    neonToken: authToken 
+                });
+                const backendUser = backendLoginRes.data.user;
 
-            if (!backendUser) {
-                throw new Error("Failed to retrieve user role from system.");
+                if (!backendUser) {
+                    throw new Error("Failed to retrieve user role from system.");
+                }
+
+                setUser(backendUser);
+                localStorage.setItem('user', JSON.stringify(backendUser));
+                return true;
+            } catch (backendErr) {
+                const errorMsg = backendErr.response?.data?.error || backendErr.message;
+                throw new Error(errorMsg);
             }
-
-            setUser(backendUser);
-            localStorage.setItem('user', JSON.stringify(backendUser));
-
-            return true;
         } catch (e) {
             console.error("Login Failed:", e);
             logout();
-            return false;
+            throw e; // Re-throw to let the UI handle the specific message
         }
     };
 

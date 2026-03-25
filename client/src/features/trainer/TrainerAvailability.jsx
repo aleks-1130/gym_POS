@@ -503,530 +503,546 @@ export default function TrainerAvailability({ embedded = false, allowBookingStat
     return (
         <div className="space-y-4 sm:space-y-5">
             {!embedded && (
-                <header>
-                    <h1 className="text-2xl sm:text-3xl font-bold text-white">My Availability</h1>
-                    <p className="text-text-muted mt-1 text-sm sm:text-base">Set your normal schedule first, then adjust specific dates only when needed.</p>
+                <header className="px-1 py-2">
+                    <p className="text-[10px] text-primary font-black uppercase tracking-widest leading-none mb-1.5">Availability & Settings</p>
+                    <h1 className="text-2xl sm:text-3xl font-black text-white leading-tight">Your Work Hours</h1>
+                    <p className="text-text-muted mt-2 text-[13px] font-medium max-w-md leading-relaxed">
+                        Define your weekly rhythm and manage special dates for your training sessions.
+                    </p>
                 </header>
             )}
 
-            <section className="bg-surface rounded-2xl border border-white/5 p-3 sm:p-5 space-y-4 sm:space-y-5">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-                    <div className="rounded-lg sm:rounded-xl p-2.5 sm:p-3 bg-black/10">
-                        <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-text-muted">Available Days</p>
-                        <p className="text-white text-base sm:text-xl font-bold mt-1">{selectedDayKeys.length}</p>
-                    </div>
-                    <div className="rounded-lg sm:rounded-xl p-2.5 sm:p-3 bg-black/10">
-                        <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-text-muted">Date Changes</p>
-                        <p className="text-white text-base sm:text-xl font-bold mt-1">{overrideCount}</p>
-                    </div>
-                    <div className="rounded-lg sm:rounded-xl p-2.5 sm:p-3 bg-black/10">
-                        <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-text-muted">Interval</p>
-                        <p className="text-white text-base sm:text-xl font-bold mt-1">{availabilityIntervalMinutes}m</p>
-                    </div>
-                    <div className="rounded-lg sm:rounded-xl p-2.5 sm:p-3 bg-black/10">
-                        <p className="text-[9px] sm:text-[10px] uppercase tracking-wider text-text-muted">Bookings</p>
-                        <p className="text-white text-base sm:text-xl font-bold mt-1">{upcomingBookingCount}</p>
-                        <p className="text-[10px] text-text-muted mt-0.5">{bookedDayCount} day(s)</p>
-                    </div>
+            <section className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-md px-4 py-5 shadow-xl transition-all hover:bg-white/10 group">
+                    <p className="text-[9px] uppercase tracking-widest text-text-muted font-black group-hover:text-primary transition-colors">Active Days</p>
+                    <p className="text-2xl font-black text-white mt-1.5">{selectedDayKeys.length}</p>
+                    <p className="text-[10px] text-text-muted/60 mt-1 font-medium">Weekly</p>
                 </div>
-
+                <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-md px-4 py-5 shadow-xl transition-all hover:bg-white/10 group">
+                    <p className="text-[9px] uppercase tracking-widest text-text-muted font-black group-hover:text-cyan-400 transition-colors">Exceptions</p>
+                    <p className="text-2xl font-black text-white mt-1.5">{overrideCount}</p>
+                    <p className="text-[10px] text-text-muted/60 mt-1 font-medium">Special dates</p>
+                </div>
+                <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-md px-4 py-5 shadow-xl transition-all hover:bg-white/10 group">
+                    <p className="text-[9px] uppercase tracking-widest text-text-muted font-black group-hover:text-emerald-400 transition-colors">Interval</p>
+                    <p className="text-2xl font-black text-white mt-1.5">{availabilityIntervalMinutes}m</p>
+                    <p className="text-[10px] text-text-muted/60 mt-1 font-medium">Slot duration</p>
+                </div>
+                <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-md px-4 py-5 shadow-xl transition-all hover:bg-white/10 group">
+                    <p className="text-[9px] uppercase tracking-widest text-text-muted font-black group-hover:text-amber-400 transition-colors">Logistics</p>
+                    <p className="text-2xl font-black text-white mt-1.5">{upcomingBookingCount}</p>
+                    <p className="text-[10px] text-text-muted/60 mt-1 font-medium">New bookings</p>
+                </div>
             </section>
 
             {allowBookingStatusChange && (
-                <section className={`rounded-2xl border p-3 sm:p-5 transition-colors ${bookingStatus === 'OPEN'
-                    ? 'bg-emerald-500/15 border-emerald-500/35'
-                    : 'bg-rose-500/15 border-rose-500/35'
-                    }`}>
-                <div className="space-y-3">
-                    <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                            <p className="text-sm font-semibold text-white">Booking Access</p>
-                            <p className={`text-xs mt-1 ${bookingStatus === 'OPEN' ? 'text-emerald-100/90' : 'text-rose-100/90'}`}>
-                                Control whether members can create new bookings. Existing confirmed sessions remain valid.
-                            </p>
-                            <p className="text-sm font-semibold text-white mt-3">
-                                {bookingStatus === 'OPEN' ? 'Open For Booking' : 'Closed For Booking'}
-                            </p>
-                            <p className={`text-xs mt-1 ${bookingStatus === 'OPEN' ? 'text-emerald-100/90' : 'text-rose-100/90'}`}>
-                                {bookingStatus === 'OPEN'
-                                    ? 'Members can currently book available slots.'
-                                    : 'New bookings are currently blocked. Existing sessions stay valid.'}
+                <section className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl p-6 shadow-2xl relative overflow-hidden group transition-all hover:bg-white/10">
+                    {/* Decorative Background Glow */}
+                    <div className={`absolute -right-12 -top-12 w-32 h-32 blur-[60px] opacity-20 rounded-full transition-colors duration-500 ${bookingStatus === 'OPEN' ? 'bg-emerald-400' : 'bg-rose-400'}`}></div>
+                    
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 relative z-10">
+                        <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                                <span className={`w-2 h-2 rounded-full animate-pulse ${bookingStatus === 'OPEN' ? 'bg-emerald-400' : 'bg-rose-400'}`}></span>
+                                <h3 className="text-base font-black text-white uppercase tracking-widest leading-none">New Booking Access</h3>
+                            </div>
+                            <p className="text-[13px] text-text-muted font-medium leading-relaxed max-w-sm">
+                                {bookingStatus === 'OPEN' 
+                                    ? 'Members can discover and book your available time slots.' 
+                                    : 'Your schedule is hidden from members. No new bookings can be made.'
+                                }
                             </p>
                         </div>
-                        <button
-                            type="button"
-                            role="switch"
-                            aria-checked={bookingStatus === 'OPEN'}
-                            onClick={() => requestBookingStatusChange(nextBookingStatus)}
-                            disabled={savingBookingStatus}
-                            className={`relative inline-flex h-8 w-14 shrink-0 items-center rounded-full border transition-colors ${bookingStatus === 'OPEN'
-                                ? 'bg-emerald-500 border-emerald-300/70'
-                                : 'bg-rose-500 border-rose-300/70'
-                                } disabled:opacity-60`}
-                        >
-                            <span
-                                className={`inline-block h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${bookingStatus === 'OPEN'
-                                    ? 'translate-x-7'
-                                    : 'translate-x-1'
-                                    }`}
-                            />
-                        </button>
+
+                        <div className="flex items-center gap-4">
+                            <div className="text-right hidden sm:block">
+                                <p className={`text-[10px] font-black uppercase tracking-widest ${bookingStatus === 'OPEN' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                    Status: {bookingStatus}
+                                </p>
+                                <p className="text-[9px] text-text-muted font-bold mt-0.5">Click to toggle</p>
+                            </div>
+                            <button
+                                type="button"
+                                role="switch"
+                                aria-checked={bookingStatus === 'OPEN'}
+                                onClick={() => requestBookingStatusChange(nextBookingStatus)}
+                                disabled={savingBookingStatus}
+                                className={`relative inline-flex h-10 w-20 shrink-0 items-center rounded-full border-2 transition-all shadow-lg ${bookingStatus === 'OPEN'
+                                    ? 'bg-emerald-500/20 border-emerald-400 shadow-emerald-500/10'
+                                    : 'bg-rose-500/20 border-rose-400 shadow-rose-500/10'
+                                    } disabled:opacity-50 active:scale-95`}
+                            >
+                                <span
+                                    className={`inline-flex h-7 w-7 rounded-full shadow-lg transition-all duration-300 transform ${bookingStatus === 'OPEN'
+                                        ? 'translate-x-11 bg-emerald-400'
+                                        : 'translate-x-1.5 bg-rose-400'
+                                        }`}
+                                />
+                            </button>
+                        </div>
                     </div>
-                    {savingBookingStatus && (
-                        <p className={`text-[11px] mt-2 ${bookingStatus === 'OPEN' ? 'text-emerald-100/90' : 'text-rose-100/90'}`}>Updating booking status...</p>
-                    )}
-                    {bookingStatusSuccess && (
-                        <div className={`rounded-lg p-2 mt-2 text-xs border ${bookingStatus === 'OPEN'
-                            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-200'
-                            : 'bg-rose-500/10 border-rose-500/20 text-rose-200'
-                            }`}>
-                            {bookingStatusSuccess}
-                        </div>
-                    )}
-                    {bookingStatusError && (
-                        <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2 mt-2 text-xs text-red-200">
-                            {bookingStatusError}
-                        </div>
-                    )}
-                </div>
                 </section>
             )}
 
-            <section className="bg-surface rounded-2xl border border-white/5 p-3 sm:p-5">
-                <div className="space-y-4">
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
-                        <div>
-                            <p className="text-sm font-semibold text-white mb-2">Weekly Schedule</p>
-                            <p className="text-xs text-text-muted">
-                                {isWeeklyEditing
-                                    ? 'Update your recurring days, hours, and interval, then save your weekly schedule.'
-                                    : 'View your recurring availability by day. Click edit only when you need to update it.'}
-                            </p>
-                        </div>
-                        {!isWeeklyEditing && (
-                            <button
-                                type="button"
-                                onClick={startWeeklyEdit}
-                                className="w-full sm:w-auto px-4 py-2.5 rounded-lg border border-white/15 bg-white/5 text-xs font-bold text-white hover:bg-white/10 transition-all"
-                            >
-                                Edit Weekly Schedule
-                            </button>
-                        )}
+            <section className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl p-6 shadow-2xl space-y-6">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                    <div>
+                        <p className="text-[10px] text-cyan-400 font-black uppercase tracking-widest leading-none mb-1.5">Recurring Schedule</p>
+                        <h2 className="text-xl font-black text-white leading-tight">Weekly Rhythm</h2>
+                        <p className="text-[13px] text-text-muted mt-2 font-medium max-w-sm">
+                            Your baseline schedule that repeats every week.
+                        </p>
                     </div>
-                    <div className="grid grid-cols-7 gap-1 sm:gap-2">
-                        {WEEKDAY_TAB_ORDER.map((dayValue) => {
-                            const dayMeta = WEEKDAY_OPTIONS.find((d) => d.value === dayValue);
-                            if (!dayMeta) return null;
-                            const isActive = weeklyActiveDay === dayValue;
-                            const isAvailable = Boolean(availabilityByDay[String(dayValue)]);
-                            return (
-                                <button
-                                    key={`weekly-tab-${dayValue}`}
-                                    type="button"
-                                    onClick={() => setWeeklyActiveDay(dayValue)}
-                                    className={`w-full min-w-0 px-0 py-2 sm:py-2.5 rounded-lg text-[11px] sm:text-xs font-bold border transition-all ${isActive
-                                        ? 'bg-primary/20 border-primary/40 text-primary'
-                                        : 'bg-white/5 border-white/10 text-text-muted hover:text-white'
-                                        }`}
-                                >
-                                    <span className="block leading-none">{dayMeta.short}</span>
-                                    <span className={`block w-1.5 h-1.5 rounded-full mx-auto mt-1 ${isAvailable ? 'bg-emerald-300' : 'bg-white/30'}`}></span>
-                                </button>
-                            );
-                        })}
-                    </div>
+                    {!isWeeklyEditing && (
+                        <button
+                            type="button"
+                            onClick={startWeeklyEdit}
+                            className="px-5 py-2.5 rounded-2xl bg-white/5 border border-white/10 text-[11px] font-black uppercase tracking-widest text-white hover:bg-white/10 transition-all active:scale-95 shadow-lg"
+                        >
+                            Edit Baseline
+                        </button>
+                    )}
+                </div>
 
-                    <div className="rounded-xl border border-white/10 bg-black/20 p-3 sm:p-4 space-y-3">
-                        <div className="flex items-start justify-between gap-3">
-                            <div>
-                                <p className="text-sm font-semibold text-white">{weeklyActiveOption.label}</p>
-                                <p className="text-xs text-text-muted mt-1">
+                <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+                    {WEEKDAY_TAB_ORDER.map((dayValue) => {
+                        const dayMeta = WEEKDAY_OPTIONS.find((d) => d.value === dayValue);
+                        if (!dayMeta) return null;
+                        const isActive = weeklyActiveDay === dayValue;
+                        const isAvailable = Boolean(availabilityByDay[String(dayValue)]);
+                        return (
+                            <button
+                                key={`weekly-tab-${dayValue}`}
+                                type="button"
+                                onClick={() => setWeeklyActiveDay(dayValue)}
+                                className={`group relative flex flex-col items-center justify-center py-4 rounded-2xl border transition-all duration-300 ${isActive
+                                    ? 'bg-primary border-primary shadow-lg shadow-primary/20 scale-105 z-10'
+                                    : 'bg-white/5 border-white/10 text-text-muted hover:bg-white/10 hover:border-white/20'
+                                    }`}
+                            >
+                                <span className={`text-[10px] font-black uppercase tracking-tighter ${isActive ? 'text-background' : 'group-hover:text-white transition-colors'}`}>
+                                    {dayMeta.short}
+                                </span>
+                                <div className={`mt-2 w-1.5 h-1.5 rounded-full ${isActive 
+                                    ? 'bg-background' 
+                                    : isAvailable ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-white/20'
+                                }`}></div>
+                            </button>
+                        );
+                    })}
+                </div>
+
+                <div className="rounded-[28px] border border-white/10 bg-white/5 backdrop-blur-md p-6 shadow-xl space-y-6 transition-all">
+                    <div className="flex items-start justify-between gap-4">
+                        <div>
+                            <h3 className="text-lg font-black text-white leading-tight">{weeklyActiveOption.label}</h3>
+                            <div className="flex items-center gap-2 mt-1.5">
+                                <span className={`w-2 h-2 rounded-full ${weeklyActiveConfig ? 'bg-emerald-400' : 'bg-white/20'}`}></span>
+                                <p className="text-[13px] text-text-muted font-bold">
                                     {weeklyActiveConfig
-                                        ? `${formatTime12h(weeklyActiveConfig.start || '09:00')} - ${formatTime12h(weeklyActiveConfig.end || '18:00')}`
-                                        : 'Unavailable'}
+                                        ? `${formatTime12h(weeklyActiveConfig.start || '09:00')} — ${formatTime12h(weeklyActiveConfig.end || '18:00')}`
+                                        : 'Currently Unavailable'}
                                 </p>
                             </div>
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold border ${weeklyActiveConfig
-                                ? 'bg-emerald-500/15 text-emerald-200 border-emerald-500/30'
-                                : 'bg-white/10 text-text-muted border-white/20'
-                                }`}>
-                                {weeklyActiveConfig ? 'Available' : 'Off'}
-                            </span>
                         </div>
+                        <span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest border ${weeklyActiveConfig
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-[0_0_12px_rgba(52,211,153,0.1)]'
+                            : 'bg-white/5 text-text-muted border-white/10'
+                            }`}>
+                            {weeklyActiveConfig ? 'Available' : 'Paused'}
+                        </span>
+                    </div>
 
-                        {!isWeeklyEditing && (
-                            <p className="text-xs text-text-muted">Tap a day tab to view schedule. Use Edit to change this day.</p>
-                        )}
-
-                        {isWeeklyEditing && (
-                            <div className="space-y-3 border-t border-white/10 pt-3">
+                    {isWeeklyEditing ? (
+                        <div className="space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
+                            <div className="flex gap-2">
                                 <button
                                     type="button"
                                     onClick={() => toggleDay(weeklyActiveDay)}
-                                    className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${weeklyActiveConfig
-                                        ? 'bg-rose-500/15 text-rose-200 border-rose-500/30 hover:bg-rose-500/25'
-                                        : 'bg-emerald-500/15 text-emerald-200 border-emerald-500/30 hover:bg-emerald-500/25'
+                                    className={`flex-1 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest border transition-all active:scale-[0.98] ${weeklyActiveConfig
+                                        ? 'bg-rose-500/10 text-rose-400 border-rose-500/20 hover:bg-rose-500/20'
+                                        : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
                                         }`}
                                 >
-                                    {weeklyActiveConfig ? `Mark ${weeklyActiveOption.short} Unavailable` : `Mark ${weeklyActiveOption.short} Available`}
+                                    {weeklyActiveConfig ? 'Mark Unavailable' : 'Set as Available'}
                                 </button>
+                            </div>
 
-                                {weeklyActiveConfig ? (
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        <div>
-                                            <label className="block text-[10px] text-text-muted uppercase tracking-wider mb-1">Start</label>
+                            {weeklyActiveConfig && (
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] text-text-muted font-black uppercase tracking-widest ml-1">Start Time</label>
+                                        <div className="relative group">
                                             <input
                                                 type="time"
                                                 value={weeklyActiveConfig.start || '09:00'}
                                                 onChange={(e) => setDayTime(weeklyActiveDay, 'start', e.target.value)}
-                                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-2 text-sm text-white focus:outline-none focus:border-primary"
+                                                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
                                             />
-                                            <p className="text-[11px] text-text-muted mt-1">{formatTime12h(weeklyActiveConfig.start || '09:00')}</p>
                                         </div>
-                                        <div>
-                                            <label className="block text-[10px] text-text-muted uppercase tracking-wider mb-1">End</label>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] text-text-muted font-black uppercase tracking-widest ml-1">End Time</label>
+                                        <div className="relative group">
                                             <input
                                                 type="time"
                                                 value={weeklyActiveConfig.end || '18:00'}
                                                 onChange={(e) => setDayTime(weeklyActiveDay, 'end', e.target.value)}
-                                                className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-2 text-sm text-white focus:outline-none focus:border-primary"
+                                                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
                                             />
-                                            <p className="text-[11px] text-text-muted mt-1">{formatTime12h(weeklyActiveConfig.end || '18:00')}</p>
                                         </div>
                                     </div>
-                                ) : (
-                                    <p className="text-xs text-text-muted">This day is off. Mark it available to set start and end time.</p>
-                                )}
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="w-full sm:max-w-xs">
-                        <label className="block text-xs text-text-muted uppercase tracking-wider font-bold mb-2">Slot Interval</label>
-                        {isWeeklyEditing ? (
-                            <select
-                                value={availabilityIntervalMinutes}
-                                onChange={(e) => setAvailabilityIntervalMinutes(Number(e.target.value))}
-                                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-primary"
-                            >
-                                {[15, 30, 45, 60].map((v) => (
-                                    <option key={v} value={v} className="bg-[#1a1d24]">{v} minutes</option>
-                                ))}
-                            </select>
-                        ) : (
-                            <p className="text-sm text-white font-semibold">{availabilityIntervalMinutes} minutes</p>
-                        )}
-                    </div>
-
-                    {isWeeklyEditing && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <button
-                                type="button"
-                                onClick={handleSaveWeeklySchedule}
-                                disabled={savingWeeklySchedule}
-                                className="px-4 py-2.5 rounded-xl bg-primary text-background text-sm font-bold hover:brightness-110 disabled:opacity-70 transition-all w-full"
-                            >
-                                {savingWeeklySchedule ? 'Saving Weekly Schedule...' : 'Save Weekly Schedule'}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={cancelWeeklyEdit}
-                                disabled={savingWeeklySchedule}
-                                className="px-4 py-2.5 rounded-xl border border-white/15 bg-white/5 text-white text-sm font-bold hover:bg-white/10 disabled:opacity-70 transition-all w-full"
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                    )}
-                    {weeklySuccess && (
-                        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-xs text-emerald-200">
-                            {weeklySuccess}
-                        </div>
-                    )}
-                    {weeklyError && (
-                        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 text-xs text-red-200">
-                            {weeklyError}
-                        </div>
-                    )}
-                </div>
-            </section>
-
-            <section className="bg-surface rounded-2xl border border-white/5 p-3 sm:p-5">
-                <div className="space-y-4">
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
-                        <div>
-                            <p className="text-sm font-semibold text-white mb-2">Date Exceptions</p>
-                            <p className="text-xs text-text-muted">Set one-day changes like day off or custom hours without changing your weekly schedule.</p>
-                        </div>
-                        {!isDateEditing && (
-                            <button
-                                type="button"
-                                onClick={startDateEdit}
-                                className="w-full sm:w-auto px-4 py-2.5 rounded-lg border border-white/15 bg-white/5 text-xs font-bold text-white hover:bg-white/10 transition-all"
-                            >
-                                Add / Edit Exceptions
-                            </button>
-                        )}
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-3 sm:gap-4">
-                        <div className="rounded-xl p-2.5 sm:p-3 bg-black/10">
-                            <div className="flex items-center justify-between mb-3">
-                                <button
-                                    type="button"
-                                    onClick={() => setMonthCursor((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
-                                    className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 text-white"
-                                >
-                                    <span className="material-icons-round text-base">chevron_left</span>
-                                </button>
-                                <p className="text-sm font-semibold text-white">
-                                    {monthCursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
-                                </p>
-                                <button
-                                    type="button"
-                                    onClick={() => setMonthCursor((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
-                                    className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 text-white"
-                                >
-                                    <span className="material-icons-round text-base">chevron_right</span>
-                                </button>
-                            </div>
-                            <div className="grid grid-cols-7 gap-1 mb-2">
-                                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-                                    <div key={d} className="text-[10px] text-center uppercase tracking-wide text-text-muted font-semibold">{d}</div>
-                                ))}
-                            </div>
-                            <div className="grid grid-cols-7 gap-1">
-                                {calendarCells.map((day, idx) => {
-                                    if (!day) return <div key={`blank-${idx}`} className="h-10" />;
-                                    const iso = toIsoDate(day);
-                                    const isPast = iso < todayIso;
-                                    const selected = iso === selectedDate;
-                                    const override = specificDateAvailability[iso];
-                                    const isClosed = override?.available === false;
-                                    const isCustom = Boolean(override) && override?.available !== false;
-                                    const bookingCount = (bookingsByDate[iso] || []).length;
-                                    const hasBookings = bookingCount > 0;
-                                    const className = selected
-                                        ? 'bg-primary text-background ring-1 ring-primary/60'
-                                        : isClosed
-                                            ? 'bg-rose-500/20 text-rose-200 border border-rose-500/30'
-                                            : isCustom
-                                                ? 'bg-cyan-500/20 text-cyan-100 border border-cyan-500/30'
-                                                : hasBookings
-                                                    ? 'bg-amber-500/15 text-amber-100 border border-amber-500/30 hover:bg-amber-500/20'
-                                                    : 'bg-white/5 text-white border border-white/5 hover:bg-white/10';
-                                    return (
-                                        <button
-                                            key={iso}
-                                            type="button"
-                                            disabled={isPast}
-                                            onClick={() => setSelectedDate(iso)}
-                                            className={`h-9 sm:h-10 rounded-lg text-xs font-semibold transition-all relative ${isPast
-                                                ? 'bg-white/5 text-text-muted/40 cursor-not-allowed'
-                                                : className
-                                                }`}
-                                        >
-                                            {day.getDate()}
-                                            {!selected && !isPast && isClosed && (
-                                                <span className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-rose-300"></span>
-                                            )}
-                                            {!selected && !isPast && isCustom && (
-                                                <span className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-cyan-200"></span>
-                                            )}
-                                            {!isPast && hasBookings && (
-                                                <span className={`absolute top-1 right-1 min-w-[14px] h-3.5 px-1 rounded text-[9px] leading-[14px] font-bold ${selected ? 'bg-background/70 text-primary' : 'bg-amber-400 text-black'}`}>
-                                                    {bookingCount}
-                                                </span>
-                                            )}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                            <div className="flex flex-wrap gap-3 mt-3 text-[11px] text-text-muted">
-                                <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-300"></span>Day off</span>
-                                <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cyan-200"></span>Custom hours</span>
-                                <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-300"></span>Has bookings</span>
-                            </div>
-                        </div>
-
-                        <div className="rounded-xl p-3 sm:p-4 space-y-4 bg-black/10">
-                            <div>
-                                <p className="text-xs text-text-muted uppercase tracking-wider">Selected Date</p>
-                                <p className="text-white font-semibold mt-1">{selectedDateLabel}</p>
-                            </div>
-
-                            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
-                                <p className="text-[11px] uppercase tracking-wider text-amber-200 font-semibold">Bookings on this date</p>
-                                {sessionsLoading && (
-                                    <p className="text-xs text-amber-100/80">Loading bookings...</p>
-                                )}
-                                {!sessionsLoading && selectedDateBookings.length === 0 && (
-                                    <p className="text-xs text-amber-100/80">No active bookings for this date.</p>
-                                )}
-                                {!sessionsLoading && selectedDateBookings.length > 0 && (
-                                    <div className="space-y-2">
-                                        {selectedDateBookings.map((session) => {
-                                            const sessionDate = new Date(session.date);
-                                            const sessionTimeLabel = Number.isNaN(sessionDate.getTime())
-                                                ? '--'
-                                                : sessionDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-                                            const statusClass = session.status === 'RESCHEDULED'
-                                                ? 'border-blue-500/30 text-blue-200'
-                                                : 'border-emerald-500/30 text-emerald-200';
-                                            return (
-                                                <div key={session.id} className={`rounded-lg border px-2.5 py-2 text-xs bg-black/20 ${statusClass}`}>
-                                                    <div className="flex items-center justify-between gap-2">
-                                                        <span className="font-semibold">{sessionTimeLabel}</span>
-                                                        <span className="text-[10px] uppercase tracking-wider">{session.status}</span>
-                                                    </div>
-                                                    <p className="mt-1 text-white/90">{session.memberName || 'Member'} {session.duration ? `- ${session.duration}m` : ''}</p>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
-                            </div>
-
-                            {!isDateEditing && (
-                                <div className="space-y-2">
-                                    <p className="text-xs text-text-muted">
-                                        Current exceptions: <span className="text-white font-semibold">{overrideCount}</span>
-                                    </p>
-                                    <p className="text-xs text-text-muted">
-                                        {selectedMode === 'NONE'
-                                            ? 'No exception set for this date yet.'
-                                            : selectedMode === 'CLOSED'
-                                                ? 'This date is currently marked as Day Off.'
-                                                : `Custom hours: ${selectedDateOverride?.start || '09:00'} - ${selectedDateOverride?.end || '18:00'}`}
-                                    </p>
-                                    <p className="text-xs text-text-muted">Click "Add / Edit Exceptions" to modify this date.</p>
                                 </div>
                             )}
 
-                            {isDateEditing && (
-                                <>
-                                    <div className="space-y-2">
+                            <div className="pt-4 border-t border-white/5">
+                                <label className="text-[10px] text-text-muted font-black uppercase tracking-widest ml-1 mb-3 block">Slot Duration</label>
+                                <div className="grid grid-cols-4 gap-2">
+                                    {[15, 30, 45, 60].map((v) => (
                                         <button
+                                            key={`interval-${v}`}
                                             type="button"
-                                            onClick={() => setSelectedDateMode('CLOSED')}
-                                            className={`w-full text-left px-3 py-2 rounded-lg border text-xs font-semibold ${selectedMode === 'CLOSED'
-                                                ? 'bg-rose-500/20 border-rose-500/30 text-rose-200'
-                                                : 'bg-white/5 border-white/10 text-text-muted hover:text-white'
+                                            onClick={() => setAvailabilityIntervalMinutes(v)}
+                                            className={`py-2.5 rounded-xl text-[11px] font-black border transition-all ${availabilityIntervalMinutes === v
+                                                ? 'bg-white text-background border-white shadow-lg'
+                                                : 'bg-white/5 border-white/10 text-white hover:bg-white/10'
                                                 }`}
                                         >
-                                            Mark Day Off
+                                            {v}m
                                         </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setSelectedDateMode('CUSTOM')}
-                                            className={`w-full text-left px-3 py-2 rounded-lg border text-xs font-semibold ${selectedMode === 'CUSTOM'
-                                                ? 'bg-cyan-500/20 border-cyan-500/30 text-cyan-100'
-                                                : 'bg-white/5 border-white/10 text-text-muted hover:text-white'
-                                                }`}
-                                        >
-                                            Set Custom Hours
-                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-3 p-4 rounded-2xl border border-white/5 bg-white/[0.02]">
+                            <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center border border-white/5">
+                                <span className="material-icons-round text-primary text-xl">info</span>
+                            </div>
+                            <p className="text-[12px] text-text-muted font-medium leading-normal">
+                                Select a day above to view its recurring hours. Use the "Edit Baseline" button to modify your schedule.
+                            </p>
+                        </div>
+                    )}
+                </div>
+
+                {isWeeklyEditing && (
+                    <div className="grid grid-cols-2 gap-3 pt-2">
+                        <button
+                            type="button"
+                            onClick={handleSaveWeeklySchedule}
+                            disabled={savingWeeklySchedule}
+                            className="h-12 rounded-[20px] bg-primary text-background text-[11px] font-black uppercase tracking-widest hover:brightness-110 active:scale-[0.98] disabled:opacity-50 transition-all shadow-lg shadow-primary/20"
+                        >
+                            {savingWeeklySchedule ? 'Saving...' : 'Save Schedule'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={cancelWeeklyEdit}
+                            disabled={savingWeeklySchedule}
+                            className="h-12 rounded-[20px] bg-white/5 border border-white/10 text-white text-[11px] font-black uppercase tracking-widest hover:bg-white/10 active:scale-[0.98] disabled:opacity-50 transition-all"
+                        >
+                            Discard
+                        </button>
+                    </div>
+                )}
+                
+                {weeklySuccess && (
+                    <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 flex items-center gap-3 animate-in fade-in duration-300">
+                        <span className="material-icons-round text-emerald-400">check_circle</span>
+                        <p className="text-xs font-bold text-emerald-200">{weeklySuccess}</p>
+                    </div>
+                )}
+                {weeklyError && (
+                    <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-4 flex items-center gap-3 animate-in fade-in duration-300">
+                        <span className="material-icons-round text-rose-400">error</span>
+                        <p className="text-xs font-bold text-rose-200">{weeklyError}</p>
+                    </div>
+                )}
+            </section>
+            <section className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl p-6 shadow-2xl space-y-6">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                    <div>
+                        <p className="text-[10px] text-cyan-400 font-black uppercase tracking-widest leading-none mb-1.5">One-Off Changes</p>
+                        <h2 className="text-xl font-black text-white leading-tight">Special Dates</h2>
+                        <p className="text-[13px] text-text-muted mt-2 font-medium max-w-sm">
+                            Adjust specific days without changing your weekly rhythm.
+                        </p>
+                    </div>
+                    {!isDateEditing && (
+                        <button
+                            type="button"
+                            onClick={startDateEdit}
+                            className="px-5 py-2.5 rounded-2xl bg-white/5 border border-white/10 text-[11px] font-black uppercase tracking-widest text-white hover:bg-white/10 transition-all active:scale-95 shadow-lg"
+                        >
+                            Modify Dates
+                        </button>
+                    )}
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-6">
+                    {/* Calendar Column */}
+                    <div className="rounded-[28px] border border-white/10 bg-white/5 backdrop-blur-md p-5 shadow-xl">
+                        <div className="flex items-center justify-between mb-6 px-1">
+                            <button
+                                type="button"
+                                onClick={() => setMonthCursor((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
+                                className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white hover:bg-white/10 transition-all active:scale-90"
+                            >
+                                <span className="material-icons-round text-xl">chevron_left</span>
+                            </button>
+                            <p className="text-base font-black text-white px-4">
+                                {monthCursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+                            </p>
+                            <button
+                                type="button"
+                                onClick={() => setMonthCursor((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
+                                className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white hover:bg-white/10 transition-all active:scale-90"
+                            >
+                                <span className="material-icons-round text-xl">chevron_right</span>
+                            </button>
+                        </div>
+
+                        <div className="grid grid-cols-7 gap-1 mb-2">
+                            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+                                <div key={d} className="text-[9px] text-center uppercase tracking-widest text-text-muted font-black opacity-60 px-1 py-2">{d}</div>
+                            ))}
+                        </div>
+
+                        <div className="grid grid-cols-7 gap-1.5">
+                            {calendarCells.map((day, idx) => {
+                                if (!day) return <div key={`blank-${idx}`} className="h-10 sm:h-12" />;
+                                const iso = toIsoDate(day);
+                                const isPast = iso < todayIso;
+                                const selected = iso === selectedDate;
+                                const override = specificDateAvailability[iso];
+                                const isClosed = override?.available === false;
+                                const isCustom = Boolean(override) && override?.available !== false;
+                                const bookingCount = (bookingsByDate[iso] || []).length;
+                                const hasBookings = bookingCount > 0;
+                                
+                                const baseClass = "relative h-10 sm:h-12 rounded-xl text-xs font-black transition-all duration-300 flex items-center justify-center";
+                                
+                                if (isPast) return (
+                                    <div key={iso} className={`${baseClass} bg-white/[0.02] text-text-muted/20 cursor-not-allowed`}>
+                                        {day.getDate()}
                                     </div>
+                                );
 
-                                    {selectedMode === 'CUSTOM' && (
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <div>
-                                                <label className="block text-[10px] text-text-muted uppercase tracking-wider mb-1">Start</label>
-                                                <input
-                                                    type="time"
-                                                    value={selectedDateOverride?.start || '09:00'}
-                                                    onChange={(e) => setSelectedDateTime('start', e.target.value)}
-                                                    className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-2 text-sm text-white focus:outline-none focus:border-primary"
-                                                />
+                                let stateStyles = "bg-white/5 border border-white/5 text-white hover:bg-white/10 hover:scale-105 hover:z-10";
+                                if (selected) stateStyles = "bg-primary border-primary text-background shadow-lg shadow-primary/30 z-20 scale-110";
+                                else if (isClosed) stateStyles = "bg-rose-500/10 border-rose-500/20 text-rose-400";
+                                else if (isCustom) stateStyles = "bg-cyan-500/10 border-cyan-500/20 text-cyan-400";
+                                else if (hasBookings) stateStyles = "bg-amber-500/10 border-amber-500/20 text-amber-400";
+
+                                return (
+                                    <button
+                                        key={iso}
+                                        type="button"
+                                        onClick={() => setSelectedDate(iso)}
+                                        className={`${baseClass} ${stateStyles}`}
+                                    >
+                                        <span className="relative z-10">{day.getDate()}</span>
+                                        {!selected && isClosed && <span className="absolute bottom-1.5 w-1 h-1 rounded-full bg-rose-400 animate-pulse" />}
+                                        {!selected && isCustom && <span className="absolute bottom-1.5 w-1 h-1 rounded-full bg-cyan-400 animate-pulse" />}
+                                        {hasBookings && (
+                                            <span className={`absolute top-1 right-1 min-w-[14px] h-3.5 px-0.5 rounded-md text-[8px] font-black flex items-center justify-center ${selected ? 'bg-background text-primary' : 'bg-amber-400 text-black'}`}>
+                                                {bookingCount}
+                                            </span>
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        
+                        <div className="flex flex-wrap gap-4 mt-6 pt-4 border-t border-white/5 text-[10px] font-black uppercase tracking-widest text-text-muted">
+                            <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-rose-400 shadow-[0_0_8px_rgba(251,113,133,0.4)]"></span>Off</span>
+                            <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.4)]"></span>Custom</span>
+                            <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.4)]"></span>Booked</span>
+                        </div>
+                    </div>
+
+                    {/* Details Column */}
+                    <div className="rounded-[28px] border border-white/10 bg-white/5 backdrop-blur-md p-6 shadow-xl space-y-6">
+                        <div>
+                            <p className="text-[10px] text-text-muted font-black uppercase tracking-widest leading-none mb-1.5">Focus Date</p>
+                            <h3 className="text-lg font-black text-white leading-tight">{selectedDateLabel}</h3>
+                        </div>
+
+                        {/* Date Bookings Card */}
+                        <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                                <p className="text-[10px] uppercase tracking-widest text-amber-400 font-black">Agenda</p>
+                                {sessionsLoading && <span className="animate-spin material-icons-round text-amber-400 text-xs">sync</span>}
+                            </div>
+                            
+                            {!sessionsLoading && selectedDateBookings.length === 0 && (
+                                <p className="text-[12px] text-amber-200/60 font-medium italic">No bookings on this day yet.</p>
+                            )}
+                            
+                            {!sessionsLoading && selectedDateBookings.length > 0 && (
+                                <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1 custom-scrollbar">
+                                    {selectedDateBookings.map((session) => {
+                                        const sessionDate = new Date(session.date);
+                                        const sessionTimeLabel = Number.isNaN(sessionDate.getTime()) ? '--:--' : sessionDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                                        return (
+                                            <div key={session.id} className="rounded-xl bg-black/20 border border-white/5 p-2.5 flex items-center justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <p className="text-[11px] font-black text-white leading-none">{sessionTimeLabel}</p>
+                                                    <p className="text-[10px] text-text-muted mt-1 font-medium truncate">{session.memberName || 'Member'}</p>
+                                                </div>
+                                                <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[8px] font-black uppercase tracking-widest">
+                                                    {session.status}
+                                                </span>
                                             </div>
-                                            <div>
-                                                <label className="block text-[10px] text-text-muted uppercase tracking-wider mb-1">End</label>
-                                                <input
-                                                    type="time"
-                                                    value={selectedDateOverride?.end || '18:00'}
-                                                    onChange={(e) => setSelectedDateTime('end', e.target.value)}
-                                                    className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-2 text-sm text-white focus:outline-none focus:border-primary"
-                                                />
-                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+
+                        {!isDateEditing ? (
+                            <div className="space-y-4">
+                                <div className="p-4 rounded-2xl border border-white/5 bg-white/[0.02] space-y-2">
+                                    <p className="text-[10px] text-text-muted font-black uppercase tracking-widest">Status Overview</p>
+                                    <p className="text-[13px] text-white font-bold">
+                                        {selectedMode === 'NONE' ? 'Following weekly rhythm' : selectedMode === 'CLOSED' ? 'Marked as Day Off' : `Custom hours: ${selectedDateOverride?.start} - ${selectedDateOverride?.end}`}
+                                    </p>
+                                    <p className="text-[11px] text-text-muted font-medium">Click "Modify Dates" to adjust this specific day.</p>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setSelectedDateMode('CLOSED')}
+                                        className={`py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all active:scale-[0.98] ${selectedMode === 'CLOSED'
+                                            ? 'bg-rose-500/10 text-rose-400 border-rose-400 shadow-lg shadow-rose-500/10'
+                                            : 'bg-white/5 border-white/10 text-text-muted hover:bg-white/10'
+                                            }`}
+                                    >
+                                        Day Off
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setSelectedDateMode('CUSTOM')}
+                                        className={`py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all active:scale-[0.98] ${selectedMode === 'CUSTOM'
+                                            ? 'bg-cyan-500/10 text-cyan-400 border-cyan-400 shadow-lg shadow-cyan-500/10'
+                                            : 'bg-white/5 border-white/10 text-text-muted hover:bg-white/10'
+                                            }`}
+                                    >
+                                        Custom Hours
+                                    </button>
+                                </div>
+
+                                {selectedMode === 'CUSTOM' && (
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] text-text-muted font-black uppercase tracking-widest ml-1">Daily Start</label>
+                                            <input
+                                                type="time"
+                                                value={selectedDateOverride?.start || '09:00'}
+                                                onChange={(e) => setSelectedDateTime('start', e.target.value)}
+                                                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
+                                            />
                                         </div>
-                                    )}
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] text-text-muted font-black uppercase tracking-widest ml-1">Daily End</label>
+                                            <input
+                                                type="time"
+                                                value={selectedDateOverride?.end || '18:00'}
+                                                onChange={(e) => setSelectedDateTime('end', e.target.value)}
+                                                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm font-bold text-white focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all cursor-pointer"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
 
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div className="space-y-3 pt-4 border-t border-white/5">
+                                    <p className="text-[10px] text-text-muted font-black uppercase tracking-widest ml-1 mb-3 block">Cleanup Actions</p>
+                                    <div className="grid grid-cols-2 gap-3">
                                         <button
                                             type="button"
                                             onClick={clearSelectedDateOverride}
                                             disabled={selectedMode === 'NONE'}
-                                            className="px-3 py-2 rounded-lg border border-white/10 bg-white/5 text-xs font-semibold text-white hover:bg-white/10 disabled:opacity-50 w-full"
+                                            className="h-10 rounded-xl bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-widest text-white hover:bg-white/10 disabled:opacity-30 transition-all"
                                         >
-                                            Reset This Date
+                                            Reset Date
                                         </button>
                                         <button
                                             type="button"
                                             onClick={clearAllOverrides}
                                             disabled={overrideCount === 0}
-                                            className="px-3 py-2 rounded-lg border border-rose-500/30 bg-rose-500/10 text-xs font-semibold text-rose-200 hover:bg-rose-500/20 disabled:opacity-50 w-full"
+                                            className="h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 text-[10px] font-black uppercase tracking-widest text-rose-400 hover:bg-rose-500/20 disabled:opacity-30 transition-all"
                                         >
-                                            Reset All Date Changes
+                                            Flush All
                                         </button>
                                     </div>
-                                </>
-                            )}
-                        </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
-
-                    {isDateEditing && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <button
-                                type="button"
-                                onClick={handleSaveDateChanges}
-                                disabled={savingDateChanges}
-                                className="px-4 py-2.5 rounded-xl bg-primary text-background text-sm font-bold hover:brightness-110 disabled:opacity-70 transition-all w-full"
-                            >
-                                {savingDateChanges ? 'Saving Date Changes...' : 'Save Date Changes'}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={cancelDateEdit}
-                                disabled={savingDateChanges}
-                                className="px-4 py-2.5 rounded-xl border border-white/15 bg-white/5 text-white text-sm font-bold hover:bg-white/10 disabled:opacity-70 transition-all w-full"
-                            >
-                                Cancel
-                            </button>
-                        </div>
-                    )}
-
-                    {dateSuccess && (
-                        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-xs text-emerald-200">
-                            {dateSuccess}
-                        </div>
-                    )}
-                    {dateError && (
-                        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 text-xs text-red-200">
-                            {dateError}
-                        </div>
-                    )}
                 </div>
+
+                {isDateEditing && (
+                    <div className="grid grid-cols-2 gap-3 pt-4 border-t border-white/5">
+                        <button
+                            type="button"
+                            onClick={handleSaveDateChanges}
+                            disabled={savingDateChanges}
+                            className="h-12 rounded-[20px] bg-primary text-background text-[11px] font-black uppercase tracking-widest hover:brightness-110 active:scale-[0.98] disabled:opacity-50 transition-all shadow-lg shadow-primary/20"
+                        >
+                            {savingDateChanges ? 'Saving...' : 'Apply Overrides'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={cancelDateEdit}
+                            disabled={savingDateChanges}
+                            className="h-12 rounded-[20px] bg-white/5 border border-white/10 text-white text-[11px] font-black uppercase tracking-widest hover:bg-white/10 active:scale-[0.98] disabled:opacity-50 transition-all"
+                        >
+                            Discard
+                        </button>
+                    </div>
+                )}
+
+                {dateSuccess && (
+                    <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 flex items-center gap-3 animate-in fade-in duration-300">
+                        <span className="material-icons-round text-emerald-400">check_circle</span>
+                        <p className="text-xs font-bold text-emerald-200">{dateSuccess}</p>
+                    </div>
+                )}
+                {dateError && (
+                    <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-4 flex items-center gap-3 animate-in fade-in duration-300">
+                        <span className="material-icons-round text-rose-400">error</span>
+                        <p className="text-xs font-bold text-rose-200">{dateError}</p>
+                    </div>
+                )}
             </section>
 
             {conflicts.length > 0 && (
-                <section className="bg-red-500/10 border border-red-500/20 rounded-2xl p-3 sm:p-4">
-                    <p className="text-xs font-bold text-red-200 mb-2">Conflicting Bookings</p>
-                    <div className="space-y-2">
+                <section className="rounded-3xl border border-rose-500/20 bg-rose-500/5 backdrop-blur-xl p-6 shadow-2xl space-y-4">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-rose-500/20 flex items-center justify-center border border-rose-500/20">
+                            <span className="material-icons-round text-rose-400 text-xl">warning</span>
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-black text-white leading-tight">Schedule Conflicts</h3>
+                            <p className="text-[13px] text-rose-200/60 font-medium">The following bookings are now outside your working hours.</p>
+                        </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {conflicts.map((conflict) => {
                             const dt = new Date(conflict.date);
-                            const dateLabel = Number.isNaN(dt.getTime())
-                                ? String(conflict.date)
-                                : dt.toLocaleString([], {
-                                    weekday: 'short',
-                                    month: 'short',
-                                    day: 'numeric',
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                });
+                            const dateLabel = Number.isNaN(dt.getTime()) ? String(conflict.date) : dt.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
                             return (
-                                <div key={conflict.id} className="text-xs text-red-100 bg-black/20 rounded-lg px-2.5 py-2 border border-red-500/20">
-                                    <span className="font-semibold">{dateLabel}</span>
-                                    <span className="text-red-200/90"> - {conflict.duration} min - {conflict.memberName || 'Member'}</span>
+                                <div key={conflict.id} className="rounded-2xl bg-black/40 border border-rose-500/10 p-4 flex items-start justify-between gap-4">
+                                    <div>
+                                        <p className="text-sm font-black text-white">{dateLabel}</p>
+                                        <p className="text-[12px] text-rose-200/60 font-medium mt-1">{conflict.memberName || 'Member'} — {conflict.duration}m session</p>
+                                    </div>
+                                    <span className="px-2 py-0.5 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[9px] font-black uppercase tracking-widest">Conflict</span>
                                 </div>
                             );
                         })}
@@ -1035,44 +1051,42 @@ export default function TrainerAvailability({ embedded = false, allowBookingStat
             )}
 
             {allowBookingStatusChange && isBookingStatusModalOpen && pendingBookingStatus && (
-                <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-3 sm:p-4">
-                    <button
-                        type="button"
-                        aria-label="Close confirmation"
-                        onClick={closeBookingStatusModal}
-                        className="absolute inset-0 bg-black/70"
-                    />
-                    <div className="relative w-full max-w-md rounded-2xl border border-white/10 bg-surface p-4 sm:p-5 space-y-4">
-                        <div>
-                            <p className="text-base font-bold text-white">Confirm Booking Status Change</p>
-                            <p className="text-sm text-text-muted mt-2">
-                                Change status to{' '}
-                                <span className="font-semibold text-white">
-                                    {pendingBookingStatus === 'OPEN' ? 'Open For Booking' : 'Closed For Booking'}
+                <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300" onClick={closeBookingStatusModal} />
+                    <div className="relative w-full max-w-sm rounded-[32px] border border-white/10 bg-[#1a1d24]/90 backdrop-blur-2xl p-8 shadow-2xl space-y-8 animate-in zoom-in-95 slide-in-from-bottom-10 duration-500">
+                        <div className="text-center space-y-3">
+                            <div className={`w-20 h-20 rounded-[28px] mx-auto flex items-center justify-center border-2 shadow-2xl transition-all duration-700 ${pendingBookingStatus === 'OPEN' ? 'bg-emerald-500/10 border-emerald-400/50 shadow-emerald-500/20' : 'bg-rose-500/10 border-rose-400/50 shadow-rose-500/20'}`}>
+                                <span className={`material-icons-round text-4xl ${pendingBookingStatus === 'OPEN' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                    {pendingBookingStatus === 'OPEN' ? 'lock_open' : 'lock'}
                                 </span>
-                                ?
-                            </p>
-                            <p className="text-xs text-text-muted mt-2">This helps prevent accidental status changes.</p>
+                            </div>
+                            <div>
+                                <h3 className="text-2xl font-black text-white leading-tight">Change Access?</h3>
+                                <p className="text-[14px] text-text-muted mt-2 font-medium px-4">
+                                    You are switching to <span className={pendingBookingStatus === 'OPEN' ? 'text-emerald-400 font-black' : 'text-rose-400 font-black'}>{pendingBookingStatus === 'OPEN' ? 'Open' : 'Private'}</span> mode.
+                                </p>
+                            </div>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+
+                        <div className="grid grid-cols-2 gap-4">
                             <button
                                 type="button"
                                 onClick={closeBookingStatusModal}
                                 disabled={savingBookingStatus}
-                                className="px-4 py-2.5 rounded-xl border border-white/15 bg-white/5 text-white text-sm font-bold hover:bg-white/10 disabled:opacity-70 transition-all w-full"
+                                className="h-14 rounded-2xl bg-white/5 border border-white/10 text-white text-[12px] font-black uppercase tracking-widest hover:bg-white/10 active:scale-95 transition-all"
                             >
-                                Cancel
+                                Not Now
                             </button>
                             <button
                                 type="button"
                                 onClick={confirmBookingStatusChange}
                                 disabled={savingBookingStatus}
-                                className={`px-4 py-2.5 rounded-xl text-sm font-bold disabled:opacity-70 transition-all w-full ${pendingBookingStatus === 'OPEN'
-                                    ? 'bg-emerald-500 text-white hover:bg-emerald-400'
-                                    : 'bg-rose-500 text-white hover:bg-rose-400'
+                                className={`h-14 rounded-2xl text-[12px] font-black uppercase tracking-widest text-background active:scale-95 transition-all shadow-xl ${pendingBookingStatus === 'OPEN'
+                                    ? 'bg-emerald-400 hover:bg-emerald-300 shadow-emerald-500/20'
+                                    : 'bg-rose-400 hover:bg-rose-300 shadow-rose-500/20'
                                     }`}
                             >
-                                Confirm
+                                {savingBookingStatus ? 'Syncing...' : 'Yes, Confirm'}
                             </button>
                         </div>
                     </div>

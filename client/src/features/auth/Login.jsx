@@ -17,14 +17,10 @@ export default function Login() {
         setIsSubmitting(true);
         setError('');
         try {
-            const success = await login(email, password);
-            if (success) {
-                navigate('/dashboard');
-            } else {
-                setError('Invalid email or password');
-            }
-        } catch {
-            setError('Unable to sign in right now. Please try again.');
+            await login(email, password);
+            navigate('/dashboard');
+        } catch (err) {
+            setError(err.message || 'Invalid email or password');
         } finally {
             setIsSubmitting(false);
         }
@@ -80,9 +76,12 @@ export default function Login() {
                             </span>
                         </button>
                     </div>
-                    <div className="flex justify-end">
-                        <Link to="/forgot-password" className="text-xs font-medium text-primary hover:text-orange-400 transition-colors">
-                            Forgot password?
+                    <div className="flex justify-end mt-2 px-1">
+                        <Link
+                            to="/forgot-password"
+                            className="text-xs font-semibold text-primary transition-colors hover:text-orange-400"
+                        >
+                            Forgot Password?
                         </Link>
                     </div>
                 </div>

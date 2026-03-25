@@ -1,28 +1,6 @@
 const prisma = require('../config/prisma');
 
-// jose is ESM-only, so we use a lazy dynamic import
-let _jose = null;
-let _JWKS = null;
-
-// Handle different env variable names and trailing slashes
-const rawNeonAuthUrl = process.env.NEON_AUTH_URL || process.env.NEON_AUTH_API_URL;
-const NEON_AUTH_URL = rawNeonAuthUrl ? rawNeonAuthUrl.replace(/\/+$/, '') : null;
-const NEON_AUTH_JWKS_URL = process.env.NEON_AUTH_JWKS_URL || (NEON_AUTH_URL ? `${NEON_AUTH_URL}/.well-known/jwks.json` : null);
-
-async function getJose() {
-    if (!_jose) {
-        _jose = await import('jose');
-
-        if (NEON_AUTH_JWKS_URL) {
-            try {
-                _JWKS = _jose.createRemoteJWKSet(new URL(NEON_AUTH_JWKS_URL));
-            } catch (error) {
-                console.error('[DEBUG] Invalid Neon JWKS URL, JWT verification disabled:', error.message);
-            }
-        }
-    }
-    return { jwtVerify: _jose.jwtVerify, JWKS: _JWKS };
-}
+const { verifyAnyToken } = require('../utils/authUtils');
 
 // Middleware to verify Neon Auth Token
 const authenticateToken = async (req, res, next) => {
@@ -33,45 +11,21 @@ const authenticateToken = async (req, res, next) => {
 
     let email = null;
     let neonUserId = null;
-    let lastError = null;
     let decodedPayload = null;
 
     try {
-        // 1. Try Local JWT Verification first (most common for cookie-based auth)
-        const jwt = require('jsonwebtoken'); // Lazy require
-        const SECRET = process.env.JWT_SECRET;
-
-        try {
-            console.log('[DEBUG] Attempting Local JWT Verification...');
-            const decoded = jwt.verify(token, SECRET);
-            console.log('[DEBUG] Local JWT Verification Successful for email:', decoded.email);
-            email = decoded.email;
-            decodedPayload = decoded;
-            // No neonUserId in local token, but that's okay as we use email for sync
-        } catch (localErr) {
-            console.log('[DEBUG] Local JWT Verification Failed:', localErr.message);
-            lastError = `Local: ${localErr.message}`;
-            // 2. Try Neon Remote JWT Verification
-            const { jwtVerify, JWKS } = await getJose();
-
-            if (JWKS) {
-                try {
-                    const { payload } = await jwtVerify(token, JWKS);
-                    console.log('[DEBUG] Neon JWT Verification Successful');
-                    email = payload.email;
-                    neonUserId = payload.sub;
-                    decodedPayload = payload;
-                } catch (neonErr) {
-                    console.log('[DEBUG] Neon JWT Verification Failed:', neonErr.message);
-                    lastError += ` | Neon: ${neonErr.message}`;
-                }
-            } else {
-                lastError += ' | Neon JWKS not configured';
-            }
+        const verified = await verifyAnyToken(token);
+        if (verified) {
+            email = verified.email;
+            decodedPayload = verified.payload;
+            neonUserId = verified.payload?.sub;
+            console.log('[DEBUG] Token verified for:', email);
+        } else {
+            throw new Error('Verification failed');
         }
     } catch (jwtError) {
-        // 2. Fallback to Database Session Verification
-        console.log('[DEBUG] JWT skipped/failed, trying DB Session lookup...');
+        // 2. Fallback to Database Session Verification (if JWT verification failed or were expired)
+        console.log('[DEBUG] JWT verification failed, trying DB Session lookup...');
 
         try {
             const sessionResults = await prisma.$queryRaw`

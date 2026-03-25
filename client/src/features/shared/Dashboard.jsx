@@ -9,6 +9,8 @@ import StaffDashboard from '../staff/StaffDashboard';
 import TrainerDashboard from '../trainer/TrainerDashboard';
 import BranchSelector from '../../components/dashboard/BranchSelector';
 
+import { withApiBase } from '../../config/api';
+
 export default function Dashboard() {
     const { user, activeGymId, switchBranch } = useAuth();
     
@@ -27,7 +29,7 @@ export default function Dashboard() {
     const { data: stats, isLoading: loading, error } = useQuery({
         queryKey: ['dashboard-stats', activeGymId],
         queryFn: async () => {
-            const res = await axios.get('/api/dashboard/stats');
+            const res = await axios.get(withApiBase('/api/dashboard/stats'));
             return res.data;
         },
         retry: 1,

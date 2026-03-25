@@ -28,7 +28,17 @@ const DEFAULT_RECEIPT_SETTINGS = {
     printerName: '',
     printerTin: '',
     issuedDateLabel: 'Date & Time Issued',
-    thankYouMessage: 'Thank you for training with us!'
+    thankYouMessage: 'Thank you for training with us!',
+    companyId: 'FITOS_GYM_001',
+    currency: 'PHP',
+    currencyLocale: 'en-PH',
+    roundingRule: 'NEAREST_0_05',
+    financialMappings: {
+        GCASH: 'GCash / Alipay',
+        PAYMAYA: 'Maya / PLDT',
+        BANK_TRANSFER: 'Local Bank Transfer',
+        CARD: 'Terminal Card'
+    }
 };
 
 const DISCOUNT_ICON_OPTIONS = [
@@ -197,6 +207,16 @@ export default function PosSettings() {
 
     const updateReceiptField = (key, value) => {
         setReceiptSettings((prev) => ({ ...prev, [key]: value }));
+    };
+
+    const updateFinancialMapping = (method, label) => {
+        setReceiptSettings((prev) => ({
+            ...prev,
+            financialMappings: {
+                ...(prev.financialMappings || {}),
+                [method]: label
+            }
+        }));
     };
 
     const handleAddDiscountPreset = async () => {
@@ -496,10 +516,49 @@ export default function PosSettings() {
                         <p className="text-text-muted text-sm mb-6">Update receipt details and compliance text used by POS preview/print.</p>
 
                         <form onSubmit={handleSaveReceipt} className="space-y-4">
-                            <p className="text-xs font-bold uppercase tracking-widest text-text-muted">Header</p>
-                            <Field label="Receipt Title" value={receiptSettings.invoiceTitle} onChange={(v) => updateReceiptField('invoiceTitle', v)} required />
-                            <Field label="Business Name" value={receiptSettings.businessName} onChange={(v) => updateReceiptField('businessName', v)} required />
+                            <p className="text-xs font-bold uppercase tracking-widest text-text-muted">Gym Details</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <Field label="Company ID" value={receiptSettings.companyId} onChange={(v) => updateReceiptField('companyId', v)} required />
+                                <Field label="Business Name" value={receiptSettings.businessName} onChange={(v) => updateReceiptField('businessName', v)} required />
+                            </div>
                             <Field label="Branch Address" value={receiptSettings.branchAddress} onChange={(v) => updateReceiptField('branchAddress', v)} required />
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <SelectField 
+                                    label="Currency" 
+                                    value={receiptSettings.currency} 
+                                    onChange={(v) => updateReceiptField('currency', v)}
+                                    options={[
+                                        { value: 'PHP', label: 'PHP (₱)' },
+                                        { value: 'SGD', label: 'SGD ($)' },
+                                        { value: 'USD', label: 'USD ($)' }
+                                    ]}
+                                />
+                                <SelectField 
+                                    label="Locale" 
+                                    value={receiptSettings.currencyLocale} 
+                                    onChange={(v) => updateReceiptField('currencyLocale', v)}
+                                    options={[
+                                        { value: 'en-PH', label: 'English (PH)' },
+                                        { value: 'en-SG', label: 'English (SG)' },
+                                        { value: 'en-US', label: 'English (US)' }
+                                    ]}
+                                />
+                                <SelectField 
+                                    label="Rounding Rule" 
+                                    value={receiptSettings.roundingRule} 
+                                    onChange={(v) => updateReceiptField('roundingRule', v)}
+                                    options={[
+                                        { value: 'NONE', label: 'None' },
+                                        { value: 'NEAREST_0_05', label: 'Nearest 0.05' },
+                                        { value: 'NEAREST_0_10', label: 'Nearest 0.10' },
+                                        { value: 'UP_TO_1_00', label: 'Always Round Up to 1.00' }
+                                    ]}
+                                />
+                            </div>
+
+                            <p className="text-xs font-bold uppercase tracking-widest text-text-muted pt-2">Compliance (BIR)</p>
+                            <Field label="Receipt Title" value={receiptSettings.invoiceTitle} onChange={(v) => updateReceiptField('invoiceTitle', v)} required />
                             <Field label="TIN (with branch code)" value={receiptSettings.tin} onChange={(v) => updateReceiptField('tin', v)} />
 
                             <div>
@@ -545,6 +604,22 @@ export default function PosSettings() {
                                     value={receiptSettings.thankYouMessage}
                                     onChange={(e) => updateReceiptField('thankYouMessage', e.target.value)}
                                 />
+                            </div>
+
+                            <p className="text-xs font-bold uppercase tracking-widest text-text-muted pt-2">Financial Institution Mappings</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-white/5 p-4 rounded-2xl border border-white/5">
+                                {Object.keys(DEFAULT_RECEIPT_SETTINGS.financialMappings).map((method) => (
+                                    <div key={method}>
+                                        <label className="block text-[10px] text-text-muted font-bold mb-1">{method.replaceAll('_', ' ')} Label</label>
+                                        <input
+                                            type="text"
+                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:border-primary outline-none"
+                                            value={receiptSettings.financialMappings?.[method] || ''}
+                                            onChange={(e) => updateFinancialMapping(method, e.target.value)}
+                                            placeholder={`e.g., ${DEFAULT_RECEIPT_SETTINGS.financialMappings[method]}`}
+                                        />
+                                    </div>
+                                ))}
                             </div>
 
                             <div className="flex justify-end pt-2">
@@ -953,6 +1028,21 @@ const Field = ({ label, value, onChange, placeholder, required = false }) => (
         />
     </div>
 );
+
+const SelectField = ({ label, value, onChange, options }) => (
+    <div>
+        <label className="block text-xs text-text-secondary font-bold mb-2">{label}</label>
+        <select
+            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+            value={value || ''}
+            onChange={(e) => onChange(e.target.value)}
+        >
+            {options.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+        </select>
+    </div>
+); 
 
 const StatusCard = ({ label, enabled }) => (
     <div className="bg-surfaceHighlight rounded-2xl border border-white/10 p-4 flex items-center justify-between">

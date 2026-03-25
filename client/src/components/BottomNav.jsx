@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Home, Calendar, User, Users, Dumbbell } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -45,6 +45,51 @@ export default function BottomNav() {
         const interval = setInterval(fetchUnreadCount, 60000); // Check every minute
         return () => clearInterval(interval);
     }, [user]);
+    
+    // Drag-to-scroll logic for horizontal navigation
+    const scrollRef = useRef(null);
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragMoved, setDragMoved] = useState(false);
+    const [startX, setStartX] = useState(0);
+    const [scrollLeft, setScrollLeft] = useState(0);
+
+    const handleMouseDown = (e) => {
+        if (!scrollRef.current) return;
+        setIsDragging(true);
+        setDragMoved(false);
+        setStartX(e.pageX - scrollRef.current.offsetLeft);
+        setScrollLeft(scrollRef.current.scrollLeft);
+    };
+
+    const handleMouseLeave = () => {
+        setIsDragging(false);
+    };
+
+    const handleMouseUp = () => {
+        setIsDragging(false);
+    };
+
+    const handleMouseMove = (e) => {
+        if (!isDragging || !scrollRef.current) return;
+        
+        const x = e.pageX - scrollRef.current.offsetLeft;
+        const walk = (x - startX) * 2;
+        
+        // If moved more than 5px, mark as dragMoved to prevent accidental clicks
+        if (Math.abs(x - startX) > 5) {
+            setDragMoved(true);
+        }
+
+        e.preventDefault();
+        scrollRef.current.scrollLeft = scrollLeft - walk;
+    };
+
+    const handleItemClick = (e) => {
+        if (dragMoved) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    };
 
     // Primary navigation items (bottom bar)
     const memberPrimaryNav = [
@@ -199,32 +244,25 @@ export default function BottomNav() {
             {/* Bottom Navigation Bar */}
             <nav className={`fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur-md z-40 border-t border-white/5 ${(!isMember && !isTrainer) && 'lg:hidden'}`}>
                 <div className="relative max-w-full mx-auto">
-                    <div className="relative h-16 bg-surface/50">
-                        {/* This container prevents overflow */}
-                        <div className="absolute inset-0 overflow-hidden">
-                            {/* Animated highlight indicator - only show if activeIndex is valid */}
-                            {activeIndex >= 0 && (
-                                <div
-                                    className="absolute bottom-0 h-0.5 bg-gradient-to-r from-primary to-orange-500 transition-all duration-300 ease-out rounded-full"
-                                    style={{
-                                        left: `${activeIndex * itemWidthPercent}%`,
-                                        width: `${itemWidthPercent}%` }}
-                                />
-                            )}
-
-                            {/* Active background glow - only show if activeIndex is valid */}
-                            {activeIndex >= 0 && (
-                                <div
-                                    className="absolute inset-y-0 bg-gradient-to-t from-primary/10 to-transparent transition-all duration-300 ease-out pointer-events-none"
-                                    style={{
-                                        left: `${activeIndex * itemWidthPercent}%`,
-                                        width: `${itemWidthPercent}%` }}
-                                />
-                            )}
-                        </div>
-
-                        {/* Navigation Items */}
-                        <div className="absolute inset-0 flex items-center justify-center">
+                    {/* Scrollable Container - allows horizontal scroll if items overflow */}
+                    <div 
+                        ref={scrollRef}
+                        onMouseDown={handleMouseDown}
+                        onMouseLeave={handleMouseLeave}
+                        onMouseUp={handleMouseUp}
+                        onMouseMove={handleMouseMove}
+                        className={`
+                            relative h-16 bg-surface/50 overflow-x-auto scrollbar-hide
+                            select-none touch-pan-x
+                            ${isDragging ? 'cursor-grabbing' : 'cursor-grab active:cursor-grabbing'}
+                        `}
+                    >
+                        {/* 
+                            Navigation Items Container 
+                            - Use w-full and justify-center to look good on large screens 
+                            - Use flex-nowrap to keep items in a row for scrolling
+                        */}
+                        <div className="flex items-center h-full w-full">
                             {primaryNavItems.map((item, index) => {
                                 const isActive = activeIndex === index;
 
@@ -232,67 +270,76 @@ export default function BottomNav() {
                                     <NavLink
                                         key={item.to}
                                         to={item.to}
-                                        className="flex-1 h-full transition-all duration-200 relative group"
+                                        onClick={handleItemClick}
+                                        onDragStart={(e) => e.preventDefault()}
+                                        className="flex-1 min-w-[90px] flex-shrink-0 h-full transition-all duration-200 relative group"
                                     >
-                                        {({ isActive: navIsActive }) => {
-                                            return (
-                                                <div className="w-full h-full flex flex-col items-center justify-center gap-1 relative z-10">
-                                                    {/* Icon Container with contained effects */}
-                                                    <div className={`
-                                                        relative flex items-center justify-center w-9 h-9
-                                                        transition-all duration-200 overflow-hidden rounded-full
-                                                        ${isActive ? 'scale-110' : 'scale-100 group-hover:scale-105'}
-                                                    `}>
-                                                        {/* Icon glow effect when active - tightly contained with minimal blur */}
-                                                        {isActive && (
-                                                            <div className="absolute inset-0 bg-primary/20 blur-[2px] rounded-full scale-75" />
-                                                        )}
+                                        <div className="w-full h-full flex flex-col items-center justify-center gap-1 relative z-10">
+                                            {/* Icon Container with active effects */}
+                                            <div className={`
+                                                relative flex items-center justify-center w-9 h-9
+                                                transition-all duration-200 overflow-hidden rounded-full
+                                                ${isActive ? 'scale-110' : 'scale-100 group-hover:scale-105'}
+                                            `}>
+                                                {/* Icon glow effect when active */}
+                                                {isActive && (
+                                                    <div className="absolute inset-0 bg-primary/20 blur-[2px] rounded-full scale-75" />
+                                                )}
 
-                                                        {/* Icon */}
-                                                        {renderNavIcon(item.icon, {
-                                                            size: 22,
-                                                            className: `
-                                                                transition-all duration-200 relative z-10
-                                                                ${isActive
-                                                                    ? 'text-primary'
-                                                                    : 'text-text-muted group-hover:text-white'
-                                                                }
-                                                            `,
-                                                            strokeWidth: isActive ? 2.5 : 2
-                                                        })}
-                                                    </div>
-
-                                                    {/* Label */}
-                                                    <span className={`
-                                                        text-[10px] font-medium tracking-tight transition-all duration-200
+                                                {/* Icon */}
+                                                {renderNavIcon(item.icon, {
+                                                    size: 22,
+                                                    className: `
+                                                        transition-all duration-200 relative z-10
                                                         ${isActive
-                                                            ? 'text-primary opacity-100'
-                                                            : 'text-text-muted opacity-70 group-hover:opacity-100 group-hover:text-white'
+                                                            ? 'text-primary'
+                                                            : 'text-text-muted group-hover:text-white'
                                                         }
-                                                    `}>
-                                                        {item.label}
-                                                    </span>
-                                                </div>
-                                            );
-                                        }}
+                                                    `,
+                                                    strokeWidth: isActive ? 2.5 : 2
+                                                })}
+                                            </div>
+
+                                            {/* Label */}
+                                            <span className={`
+                                                text-[10px] font-medium tracking-tight transition-all duration-200
+                                                ${isActive
+                                                    ? 'text-primary opacity-100'
+                                                    : 'text-text-muted opacity-70 group-hover:opacity-100 group-hover:text-white'
+                                                }
+                                            `}>
+                                                {item.label}
+                                            </span>
+
+                                            {/* Local Active Indicator (Line) */}
+                                            {isActive && (
+                                                <div className="absolute bottom-0 left-2 right-2 h-0.5 bg-gradient-to-r from-primary to-orange-500 rounded-full animate-fade-in" />
+                                            )}
+                                        </div>
                                     </NavLink>
                                 );
                             })}
 
-                            {/* Hamburger Menu Button (Members only) */}
+                            {/* Hamburger Menu Button */}
                             {hasMoreMenu && (
                                 <button
-                                    onClick={() => setShowMenu(!showMenu)}
-                                    className="flex-1 h-full transition-all duration-200 relative group"
+                                    onClick={(e) => {
+                                        if (dragMoved) {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            return;
+                                        }
+                                        setShowMenu(!showMenu);
+                                    }}
+                                    onDragStart={(e) => e.preventDefault()}
+                                    className="flex-1 min-w-[90px] flex-shrink-0 h-full transition-all duration-200 relative group"
                                 >
                                     <div className="w-full h-full flex flex-col items-center justify-center gap-1 relative z-10">
-                                        {/* Icon Container with contained effects */}
                                         <div className={`
                                             relative flex items-center justify-center w-9 h-9
                                             transition-all duration-200 overflow-hidden rounded-full
                                             ${showMenu ? 'scale-110' : 'scale-100 group-hover:scale-105'}
                                         `}>
-                                            {/* Glow effect when menu is open - tightly contained with minimal blur */}
                                             {showMenu && (
                                                 <div className="absolute inset-0 bg-primary/20 blur-[2px] rounded-full scale-75" />
                                             )}
@@ -357,6 +404,14 @@ export default function BottomNav() {
 
                 .animate-slide-up {
                     animation: slide-up 0.3s ease-out;
+                }
+
+                .scrollbar-hide::-webkit-scrollbar {
+                    display: none;
+                }
+                .scrollbar-hide {
+                    -ms-overflow-style: none;
+                    scrollbar-width: none;
                 }
             `}</style>
         </>

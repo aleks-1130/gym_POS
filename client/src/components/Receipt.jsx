@@ -4,16 +4,21 @@ import { useAuth } from '../context/AuthContext';
 // This component can be used in a modal or hidden iframe for printing
 export const Receipt = React.forwardRef(({ transaction, items, member, cashierName, discount = 0, paymentDetails, receiptSettings }, ref) => {
     const { user } = useAuth();
-    const transactionCurrency = transaction?.currency || 'PHP';
-    const transactionLocale = transactionCurrency === 'SGD' ? 'en-SG' : 'en-PH';
+    const transactionCurrency = receiptSettings?.currency || transaction?.currency || 'PHP';
+    const transactionLocale = receiptSettings?.currencyLocale || (transactionCurrency === 'SGD' ? 'en-SG' : 'en-PH');
 
     const formatCurrency = (amount) => {
-        return new Intl.NumberFormat(transactionLocale, {
-            style: 'currency',
-            currency: transactionCurrency,
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2
-        }).format(amount || 0);
+        try {
+            return new Intl.NumberFormat(transactionLocale, {
+                style: 'currency',
+                currency: transactionCurrency,
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }).format(amount || 0);
+        } catch (e) {
+            // Fallback for invalid locale/currency
+            return `${transactionCurrency} ${(amount || 0).toFixed(2)}`;
+        }
     };
 
     const transactionDate = transaction?.date ? new Date(transaction.date) : new Date();
@@ -64,7 +69,7 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
     
     // Dynamic Invoice Logic
     const invoiceNo = transaction?.referenceId || String(transaction?.id || 'PENDING');
-    const companyId = transaction?.companyId || user?.gym?.companyId || 'FITOS_GYM_001';
+    const companyId = receiptSettings?.companyId || transaction?.companyId || user?.gym?.companyId || 'FITOS_GYM_001';
     const serialNo = settings.serialNo ? `${settings.serialNo}${invoiceNo}` : invoiceNo;
 
     return (
@@ -184,7 +189,11 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
                 <div className="mt-4 pt-2 border-t border-dotted border-black">
                     <div className="flex justify-between text-xs font-bold">
                         <span>Payment Method:</span>
-                        <span>{(transaction?.method || paymentDetails?.method || 'N/A').replaceAll('_', ' ')}</span>
+                        <span>
+                            {transaction?.method === 'SPLIT' || paymentDetails?.method === 'SPLIT'
+                                ? 'Mixed / Split'
+                                : (receiptSettings?.financialMappings?.[transaction?.method || paymentDetails?.method] || transaction?.method || paymentDetails?.method || 'N/A').replaceAll('_', ' ')}
+                        </span>
                     </div>
 
                     {/* Split Payment Breakdown */}
@@ -192,7 +201,7 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
                         <div className="mt-2 space-y-1 pl-4 border-l-2 border-gray-100">
                             {(transaction?.collections || paymentDetails?.collections).map((col, idx) => (
                                 <div key={idx} className="flex justify-between text-[11px]">
-                                    <span>{(col?.method || 'N/A').replaceAll('_', ' ')}:</span>
+                                    <span>{(receiptSettings?.financialMappings?.[col?.method] || col?.method || 'N/A').replaceAll('_', ' ')}:</span>
                                     <span>{formatCurrency(col.amount)}</span>
                                 </div>
                             ))}

@@ -264,8 +264,8 @@ export default function TrainerProfile() {
                 }
             }
             await showAlert({
-                title: 'Request Submitted',
-                message: 'Your member-card update was sent for admin approval.',
+                title: 'Request Received',
+                message: 'Your profile refinements were sent for review.',
                 type: 'success'
             });
             setShowEditModal(false);
@@ -284,8 +284,8 @@ export default function TrainerProfile() {
     const handleLogout = async () => {
         const confirmed = await showConfirm({
             title: 'Sign Out',
-            message: 'Are you sure you want to log out of your trainer account?',
-            confirmLabel: 'Log Out',
+            message: 'Are you sure you want to sign out of your trainer account?',
+            confirmLabel: 'Sign Out',
             cancelLabel: 'Cancel',
             type: 'danger'
         });
@@ -415,12 +415,12 @@ export default function TrainerProfile() {
                     )}
                     <div className="min-w-0 flex-1">
                         <h1 className="text-base font-bold text-white truncate">
-                            {isAvailabilityPage ? 'Availability' : isMemberCardPage ? 'Member Card' : isRequestsPage ? 'Update Requests' : 'Profile Settings'}
+                            {isAvailabilityPage ? 'My Availability' : isMemberCardPage ? 'How Clients See Me' : isRequestsPage ? 'Profile Refinements' : 'My Professional Profile'}
                         </h1>
                         <p className="text-[11px] text-text-muted">
                             {isAvailabilityPage ? 'Weekly schedule and date exceptions'
                                 : isMemberCardPage ? 'Profile card details seen by members'
-                                    : isRequestsPage ? 'Request history and approvals'
+                                    : isRequestsPage ? 'Update history and status'
                                         : 'Trainer Account'}
                         </p>
                     </div>
@@ -480,10 +480,10 @@ export default function TrainerProfile() {
                 </div>
                 <div className="divide-y divide-white/5">
                     {[
-                        { key: 'availability', path: '/trainer/profile/availability', label: 'Availability', description: 'Weekly schedule and date exceptions' },
-                        { key: 'member-card', path: '/trainer/profile/member-card', label: 'Member Card', description: 'Profile card details seen by members' },
-                        { key: 'requests', path: '/trainer/profile/requests', label: 'Update Requests', description: 'Request history and approval status' },
-                        { key: 'change-password', path: '/forgot-password', label: 'Change Password', description: 'Reset password via email verification' }
+                        { key: 'availability', path: '/trainer/profile/availability', label: 'My Availability', description: 'Weekly schedule and date exceptions' },
+                        { key: 'member-card', path: '/trainer/profile/member-card', label: 'How Clients See Me', description: 'Profile card details seen by members' },
+                        { key: 'requests', path: '/trainer/profile/requests', label: 'Profile Refinements', description: 'Update history and status' },
+                        { key: 'change-password', path: '/forgot-password', label: 'Update Security', description: 'Reset password via email verification' }
                     ].map((item) => (
                         <button
                             key={item.key}
@@ -508,7 +508,7 @@ export default function TrainerProfile() {
                         onClick={handleLogout}
                         className="w-full py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 font-bold hover:bg-red-500/20 transition-colors"
                     >
-                        Log Out
+                        Sign Out
                     </button>
                 </>
             )}
@@ -527,7 +527,7 @@ export default function TrainerProfile() {
                 <section className="bg-surface rounded-2xl p-4 sm:p-5 border border-white/5 space-y-4">
                     <div className="flex items-center justify-between gap-3">
                         <div>
-                            <h3 className="text-sm font-bold text-white">Member Card</h3>
+                            <h3 className="text-sm font-bold text-white">How Clients See Me</h3>
                             <p className="text-xs text-text-muted mt-0.5">Visible to members during trainer booking.</p>
                         </div>
                         <button
@@ -535,14 +535,14 @@ export default function TrainerProfile() {
                             onClick={() => setShowEditModal(true)}
                             className="px-3 py-2 rounded-lg border border-primary/40 bg-primary/10 text-primary text-xs font-bold"
                         >
-                            Request Update
+                            Request Refinement
                         </button>
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_340px] gap-4">
                         <div className="space-y-3">
                             <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5">
-                                <p className="text-[10px] uppercase tracking-wider text-text-muted">Specialization</p>
+                                <p className="text-[10px] uppercase tracking-wider text-text-muted">My Expertise</p>
                                 <p className="text-sm text-white font-semibold mt-1">{previewTrainer?.specialization || 'Personal Trainer'}</p>
                             </div>
                             <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5">
@@ -562,7 +562,7 @@ export default function TrainerProfile() {
                                 <p className="text-xs text-white/80 mt-1">{previewTrainer?.statusDescription || 'No status description set.'}</p>
                             </div>
                             <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5">
-                                <p className="text-[10px] uppercase tracking-wider text-text-muted">Bio</p>
+                                <p className="text-[10px] uppercase tracking-wider text-text-muted">My Story</p>
                                 <p className="text-xs text-white/80 mt-1">{previewTrainer?.bio || 'No bio yet.'}</p>
                             </div>
                         </div>
@@ -627,8 +627,8 @@ export default function TrainerProfile() {
             {isRequestsPage && (
                 <section className="bg-surface rounded-2xl border border-white/5 overflow-hidden">
                     <div className="px-4 py-3 border-b border-white/10">
-                        <h3 className="text-sm font-bold text-white">Update Requests</h3>
-                        <p className="text-xs text-text-muted mt-0.5">Change request history</p>
+                        <h3 className="text-sm font-bold text-white">Profile Refinements</h3>
+                        <p className="text-xs text-text-muted mt-0.5">Change history and status</p>
                     </div>
                     <div className="p-3 space-y-2">
                         {requestsLoading && (
@@ -670,13 +670,13 @@ export default function TrainerProfile() {
                     <div className="fixed inset-x-0 bottom-0 z-[60] bg-surface border-t border-white/10 rounded-t-3xl p-4 sm:max-w-xl sm:mx-auto sm:bottom-4 sm:rounded-2xl">
                         <div className="w-10 h-1 rounded-full bg-white/20 mx-auto mb-4" />
                         <div className="mb-4">
-                            <h3 className="text-lg font-bold text-white">Request Member Card Update</h3>
-                            <p className="text-xs text-text-muted">Submit changes for admin approval</p>
+                            <h3 className="text-lg font-bold text-white">Refine My Profile</h3>
+                            <p className="text-xs text-text-muted">Submit changes for review</p>
                         </div>
                         <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
                             <input
                                 className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white"
-                                placeholder="Specialization"
+                                placeholder="My Expertise"
                                 value={editForm.specialization}
                                 onChange={(e) => setEditForm((prev) => ({ ...prev, specialization: e.target.value }))}
                             />
@@ -691,7 +691,7 @@ export default function TrainerProfile() {
                                 min="1"
                                 step="0.01"
                                 className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white"
-                                placeholder="Session Price"
+                                placeholder="Standard Rate"
                                 value={editForm.sessionPrice}
                                 onChange={(e) => setEditForm((prev) => ({ ...prev, sessionPrice: e.target.value }))}
                             />
@@ -711,7 +711,7 @@ export default function TrainerProfile() {
                             <textarea
                                 rows={4}
                                 className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white"
-                                placeholder="Bio"
+                                placeholder="My Story"
                                 value={editForm.bio}
                                 onChange={(e) => setEditForm((prev) => ({ ...prev, bio: e.target.value }))}
                             />

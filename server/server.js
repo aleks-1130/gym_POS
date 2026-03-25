@@ -67,7 +67,7 @@ app.get('/api/health', async (req, res) => {
     try {
         const userCount = await prisma.user.count();
         const productCount = await prisma.product.count();
-        
+
         let redisStatus = 'disconnected';
         let redisHoldCount = 0;
         try {
@@ -77,22 +77,22 @@ app.get('/api/health', async (req, res) => {
                 const keys = await redisClient.keys('cart:reserve:*');
                 redisHoldCount = keys.length;
             }
-        } catch (re) {}
+        } catch (re) { }
 
-        res.json({ 
-            status: 'ok', 
-            db: 'connected', 
+        res.json({
+            status: 'ok',
+            db: 'connected',
             userCount,
             productCount,
             redisStatus,
             redisHoldCount,
-            timestamp: new Date().toISOString(), 
+            timestamp: new Date().toISOString(),
             env: process.env.NODE_ENV
         });
     } catch (e) {
-        res.status(503).json({ 
-            status: 'error', 
-            db: 'disconnected', 
+        res.status(503).json({
+            status: 'error',
+            db: 'disconnected',
             message: e.message,
             timestamp: new Date().toISOString()
         });

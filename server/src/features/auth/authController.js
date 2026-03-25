@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const prisma = require('../../config/prisma');
 const { isDatabaseUnreachableError } = require('../../utils/prismaError');
 const { syncToNeonAuth } = require('../../services/neonAuthSync');
+const { verifyAnyToken } = require('../../utils/authUtils');
 
 const SECRET = process.env.JWT_SECRET;
 const IS_PROD = process.env.NODE_ENV === 'production';
@@ -16,32 +17,58 @@ const cookieOptions = {
 };
 
 const login = async (req, res) => {
-    const { email, password } = req.body;
+    const { email, password, neonToken } = req.body;
     const normalizedEmail = String(email || '').trim().toLowerCase();
-    console.log("[DEBUG] Login Attempt:", normalizedEmail);
-    console.log("[DEBUG] DATABASE_URL loaded:", !!process.env.DATABASE_URL);
+    console.log("[DEBUG] Login Attempt:", normalizedEmail, "with neonToken:", !!neonToken);
 
     try {
-        // 1. Try finding in USER table (Owner/Admin/Staff/Trainer)
-        // Use select to avoid querying missing trainerId column
+        // 1. If neonToken is provided, verify it first
+        let neonVerified = false;
+        if (neonToken) {
+            const verified = await verifyAnyToken(neonToken);
+            if (verified && verified.email.toLowerCase() === normalizedEmail) {
+                console.log("[DEBUG] Neon Token Verified for:", normalizedEmail);
+                neonVerified = true;
+            } else {
+                console.warn("[DEBUG] Neon Token provided but verification failed or email mismatch.");
+            }
+        }
+
+        // 2. Find in USER table (Owner/Admin/Staff/Trainer)
         const user = await prisma.user.findFirst({
             where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
             select: {
-                id: true,
-                email: true,
-                password: true,
-                name: true,
-                role: true,
-                gymId: true,
-                tenantId: true,
-                trainerId: true,
-                sessionVersion: true
+                id: true, email: true, password: true, name: true, role: true,
+                gymId: true, tenantId: true, trainerId: true, sessionVersion: true,
+                status: true
             }
         });
 
         if (user) {
-            const match = await bcrypt.compare(password, user.password);
-            console.log("[DEBUG] Password Match:", match);
+            if (user.status !== 'ACTIVE') {
+                return res.status(403).json({ error: `Account is ${user.status.toLowerCase()}. Please contact support.` });
+            }
+
+            let match = neonVerified; // If Neon token is valid, we trust it
+            if (!match && password) {
+                match = await bcrypt.compare(password, user.password);
+                
+                // AUTO-SYNC: If we have a password and it matched Neon (neonVerified), 
+                // we should NOT reach here. But if Neon succeeded (neonVerified=true) 
+                // and we also have the raw password, we could technically verify local too.
+            } else if (neonVerified && password) {
+                // If Neon verified but we have a password, let's update our local hash if it was different
+                const localMatch = await bcrypt.compare(password, user.password);
+                if (!localMatch) {
+                    console.log("[DEBUG] Syncing local password for USER:", normalizedEmail);
+                    const newHash = await bcrypt.hash(password, 10);
+                    await prisma.user.update({ where: { id: user.id }, data: { password: newHash } });
+                }
+            } else if (neonToken && neonVerified && !password) {
+                // Neon token valid, no password provided (e.g. social login) - we trust Neon.
+                match = true;
+            }
+
             if (match) {
                 const payload = {
                     id: user.id,
@@ -53,7 +80,6 @@ const login = async (req, res) => {
                     trainerId: user.trainerId,
                     sessionVersion: Number(user.sessionVersion || 0)
                 };
-                console.log("[DEBUG] Signing JWT for user:", user.email, "with SECRET length:", SECRET ? SECRET.length : 0);
                 const token = jwt.sign(payload, SECRET);
                 res.cookie('token', token, cookieOptions);
                 
@@ -76,26 +102,37 @@ const login = async (req, res) => {
             }
         }
 
-        // 2. Try finding in MEMBER table
+        // 3. Try finding in MEMBER table
         const member = await prisma.member.findFirst({
             where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
             select: {
-                id: true,
-                email: true,
-                password: true,
-                status: true,
-                gymId: true,
-                firstName: true,
-                sessionVersion: true
+                id: true, email: true, password: true, status: true,
+                gymId: true, firstName: true, sessionVersion: true
             }
         });
 
-        if (member && member.password) { // Only if password is set
+        if (member) {
             if (member.status === 'PENDING' || member.status === 'PENDING_ACTIVATION') {
                 return res.status(403).json({ error: "Your account is pending activation. Please check your email." });
             }
-            const match = await bcrypt.compare(password, member.password);
-            console.log("[DEBUG] Member Password Match:", match);
+            if (member.status === 'DELETED') {
+                return res.status(403).json({ error: "This account has been closed." });
+            }
+
+            let match = neonVerified;
+            if (!match && password && member.password) {
+                match = await bcrypt.compare(password, member.password);
+            } else if (neonVerified && password && member.password) {
+                const localMatch = await bcrypt.compare(password, member.password);
+                if (!localMatch) {
+                    console.log("[DEBUG] Syncing local password for MEMBER:", normalizedEmail);
+                    const newHash = await bcrypt.hash(password, 10);
+                    await prisma.member.update({ where: { id: member.id }, data: { password: newHash } });
+                }
+            } else if (neonToken && neonVerified && !password) {
+                match = true;
+            }
+
             if (match) {
                 const payload = {
                     id: member.id,
@@ -105,7 +142,6 @@ const login = async (req, res) => {
                     type: 'MEMBER',
                     sessionVersion: Number(member.sessionVersion || 0)
                 };
-                console.log("[DEBUG] Signing JWT for member:", member.email, "with SECRET length:", SECRET ? SECRET.length : 0);
                 const token = jwt.sign(payload, SECRET);
                 res.cookie('token', token, cookieOptions);
                 
@@ -126,8 +162,8 @@ const login = async (req, res) => {
             }
         }
 
-        console.log("[DEBUG] Invalid Credentials");
-        res.status(403).json({ error: "Invalid credentials" });
+        console.log("[DEBUG] Invalid Credentials for:", normalizedEmail);
+        res.status(403).json({ error: "Invalid email or password" });
     } catch (e) {
         if (isDatabaseUnreachableError(e)) {
             console.error("[DEBUG] Login Error: database unreachable");
