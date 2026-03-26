@@ -32,8 +32,8 @@ const prisma = prismaClient.$extends({
               args.where = { ...args.where, OR: [{ gymId }, { gymId: null }] };
             }
           } else if (gymId) {
-            // Force gymId UNLESS user is OWNER and already provided an explicit gymId or specific ID
-            const isOwnerOverride = userRole === 'OWNER' && (args.where.gymId || args.where.id);
+            // Force gymId unless OWNER explicitly provides gymId in the query.
+            const isOwnerOverride = userRole === 'OWNER' && Boolean(args.where.gymId);
             if (!isOwnerOverride) {
               args.where = { ...args.where, gymId };
             }
@@ -95,8 +95,8 @@ const prisma = prismaClient.$extends({
                 args.where = { ...args.where, OR: [{ gymId }, { gymId: null }] };
               }
             } else if (gymId) {
-             // Force gymId UNLESS user is OWNER and already provided an explicit gymId or specific ID
-             const isOwnerOverride = userRole === 'OWNER' && (args.where.gymId || args.where.id);
+             // Force gymId unless OWNER explicitly provides gymId in the query.
+             const isOwnerOverride = userRole === 'OWNER' && Boolean(args.where.gymId);
              if (!isOwnerOverride) {
                 args.where = { ...args.where, gymId };
              }

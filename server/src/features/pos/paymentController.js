@@ -1,5 +1,5 @@
 const prisma = require('../../config/prisma');
-const { getPosConfig } = require('../../services/configService');
+const { getPosConfig, DEFAULT_DISCOUNT_PRESETS } = require('../../services/configService');
 const { getReceiptSettings, saveReceiptSettings } = require('../../services/receiptSettingsService');
 const notificationService = require('../../services/notificationService');
 const bcrypt = require('bcryptjs');
@@ -48,7 +48,7 @@ const getStoredDiscountPresets = async (gymId, tenantId) => {
             tenantId: Number(tenantId)
         }
     });
-    return normalizeDiscountPresets(config?.discountPresets);
+    return normalizeDiscountPresets(config?.discountPresets ?? DEFAULT_DISCOUNT_PRESETS);
 };
 
 const saveDiscountPresets = async (gymId, presets, tenantId) => {
@@ -62,6 +62,14 @@ const saveDiscountPresets = async (gymId, presets, tenantId) => {
         await prisma.posConfig.update({
             where: { id: config.id },
             data: { discountPresets: presets || [] }
+        });
+    } else {
+        await prisma.posConfig.create({
+            data: {
+                gymId: Number(gymId),
+                tenantId: Number(tenantId),
+                discountPresets: presets || []
+            }
         });
     }
 };
@@ -1264,7 +1272,7 @@ const updatePosSettings = async (req, res) => {
 
         if (!hasVoidPinInput && !hasReturnPinInput && !hasReceiptSettingsInput && !hasDiscountPresetsInput) {
             const [config, currentReceiptSettings] = await Promise.all([
-                getPosConfig(req.user.gymId),
+                getPosConfig(req.user.gymId, req.user.tenantId),
                 getReceiptSettings(req.user.gymId, req.user.tenantId)
             ]);
             return res.json({
@@ -1272,7 +1280,9 @@ const updatePosSettings = async (req, res) => {
                 hasVoidPin: Boolean(config.voidPinHash),
                 hasReturnPin: Boolean(config.returnPinHash),
                 receiptSettings: currentReceiptSettings,
-                discountPresets: await getStoredDiscountPresets(config.gymId, config.tenantId)
+                discountPresets: config.id
+                    ? await getStoredDiscountPresets(config.gymId, config.tenantId)
+                    : normalizeDiscountPresets(config.discountPresets ?? DEFAULT_DISCOUNT_PRESETS)
             });
         }
 
@@ -1310,10 +1320,21 @@ const updatePosSettings = async (req, res) => {
         const config = await getPosConfig(req.user.gymId, req.user.tenantId);
 
         if (Object.keys(data).length > 0) {
-            await prisma.posConfig.update({
-                where: { id: config.id },
-                data
-            });
+            if (config.id) {
+                await prisma.posConfig.update({
+                    where: { id: config.id },
+                    data
+                });
+            } else {
+                await prisma.posConfig.create({
+                    data: {
+                        gymId: Number(req.user.gymId),
+                        tenantId: Number(req.user.tenantId),
+                        ...data,
+                        discountPresets: normalizeDiscountPresets(config.discountPresets ?? DEFAULT_DISCOUNT_PRESETS)
+                    }
+                });
+            }
         }
 
         if (hasDiscountPresetsInput) {

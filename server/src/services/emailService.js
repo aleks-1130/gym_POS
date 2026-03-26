@@ -20,7 +20,7 @@ const sendEmailWebhook = async (webhookUrl, payload) => {
     }
 };
 
-const sendActivationEmail = async (email, name, token, planName, expiryDate, phone, birthDate, gender, role = 'MEMBER') => {
+const sendActivationEmail = async (email, name, token, planName, expiryDate, phone, birthDate, gender, role = 'MEMBER', gymContext = {}) => {
     const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').trim();
     const activationLink = `${frontendUrl}/activate?token=${token}`.trim();
 
@@ -33,14 +33,16 @@ const sendActivationEmail = async (email, name, token, planName, expiryDate, pho
         expiryDate,
         phone: phone || 'N/A',
         birthDate: birthDate || 'N/A',
-        gender: gender || 'N/A'
+        gender: gender || 'N/A',
+        gymName: gymContext?.name || null,
+        gymId: gymContext?.id || null
     };
 
     console.log(`[EmailService] Sending activation email payload for ${email}`);
     await sendEmailWebhook(process.env.N8N_ACTIVATION_WEBHOOK_URL, payload);
 };
 
-const sendPasswordResetEmail = async (email, name, token) => {
+const sendPasswordResetEmail = async (email, name, token, gymContext = {}) => {
     const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').trim();
     const resetLink = `${frontendUrl}/reset-password?token=${token}`.trim();
 
@@ -48,7 +50,9 @@ const sendPasswordResetEmail = async (email, name, token) => {
         email,
         name,
         role: 'FORGOT_PASSWORD', // Matches the exact n8n rule!
-        resetLink
+        resetLink,
+        gymName: gymContext?.name || null,
+        gymId: gymContext?.id || null
     };
 
     console.log(`[EmailService] Sending password reset payload for ${email}`);

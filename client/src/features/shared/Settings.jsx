@@ -87,6 +87,7 @@ export default function Settings() {
     }, [settings]);
 
     useEffect(() => {
+        if (!isOwner) return;
         const fetchFinancialInstitutions = async () => {
             try {
                 const res = await axios.get('/api/settings/financial-institutions');
@@ -96,7 +97,7 @@ export default function Settings() {
             }
         };
         fetchFinancialInstitutions();
-    }, []);
+    }, [isOwner]);
 
     useEffect(() => {
         fetchPlans();

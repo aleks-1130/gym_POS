@@ -16,10 +16,14 @@ export const SettingsProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (user) {
+        const role = String(user?.role || '').toUpperCase();
+        if (user && role === 'OWNER') {
+            setLoading(true);
             fetchSettings();
+            return;
         }
-    }, [user?.id, user?.gymId]);
+        setLoading(false);
+    }, [user?.id, user?.gymId, user?.role]);
 
     const fetchSettings = async () => {
         try {

@@ -335,11 +335,17 @@ const forgotPassword = async (req, res) => {
 
     try {
         // Find in User or Member
-        let account = await prisma.user.findFirst({ where: { email: { equals: normalizedEmail, mode: 'insensitive' } } });
+        let account = await prisma.user.findFirst({
+            where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
+            include: { gym: { select: { id: true, name: true } } }
+        });
         let isMember = false;
 
         if (!account) {
-            account = await prisma.member.findFirst({ where: { email: { equals: normalizedEmail, mode: 'insensitive' } } });
+            account = await prisma.member.findFirst({
+                where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
+                include: { gym: { select: { id: true, name: true } } }
+            });
             isMember = true;
         }
 
@@ -369,7 +375,12 @@ const forgotPassword = async (req, res) => {
 
         // Send email with the RAW token
         const fullName = isMember ? `${account.firstName} ${account.lastName}` : account.name;
-        await sendPasswordResetEmail(account.email, fullName, rawToken);
+        await sendPasswordResetEmail(
+            account.email,
+            fullName,
+            rawToken,
+            { name: account.gym?.name, id: account.gymId }
+        );
 
         res.json({ message: "If an account with that email exists, a password reset link has been sent." });
     } catch (e) {

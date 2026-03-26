@@ -359,7 +359,7 @@ export default function PosSettings() {
                 isActive: !promo.isActive
             }, { headers: authHeaders() });
             await fetchPromoCodes();
-        } catch (e) {
+        } catch {
             await showAlert({ title: 'Error', message: 'Failed to update promo status', type: 'danger' });
         }
     };
@@ -378,7 +378,7 @@ export default function PosSettings() {
                 headers: authHeaders()
             });
             await fetchPromoCodes();
-        } catch (e) {
+        } catch {
             await showAlert({ title: 'Error', message: 'Failed to delete promo code', type: 'danger' });
         }
     };
@@ -401,6 +401,7 @@ export default function PosSettings() {
             tin: '123-456-789-000'
         }
     }), []);
+    const activePromoCount = useMemo(() => promoCodes.filter((promo) => promo.isActive).length, [promoCodes]);
 
     return (
         <div className="space-y-6 w-full">
@@ -409,46 +410,79 @@ export default function PosSettings() {
                 <p className="text-text-muted mt-1">Configure POS security, receipt details, and discount presets.</p>
             </header>
 
-            <div className="bg-surface rounded-3xl border border-white/5 p-2 shadow-sm flex flex-wrap gap-2">
-                <TabButton
-                    active={activeTab === TABS.SECURITY}
-                    onClick={() => setActiveTab(TABS.SECURITY)}
-                    label="Security"
-                    icon="shield"
-                />
-                <TabButton
-                    active={activeTab === TABS.RECEIPT}
-                    onClick={() => setActiveTab(TABS.RECEIPT)}
-                    label="Receipt"
-                    icon="receipt_long"
-                />
-                <TabButton
-                    active={activeTab === TABS.DISCOUNTS}
-                    onClick={() => setActiveTab(TABS.DISCOUNTS)}
-                    label="Discounts"
-                    icon="local_offer"
-                />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="bg-surface rounded-2xl border border-white/5 p-3 text-xs text-white">
+                    Void PIN: <span className={status.hasVoidPin ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>{status.hasVoidPin ? 'Configured' : 'Missing'}</span>
+                </div>
+                <div className="bg-surface rounded-2xl border border-white/5 p-3 text-xs text-white">
+                    Return PIN: <span className={status.hasReturnPin ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>{status.hasReturnPin ? 'Configured' : 'Missing'}</span>
+                </div>
+                <div className="bg-surface rounded-2xl border border-white/5 p-3 text-xs text-white">
+                    Promo Codes: <span className="font-bold text-primary">{promoCodes.length}</span> ({activePromoCount} active)
+                </div>
+            </div>
+
+            <div className="rounded-3xl border border-white/5 bg-surface p-2 shadow-sm">
+                <div className="flex flex-wrap gap-2">
+                    <TabButton
+                        active={activeTab === TABS.SECURITY}
+                        onClick={() => setActiveTab(TABS.SECURITY)}
+                        label="Security"
+                        icon="shield"
+                    />
+                    <TabButton
+                        active={activeTab === TABS.RECEIPT}
+                        onClick={() => setActiveTab(TABS.RECEIPT)}
+                        label="Receipt"
+                        icon="receipt_long"
+                    />
+                    <TabButton
+                        active={activeTab === TABS.DISCOUNTS}
+                        onClick={() => setActiveTab(TABS.DISCOUNTS)}
+                        label="Discounts & Promos"
+                        icon="local_offer"
+                    />
+                </div>
             </div>
 
             {activeTab === TABS.SECURITY && (
-                <div className="space-y-6">
-                    <div className="bg-surface rounded-3xl border border-white/5 p-6 shadow-sm">
-                        <h3 className="text-xl font-bold text-white mb-4">Current PIN Status</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <StatusCard label="Void PIN" enabled={status.hasVoidPin} />
-                            <StatusCard label="Return PIN" enabled={status.hasReturnPin} />
+                <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
+                    <div className="space-y-4">
+                        <div className="rounded-3xl border border-white/5 bg-surface p-5 shadow-sm">
+                            <h3 className="text-base font-black uppercase tracking-wider text-white">Current PIN Status</h3>
+                            <div className="mt-4 space-y-3">
+                                <StatusCard label="Void PIN" enabled={status.hasVoidPin} />
+                                <StatusCard label="Return PIN" enabled={status.hasReturnPin} />
+                            </div>
+                        </div>
+                        <div className="rounded-3xl border border-white/5 bg-surface p-5 shadow-sm">
+                            <h3 className="text-base font-black uppercase tracking-wider text-white">Guidelines</h3>
+                            <div className="mt-3 space-y-2 text-sm text-text-muted">
+                                <p>Use different PINs for void and return actions.</p>
+                                <p>Set at least {MIN_PIN_LENGTH} digits to reduce unauthorized overrides.</p>
+                                <p>Use the clear action only when rotating to a new PIN policy.</p>
+                            </div>
                         </div>
                     </div>
 
-                    <div className="bg-surface rounded-3xl border border-white/5 p-6 shadow-sm">
-                        <h3 className="text-xl font-bold text-white mb-4">Update PINs</h3>
-                        <form onSubmit={handleSavePins} className="space-y-6">
+                    <div className="rounded-3xl border border-white/5 bg-surface p-6 shadow-sm">
+                        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                             <div>
-                                <label className="block text-xs text-text-secondary font-bold mb-2">Void PIN</label>
-                                <div className="flex flex-col sm:flex-row gap-3">
+                                <h3 className="text-xl font-black text-white">Update PINs</h3>
+                                <p className="text-sm text-text-muted">Changes apply immediately for staff checkout actions.</p>
+                            </div>
+                            <span className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-bold uppercase tracking-wider text-primary">
+                                Minimum {MIN_PIN_LENGTH} digits
+                            </span>
+                        </div>
+
+                        <form onSubmit={handleSavePins} className="space-y-5">
+                            <div className="rounded-2xl border border-white/10 bg-surfaceHighlight/70 p-4">
+                                <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-text-secondary">Void PIN</label>
+                                <div className="flex flex-col gap-3 sm:flex-row">
                                     <input
                                         type="password"
-                                        className="flex-1 bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                                        className="flex-1 rounded-xl border border-white/10 bg-surface px-4 py-3 text-white outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
                                         placeholder={`Enter ${MIN_PIN_LENGTH}+ digit PIN`}
                                         value={voidPin}
                                         onChange={(e) => {
@@ -462,19 +496,19 @@ export default function PosSettings() {
                                             setVoidPin('');
                                             setClearVoidPin(true);
                                         }}
-                                        className="px-4 py-3 rounded-xl bg-white/10 text-white font-bold hover:bg-white/20 transition-colors"
+                                        className="rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-white/15"
                                     >
                                         Clear Void PIN
                                     </button>
                                 </div>
                             </div>
 
-                            <div>
-                                <label className="block text-xs text-text-secondary font-bold mb-2">Return PIN</label>
-                                <div className="flex flex-col sm:flex-row gap-3">
+                            <div className="rounded-2xl border border-white/10 bg-surfaceHighlight/70 p-4">
+                                <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-text-secondary">Return PIN</label>
+                                <div className="flex flex-col gap-3 sm:flex-row">
                                     <input
                                         type="password"
-                                        className="flex-1 bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                                        className="flex-1 rounded-xl border border-white/10 bg-surface px-4 py-3 text-white outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
                                         placeholder={`Enter ${MIN_PIN_LENGTH}+ digit PIN`}
                                         value={returnPin}
                                         onChange={(e) => {
@@ -488,19 +522,20 @@ export default function PosSettings() {
                                             setReturnPin('');
                                             setClearReturnPin(true);
                                         }}
-                                        className="px-4 py-3 rounded-xl bg-white/10 text-white font-bold hover:bg-white/20 transition-colors"
+                                        className="rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-white/15"
                                     >
                                         Clear Return PIN
                                     </button>
                                 </div>
                             </div>
 
-                            <div className="flex justify-end">
+                            <div className="flex justify-end border-t border-white/10 pt-4">
                                 <button
                                     type="submit"
                                     disabled={loading}
-                                    className="px-6 py-3 rounded-xl bg-primary hover:bg-orange-600 text-white font-bold shadow-lg shadow-primary/20 disabled:opacity-50"
+                                    className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 font-bold text-white shadow-lg shadow-primary/20 transition-colors hover:bg-orange-600 disabled:opacity-50"
                                 >
+                                    <span className="material-icons-round text-base">{loading ? 'sync' : 'save'}</span>
                                     {loading ? 'Saving...' : 'Save PIN Settings'}
                                 </button>
                             </div>
@@ -510,13 +545,13 @@ export default function PosSettings() {
             )}
 
             {activeTab === TABS.RECEIPT && (
-                <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_auto] gap-6 items-start">
-                    <div className="bg-surface rounded-3xl border border-white/5 p-6 shadow-sm">
-                        <h3 className="text-xl font-bold text-white mb-1">Receipt (BIR Text)</h3>
-                        <p className="text-text-muted text-sm mb-6">Update receipt details and compliance text used by POS preview/print.</p>
+                <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+                    <div className="rounded-3xl border border-white/5 bg-surface p-6 shadow-sm">
+                        <h3 className="text-xl font-black text-white mb-1">Receipt Template</h3>
+                        <p className="text-sm text-text-muted mb-6">Edit compliance text and display formatting used by printed and previewed receipts.</p>
 
-                        <form onSubmit={handleSaveReceipt} className="space-y-4">
-                            <p className="text-xs font-bold uppercase tracking-widest text-text-muted">Gym Details</p>
+                        <form onSubmit={handleSaveReceipt} className="space-y-5">
+                            <p className="text-xs font-black uppercase tracking-widest text-text-muted">Gym Details</p>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <Field label="Company ID" value={receiptSettings.companyId} onChange={(v) => updateReceiptField('companyId', v)} required />
                                 <Field label="Business Name" value={receiptSettings.businessName} onChange={(v) => updateReceiptField('businessName', v)} required />
@@ -557,14 +592,14 @@ export default function PosSettings() {
                                 />
                             </div>
 
-                            <p className="text-xs font-bold uppercase tracking-widest text-text-muted pt-2">Compliance (BIR)</p>
+                            <p className="text-xs font-black uppercase tracking-widest text-text-muted pt-2">Compliance (BIR)</p>
                             <Field label="Receipt Title" value={receiptSettings.invoiceTitle} onChange={(v) => updateReceiptField('invoiceTitle', v)} required />
                             <Field label="TIN (with branch code)" value={receiptSettings.tin} onChange={(v) => updateReceiptField('tin', v)} />
 
                             <div>
-                                <label className="block text-xs text-text-secondary font-bold mb-2">VAT / Non-VAT Label</label>
+                                <label className="block text-xs text-text-secondary font-bold mb-2 uppercase tracking-wider">VAT / Non-VAT Label</label>
                                 <select
-                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                                    className="w-full bg-surface border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
                                     value={receiptSettings.vatType || 'VAT'}
                                     onChange={(e) => updateReceiptField('vatType', e.target.value)}
                                 >
@@ -573,12 +608,12 @@ export default function PosSettings() {
                                 </select>
                             </div>
 
-                            <p className="text-xs font-bold uppercase tracking-widest text-text-muted pt-2">Body</p>
+                            <p className="text-xs font-black uppercase tracking-widest text-text-muted pt-2">Body</p>
                             <Field label="Date/Time Label" value={receiptSettings.issuedDateLabel} onChange={(v) => updateReceiptField('issuedDateLabel', v)} placeholder="Date & Time Issued" />
                             <Field label="Invoice / Serial Prefix (optional)" value={receiptSettings.serialNo} onChange={(v) => updateReceiptField('serialNo', v)} placeholder="SI-" />
                             <Field label="VAT Reg TIN Line" value={receiptSettings.vatRegTin} onChange={(v) => updateReceiptField('vatRegTin', v)} placeholder="VAT REG TIN: 123-456-789-000" />
 
-                            <p className="text-xs font-bold uppercase tracking-widest text-text-muted pt-2">Footer</p>
+                            <p className="text-xs font-black uppercase tracking-widest text-text-muted pt-2">Footer</p>
                             <Field label="Permit To Use No." value={receiptSettings.permitToUseNo} onChange={(v) => updateReceiptField('permitToUseNo', v)} />
                             <Field label="BIR Accreditation No." value={receiptSettings.birAccreditationNo} onChange={(v) => updateReceiptField('birAccreditationNo', v)} />
                             <Field label="MIN No." value={receiptSettings.minNo} onChange={(v) => updateReceiptField('minNo', v)} />
@@ -587,9 +622,9 @@ export default function PosSettings() {
                             <Field label="Printer TIN" value={receiptSettings.printerTin} onChange={(v) => updateReceiptField('printerTin', v)} />
 
                             <div>
-                                <label className="block text-xs text-text-secondary font-bold mb-2">Mandatory Disclaimer</label>
+                                <label className="block text-xs text-text-secondary font-bold mb-2 uppercase tracking-wider">Mandatory Disclaimer</label>
                                 <textarea
-                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                                    className="w-full bg-surface border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
                                     rows={2}
                                     value={receiptSettings.mandatoryDisclaimer}
                                     onChange={(e) => updateReceiptField('mandatoryDisclaimer', e.target.value)}
@@ -597,23 +632,23 @@ export default function PosSettings() {
                             </div>
 
                             <div>
-                                <label className="block text-xs text-text-secondary font-bold mb-2">Thank You Message</label>
+                                <label className="block text-xs text-text-secondary font-bold mb-2 uppercase tracking-wider">Thank You Message</label>
                                 <textarea
-                                    className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                                    className="w-full bg-surface border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
                                     rows={2}
                                     value={receiptSettings.thankYouMessage}
                                     onChange={(e) => updateReceiptField('thankYouMessage', e.target.value)}
                                 />
                             </div>
 
-                            <p className="text-xs font-bold uppercase tracking-widest text-text-muted pt-2">Financial Institution Mappings</p>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-white/5 p-4 rounded-2xl border border-white/5">
+                            <p className="text-xs font-black uppercase tracking-widest text-text-muted pt-2">Financial Institution Mappings</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-surfaceHighlight/60 p-4 rounded-2xl border border-white/10">
                                 {Object.keys(DEFAULT_RECEIPT_SETTINGS.financialMappings).map((method) => (
                                     <div key={method}>
-                                        <label className="block text-[10px] text-text-muted font-bold mb-1">{method.replaceAll('_', ' ')} Label</label>
+                                        <label className="block text-[10px] text-text-muted font-bold uppercase tracking-wide mb-1">{method.replaceAll('_', ' ')} Label</label>
                                         <input
                                             type="text"
-                                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:border-primary outline-none"
+                                            className="w-full bg-surface border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:border-primary outline-none"
                                             value={receiptSettings.financialMappings?.[method] || ''}
                                             onChange={(e) => updateFinancialMapping(method, e.target.value)}
                                             placeholder={`e.g., ${DEFAULT_RECEIPT_SETTINGS.financialMappings[method]}`}
@@ -622,20 +657,26 @@ export default function PosSettings() {
                                 ))}
                             </div>
 
-                            <div className="flex justify-end pt-2">
+                            <div className="flex justify-end border-t border-white/10 pt-4">
                                 <button
                                     type="submit"
                                     disabled={receiptSaving}
-                                    className="px-6 py-3 rounded-xl bg-primary hover:bg-orange-600 text-white font-bold shadow-lg shadow-primary/20 disabled:opacity-50"
+                                    className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary hover:bg-orange-600 text-white font-bold shadow-lg shadow-primary/20 disabled:opacity-50"
                                 >
+                                    <span className="material-icons-round text-base">{receiptSaving ? 'sync' : 'save'}</span>
                                     {receiptSaving ? 'Saving...' : 'Save Receipt Settings'}
                                 </button>
                             </div>
                         </form>
                     </div>
 
-                    <div className="bg-surface rounded-3xl border border-white/5 p-6 shadow-sm">
-                        <h3 className="text-xl font-bold text-white mb-4">Live Receipt Preview</h3>
+                    <div className="bg-surface rounded-3xl border border-white/10 p-5 shadow-sm xl:sticky xl:top-4">
+                        <div className="mb-3 flex items-center justify-between">
+                            <h3 className="text-lg font-black text-white">Live Receipt Preview</h3>
+                            <span className="rounded-full border border-white/10 bg-surfaceHighlight px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-text-muted">
+                                Sample Transaction
+                            </span>
+                        </div>
                         <div className="bg-surfaceHighlight rounded-2xl border border-white/10 p-3 overflow-auto">
                             <Receipt
                                 transaction={receiptPreviewData.transaction}
@@ -653,14 +694,19 @@ export default function PosSettings() {
 
             {activeTab === TABS.DISCOUNTS && (
                 <div className="space-y-6">
-                    <div className="bg-surface rounded-3xl border border-white/5 p-6 shadow-sm">
-                        <h3 className="text-xl font-bold text-white mb-1 flex items-center gap-2">
+                    <div className="rounded-3xl border border-white/5 bg-surface p-6 shadow-sm">
+                        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                            <h3 className="text-xl font-black text-white flex items-center gap-2">
                             <span className="material-icons-round text-primary">local_offer</span>
                             Discount Presets
-                        </h3>
-                        <p className="text-text-muted text-sm mb-6">Create reusable discounts for POS checkout. Staff and Admin will be able to select these in transactions.</p>
+                            </h3>
+                            <span className="rounded-full border border-white/10 bg-surfaceHighlight px-3 py-1 text-xs font-bold uppercase tracking-wider text-text-muted">
+                                {discountPresets.length} preset(s)
+                            </span>
+                        </div>
+                        <p className="text-text-muted text-sm mb-6">Create reusable discounts available during POS checkout.</p>
 
-                        <div className="grid grid-cols-1 md:grid-cols-[180px,1fr,150px,auto] gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-[160px,1fr,140px,auto] gap-3">
                             <div className="relative">
                                 <span className="absolute left-3 top-1/2 -translate-y-1/2 material-icons-round text-base text-text-muted">{discountDraft.icon || 'local_offer'}</span>
                                 <select
@@ -696,7 +742,7 @@ export default function PosSettings() {
                             <button
                                 type="button"
                                 onClick={handleAddDiscountPreset}
-                                className="px-4 py-3 rounded-xl bg-white/10 text-white font-bold hover:bg-white/20 transition-colors inline-flex items-center justify-center gap-2"
+                                className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 py-3 font-bold text-white transition-colors hover:bg-white/15"
                             >
                                 <span className="material-icons-round text-base">add_circle</span>
                                 Add Preset
@@ -704,22 +750,24 @@ export default function PosSettings() {
                         </div>
                     </div>
 
-                    <div className="bg-surface rounded-3xl border border-white/5 p-6 shadow-sm">
+                    <div className="rounded-3xl border border-white/10 bg-surface p-6 shadow-sm">
                         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                            <h3 className="text-lg font-bold text-white">Saved Presets</h3>
-                            <span className="text-xs text-text-muted uppercase tracking-widest">{discountPresets.length} preset(s)</span>
+                            <h3 className="text-lg font-black text-white">Saved Presets</h3>
+                            <span className="text-xs text-text-muted uppercase tracking-widest">Edit and save to apply</span>
                         </div>
 
                         {discountPresets.length === 0 ? (
-                            <p className="text-text-muted text-sm">No discount presets configured yet.</p>
+                            <div className="rounded-2xl border border-dashed border-white/15 bg-surfaceHighlight/40 px-4 py-8 text-center text-sm text-text-muted">
+                                No discount presets configured yet.
+                            </div>
                         ) : (
                             <div className="space-y-3">
                                 {discountPresets.map((preset) => (
-                                    <div key={preset.id} className="grid grid-cols-1 md:grid-cols-[180px,1fr,150px,auto] gap-3 bg-surfaceHighlight rounded-2xl border border-white/10 p-3">
+                                    <div key={preset.id} className="grid grid-cols-1 md:grid-cols-[160px,1fr,140px,auto] gap-3 bg-surfaceHighlight/60 rounded-2xl border border-white/10 p-3">
                                         <div className="relative">
                                             <span className="absolute left-3 top-1/2 -translate-y-1/2 material-icons-round text-base text-text-muted">{preset.icon || 'local_offer'}</span>
                                             <select
-                                                className="w-full bg-transparent border border-white/10 rounded-xl pl-10 pr-3 py-2 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                                                className="w-full bg-surface border border-white/10 rounded-xl pl-10 pr-3 py-2 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
                                                 value={preset.icon || 'local_offer'}
                                                 onChange={(e) => updateDiscountPreset(preset.id, 'icon', e.target.value)}
                                             >
@@ -730,7 +778,7 @@ export default function PosSettings() {
                                         </div>
                                         <input
                                             type="text"
-                                            className="bg-transparent border border-white/10 rounded-xl px-3 py-2 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                                            className="bg-surface border border-white/10 rounded-xl px-3 py-2 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
                                             value={preset.name}
                                             onChange={(e) => updateDiscountPreset(preset.id, 'name', e.target.value)}
                                         />
@@ -740,7 +788,7 @@ export default function PosSettings() {
                                                 min="0"
                                                 max="100"
                                                 step="0.01"
-                                                className="w-full bg-transparent border border-white/10 rounded-xl px-3 py-2 pr-8 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                                                className="w-full bg-surface border border-white/10 rounded-xl px-3 py-2 pr-8 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
                                                 value={preset.rate}
                                                 onChange={(e) => updateDiscountPreset(preset.id, 'rate', e.target.value)}
                                             />
@@ -749,7 +797,7 @@ export default function PosSettings() {
                                         <button
                                             type="button"
                                             onClick={() => removeDiscountPreset(preset.id)}
-                                            className="px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 font-bold hover:bg-red-500/20 transition-colors inline-flex items-center justify-center gap-2"
+                                            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 font-bold hover:bg-red-500/20 transition-colors"
                                         >
                                             <span className="material-icons-round text-base">delete</span>
                                             Remove
@@ -759,7 +807,7 @@ export default function PosSettings() {
                             </div>
                         )}
 
-                        <div className="flex justify-end pt-5">
+                        <div className="flex justify-end border-t border-white/10 pt-5">
                             <button
                                 type="button"
                                 disabled={discountSaving}
@@ -772,14 +820,22 @@ export default function PosSettings() {
                         </div>
                     </div>
 
-                    <div className="bg-surface rounded-3xl border border-white/5 p-6 shadow-sm mt-6">
-                        <h3 className="text-xl font-bold text-white mb-1 flex items-center gap-2">
-                            <span className="material-icons-round text-primary">campaign</span>
-                            Global Promo Codes
-                        </h3>
-                        <p className="text-text-muted text-sm mb-6">Create reusable codes applicable to any transaction. These are not tied to specific members.</p>
-                        
-                        <form onSubmit={handleCreatePromoCode} className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-8 bg-surfaceHighlight p-4 rounded-2xl border border-white/5 shadow-inner">
+                    <div className="rounded-3xl border border-white/5 bg-surface p-6 shadow-sm mt-6">
+                        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                                <h3 className="text-xl font-black text-white flex items-center gap-2">
+                                    <span className="material-icons-round text-primary">campaign</span>
+                                    Global Promo Codes
+                                </h3>
+                                <p className="text-text-muted text-sm mt-1">Create reusable promo codes that can be applied across transactions.</p>
+                            </div>
+                            <div className="flex flex-wrap gap-2 text-xs font-bold uppercase tracking-wider">
+                                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-emerald-300">{activePromoCount} Active</span>
+                                <span className="rounded-full border border-red-500/30 bg-red-500/10 px-3 py-1 text-red-300">{Math.max(promoCodes.length - activePromoCount, 0)} Inactive</span>
+                            </div>
+                        </div>
+
+                        <form onSubmit={handleCreatePromoCode} className="mb-8 grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3 rounded-2xl border border-white/10 bg-surfaceHighlight/70 p-4 shadow-inner">
                             <div className="md:col-span-1">
                                 <label className="block text-[10px] text-text-muted font-bold uppercase mb-1">Code</label>
                                 <input
@@ -798,7 +854,7 @@ export default function PosSettings() {
                                     onChange={e => setPromoDraft(p => ({ ...p, type: e.target.value }))}
                                 >
                                     <option value="PERCENTAGE">% Percent</option>
-                                    <option value="FLAT">₱ Flat</option>
+                                    <option value="FLAT">Flat (PHP)</option>
                                     <option value="BOGO">Buy 1 Get 1</option>
                                 </select>
                             </div>
@@ -919,33 +975,37 @@ export default function PosSettings() {
                                         disabled={promoSaving}
                                         className="w-full bg-primary hover:bg-orange-600 text-white font-bold py-2 rounded-xl transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
                                     >
-                                        {promoSaving ? '...' : 'Create Promo'}
+                                        {promoSaving ? 'Saving...' : 'Create Promo'}
                                     </button>
                                 </div>
                             </div>
                         </form>
 
-                        <div className="overflow-x-auto">
+                        <div className="overflow-x-auto rounded-2xl border border-white/10 bg-surfaceHighlight/40">
                             <table className="w-full text-left">
-                                <thead className="text-[10px] text-text-muted uppercase font-bold border-b border-white/5">
+                                <thead className="border-b border-white/10 bg-surfaceHighlight/80 text-[10px] text-text-muted uppercase font-bold tracking-wide">
                                     <tr>
-                                        <th className="pb-3 px-2">Code</th>
-                                        <th className="pb-3">Value</th>
-                                        <th className="pb-3">Uses</th>
-                                        <th className="pb-3">Expiry</th>
-                                        <th className="pb-3">Status</th>
-                                        <th className="pb-3 text-right">Actions</th>
+                                        <th className="px-3 py-3">Code</th>
+                                        <th className="py-3">Value</th>
+                                        <th className="py-3">Uses</th>
+                                        <th className="py-3">Expiry</th>
+                                        <th className="py-3">Status</th>
+                                        <th className="py-3 pr-3 text-right">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="text-sm">
-                                    {promoCodes.length === 0 ? (
+                                    {promoLoading ? (
                                         <tr>
-                                            <td colSpan="6" className="py-8 text-center text-text-muted">No global promo codes found.</td>
+                                            <td colSpan="6" className="px-3 py-8 text-center text-text-muted">Loading promo codes...</td>
+                                        </tr>
+                                    ) : promoCodes.length === 0 ? (
+                                        <tr>
+                                            <td colSpan="6" className="px-3 py-8 text-center text-text-muted">No global promo codes found.</td>
                                         </tr>
                                     ) : (
                                         promoCodes.map(promo => (
                                             <tr key={promo.id} className="border-b border-white/5 group hover:bg-white/5 transition-colors">
-                                                <td className="py-4 px-2">
+                                                <td className="px-3 py-4">
                                                     <span className="font-mono font-bold text-primary">{promo.code}</span>
                                                     {promo.gymId === null && (
                                                         <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold bg-primary/20 text-primary uppercase">
@@ -954,18 +1014,18 @@ export default function PosSettings() {
                                                     )}
                                                     {promo.scope !== 'ORDER' && (
                                                         <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold bg-white/10 text-white">
-                                                            SCOPE: {promo.scope}
+                                                            Scope: {promo.scope}
                                                         </span>
                                                     )}
                                                 </td>
                                                 <td className="py-4 font-bold text-white">
-                                                    {promo.type === 'FLAT' ? `₱${promo.value}` : promo.type === 'PERCENTAGE' ? `${promo.value}%` : `Buy ${promo.bogoConfig?.buyQty || 1} Get ${promo.bogoConfig?.getQty || 1}`}
+                                                    {promo.type === 'FLAT' ? `PHP ${promo.value}` : promo.type === 'PERCENTAGE' ? `${promo.value}%` : `Buy ${promo.bogoConfig?.buyQty || 1} Get ${promo.bogoConfig?.getQty || 1}`}
                                                 </td>
                                                 <td className="py-4">
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-white">{promo.usedCount}</span>
                                                         <span className="text-text-muted">/</span>
-                                                        <span className="text-text-muted">{promo.maxUses || '∞'}</span>
+                                                        <span className="text-text-muted">{promo.maxUses || 'Unlimited'}</span>
                                                     </div>
                                                 </td>
                                                 <td className="py-4 text-text-muted">
@@ -979,10 +1039,10 @@ export default function PosSettings() {
                                                         {promo.isActive ? 'ACTIVE' : 'INACTIVE'}
                                                     </button>
                                                 </td>
-                                                <td className="py-4 text-right">
+                                                <td className="py-4 pr-3 text-right">
                                                     <button 
                                                         onClick={() => deletePromoCode(promo.id)}
-                                                        className="p-2 text-text-muted hover:text-red-400 transition-colors"
+                                                        className="rounded p-2 text-text-muted transition-colors hover:bg-red-500/10 hover:text-red-400"
                                                     >
                                                         <span className="material-icons-round text-lg">delete</span>
                                                     </button>
@@ -1017,10 +1077,10 @@ const TabButton = ({ active, label, onClick, icon }) => (
 
 const Field = ({ label, value, onChange, placeholder, required = false }) => (
     <div>
-        <label className="block text-xs text-text-secondary font-bold mb-2">{label}</label>
+        <label className="block text-xs text-text-secondary font-bold uppercase tracking-wider mb-2">{label}</label>
         <input
             type="text"
-            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+            className="w-full bg-surface border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
             value={value || ''}
             placeholder={placeholder}
             required={required}
@@ -1031,9 +1091,9 @@ const Field = ({ label, value, onChange, placeholder, required = false }) => (
 
 const SelectField = ({ label, value, onChange, options }) => (
     <div>
-        <label className="block text-xs text-text-secondary font-bold mb-2">{label}</label>
+        <label className="block text-xs text-text-secondary font-bold uppercase tracking-wider mb-2">{label}</label>
         <select
-            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+            className="w-full bg-surface border border-white/10 rounded-xl px-4 py-3 text-white focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
             value={value || ''}
             onChange={(e) => onChange(e.target.value)}
         >
@@ -1045,7 +1105,7 @@ const SelectField = ({ label, value, onChange, options }) => (
 ); 
 
 const StatusCard = ({ label, enabled }) => (
-    <div className="bg-surfaceHighlight rounded-2xl border border-white/10 p-4 flex items-center justify-between">
+    <div className="bg-surfaceHighlight/70 rounded-2xl border border-white/10 p-4 flex items-center justify-between">
         <div>
             <p className="text-xs uppercase tracking-widest text-text-muted font-bold">{label}</p>
             <p className="text-lg font-bold text-white mt-1">{enabled ? 'Configured' : 'Not Set'}</p>
@@ -1055,5 +1115,6 @@ const StatusCard = ({ label, enabled }) => (
         </span>
     </div>
 );
+
 
 

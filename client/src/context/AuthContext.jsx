@@ -148,6 +148,11 @@ export const AuthProvider = ({ children }) => {
     };
 
     const switchBranch = async (gymId) => {
+        const role = String(user?.role || '').toUpperCase();
+        if (role !== 'OWNER') {
+            return false;
+        }
+
         if (!gymId) {
             localStorage.removeItem('activeGymId');
             setActiveGymId(null);

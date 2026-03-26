@@ -4,10 +4,10 @@ const { getSettings, updateSettings } = require('./settingsController');
 const { getFinancialInstitutions, updateFinancialInstitutions } = require('./financialInstitutionController');
 const { authenticateToken, authorize } = require('../../middleware/authMiddleware');
 
-router.get('/', authenticateToken, getSettings);
+router.get('/', authenticateToken, authorize(['OWNER']), getSettings);
 router.post('/', authenticateToken, authorize(['OWNER']), updateSettings);
 
-router.get('/financial-institutions', authenticateToken, getFinancialInstitutions);
+router.get('/financial-institutions', authenticateToken, authorize(['OWNER']), getFinancialInstitutions);
 router.post('/financial-institutions', authenticateToken, authorize(['OWNER']), updateFinancialInstitutions);
 
 module.exports = router;

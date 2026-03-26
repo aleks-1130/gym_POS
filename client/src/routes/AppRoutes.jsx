@@ -117,8 +117,14 @@ const ProtectedRoute = ({ children, allowedRoles, fullScreen }) => {
 
     // Members and Trainers use bottom nav only (no sidebar)
     if (user.role === ROLES.MEMBER || user.role === ROLES.TRAINER) {
+        const gymName = user?.gym?.name;
         return (
             <div className="flex flex-col bg-background min-h-screen overflow-x-hidden">
+                {gymName && (
+                    <div className="w-full bg-[#14171c] border-b border-white/5 py-2 text-center text-[11px] tracking-wide text-gray-400">
+                        {gymName}
+                    </div>
+                )}
                 <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6 pb-24 overflow-y-auto transition-all duration-300">
                     {children}
                 </main>
@@ -905,3 +911,4 @@ export default function AppRoutes() {
         </div>
     );
 }
+

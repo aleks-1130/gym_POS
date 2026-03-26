@@ -1,8 +1,6 @@
 const prisma = require('../../config/prisma');
 const bcrypt = require('bcryptjs');
 const { syncToNeonAuth, deleteFromNeonAuth } = require('../../services/neonAuthSync');
-const { DEFAULT_RECEIPT_SETTINGS } = require('../../services/receiptSettingsService');
-const { DEFAULT_DISCOUNT_PRESETS } = require('../../services/configService');
 
 /**
  * SuperAdmin Tenant Management Controller
@@ -71,19 +69,6 @@ const createTenant = async (req, res) => {
                     name: finalGymName,
                     companyId: `${tenantId}-1`, // Default slug
                     tenantId: tenant.id,
-                    receiptSettings: {
-                        create: {
-                            settings: {
-                                ...DEFAULT_RECEIPT_SETTINGS,
-                                businessName: finalGymName
-                            }
-                        }
-                    },
-                    posConfigs: {
-                        create: {
-                            discountPresets: DEFAULT_DISCOUNT_PRESETS
-                        }
-                    },
                     // Create default financial institutions (essential for POS external refs)
                     financialInstitutions: {
                         create: [

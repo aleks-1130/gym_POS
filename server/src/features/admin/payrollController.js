@@ -1,4 +1,5 @@
 const prisma = require('../../config/prisma');
+const { logAudit } = require('../../services/auditService');
 
 const executeCommissionPayout = async (tx, { trainerId, sessionIds = [], classHistoryIds = [], recordedBy, tenantId, gymId }) => {
     let totalCommission = 0;
@@ -393,14 +394,33 @@ const payCommissions = async (req, res) => {
     }
 
     try {
+        const tenantId = Number(req.user.tenantId);
+        const gymId = Number(req.gymId || req.user.gymId);
+        const scopedTrainer = await prisma.trainer.findFirst({
+            where: { id: Number(trainerId), gymId, tenantId },
+            select: { id: true, name: true }
+        });
+        if (!scopedTrainer) {
+            return res.status(404).json({ error: 'Trainer not found in your gym' });
+        }
+
         const result = await prisma.$transaction((tx) => executeCommissionPayout(tx, {
             trainerId: Number(trainerId),
             sessionIds: sessionIds.map(Number),
             classHistoryIds: classHistoryIds.map(Number),
             recordedBy: req.user.id,
-            tenantId: Number(req.user.tenantId),
-            gymId: Number(req.gymId || req.user.gymId)
+            tenantId,
+            gymId
         }));
+
+        await logAudit(
+            'COMMISSION_PAYOUT',
+            req.user.email,
+            scopedTrainer.name,
+            `Commission payout to ${scopedTrainer.name}: PHP ${Number(result.amount || 0).toFixed(2)} (gymId=${gymId})`,
+            gymId,
+            tenantId
+        );
 
         res.json({
             message: 'Commissions paid successfully',
@@ -422,12 +442,11 @@ const payCommissionsAuto = async (req, res) => {
         const tenantId = Number(req.user.tenantId);
         const gymId = Number(req.gymId || req.user.gymId);
 
-        // Verify trainer belongs to this gym/tenant
         const trainer = await prisma.trainer.findFirst({
             where: { id: trainerId, tenantId, gymId }
         });
         if (!trainer) {
-            return res.status(404).json({ error: 'Trainer not found in this branch.' });
+            return res.status(404).json({ error: 'Trainer not found in your gym' });
         }
 
         const [sessions, classes] = await Promise.all([
@@ -449,8 +468,19 @@ const payCommissionsAuto = async (req, res) => {
             trainerId,
             sessionIds: sessions.map((s) => Number(s.id)),
             classHistoryIds: classes.map((c) => Number(c.id)),
-            recordedBy: req.user.id
+            recordedBy: req.user.id,
+            tenantId,
+            gymId
         }));
+
+        await logAudit(
+            'COMMISSION_PAYOUT',
+            req.user.email,
+            trainer.name,
+            `Commission payout to ${trainer.name}: PHP ${Number(result.amount || 0).toFixed(2)} (gymId=${gymId})`,
+            gymId,
+            tenantId
+        );
 
         res.json({
             message: 'Commissions paid (auto) successfully',

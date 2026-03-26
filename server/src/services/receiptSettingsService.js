@@ -49,33 +49,39 @@ const mergeWithDefaults = (value) => sanitizeReceiptSettings({
 
 async function getReceiptSettings(gymId, tenantId) {
     if (!gymId) return mergeWithDefaults();
-    const record = await prisma.receiptSettings.findFirst({
+    const normalizedGymId = Number(gymId);
+    const normalizedTenantId = tenantId ? Number(tenantId) : 1;
+
+    let record = await prisma.receiptSettings.findFirst({
         where: { 
-            gymId: Number(gymId),
-            tenantId: tenantId ? Number(tenantId) : undefined
+            gymId: normalizedGymId,
+            tenantId: normalizedTenantId
         }
     });
+
     if (!record) {
         const defaults = mergeWithDefaults();
-        await prisma.receiptSettings.create({
+        record = await prisma.receiptSettings.create({
             data: {
-                gymId: Number(gymId),
-                tenantId: tenantId ? Number(tenantId) : 1,
+                gymId: normalizedGymId,
+                tenantId: normalizedTenantId,
                 settings: defaults
             }
         });
-        return defaults;
     }
+
     return mergeWithDefaults(record.settings || {});
 }
 
 async function saveReceiptSettings(gymId, settings, tenantId) {
-    if (!gymId) throw new Error("Gym ID required to save settings");
     const merged = mergeWithDefaults(settings);
+    const normalizedGymId = Number.isInteger(Number(gymId)) && Number(gymId) > 0 ? Number(gymId) : null;
+    const normalizedTenantId = tenantId ? Number(tenantId) : 1;
+
     const existing = await prisma.receiptSettings.findFirst({
         where: { 
-            gymId: Number(gymId),
-            tenantId: tenantId ? Number(tenantId) : undefined
+            gymId: normalizedGymId,
+            tenantId: normalizedTenantId
         }
     });
     
@@ -84,14 +90,14 @@ async function saveReceiptSettings(gymId, settings, tenantId) {
             where: { id: existing.id },
             data: { 
                 settings: merged,
-                tenantId: tenantId ? Number(tenantId) : undefined
+                tenantId: normalizedTenantId
             }
         });
     } else {
         await prisma.receiptSettings.create({
             data: { 
-                gymId: Number(gymId),
-                tenantId: tenantId ? Number(tenantId) : 1,
+                gymId: normalizedGymId,
+                tenantId: normalizedTenantId,
                 settings: merged 
             }
         });

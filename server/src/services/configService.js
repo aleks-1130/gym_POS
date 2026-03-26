@@ -8,22 +8,37 @@ const DEFAULT_DISCOUNT_PRESETS = [
 ];
 
 async function getPosConfig(gymId, tenantId) {
-    if (!gymId) return null;
+    if (!gymId) {
+        return {
+            id: null,
+            voidPinHash: null,
+            returnPinHash: null,
+            discountPresets: DEFAULT_DISCOUNT_PRESETS,
+            gymId: null,
+            tenantId: tenantId ? Number(tenantId) : 1
+        };
+    }
+
+    const normalizedGymId = Number(gymId);
+    const normalizedTenantId = tenantId ? Number(tenantId) : 1;
+
     let config = await prisma.posConfig.findFirst({
         where: { 
-            gymId: Number(gymId),
-            tenantId: tenantId ? Number(tenantId) : undefined
+            gymId: normalizedGymId,
+            tenantId: normalizedTenantId
         }
     });
-    if (!config) {
-        config = await prisma.posConfig.create({ 
-            data: {
-                gymId: Number(gymId),
-                tenantId: tenantId ? Number(tenantId) : 1,
-                discountPresets: DEFAULT_DISCOUNT_PRESETS
-            } 
-        });
-    }
+
+    if (config) return config;
+
+    config = await prisma.posConfig.create({
+        data: {
+            gymId: normalizedGymId,
+            tenantId: normalizedTenantId,
+            discountPresets: DEFAULT_DISCOUNT_PRESETS
+        }
+    });
+
     return config;
 }
 

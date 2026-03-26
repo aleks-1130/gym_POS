@@ -330,7 +330,7 @@ const migrateReceiptSettingsFromJson = async () => {
         return { source: 1, inserted: 0, skippedExisting: 1 };
     }
 
-    await saveReceiptSettings(1, data, 1);
+    await saveReceiptSettings(null, data, 1);
     return { source: 1, inserted: 1, skippedExisting: 0 };
 };
 

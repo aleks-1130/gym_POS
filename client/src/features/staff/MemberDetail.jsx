@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+﻿import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useReactToPrint } from 'react-to-print';
@@ -83,9 +83,36 @@ export default function MemberDetail() {
     // Activity Filter
     const [activityFilter, setActivityFilter] = useState(ACTIVITY_FILTERS.ALL);
     const [activeTab, setActiveTab] = useState('overview');
+    const isAnyModalOpen = useMemo(() => (
+        showFreezeModal
+        || showPasswordModal
+        || showPhotoModal
+        || showNotesModal
+        || showEditModal
+        || showGuestPassCountModal
+        || showGuestPassTermsModal
+    ), [
+        showFreezeModal,
+        showPasswordModal,
+        showPhotoModal,
+        showNotesModal,
+        showEditModal,
+        showGuestPassCountModal,
+        showGuestPassTermsModal
+    ]);
 
     // Use custom hook for member stats
     const stats = useMemberStats(member);
+
+    useEffect(() => {
+        if (!isAnyModalOpen) return undefined;
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+
+        return () => {
+            document.body.style.overflow = previousOverflow;
+        };
+    }, [isAnyModalOpen]);
 
     useEffect(() => {
         fetchMember();
@@ -681,7 +708,7 @@ export default function MemberDetail() {
                                 : 'text-text-muted border-transparent hover:text-white'
                                 }`}
                         >
-                            {tab.id === 'payments' ? 'Payments-History' : tab.label}
+                            {tab.id === 'payments' ? 'Purchase-History' : tab.id === 'history' ? 'Checks-In' : tab.label}
                         </button>
                     ))}
                 </div>
@@ -1284,7 +1311,7 @@ export default function MemberDetail() {
                                     </div>
                                 </div>
                             ))}
-                            {paymentRows.length === 0 && <p className="text-sm text-text-muted py-4 text-center">No payment history yet.</p>}
+                            {paymentRows.length === 0 && <p className="text-sm text-text-muted py-4 text-center">No purchase history yet.</p>}
                         </div>
                     </section>
                 </section>
@@ -1520,13 +1547,13 @@ export default function MemberDetail() {
             {/* Modals */}
 
             {showGuestPassCountModal && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                    <div className="bg-surface p-8 rounded-[32px] w-full max-w-sm border border-white/10 shadow-2xl">
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+                    <div className="bg-surface p-8 rounded-[32px] w-full max-w-sm border border-white/10 shadow-2xl max-h-[90vh] overflow-hidden flex flex-col">
                         <h3 className="text-xl font-bold text-white mb-2">Guest Pass Usage</h3>
                         <p className="text-sm text-text-muted mb-6">
                             Remaining guest pass: {guestPassRemainingCount} of {guestPassLimitCount}
                         </p>
-                        <form onSubmit={handleGuestPassCountSubmit} className="space-y-4">
+                        <form onSubmit={handleGuestPassCountSubmit} className="space-y-4 overflow-y-auto">
                             <div>
                                 <label className="text-text-muted text-sm mb-2 block">How many guests will use the pass?</label>
                                 <input
@@ -1560,7 +1587,7 @@ export default function MemberDetail() {
             )}
 
             {showGuestPassTermsModal && (
-                <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-[60]">
+                <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 z-[60] overflow-y-auto">
                     <div className="bg-surface border border-white/10 rounded-3xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col">
                         <div className="p-5 border-b border-white/10 flex items-center justify-between bg-white/5">
                             <div>
@@ -1663,10 +1690,10 @@ export default function MemberDetail() {
             )}
 
             {showPasswordModal && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                    <div className="bg-surface p-8 rounded-[32px] w-full max-w-sm border border-white/10 shadow-2xl">
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+                    <div className="bg-surface p-8 rounded-[32px] w-full max-w-sm border border-white/10 shadow-2xl max-h-[90vh] overflow-hidden flex flex-col">
                         <h3 className="text-xl font-bold text-white mb-6">Reset Password</h3>
-                        <form onSubmit={handleSetPassword} className="space-y-4">
+                        <form onSubmit={handleSetPassword} className="space-y-4 overflow-y-auto">
                             <input required type="password" className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white outline-none" placeholder="New Password" value={passwordData} onChange={e => setPasswordData(e.target.value)} />
                             <div className="flex justify-end gap-3"><button type="button" onClick={() => setShowPasswordModal(false)} className="text-text-muted">Cancel</button><button type="submit" className="bg-primary text-white font-bold px-8 py-2.5 rounded-2xl">Save</button></div>
                         </form>
@@ -1675,8 +1702,8 @@ export default function MemberDetail() {
             )}
 
             {showPhotoModal && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                    <div className="bg-surface rounded-3xl border border-white/10 w-full max-w-sm p-6 shadow-2xl">
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+                    <div className="bg-surface rounded-3xl border border-white/10 w-full max-w-sm p-6 shadow-2xl max-h-[90vh] overflow-hidden flex flex-col">
                         <h3 className="text-xl font-bold text-white mb-6">Update Photo</h3>
                         <div className="aspect-square rounded-2xl overflow-hidden bg-white/5 border border-white/10 mb-6 flex items-center justify-center">
                             {isCameraOpen ? <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover scale-x-[-1]" /> : <button onClick={startCamera} className="bg-primary text-white px-4 py-2 rounded-xl">Open Camera</button>}
@@ -1691,10 +1718,10 @@ export default function MemberDetail() {
             )}
 
             {showNotesModal && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                    <div className="bg-surface p-8 rounded-[32px] w-full max-w-md border border-white/10 shadow-2xl">
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+                    <div className="bg-surface p-8 rounded-[32px] w-full max-w-md border border-white/10 shadow-2xl max-h-[90vh] overflow-hidden flex flex-col">
                         <h3 className="text-xl font-bold text-white mb-6">Add Staff Note</h3>
-                        <form onSubmit={async e => { e.preventDefault(); if (!noteData.trim()) return; try { await axios.post(`/api/members/${id}/notes`, { content: noteData.trim() }); setNoteData(''); setShowNotesModal(false); fetchNotes(); } catch { showAlert({ title: "Save Failed", message: "Failed to save note", type: "danger" }); } }} className="space-y-4">
+                        <form onSubmit={async e => { e.preventDefault(); if (!noteData.trim()) return; try { await axios.post(`/api/members/${id}/notes`, { content: noteData.trim() }); setNoteData(''); setShowNotesModal(false); fetchNotes(); } catch { showAlert({ title: "Save Failed", message: "Failed to save note", type: "danger" }); } }} className="space-y-4 overflow-y-auto">
                             <textarea required rows="5" className="w-full bg-surfaceHighlight border border-white/10 rounded-2xl px-4 py-3 text-white outline-none resize-none" placeholder="Enter note..." value={noteData} onChange={e => setNoteData(e.target.value)} />
                             <div className="flex justify-end gap-3"><button type="button" onClick={() => setShowNotesModal(false)} className="text-text-muted">Cancel</button><button type="submit" className="bg-primary text-white font-bold px-8 py-2.5 rounded-2xl">Save</button></div>
                         </form>
@@ -1703,10 +1730,10 @@ export default function MemberDetail() {
             )}
 
             {showEditModal && (
-                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-                    <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-lg w-full p-6">
+                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+                    <div className="bg-surface border border-white/10 rounded-2xl shadow-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-hidden flex flex-col">
                         <h2 className="text-2xl font-bold text-white mb-6">Edit Member</h2>
-                        <form onSubmit={handleEditSave} className="space-y-4">
+                        <form onSubmit={handleEditSave} className="space-y-4 overflow-y-auto">
                             <div className="grid grid-cols-2 gap-4">
                                 <input type="text" required className="bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white outline-none" placeholder="First Name" value={editFormData.firstName || ''} onChange={e => setEditFormData({ ...editFormData, firstName: e.target.value })} />
                                 <input type="text" required className="bg-surfaceHighlight border border-white/10 rounded-xl px-4 py-3 text-white outline-none" placeholder="Last Name" value={editFormData.lastName || ''} onChange={e => setEditFormData({ ...editFormData, lastName: e.target.value })} />
@@ -1720,8 +1747,8 @@ export default function MemberDetail() {
             )}
 
             {showFreezeModal && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                    <div className="bg-surface p-8 rounded-[32px] w-full max-w-sm border border-white/10 shadow-2xl">
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+                    <div className="bg-surface p-8 rounded-[32px] w-full max-w-sm border border-white/10 shadow-2xl max-h-[90vh] overflow-hidden flex flex-col">
                         <h3 className="text-xl font-bold text-white mb-6">Freeze Membership</h3>
                         <form onSubmit={(e) => {
                             e.preventDefault();
@@ -1730,7 +1757,7 @@ export default function MemberDetail() {
                                 freezeStartDate: freezeData.startDate,
                                 freezeEndDate: freezeData.endDate
                             });
-                        }} className="space-y-4">
+                        }} className="space-y-4 overflow-y-auto">
                             <div className={`rounded-xl border px-3 py-2 text-xs ${canUseFreezeNow ? 'border-blue-500/25 bg-blue-500/10 text-blue-200' : 'border-red-500/25 bg-red-500/10 text-red-200'}`}>
                                 {canUseFreezeNow
                                     ? `Freeze usage left: ${freezeRemainingCount} of ${freezeLimitCount}`
@@ -1757,8 +1784,6 @@ export default function MemberDetail() {
         </div>
     );
 }
-
-
 
 
 

@@ -422,18 +422,24 @@ const getAccessLogDetails = async (req, res) => {
 const simulateAccess = async (req, res) => {
     try {
         const { type } = req.body; // 'valid', 'expired', 'denied'
+        const tenantId = Number(req.user?.tenantId);
+        const gymId = Number(req.gymId || req.user?.gymId);
+        const scopedWhere = {
+            gym: { tenantId },
+            ...(Number.isInteger(gymId) && gymId > 0 ? { gymId } : {})
+        };
 
         // Find a random member fitting the criteria
         let member;
         if (type === 'valid') {
-            member = await prisma.member.findFirst({ where: { status: 'ACTIVE' } });
+            member = await prisma.member.findFirst({ where: { status: 'ACTIVE', ...scopedWhere } });
         } else if (type === 'expired') {
-            member = await prisma.member.findFirst({ where: { status: 'EXPIRED' } });
+            member = await prisma.member.findFirst({ where: { status: 'EXPIRED', ...scopedWhere } });
         }
 
         if (!member) {
             // Fallback to any member
-            member = await prisma.member.findFirst();
+            member = await prisma.member.findFirst({ where: scopedWhere });
         }
 
         if (!member) return res.status(404).json({ error: "No members found to simulate" });
@@ -444,7 +450,9 @@ const simulateAccess = async (req, res) => {
             data: {
                 memberId: member.id,
                 status,
-                checkIn: new Date()
+                checkIn: new Date(),
+                gymId: Number.isInteger(gymId) && gymId > 0 ? gymId : null,
+                tenantId: Number.isInteger(tenantId) && tenantId > 0 ? tenantId : 1
             },
             include: accessLogInclude
         });

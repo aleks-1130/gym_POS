@@ -116,7 +116,7 @@ const adminCreateUser = async (req, res) => {
             }
         });
 
-        await logAudit("USER_CREATE", req.user.email, newUser.email, `Created ${role} for branch ${targetGymId}`, Number(targetGymId), tenantId);
+        await logAudit("USER_CREATE", req.user.email, newUser.email, `Created ${role} for branch ${targetGymId}`, req.user.gymId, tenantId);
 
         // Sync to Neon Auth
         try {
@@ -199,7 +199,7 @@ const adminUpdateUser = async (req, res) => {
             }
         }
 
-        await logAudit("USER_UPDATE", req.user.email, updatedUser.email, `Updated user details`, updatedUser.gymId, tenantId);
+        await logAudit("USER_UPDATE", req.user.email, updatedUser.email, `Updated user details`, req.user.gymId, tenantId);
         res.json({ message: "User updated successfully" });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -249,7 +249,7 @@ const adminDeleteUser = async (req, res) => {
             console.error("Neon Auth Delete Sync Warning:", syncErr.message);
         }
 
-        await logAudit("USER_DELETE", req.user.email, target.email, `Deleted user`, target.gymId, tenantId);
+        await logAudit("USER_DELETE", req.user.email, target.email, `Deleted user`, req.user.gymId, tenantId);
         res.json({ message: "User deleted successfully" });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -272,7 +272,7 @@ const changeUserRole = async (req, res) => {
             data: { role: newRole }
         });
 
-        await logAudit("ROLE_CHANGE", req.user.email, target.email, `Changed role to ${newRole}`, target.gymId, req.user.tenantId);
+        await logAudit("ROLE_CHANGE", req.user.email, target.email, `Changed role to ${newRole}`, req.user.gymId, req.user.tenantId);
         res.json({ message: `User role updated to ${newRole}` });
     } catch (e) {
         res.status(500).json({ error: e.message });

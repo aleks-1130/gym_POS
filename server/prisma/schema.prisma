@@ -52,7 +52,6 @@ model Tenant {
   coupons              Coupon[]
   notifications        Notification[]
   memberNotes          MemberNote[]
-  gymProfiles          GymProfile[]
   notificationPreferences NotificationPreference[]
   financialInstitutions   FinancialInstitution[]
   paymentCollections      PaymentCollection[]
@@ -88,7 +87,6 @@ model Gym {
   expenses                Expense[]
   financialInstitutions   FinancialInstitution[]
   tenant                  Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  gymProfiles             GymProfile[]
   loyaltyRewards          LoyaltyReward[]
   loyaltyTransactions     LoyaltyTransaction[]
   members                 Member[]
@@ -189,6 +187,7 @@ model User {
 
   @@unique([email, gymId])
   @@index([tenantId])
+  @@index([gymId])
 }
 
 model AuditLog {
@@ -1020,23 +1019,6 @@ model MemberNote {
   @@index([tenantId])
 }
 
-model GymProfile {
-  id        Int      @id @default(autoincrement())
-  name      String   @default("FitOS Gym")
-  address   String?  @default("123 Fitness Blvd, Gym City")
-  phone     String?  @default("(555) 123-4567")
-  email     String?  @default("contact@fitos.com")
-  website   String?  @default("www.fitos.com")
-  updatedAt DateTime @updatedAt
-  gymId     Int?
-  tenantId  Int @default(1)
-  gym       Gym?     @relation(fields: [gymId], references: [id])
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@index([gymId])
-  @@index([tenantId])
-}
-
 model PayrollConfig {
   id                   Int      @id @default(autoincrement())
   classBasePay         Float    @default(350.0)
@@ -1045,13 +1027,13 @@ model PayrollConfig {
   lastUpdatedBy        Int?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
-  gymId                Int?
+  gymId                Int
   isGlobal             Boolean  @default(false)
   tenantId             Int @default(1)
-  gym                  Gym?     @relation(fields: [gymId], references: [id])
+  gym                  Gym      @relation(fields: [gymId], references: [id])
   tenant               Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@index([gymId])
+  @@unique([gymId])
   @@index([tenantId])
   @@map("payroll_config")
 }

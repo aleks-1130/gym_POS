@@ -1,6 +1,4 @@
 const prisma = require('../../config/prisma');
-const { DEFAULT_RECEIPT_SETTINGS } = require('../../services/receiptSettingsService');
-const { DEFAULT_DISCOUNT_PRESETS } = require('../../services/configService');
 
 // Get all branches for the current tenant
 const getBranches = async (req, res) => {
@@ -47,23 +45,7 @@ const createBranch = async (req, res) => {
                 tenantId,
                 currency: currency || 'PHP',
                 taxRate: taxRate ? Number(taxRate) : 12.0,
-                referencePrefix: referencePrefix || 'A321',
-                receiptSettings: {
-                    create: {
-                        tenantId: Number(tenantId),
-                        settings: {
-                            ...DEFAULT_RECEIPT_SETTINGS,
-                            businessName: name,
-                            branchAddress: ''
-                        }
-                    }
-                },
-                posConfigs: {
-                    create: {
-                        tenantId: Number(tenantId),
-                        discountPresets: DEFAULT_DISCOUNT_PRESETS
-                    }
-                }
+                referencePrefix: referencePrefix || 'A321'
             }
         });
 
