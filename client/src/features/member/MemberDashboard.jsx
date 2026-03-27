@@ -109,6 +109,8 @@ const MemberDashboard = ({ stats, user }) => {
         sessions: 0,
         classes: 0
     });
+    const [memberBundles, setMemberBundles] = useState([]);
+    const [loadingBundles, setLoadingBundles] = useState(false);
     const loyaltyPoints = stats?.loyaltyPoints ?? member.points ?? 0;
     const checkIns = stats?.checkIns ?? (member.accessLogs?.filter((log) => log.status !== 'DENIED').length || 0);
     const latestType = String(latestNotification?.type || 'INFO').toUpperCase();
@@ -162,8 +164,27 @@ const MemberDashboard = ({ stats, user }) => {
                 const upcomingClassCount = classes.filter((booking) => {
                     const classDate = new Date(booking?.sessionDate || booking?.class?.oneTimeDate);
                     if (Number.isNaN(classDate.getTime())) return false;
+                    
+                    // ALIGNMENT: Only count if it's the "current week" session resolved by backend
+                    // Or more simply: if it's today or in the future within the current week.
+                    // If the backend resolved it to this week, it should be the one showing on the Classes page.
+                    
                     const bookingStatus = String(booking?.status || '').toUpperCase();
-                    return UPCOMING_CLASS_STATUSES.includes(bookingStatus) && classDate >= nowDate;
+                    if (!UPCOMING_CLASS_STATUSES.includes(bookingStatus)) return false;
+
+                    // Compute start of current ISO week (Mon)
+                    const temp = new Date();
+                    temp.setHours(0, 0, 0, 0);
+                    const day = temp.getDay();
+                    const diff = (day + 6) % 7;
+                    const weekStart = new Date(temp);
+                    weekStart.setDate(temp.getDate() - diff);
+                    
+                    const weekEnd = new Date(weekStart);
+                    weekEnd.setDate(weekStart.getDate() + 7);
+
+                    // Only count if session is >= now AND within this week
+                    return classDate >= nowDate && classDate < weekEnd;
                 }).length;
 
                 setUpcomingCounts({
@@ -177,10 +198,40 @@ const MemberDashboard = ({ stats, user }) => {
         };
 
         fetchUpcomingCounts();
+        fetchBundles();
+
         return () => {
             active = false;
         };
     }, []);
+
+    const fetchBundles = async () => {
+        setLoadingBundles(true);
+        try {
+            const res = await axios.get('/api/members/me/bundles');
+            console.log('Member Bundles Data:', res.data);
+            setMemberBundles(res.data);
+        } catch (e) {
+            console.error("Failed to fetch bundles");
+        } finally {
+            setLoadingBundles(false);
+        }
+    };
+
+    const handleClaimProduct = async (bundleId, bucketId) => {
+        if (!window.confirm('Confirm product redemption from this bundle?')) return;
+
+        try {
+            await axios.post('/api/shop/claim-bundle-product', { 
+                memberBundleId: bundleId, 
+                bucketId 
+            });
+            alert('Product claimed successfully!');
+            fetchBundles();
+        } catch (e) {
+            alert(e.response?.data?.error || 'Failed to claim product');
+        }
+    };
 
     useEffect(() => {
         const timer = setInterval(() => {
@@ -429,6 +480,106 @@ const MemberDashboard = ({ stats, user }) => {
                     </div>
                 </div>
             </div>
+
+            {/* My Service Bundles - Bucket System */}
+            <div className="space-y-4">
+                <div className="flex items-center justify-between px-1">
+                    <h3 className="text-[11px] font-black uppercase tracking-[0.3em] text-white/30">My Active Bundles</h3>
+                    {!loadingBundles && memberBundles.filter(mb => String(mb.status || '').toUpperCase() === 'ACTIVE').length > 0 && (
+                        <span className="px-3 py-1 rounded-full bg-primary/10 text-primary text-[10px] font-bold border border-primary/20">
+                            {memberBundles.filter(mb => String(mb.status || '').toUpperCase() === 'ACTIVE').length} ACTIVE
+                        </span>
+                    )}
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                    {memberBundles.filter(mb => String(mb.status || '').toUpperCase() === 'ACTIVE').map((mb) => (
+                        <div key={mb.id} className="relative overflow-hidden bg-[#1e293b]/50 backdrop-blur-md p-6 rounded-[2rem] border border-white/5 transition-all duration-300">
+                            <div className="flex justify-between items-start mb-6">
+                                <div>
+                                    <h4 className="text-lg font-black text-white leading-tight">{mb.bundle?.name || 'Service Bundle'}</h4>
+                                    <p className="text-[10px] text-white/30 uppercase font-bold tracking-widest mt-1">Purchased {new Date(mb.createdAt).toLocaleDateString()}</p>
+                                </div>
+                                <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center text-primary">
+                                    <span className="material-icons-round">inventory_2</span>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                {mb.buckets?.map((bucket) => {
+                                    const hasItems = bucket.items && bucket.items.length > 0;
+                                    const itemsLabel = hasItems 
+                                        ? bucket.items.map(i => `${i.name} (x${i.quantity})`).join(', ')
+                                        : bucket.type === 'CLASS' ? 'Class sessions (Added to balance)' : bucket.type === 'TRAINING_SESSION' ? 'Training sessions' : `Product (${bucket.product?.name || 'Item'})`;
+
+                                    return (
+                                        <div key={bucket.id} className="flex justify-between items-center py-1 border-b border-white/5 last:border-0">
+                                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                <span className="material-icons-round text-primary text-sm flex-shrink-0">
+                                                    {bucket.type === 'CLASS' ? 'groups' : bucket.type === 'TRAINING_SESSION' ? 'person' : 'shopping_bag'}
+                                                </span>
+                                                <span className="text-[11px] font-bold text-white uppercase tracking-wider truncate">
+                                                    {itemsLabel}
+                                                </span>
+                                            </div>
+                                            <div className="text-right flex-shrink-0 ml-4">
+                                                {bucket.type === 'PRODUCT' ? (
+                                                    bucket.remaining > 0 ? (
+                                                        <button 
+                                                            onClick={() => handleClaimProduct(mb.id, bucket.id)}
+                                                            className="px-3 py-1 rounded bg-primary text-background text-[9px] font-black uppercase tracking-wider"
+                                                        >
+                                                            Claim
+                                                        </button>
+                                                    ) : (
+                                                        <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest">Redeemed</span>
+                                                    )
+                                                ) : (
+                                                    <p className="text-xs font-black text-white">{bucket.remaining}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ))}
+                    {memberBundles.filter(mb => String(mb.status || '').toUpperCase() === 'ACTIVE').length === 0 && !loadingBundles && (
+                        <div className="md:col-span-2 py-10 text-center bg-[#1e293b]/30 border border-dashed border-white/10 rounded-[2rem]">
+                            <span className="material-icons-round text-3xl text-white/10 mb-2">auto_awesome</span>
+                            <p className="text-white/30 text-[11px] font-bold uppercase tracking-widest">No Active Bundles</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Past Bundles Section */}
+            {memberBundles.some(mb => mb.status === 'COMPLETED') && (
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between px-1">
+                        <h3 className="text-[11px] font-black uppercase tracking-[0.3em] text-white/30">Past Bundles</h3>
+                        <span className="px-3 py-1 rounded-full bg-white/5 text-white/40 text-[10px] font-bold border border-white/10">
+                            {memberBundles.filter(b => b.status === 'COMPLETED').length} COMPLETED
+                        </span>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                        {memberBundles.filter(mb => mb.status === 'COMPLETED').map((mb) => (
+                            <div key={mb.id} className="relative overflow-hidden bg-[#1e293b]/30 backdrop-blur-md p-6 rounded-[2rem] border border-white/5 opacity-70 grayscale-[0.5] transition-all duration-300 hover:opacity-100 hover:grayscale-0">
+                                <div className="flex justify-between items-start mb-6">
+                                    <div>
+                                        <h4 className="text-lg font-black text-white/60 leading-tight">{mb.bundle?.name || 'Service Bundle'}</h4>
+                                        <p className="text-[10px] text-white/30 uppercase font-bold tracking-widest mt-1">Completed {new Date(mb.completedAt || mb.createdAt).toLocaleDateString()}</p>
+                                    </div>
+                                    <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-white/30">
+                                        <span className="material-icons-round">history</span>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Announcements - Soft Integration */}
             <Link to="/announcements" className="block group">

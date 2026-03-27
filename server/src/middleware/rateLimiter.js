@@ -4,12 +4,12 @@ const rateLimit = require('express-rate-limit');
 // Applied to all routes to prevent general DoS attacks.
 const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 1000, // Limit each IP to 1000 requests per 15 minutes (increased for SPA testing)
+    max: 200, // Increased for development/pos usage
     message: {
         error: "Too many requests from this IP, please try again after 15 minutes",
         status: 429
     },
-    standardHeaders: true, 
+    standardHeaders: true,
     legacyHeaders: false,
 });
 

@@ -2,7 +2,8 @@ const { PrismaClient } = require('@prisma/client');
 
 const prismaClient = new PrismaClient();
 
-const globalModels = ['Member', 'Coupon', 'PromoCode', 'Product', 'Plan', 'Category'];
+const globalModels = ['Member', 'Coupon', 'PromoCode', 'Product', 'Plan', 'Category', 'ServiceBundle', 'ClassSessionPackage'];
+const noGymModels = ['MemberBundleBucket', 'ServiceBundleUsage', 'ServiceBundleBucket']; // Models that don't have gymId
 
 const prisma = prismaClient.$extends({
   query: {
@@ -13,8 +14,8 @@ const prisma = prismaClient.$extends({
         const tenantId = context?.tenantId;
         const userRole = context?.role;
         
-        // Skip filtering for Tenant and Gym models, or if no gymId is in context
-        if (!gymId || model === 'Tenant' || model === 'Gym') {
+        // Skip filtering for Tenant and Gym models, or if no gymId is in context, or if model doesn't have gymId
+        if (!gymId || model === 'Tenant' || model === 'Gym' || noGymModels.includes(model)) {
           return query(args);
         }
 
@@ -24,8 +25,10 @@ const prisma = prismaClient.$extends({
         if (['findFirst', 'findMany', 'findUnique', 'count', 'aggregate', 'groupBy'].includes(operation)) {
           args.where = args.where || {}; // Ensure args.where is defined
           if (isGlobalModel) {
-            if (operation === 'findUnique') {
-              // findUnique does not support OR. Skip injection to avoid Prisma error.
+            const hasExplicitGlobalOr = args.where.OR?.some(cond => cond.isGlobal === true || cond.isGlobal?.equals === true);
+            
+            if (operation === 'findUnique' || hasExplicitGlobalOr) {
+              // Skip automatic injection for findUnique or if the query already handles global visibility
             } else if (tenantId) {
               args.where = { ...args.where, tenantId: tenantId };
             } else if (gymId) {
@@ -59,21 +62,27 @@ const prisma = prismaClient.$extends({
               v !== null && typeof v === 'object' && !(v instanceof Date) && !Array.isArray(v)
             );
 
-            // Use 'tenant: { connect: { id: tenantId } }' instead of scalar 'tenantId'
-            // to avoid "Unknown argument" errors on models that don't expose tenantId as a scalar input.
-            let withTenant = data;
-            if (tenantId && !data.tenant && !data.tenantId) {
-                withTenant = { ...data, tenant: { connect: { id: tenantId } } };
-            }
-
-            if (hasRelation || (withTenant.tenant)) {
-              if (!data.gym && !data.gymId) {
-                return { ...withTenant, gym: { connect: { id: gymId } } };
-              }
-              return withTenant;
+            // Prefer scalar IDs (tenantId, gymId) to avoid "Unknown argument" errors on models 
+            // that don't support nested connects for these fields (e.g., Booking).
+            // We only use nested connects if the data already contains other relations.
+            let refinedData = { ...data };
+            
+            if (hasRelation) {
+                if (tenantId && !data.tenant && !data.tenantId) {
+                    refinedData.tenant = { connect: { id: tenantId } };
+                }
+                if (gymId && !data.gym && !data.gymId) {
+                    refinedData.gym = { connect: { id: gymId } };
+                }
             } else {
-              return { ...withTenant, gymId: data.gymId ?? gymId };
+                if (tenantId && !data.tenant && !data.tenantId) {
+                    refinedData.tenantId = tenantId;
+                }
+                if (gymId && !data.gym && !data.gymId) {
+                    refinedData.gymId = data.gymId ?? gymId;
+                }
             }
+            return refinedData;
           };
 
           if (Array.isArray(args.data)) {
@@ -103,7 +112,12 @@ const prisma = prismaClient.$extends({
            }
         }
 
-        return query(args);
+        const result = await query(args);
+        if (model === 'ServiceBundle' || model === 'ClassSessionPackage' || model === 'Plan') {
+          console.log(`[PRISMA DEBUG] ${model}.${operation} where:`, JSON.stringify(args.where, null, 2));
+          console.log(`[PRISMA DEBUG] ${model}.${operation} result:`, Array.isArray(result) ? result.length : (result ? 1 : 0));
+        }
+        return result;
       },
     },
   },

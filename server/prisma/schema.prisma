@@ -8,59 +8,63 @@ datasource db {
 }
 
 model Tenant {
-  id                   Int                   @id @default(autoincrement())
-  tenantId             String                @unique
-  name                 String
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
-  isActive             Boolean               @default(true)
-  deletedAt            DateTime?
-  accessLogs           AccessLog[]
-  auditLogs            AuditLog[]
-  categories           Category[]
-  classSessionPackages ClassSessionPackage[]
-  expenses             Expense[]
-  gyms                 Gym[]
-  loyaltyRewards       LoyaltyReward[]
-  payments             Payment[]
-  paymentItems         PaymentItem[]
-  plans                Plan[]
-  posConfigs           PosConfig[]
-  products             Product[]
-  promoCodes           PromoCode[]
-  stockOrders          StockOrder[]
-  suppliers            Supplier[]
-  users                User[]
-  payrollConfigs       PayrollConfig[]
-  receiptSettings      ReceiptSettings[]
-  stockOrderItems      StockOrderItem[]
-  orders               Order[]
-  orderItems           OrderItem[]
-  membershipPeriods    MembershipPeriod[]    @relation("MembershipPeriodTenant")
-  productStocks        ProductStock[]
-  sessionMaterials     SessionMaterial[]
-  members              Member[]
-  trainers             Trainer[]
-  trainingSessions     TrainingSession[]
-  bookings             Booking[]
-  classes              Class[]
-  classHistory         ClassHistory[]
-  classSessions        ClassSession[]
-  trainerAvailabilities TrainerAvailability[]
-  trainerChangeRequests TrainerChangeRequest[]
-  loyaltyTransactions  LoyaltyTransaction[]
-  coupons              Coupon[]
-  notifications        Notification[]
-  memberNotes          MemberNote[]
-  notificationPreferences NotificationPreference[]
+  id                      Int                      @id @default(autoincrement())
+  tenantId                String                   @unique
+  name                    String
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  isActive                Boolean                  @default(true)
+  deletedAt               DateTime?
+  accessLogs              AccessLog[]
+  auditLogs               AuditLog[]
+  bookings                Booking[]
+  categories              Category[]
+  classes                 Class[]
+  classHistory            ClassHistory[]
+  classSessions           ClassSession[]
+  classSessionPackages    ClassSessionPackage[]
+  coupons                 Coupon[]
+  expenses                Expense[]
   financialInstitutions   FinancialInstitution[]
+  gyms                    Gym[]
+  loyaltyRewards          LoyaltyReward[]
+  loyaltyTransactions     LoyaltyTransaction[]
+  members                 Member[]
+  memberBundles           MemberBundle[]
+  memberBundleBuckets     MemberBundleBucket[]
+  memberNotes             MemberNote[]
+  membershipPeriods       MembershipPeriod[]       @relation("MembershipPeriodTenant")
+  notifications           Notification[]
+  notificationPreferences NotificationPreference[]
+  orders                  Order[]
+  orderItems              OrderItem[]
+  payments                Payment[]
   paymentCollections      PaymentCollection[]
+  paymentItems            PaymentItem[]
   paymentMethods          PaymentMethod[]
+  plans                   Plan[]
+  posConfigs              PosConfig[]
+  products                Product[]
+  productStocks           ProductStock[]
+  promoCodes              PromoCode[]
+  serviceBundles          ServiceBundle[]
+  serviceBundleBuckets    ServiceBundleBucket[]
+  serviceBundleUsages     ServiceBundleUsage[]
+  sessionMaterials        SessionMaterial[]
+  stockOrders             StockOrder[]
+  stockOrderItems         StockOrderItem[]
+  suppliers               Supplier[]
+  trainers                Trainer[]
+  trainerAvailabilities   TrainerAvailability[]
+  trainerChangeRequests   TrainerChangeRequest[]
+  trainingSessions        TrainingSession[]
+  users                   User[]
+  receiptSettings         ReceiptSettings[]
 }
 
 model Gym {
   id                      Int                      @id @default(autoincrement())
-  tenantId                Int @default(1)
+  tenantId                Int                      @default(1)
   companyId               String                   @unique
   name                    String
   address                 String?
@@ -90,6 +94,7 @@ model Gym {
   loyaltyRewards          LoyaltyReward[]
   loyaltyTransactions     LoyaltyTransaction[]
   members                 Member[]
+  memberBundles           MemberBundle[]
   memberNotes             MemberNote[]
   membershipPeriods       MembershipPeriod[]
   notifications           Notification[]
@@ -105,6 +110,7 @@ model Gym {
   products                Product[]
   productStocks           ProductStock[]
   promoCodes              PromoCode[]
+  serviceBundles          ServiceBundle[]
   sessionMaterials        SessionMaterial[]
   stockOrders             StockOrder[]
   stockOrderItems         StockOrderItem[]
@@ -114,7 +120,6 @@ model Gym {
   changeRequests          TrainerChangeRequest[]
   trainingSessions        TrainingSession[]
   users                   User[]
-  payrollConfigs          PayrollConfig[]
   receiptSettings         ReceiptSettings[]
 
   @@index([tenantId])
@@ -235,15 +240,17 @@ model Member {
   resetPasswordToken     String?                 @unique
   sessionVersion         Int                     @default(0)
   freezeUsedCount        Int                     @default(0)
-  guestPassUsedCount     Int                     @default(0)
   gymId                  Int?
-  tenantId               Int @default(1)
+  tenantId               Int                     @default(1)
+  guestPassUsedCount     Int                     @default(0)
   accessLogs             AccessLog[]
   bookings               Booking[]
   coupons                Coupon[]
   loyaltyTransactions    LoyaltyTransaction[]
   gym                    Gym?                    @relation(fields: [gymId], references: [id], onDelete: Cascade)
   plan                   Plan?                   @relation(fields: [planId], references: [id])
+  tenant                 Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  memberBundles          MemberBundle[]
   notes                  MemberNote[]
   membershipPeriods      MembershipPeriod[]
   notifications          Notification[]
@@ -252,7 +259,6 @@ model Member {
   payments               Payment[]
   paymentMethods         PaymentMethod[]
   trainingSessions       TrainingSession[]
-  tenant                 Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([email, tenantId])
   @@index([status])
@@ -291,7 +297,7 @@ model Payment {
   couponCode             String?
   couponDiscount         Float               @default(0)
   isGlobal               Boolean             @default(false)
-  tenantId               Int @default(1)
+  tenantId               Int                 @default(1)
   cashier                User?               @relation("PaymentCashier", fields: [cashierId], references: [id])
   gym                    Gym?                @relation(fields: [gymId], references: [id], onDelete: Cascade)
   member                 Member?             @relation(fields: [memberId], references: [id])
@@ -315,7 +321,7 @@ model AccessLog {
   status    String   @default("ALLOWED")
   trainerId Int?
   gymId     Int?
-  tenantId  Int @default(1)
+  tenantId  Int      @default(1)
   gym       Gym?     @relation(fields: [gymId], references: [id])
   member    Member?  @relation(fields: [memberId], references: [id])
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -345,7 +351,7 @@ model Expense {
   trainerId              Int?
   gymId                  Int?
   isGlobal               Boolean   @default(false)
-  tenantId               Int @default(1)
+  tenantId               Int       @default(1)
   gym                    Gym?      @relation(fields: [gymId], references: [id])
   staff                  User?     @relation("StaffExpense", fields: [staffId], references: [id])
   supplier               Supplier? @relation(fields: [supplierId], references: [id])
@@ -381,12 +387,12 @@ model TrainingSession {
   reminderSent         Boolean           @default(false)
   finalReminderSent    Boolean           @default(false)
   gymId                Int?
-  tenantId             Int @default(1)
+  tenantId             Int               @default(1)
   materials            SessionMaterial[]
   gym                  Gym?              @relation(fields: [gymId], references: [id])
   member               Member            @relation(fields: [memberId], references: [id])
-  trainer              Trainer           @relation(fields: [trainerId], references: [id])
   tenant               Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  trainer              Trainer           @relation(fields: [trainerId], references: [id])
 
   @@index([date])
   @@index([trainerId])
@@ -422,13 +428,13 @@ model Plan {
   includedClassSessions Int                @default(0)
   includesClasses       Boolean            @default(false)
   freezeLimitCount      Int                @default(0)
-  guestPassEnabled      Boolean            @default(false)
-  guestPassLimitCount   Int                @default(0)
   gymId                 Int?
   tenantId              Int?
   isGlobal              Boolean            @default(false)
-  isActive              Boolean            @default(true)
   deletedAt             DateTime?
+  isActive              Boolean            @default(true)
+  guestPassEnabled      Boolean            @default(false)
+  guestPassLimitCount   Int                @default(0)
   members               Member[]
   membershipPeriods     MembershipPeriod[]
   gym                   Gym?               @relation(fields: [gymId], references: [id])
@@ -438,19 +444,19 @@ model Plan {
 }
 
 model ClassSessionPackage {
-  id        Int      @id @default(autoincrement())
+  id        Int       @id @default(autoincrement())
   name      String
   sessions  Int
   price     Float
-  isActive  Boolean  @default(true)
-  deletedAt DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   gymId     Int?
   tenantId  Int?
-  isGlobal  Boolean  @default(false)
-  gym       Gym?     @relation(fields: [gymId], references: [id])
-  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  isGlobal  Boolean   @default(false)
+  deletedAt DateTime?
+  gym       Gym?      @relation(fields: [gymId], references: [id])
+  tenant    Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 model PaymentItem {
@@ -466,7 +472,7 @@ model PaymentItem {
   materialUsedQuantity       Int      @default(0)
   materialSettledQuantity    Int      @default(0)
   gymId                      Int?
-  tenantId                   Int @default(1)
+  tenantId                   Int      @default(1)
   gym                        Gym?     @relation(fields: [gymId], references: [id])
   payment                    Payment  @relation(fields: [paymentId], references: [id])
   product                    Product? @relation(fields: [productId], references: [id])
@@ -487,7 +493,7 @@ model Supplier {
   updatedAt     DateTime       @updatedAt
   gymId         Int?
   isGlobal      Boolean        @default(false)
-  tenantId      Int @default(1)
+  tenantId      Int            @default(1)
   expenses      Expense[]
   products      Product[]
   productStocks ProductStock[]
@@ -501,30 +507,33 @@ model Supplier {
 }
 
 model Product {
-  id               Int               @id @default(autoincrement())
+  id               Int                   @id @default(autoincrement())
   name             String
   category         String
   price            Float
-  stock            Int               @default(0)
-  minStock         Int               @default(5)
+  stock            Int                   @default(0)
+  minStock         Int                   @default(5)
   sku              String?
   imageUrl         String?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
   supplierId       Int?
-  supplyCost       Float             @default(0)
+  supplyCost       Float                 @default(0)
   description      String?
   gymId            Int?
-  isGlobal         Boolean           @default(false)
-  tenantId         Int @default(1)
+  isGlobal         Boolean               @default(false)
+  tenantId         Int                   @default(1)
+  memberBuckets    MemberBundleBucket[]  @relation("MemberBundleBucketProduct")
   orderItems       OrderItem[]
   paymentItems     PaymentItem[]
-  gym              Gym?              @relation(fields: [gymId], references: [id])
-  supplier         Supplier?         @relation(fields: [supplierId], references: [id])
-  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  gym              Gym?                  @relation(fields: [gymId], references: [id])
+  supplier         Supplier?             @relation(fields: [supplierId], references: [id])
+  tenant           Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   stocks           ProductStock[]
+  bundleBuckets    ServiceBundleBucket[] @relation("BundleBucketProduct")
   sessionMaterials SessionMaterial[]
   stockOrderItems  StockOrderItem[]
+  memberBundleBucketItems MemberBundleBucketItem[]
 
   @@unique([sku, tenantId])
   @@index([gymId])
@@ -539,7 +548,7 @@ model ProductStock {
   minQuantity Int       @default(5)
   supplierId  Int?
   supplyCost  Float     @default(0)
-  tenantId    Int @default(1)
+  tenantId    Int       @default(1)
   gym         Gym       @relation(fields: [gymId], references: [id], onDelete: Cascade)
   product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
   supplier    Supplier? @relation(fields: [supplierId], references: [id])
@@ -558,7 +567,7 @@ model Category {
   updatedAt   DateTime @updatedAt
   gymId       Int?
   isGlobal    Boolean  @default(false)
-  tenantId    Int @default(1)
+  tenantId    Int      @default(1)
   gym         Gym?     @relation(fields: [gymId], references: [id])
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -581,7 +590,7 @@ model StockOrder {
   receivedAt     DateTime?
   cancelledAt    DateTime?
   gymId          Int?
-  tenantId       Int @default(1)
+  tenantId       Int              @default(1)
   creator        User?            @relation("StockOrderCreator", fields: [createdBy], references: [id])
   gym            Gym?             @relation(fields: [gymId], references: [id])
   supplier       Supplier         @relation(fields: [supplierId], references: [id])
@@ -607,7 +616,7 @@ model StockOrderItem {
   quantity     Int
   cost         Float
   gymId        Int?
-  tenantId     Int @default(1)
+  tenantId     Int        @default(1)
   gym          Gym?       @relation(fields: [gymId], references: [id])
   product      Product?   @relation(fields: [productId], references: [id])
   stockOrder   StockOrder @relation(fields: [stockOrderId], references: [id])
@@ -642,18 +651,18 @@ model Trainer {
   cardImageUrl      String?
   statusDescription String?
   gymId             Int?
+  tenantId          Int                    @default(1)
   accessLogs        AccessLog[]
   classes           Class[]
   classHistory      ClassHistory[]
   classSessions     ClassSession[]
   expenses          Expense[]
   gym               Gym?                   @relation(fields: [gymId], references: [id])
+  tenant            Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   availability      TrainerAvailability?
   changeRequests    TrainerChangeRequest[]
   trainingSessions  TrainingSession[]
   user              User?                  @relation("TrainerUser")
-  tenantId          Int @default(1)
-  tenant            Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([gymId])
   @@index([tenantId])
@@ -677,13 +686,13 @@ model TrainerChangeRequest {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   gymId           Int?
-  tenantId        Int @default(1)
+  tenantId        Int       @default(1)
   adminReviewer   User?     @relation("TrainerChangeAdminDecisionBy", fields: [adminDecisionBy], references: [id])
   gym             Gym?      @relation(fields: [gymId], references: [id])
   ownerReviewer   User?     @relation("TrainerChangeOwnerDecisionBy", fields: [ownerDecisionBy], references: [id])
   requestedBy     User?     @relation("TrainerChangeRequestedBy", fields: [requestedById], references: [id])
-  trainer         Trainer   @relation(fields: [trainerId], references: [id], onDelete: Cascade)
   tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  trainer         Trainer   @relation(fields: [trainerId], references: [id], onDelete: Cascade)
 
   @@index([trainerId])
   @@index([status])
@@ -699,10 +708,10 @@ model TrainerAvailability {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   gymId     Int?
-  tenantId  Int @default(1)
+  tenantId  Int      @default(1)
   gym       Gym?     @relation(fields: [gymId], references: [id])
-  trainer   Trainer  @relation(fields: [trainerId], references: [id], onDelete: Cascade)
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  trainer   Trainer  @relation(fields: [trainerId], references: [id], onDelete: Cascade)
 
   @@index([updatedAt])
   @@index([gymId])
@@ -720,7 +729,7 @@ model SessionMaterial {
   totalCost   Float
   createdAt   DateTime        @default(now())
   gymId       Int?
-  tenantId    Int @default(1)
+  tenantId    Int             @default(1)
   gym         Gym?            @relation(fields: [gymId], references: [id])
   product     Product?        @relation(fields: [productId], references: [id])
   session     TrainingSession @relation(fields: [sessionId], references: [id])
@@ -748,13 +757,13 @@ model Class {
   endDate      DateTime?
   startDate    DateTime       @default(now())
   gymId        Int?
-  tenantId     Int @default(1)
+  tenantId     Int            @default(1)
   bookings     Booking[]
   gym          Gym?           @relation(fields: [gymId], references: [id])
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   trainer      Trainer        @relation(fields: [trainerId], references: [id])
   history      ClassHistory[]
   sessions     ClassSession[]
-  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([gymId])
   @@index([tenantId])
@@ -770,11 +779,11 @@ model ClassHistory {
   commissionPaid   Boolean  @default(false)
   createdAt        DateTime @default(now())
   gymId            Int?
+  tenantId         Int      @default(1)
   class            Class    @relation(fields: [classId], references: [id])
   gym              Gym?     @relation(fields: [gymId], references: [id])
-  trainer          Trainer  @relation(fields: [trainerId], references: [id])
-  tenantId         Int @default(1)
   tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  trainer          Trainer  @relation(fields: [trainerId], references: [id])
 
   @@index([date])
   @@index([trainerId])
@@ -792,7 +801,7 @@ model Booking {
   reminderSent      Boolean   @default(false)
   finalReminderSent Boolean   @default(false)
   gymId             Int?
-  tenantId          Int @default(1)
+  tenantId          Int       @default(1)
   class             Class     @relation(fields: [classId], references: [id])
   gym               Gym?      @relation(fields: [gymId], references: [id])
   member            Member    @relation(fields: [memberId], references: [id])
@@ -819,11 +828,11 @@ model ClassSession {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   gymId           Int?
-  tenantId        Int @default(1)
+  tenantId        Int       @default(1)
   class           Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
   gym             Gym?      @relation(fields: [gymId], references: [id])
-  trainer         Trainer   @relation(fields: [trainerId], references: [id])
   tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  trainer         Trainer   @relation(fields: [trainerId], references: [id])
 
   @@unique([classId, sessionDate])
   @@index([trainerId, sessionDate])
@@ -839,7 +848,7 @@ model Order {
   status    String      @default("COMPLETED")
   createdAt DateTime    @default(now())
   gymId     Int?
-  tenantId  Int @default(1)
+  tenantId  Int         @default(1)
   gym       Gym?        @relation(fields: [gymId], references: [id])
   member    Member      @relation(fields: [memberId], references: [id])
   tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -850,17 +859,17 @@ model Order {
 }
 
 model OrderItem {
-  id        Int      @id @default(autoincrement())
+  id        Int     @id @default(autoincrement())
   orderId   Int
   productId Int
   quantity  Int
   price     Float
   gymId     Int?
-  tenantId  Int @default(1)
-  gym       Gym?     @relation(fields: [gymId], references: [id])
-  order     Order    @relation(fields: [orderId], references: [id])
-  product   Product  @relation(fields: [productId], references: [id])
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId  Int     @default(1)
+  gym       Gym?    @relation(fields: [gymId], references: [id])
+  order     Order   @relation(fields: [orderId], references: [id])
+  product   Product @relation(fields: [productId], references: [id])
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([gymId])
   @@index([tenantId])
@@ -876,7 +885,7 @@ model MembershipPeriod {
   method    String?
   createdAt DateTime @default(now())
   gymId     Int?
-  tenantId  Int @default(1)
+  tenantId  Int      @default(1)
   gym       Gym?     @relation(fields: [gymId], references: [id])
   member    Member   @relation(fields: [memberId], references: [id])
   plan      Plan?    @relation(fields: [planId], references: [id])
@@ -898,7 +907,7 @@ model LoyaltyReward {
   actionValue Float?
   gymId       Int?
   isGlobal    Boolean  @default(false)
-  tenantId    Int @default(1)
+  tenantId    Int      @default(1)
   gym         Gym?     @relation(fields: [gymId], references: [id])
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -914,7 +923,7 @@ model LoyaltyTransaction {
   description String?
   createdAt   DateTime @default(now())
   gymId       Int?
-  tenantId    Int @default(1)
+  tenantId    Int      @default(1)
   gym         Gym?     @relation(fields: [gymId], references: [id])
   member      Member   @relation(fields: [memberId], references: [id])
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -936,7 +945,7 @@ model Coupon {
   expiryDate DateTime?
   createdAt  DateTime  @default(now())
   gymId      Int?
-  tenantId   Int @default(1)
+  tenantId   Int       @default(1)
   gym        Gym?      @relation(fields: [gymId], references: [id])
   member     Member?   @relation(fields: [memberId], references: [id])
   tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -957,7 +966,7 @@ model PosConfig {
   discountPresets Json?
   gymId           Int?
   isGlobal        Boolean  @default(false)
-  tenantId        Int @default(1)
+  tenantId        Int      @default(1)
   gym             Gym?     @relation(fields: [gymId], references: [id])
   tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -972,7 +981,7 @@ model ReceiptSettings {
   updatedAt DateTime @updatedAt
   gymId     Int?
   isGlobal  Boolean  @default(false)
-  tenantId  Int @default(1)
+  tenantId  Int      @default(1)
   gym       Gym?     @relation(fields: [gymId], references: [id])
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -993,7 +1002,7 @@ model Notification {
   targetId       Int?
   memberId       Int?
   gymId          Int?
-  tenantId       Int @default(1)
+  tenantId       Int      @default(1)
   gym            Gym?     @relation(fields: [gymId], references: [id])
   member         Member?  @relation(fields: [memberId], references: [id])
   tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1009,7 +1018,7 @@ model MemberNote {
   createdAt DateTime @default(now())
   createdBy Int?
   gymId     Int?
-  tenantId  Int @default(1)
+  tenantId  Int      @default(1)
   user      User?    @relation(fields: [createdBy], references: [id])
   gym       Gym?     @relation(fields: [gymId], references: [id])
   member    Member   @relation(fields: [memberId], references: [id])
@@ -1017,25 +1026,6 @@ model MemberNote {
 
   @@index([gymId])
   @@index([tenantId])
-}
-
-model PayrollConfig {
-  id                   Int      @id @default(autoincrement())
-  classBasePay         Float    @default(350.0)
-  classBonusPerStudent Float    @default(30.0)
-  classBonusThreshold  Int      @default(5)
-  lastUpdatedBy        Int?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-  gymId                Int
-  isGlobal             Boolean  @default(false)
-  tenantId             Int @default(1)
-  gym                  Gym      @relation(fields: [gymId], references: [id])
-  tenant               Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-
-  @@unique([gymId])
-  @@index([tenantId])
-  @@map("payroll_config")
 }
 
 model PromoCode {
@@ -1047,6 +1037,7 @@ model PromoCode {
   maxUses     Int?
   usedCount   Int       @default(0)
   isActive    Boolean   @default(true)
+  isGlobal    Boolean   @default(false)
   expiryDate  DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -1055,7 +1046,7 @@ model PromoCode {
   productIds  Int[]     @default([])
   scope       String    @default("ORDER")
   gymId       Int?
-  tenantId    Int @default(1)
+  tenantId    Int       @default(1)
   gym         Gym?      @relation(fields: [gymId], references: [id])
   tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -1077,14 +1068,124 @@ model NotificationPreference {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
   gymId              Int?
-  tenantId           Int @default(1)
+  tenantId           Int      @default(1)
   gym                Gym?     @relation(fields: [gymId], references: [id])
   member             Member?  @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  user               User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user               User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([gymId])
   @@index([tenantId])
+}
+
+model ServiceBundle {
+  id            Int                   @id @default(autoincrement())
+  name          String
+  description   String?
+  price         Float
+  isGlobal      Boolean               @default(false)
+  isActive      Boolean               @default(true)
+  deletedAt     DateTime?
+  gymId         Int?
+  tenantId      Int                   @default(1)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  memberBundles MemberBundle[]
+  gym           Gym?                  @relation(fields: [gymId], references: [id])
+  tenant        Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  buckets       ServiceBundleBucket[]
+
+  @@index([gymId])
+  @@index([tenantId])
+}
+
+model ServiceBundleBucket {
+  id             Int           @id @default(autoincrement())
+  bundleId       Int
+  type           String
+  quantity       Float
+  referencePrice Float
+  tenantId       Int           @default(1)
+  productId      Int?
+  productCategory String?
+  bundle         ServiceBundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  product        Product?      @relation("BundleBucketProduct", fields: [productId], references: [id])
+  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([bundleId])
+  @@index([productId])
+}
+
+model MemberBundle {
+  id          Int                  @id @default(autoincrement())
+  memberId    Int
+  bundleId    Int
+  totalPrice  Float
+  status      String               @default("ACTIVE")
+  expiresAt   DateTime?
+  gymId       Int?
+  tenantId    Int                  @default(1)
+  createdAt   DateTime             @default(now())
+  completedAt DateTime?
+  bundle      ServiceBundle        @relation(fields: [bundleId], references: [id])
+  gym         Gym?                 @relation(fields: [gymId], references: [id])
+  member      Member               @relation(fields: [memberId], references: [id])
+  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  buckets     MemberBundleBucket[]
+  usages      ServiceBundleUsage[]
+
+  @@index([memberId])
+  @@index([bundleId])
+  @@index([gymId])
+  @@index([tenantId])
+}
+
+model MemberBundleBucket {
+  id             Int          @id @default(autoincrement())
+  memberBundleId Int
+  type           String
+  remaining      Float
+  total          Float
+  tenantId       Int          @default(1)
+  productId      Int?
+  productCategory String?
+  memberBundle   MemberBundle @relation(fields: [memberBundleId], references: [id], onDelete: Cascade)
+  product        Product?     @relation("MemberBundleBucketProduct", fields: [productId], references: [id])
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items          MemberBundleBucketItem[]
+
+  @@index([memberBundleId])
+  @@index([productId])
+}
+
+model MemberBundleBucketItem {
+  id                   Int                @id @default(autoincrement())
+  memberBundleBucketId Int
+  productId            Int
+  name                 String
+  quantity             Float              @default(1)
+  priceAtPurchase      Float
+  createdAt            DateTime           @default(now())
+  memberBundleBucket   MemberBundleBucket @relation(fields: [memberBundleBucketId], references: [id], onDelete: Cascade)
+  product              Product            @relation(fields: [productId], references: [id])
+
+  @@index([memberBundleBucketId])
+  @@index([productId])
+}
+
+model ServiceBundleUsage {
+  id             Int          @id @default(autoincrement())
+  memberBundleId Int
+  type           String
+  targetId       Int
+  quantity       Float
+  actualCost     Float
+  tenantId       Int          @default(1)
+  createdAt      DateTime     @default(now())
+  memberBundle   MemberBundle @relation(fields: [memberBundleId], references: [id], onDelete: Cascade)
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([memberBundleId])
 }
 
 enum TrainerType {

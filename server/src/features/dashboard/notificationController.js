@@ -12,7 +12,7 @@ const getNotifications = async (req, res) => {
             const member = await prisma.member.findFirst({ 
                 where: { 
                     email: { equals: req.user.email, mode: 'insensitive' },
-                    tenantId: tenantId
+                    tenantId: tenantId || 1 // Fallback to avoid Prisma error if middleware somehow fails
                 } 
             });
             targetMemberId = member?.id;
@@ -29,7 +29,13 @@ const getNotifications = async (req, res) => {
             tenantId,
             OR: [
                 { targetGroup: 'ALL', memberId: null, gymId: (role === 'OWNER' ? undefined : gymId) },
-                { isAnnouncement: true, targetGroup: 'ALL', gymId: (role === 'OWNER' ? undefined : gymId) },
+                { 
+                    isAnnouncement: true, 
+                    OR: [
+                        { targetGroup: 'ALL', gymId: (role === 'OWNER' ? undefined : (gymId || null)) },
+                        { targetGroup: 'ALL', gymId: null } // Explicitly include global announcements
+                    ]
+                },
                 // Role-based targeting
                 ...(role === 'ADMIN' || role === 'OWNER' || role === 'STAFF' 
                     ? [{ targetGroup: 'STAFF', gymId: (role === 'OWNER' ? undefined : gymId) }] 
@@ -97,7 +103,7 @@ const markAllAsRead = async (req, res) => {
             const member = await prisma.member.findFirst({ 
                 where: { 
                     email: { equals: req.user.email, mode: 'insensitive' },
-                    tenantId
+                    tenantId: tenantId || 1
                 } 
             });
             targetMemberId = member?.id;

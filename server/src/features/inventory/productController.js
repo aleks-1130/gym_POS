@@ -119,9 +119,15 @@ const getAllProducts = async (req, res) => {
             const products = await prisma.product.findMany({
                 where: {
                     ...where,
+                    tenantId: undefined, // Overridden by OR logic below
                     OR: [
                         { isGlobal: true },
-                        { gymId: currentGymId }
+                        {
+                            AND: [
+                                { tenantId: Number(tenantId) },
+                                { gymId: Number(currentGymId) }
+                            ]
+                        }
                     ]
                 },
                 include: { 
@@ -142,18 +148,30 @@ const getAllProducts = async (req, res) => {
             prisma.product.count({ 
                 where: {
                     ...where,
+                    tenantId: undefined,
                     OR: [
                         { isGlobal: true },
-                        { gymId: currentGymId }
+                        {
+                            AND: [
+                                { tenantId: Number(tenantId) },
+                                { gymId: Number(currentGymId) }
+                            ]
+                        }
                     ]
                 }
             }),
             prisma.product.findMany({
                 where: {
                     ...where,
+                    tenantId: undefined,
                     OR: [
                         { isGlobal: true },
-                        { gymId: currentGymId }
+                        {
+                            AND: [
+                                { tenantId: Number(tenantId) },
+                                { gymId: Number(currentGymId) }
+                            ]
+                        }
                     ]
                 },
                 include: { 
@@ -216,6 +234,9 @@ const getProductById = async (req, res) => {
 
 const createProduct = async (req, res) => {
     try {
+        const userRole = String(req.user?.role || '').toUpperCase();
+        const isAdminOrOwner = ['OWNER', 'ADMIN'].includes(userRole);
+        
         const normalized = normalizeProductPayload(req.body);
         if (normalized.error) return res.status(400).json({ error: normalized.error });
 
@@ -225,7 +246,8 @@ const createProduct = async (req, res) => {
             if (!gymId) throw new Error("Gym context required to manage stock");
 
             const productData = { ...normalized.data };
-            const isGlobal = productData.isGlobal;
+            // Force isGlobal to false for non-admins
+            const isGlobal = isAdminOrOwner ? productData.isGlobal : false;
             delete productData.isGlobal;
 
             const product = await tx.product.create({
@@ -255,6 +277,8 @@ const createProduct = async (req, res) => {
             });
         });
 
+        const gymId = req.gymId || req.user?.gymId;
+        const tenantId = req.tenantId;
         await logAudit("CREATE_PRODUCT", req.user.email, `Product: ${created.name}`, "Created new product", gymId, tenantId);
         res.status(201).json(serializeProduct(created));
     } catch (e) {
@@ -270,6 +294,9 @@ const updateProduct = async (req, res) => {
     }
 
     try {
+        const userRole = String(req.user?.role || '').toUpperCase();
+        const isAdminOrOwner = ['OWNER', 'ADMIN'].includes(userRole);
+
         const normalized = normalizeProductPayload(req.body);
         if (normalized.error) return res.status(400).json({ error: normalized.error });
 
@@ -280,7 +307,7 @@ const updateProduct = async (req, res) => {
 
             // Verify ownership
             const productWhere = { id, tenantId };
-            if (req.user.role !== 'OWNER' && req.user.gymId) {
+            if (!isAdminOrOwner && req.user.gymId) {
                 productWhere.OR = [
                     { isGlobal: true },
                     { gymId: Number(req.user.gymId) }
@@ -291,11 +318,13 @@ const updateProduct = async (req, res) => {
             if (!existing) throw new Error("Product not found or access denied");
 
             const productData = { ...normalized.data };
-            const isGlobal = productData.isGlobal;
+            
+            // For non-admins, ensure isGlobal doesn't change from existing value
+            const isGlobal = isAdminOrOwner ? productData.isGlobal : existing.isGlobal;
             delete productData.isGlobal;
 
-            await tx.product.updateMany({
-                where: { id, tenantId },
+            await tx.product.update({
+                where: { id },
                 data: {
                     ...productData,
                     isGlobal,
@@ -325,6 +354,8 @@ const updateProduct = async (req, res) => {
             });
         });
 
+        const gymId = req.gymId || req.user?.gymId;
+        const tenantId = req.tenantId;
         await logAudit("UPDATE_PRODUCT", req.user.email, `Product: ${updated.name}`, "Updated details", gymId, tenantId);
         res.json(serializeProduct(updated));
     } catch (e) {

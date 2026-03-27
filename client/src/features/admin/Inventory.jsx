@@ -56,6 +56,7 @@ export default function Inventory() {
         return (
             <ProductFormPage
                 productId={isProductEditPage ? routeIdParam : null}
+                user={user}
                 onCancel={() => navigate('/inventory?tab=products')}
                 onSaved={() => navigate('/inventory?tab=products')}
             />
@@ -126,7 +127,7 @@ function InventoryTabsPage({ user, navigate, location }) {
             </div>
 
             {activeTab === 'products' && <ProductsTab navigate={navigate} />}
-            {activeTab === 'categories' && <CategoriesTab />}
+            {activeTab === 'categories' && <CategoriesTab user={user} />}
             {activeTab === 'stock' && <StockOrdersTab user={user} navigate={navigate} />}
             {activeTab === 'suppliers' && <Suppliers />}
         </div>
@@ -451,7 +452,7 @@ function ProductsTab({ navigate }) {
     );
 }
 
-function CategoriesTab() {
+function CategoriesTab({ user }) {
     const { alert: showAlert, confirm: showConfirm } = useConfirm();
     const [categories, setCategories] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -507,7 +508,7 @@ function CategoriesTab() {
         setFormData({ 
             name: category.name || '', 
             description: category.description || '',
-            isGlobal: category.gymId === null
+            isGlobal: !!category.isGlobal
         });
         setShowForm(true);
     };
@@ -727,19 +728,21 @@ function CategoriesTab() {
                                     placeholder="Describe this category"
                                 />
                             </div>
-                            <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
-                                <label className="relative flex items-center cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={formData.isGlobal}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, isGlobal: e.target.checked }))}
-                                        className="sr-only peer"
-                                    />
-                                    <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                                    <span className="ms-3 text-sm font-medium text-white">Global Category</span>
-                                </label>
-                                <span className="material-icons-round text-text-muted text-sm" title="Global categories are shared across all branches.">help_outline</span>
-                            </div>
+                            {['OWNER', 'ADMIN'].includes(String(user?.role || '').toUpperCase()) && (
+                                <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+                                    <label className="relative flex items-center cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.isGlobal}
+                                            onChange={(e) => setFormData(prev => ({ ...prev, isGlobal: e.target.checked }))}
+                                            className="sr-only peer"
+                                        />
+                                        <div className="relative w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                                        <span className="ms-3 text-sm font-medium text-white">Global Category</span>
+                                    </label>
+                                    <span className="material-icons-round text-text-muted text-sm" title="Global categories are shared across all branches.">help_outline</span>
+                                </div>
+                            )}
                             <div className="flex justify-end gap-3 pt-2">
                                 <button type="button" onClick={closeForm} className="px-4 py-2 text-text-muted hover:text-white">
                                     Cancel
@@ -1122,7 +1125,7 @@ function StockOrdersTab({ user, navigate }) {
     );
 }
 
-function ProductFormPage({ productId, onCancel, onSaved }) {
+function ProductFormPage({ productId, onCancel, onSaved, user }) {
     const { alert: showAlert } = useConfirm();
     const { formatPrice } = useCurrency();
     const [loading, setLoading] = useState(false);
@@ -1172,7 +1175,7 @@ function ProductFormPage({ productId, onCancel, onSaved }) {
                 cost: String(safeNumber(product.cost, safeNumber(product.price))),
                 stock: String(safeInt(product.stock)),
                 minStock: String(safeInt(product.minStock, 5)),
-                isGlobal: product.gymId === null
+                isGlobal: !!product.isGlobal
             });
         } catch (error) {
             await showAlert({ title: 'Load Failed', message: 'Failed to load product details', type: 'danger' });
@@ -1262,25 +1265,27 @@ function ProductFormPage({ productId, onCancel, onSaved }) {
                             <span className="material-icons-round text-primary">badge</span>
                             <h2 className="text-white font-semibold">Basic Details</h2>
                         </div>
-                        <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
-                            <label className="relative flex items-center cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={formData.isGlobal}
-                                    onChange={(e) => {
-                                        const checked = e.target.checked;
-                                        setFormData(prev => ({ 
-                                            ...prev, 
-                                            isGlobal: checked
-                                        }));
-                                    }}
-                                    className="sr-only peer"
-                                />
-                                <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                                <span className="ms-3 text-sm font-medium text-white">Global Product</span>
-                            </label>
-                            <span className="material-icons-round text-text-muted text-sm" title="Global products are visible and sellable in all branches.">help_outline</span>
-                        </div>
+                        {['OWNER', 'ADMIN'].includes(String(user?.role || '').toUpperCase()) && (
+                            <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+                                <label className="relative flex items-center cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={formData.isGlobal}
+                                        onChange={(e) => {
+                                            const checked = e.target.checked;
+                                            setFormData(prev => ({ 
+                                                ...prev, 
+                                                isGlobal: checked
+                                            }));
+                                        }}
+                                        className="sr-only peer"
+                                    />
+                                    <div className="relative w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                                    <span className="ms-3 text-sm font-medium text-white">Global Product</span>
+                                </label>
+                                <span className="material-icons-round text-text-muted text-sm" title="Global products are visible and sellable in all branches.">help_outline</span>
+                            </div>
+                        )}
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-xs text-text-secondary mb-1">Product Name</label>

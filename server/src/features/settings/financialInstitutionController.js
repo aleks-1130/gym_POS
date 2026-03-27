@@ -2,9 +2,10 @@ const prisma = require('../../config/prisma');
 
 const getFinancialInstitutions = async (req, res) => {
     try {
+        const gymId = req.user.gymId || req.gymId;
         const institutions = await prisma.financialInstitution.findMany({
             where: { 
-                gymId: req.gymId,
+                gymId: Number(gymId),
                 tenantId: Number(req.user.tenantId)
             }
         });
@@ -21,7 +22,7 @@ const updateFinancialInstitutions = async (req, res) => {
     try {
         // Simple implementation: delete and recreate or upsert
         // For multi-tenancy safety, we only touch institutions for this gymId
-        const gymId = req.gymId;
+        const gymId = req.user.gymId || req.gymId;
 
         // Using a transaction to ensure atomic update
         await prisma.$transaction(async (tx) => {

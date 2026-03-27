@@ -25,6 +25,7 @@ router.post('/me/training-sessions/:id/rate', authenticateToken, authorize(['MEM
 router.post('/me/training-sessions/:id/rate/void', authenticateToken, authorize(['MEMBER']), memberController.voidTrainingSessionRating);
 router.get('/me/training-sessions', authenticateToken, authorize(['MEMBER']), memberController.getMyTrainingSessions);
 router.get('/me/class-bookings', authenticateToken, authorize(['MEMBER']), memberController.getMyClassBookings);
+router.get('/me/bundles', authenticateToken, authorize(['MEMBER']), memberController.getMyBundles);
 router.post('/me/class-bookings/:id/no-show-action', authenticateToken, authorize(['MEMBER']), memberController.requestClassNoShowAction);
 router.get('/orders', authenticateToken, authorize(['MEMBER', 'TRAINER']), shopController.getMemberOrders);
 
@@ -39,6 +40,7 @@ router.delete('/:id/payment-methods/:methodId', authenticateToken, memberControl
 router.post('/', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.createMember);
 router.post('/:id/renew', authenticateToken, authorize(['OWNER', 'ADMIN']), memberController.renewMembership);
 router.post('/:id/class-session-packages', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.purchaseClassSessionPackage);
+router.get('/:id/bundles', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.getMyBundles);
 router.get('/:id/payments', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.getMemberPayments);
 router.get('/:id/notes', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.getMemberNotes);
 router.post('/:id/notes', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), memberController.addMemberNote);

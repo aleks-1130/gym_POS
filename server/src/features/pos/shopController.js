@@ -283,7 +283,108 @@ const getMemberOrders = async (req, res) => {
     }
 };
 
+const claimBundleProduct = async (req, res) => {
+    const { memberBundleId, bucketId, productId } = req.body;
+    const memberId = req.user.id;
+    const { tenantId } = req.user;
+    const gymId = require('../../utils/context').getGymId();
+
+    try {
+        const result = await prisma.$transaction(async (tx) => {
+            // 1. Find and lock bucket
+            const bucket = await tx.memberBundleBucket.findUnique({
+                where: { id: Number(bucketId) },
+                include: { memberBundle: true }
+            });
+
+            if (!bucket || bucket.memberBundle.memberId !== Number(memberId) || bucket.memberBundle.status !== 'ACTIVE') {
+                throw new Error("Invalid or inactive bundle bucket");
+            }
+
+            if (bucket.type !== 'PRODUCT') {
+                throw new Error("This bucket is not for products");
+            }
+
+            if (bucket.productId && bucket.productId !== Number(productId)) {
+                throw new Error("This bundle bucket is only for a specific product");
+            }
+
+            // If no specific productId, we can fallback to referencePrice matching
+            if (!bucket.productId && bucket.referencePrice > 0) {
+                 // We will check the product price against referencePrice later
+            }
+
+            if (bucket.remaining < 1) {
+                throw new Error("No items remaining in this bundle bucket");
+            }
+
+            // 2. Find product for cost and stock
+            const product = await tx.product.findUnique({
+                where: { id: Number(productId) },
+                include: { 
+                    stocks: { where: { gymId } }
+                }
+            });
+
+            if (!product || product.tenantId !== tenantId) {
+                throw new Error("Product not found");
+            }
+
+            // Price Match Validation: if bucket is flexible (no productId), 
+            // the claimed product must match the referencePrice
+            if (!bucket.productId && bucket.referencePrice > 0) {
+                if (Number(product.price) !== Number(bucket.referencePrice)) {
+                    throw new Error(`Product price (${product.price}) does not match bundle reference price (${bucket.referencePrice})`);
+                }
+            }
+
+            const currentStock = product.stocks?.[0]?.quantity || 0;
+            if (currentStock < 1) {
+                throw new Error("Insufficient stock for the requested product");
+            }
+
+            // 3. Decrement bucket
+            await tx.memberBundleBucket.update({
+                where: { id: bucket.id },
+                data: { remaining: { decrement: 1 } }
+            });
+
+            // 4. Decrement stock
+            await tx.productStock.updateMany({
+                where: { productId: product.id, gymId, tenantId },
+                data: { quantity: { decrement: 1 } }
+            });
+
+            // 5. Record usage
+            const usage = await tx.serviceBundleUsage.create({
+                data: {
+                    memberBundleId: bucket.memberBundleId,
+                    type: 'PRODUCT_CLAIM',
+                    targetId: product.id,
+                    quantity: 1,
+                    actualCost: product.supplyCost || 0,
+                    tenantId
+                }
+            });
+
+            const { checkAndCompleteBundle } = require('../members/memberController');
+            await checkAndCompleteBundle(tx, bucket.memberBundleId);
+
+            return { usage, productName: product.name };
+        });
+
+        res.json({
+            message: `Successfully claimed ${result.productName} from bundle`,
+            usage: result.usage
+        });
+    } catch (e) {
+        console.error("Claim bundle product error:", e);
+        res.status(400).json({ error: e.message });
+    }
+};
+
 module.exports = {
     checkout,
-    getMemberOrders
+    getMemberOrders,
+    claimBundleProduct
 };

@@ -84,11 +84,38 @@ const getDashboardStats = async (req, res) => {
             const checkIns = member?.accessLogs?.length || 0;
             const loyaltyPoints = member?.points || 0;
 
+            // REFINEMENT: Also count sessions from bundles for the dashboard/stats
+            const bundleUsageCount = await prisma.serviceBundleUsage.count({
+                where: {
+                    memberBundle: { memberId: req.user.id },
+                    type: 'CLASS_BOOKING'
+                }
+            });
+
+            const bundleBuckets = await prisma.memberBundleBucket.findMany({
+                where: {
+                    memberBundle: {
+                        memberId: req.user.id,
+                        status: 'ACTIVE'
+                    },
+                    type: 'CLASS',
+                    remaining: { gte: 1 }
+                }
+            });
+            const bundleSessionsRemaining = bundleBuckets.reduce((sum, b) => sum + Number(b.remaining), 0);
+
+            // Add aggregated stats to memberData for the UI
+            const enhancedMemberData = {
+                ...member,
+                classSessionsUsed: Number(member.classSessionsUsed || 0) + bundleUsageCount,
+                classSessionsRemaining: Number(member.classSessionsRemaining || 0) + bundleSessionsRemaining
+            };
+
             return res.json({
                 activeMembers: 0, // Not relevant for member
                 revenueToday: 0, // Not relevant
                 expiringSoon: member.expiryDate, // Show their expiry
-                memberData: member,
+                memberData: enhancedMemberData,
                 currentPlanName,
                 checkIns,
                 loyaltyPoints

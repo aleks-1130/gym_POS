@@ -107,13 +107,20 @@ const getAllTrainers = async (req, res) => {
         const now = new Date();
         const todayIso = toLocalIsoDate(now);
             const getGymId = () => Number(req.gymId || req.user?.gymId);
-            const tenantId = Number(req.tenantId);
+            const tenantId = Number(req.tenantId || 1);
             const currentGymId = getGymId();
             const [trainers, trainerRatingCounts] = await Promise.all([
                 prisma.trainer.findMany({
                     where: {
-                        tenantId,
-                        gymId: currentGymId
+                        OR: [
+                            { gymId: null }, // Global
+                            {
+                                AND: [
+                                    { tenantId: Number(tenantId) },
+                                    { gymId: Number(currentGymId) }
+                                ]
+                            }
+                        ]
                     },
                     include: {
                         classes: true,
@@ -190,8 +197,15 @@ const getTrainerById = async (req, res) => {
         const trainer = await prisma.trainer.findFirst({
             where: { 
                 id: Number(req.params.id),
-                tenantId,
-                gymId: currentGymId
+                OR: [
+                    { gymId: null },
+                    {
+                        AND: [
+                            { tenantId: Number(tenantId) },
+                            { gymId: Number(currentGymId) }
+                        ]
+                    }
+                ]
             },
             include: {
                 classes: true,

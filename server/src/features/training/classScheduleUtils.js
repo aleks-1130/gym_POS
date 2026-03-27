@@ -109,10 +109,16 @@ const parseOneTimeDate = (value) => {
 };
 
 const resolveClassSessionStart = (cls, options = {}) => {
-    const now = options.now ? new Date(options.now) : new Date();
-    const requestedSessionDate = options.requestedSessionDate;
-    const preferToday = Boolean(options.preferToday);
-    const includePastOneTime = Boolean(options.includePastOneTime);
+    const {
+        now = new Date(),
+        requestedSessionDate,
+        preferToday = false,
+        includePastOneTime = false,
+        currentWeekOnly = false,
+        anchorDate = null // NEW: allows anchoring relative to a different week
+    } = options;
+
+    const referenceDate = anchorDate ? new Date(anchorDate) : now;
 
     const startMinutes = parseTimeToMinutes(cls?.time);
     const durationMinutes = Number(cls?.duration || 0);
@@ -161,21 +167,61 @@ const resolveClassSessionStart = (cls, options = {}) => {
         return requestedStart;
     }
 
-    if (preferToday) {
-        const todayDay = normalizeDayToken(getWeekdayName(now));
-        const todayBase = toDayStart(now);
-        const inRange = (!startDate || todayBase >= toDayStart(startDate)) && (!endDate || todayBase <= toDayStart(endDate));
-        
-        if (inRange && todayDay && classDays.includes(todayDay)) {
-            return buildDateAtMinutes(now, startMinutes);
-        }
-    }
 
     const todayStart = toDayStart(now);
     if (!todayStart) return null;
 
-    for (let offset = 0; offset < 28; offset += 1) { // Increased search range to 28 days for future classes
-        const candidateDay = new Date(todayStart);
+    const searchStart = new Date(todayStart);
+    let searchLimit = 28;
+
+    if (currentWeekOnly) {
+        // Calculate bounds for the ISO week containing referenceDate
+        const weekStart = new Date(referenceDate);
+        weekStart.setHours(0, 0, 0, 0);
+        const day = weekStart.getDay();
+        const diff = (day + 6) % 7;
+        weekStart.setDate(weekStart.getDate() - diff);
+
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 7);
+
+        // Helper to find the first session date for a recurring class within a given week
+        const findSessionInWeek = (classDetails, weekStartDate) => {
+            const classDaysInWeek = parseClassDays(classDetails?.daysOfWeek || classDetails?.dayOfWeek);
+            if (!classDaysInWeek.length) return null;
+
+            const startMinutesInWeek = parseTimeToMinutes(classDetails?.time);
+            if (startMinutesInWeek === null) return null;
+
+            for (let offset = 0; offset < 7; offset += 1) {
+                const candidateDay = new Date(weekStartDate);
+                candidateDay.setDate(weekStartDate.getDate() + offset);
+
+                const candidateToken = normalizeDayToken(getWeekdayName(candidateDay));
+                if (candidateToken && classDaysInWeek.includes(candidateToken)) {
+                    const candidateStart = buildDateAtMinutes(candidateDay, startMinutesInWeek);
+                    // Check against class start/end dates if they exist
+                    if (startDate && candidateStart < toDayStart(startDate)) continue;
+                    if (endDate && candidateStart > toDayStart(endDate)) continue;
+                    return candidateStart;
+                }
+            }
+            return null;
+        };
+
+        const candidate = findSessionInWeek(cls, weekStart);
+        if (candidate) {
+            // In currentWeekOnly mode relative to an anchor, we usually want that week's session
+            // even if it has passed (so UI can show "Ended").
+            if (candidate < weekEnd) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    for (let offset = 0; offset < searchLimit; offset += 1) {
+        const candidateDay = new Date(searchStart);
         candidateDay.setDate(candidateDay.getDate() + offset);
 
         // Date range check
@@ -187,10 +233,67 @@ const resolveClassSessionStart = (cls, options = {}) => {
 
         const candidateStart = buildDateAtMinutes(candidateDay, startMinutes);
         const candidateEnd = new Date(candidateStart.getTime() + (durationMinutes * 60000));
+        
+        // REFINEMENT: If currentWeekOnly is true, we want the session for the specific day 
+        // in the current week, even if it's in the past. This allows the UI to show "Class Ended".
+        if (currentWeekOnly) return candidateStart;
+
+        // Use candidateEnd to determine if the session is still "available" (either upcoming or in-progress)
         if (candidateEnd >= now) return candidateStart;
     }
 
     return null;
+};
+
+const resolveClassSessionsInRange = (cls, startRange, endRange) => {
+    const dates = [];
+    const startRangeDate = new Date(startRange);
+    const endRangeDate = new Date(endRange);
+    
+    if (Number.isNaN(startRangeDate.getTime()) || Number.isNaN(endRangeDate.getTime())) return [];
+
+    const startMinutes = parseTimeToMinutes(cls?.time);
+    if (startMinutes === null) return [];
+
+    const scheduleType = normalizeScheduleType(cls?.scheduleType);
+    if (scheduleType === 'ONE_TIME') {
+        const oneTimeBase = parseOneTimeDate(cls?.oneTimeDate);
+        if (!oneTimeBase) return [];
+        const oneTimeStart = buildDateAtMinutes(oneTimeBase, startMinutes);
+        if (oneTimeStart >= startRangeDate && oneTimeStart <= endRangeDate) {
+            dates.push(oneTimeStart);
+        }
+    } else {
+        const classDays = parseClassDays(cls?.daysOfWeek || cls?.dayOfWeek);
+        if (!classDays.length) return [];
+
+        const clsStart = cls?.startDate ? new Date(cls.startDate) : null;
+        const clsEnd = cls?.endDate ? new Date(cls.endDate) : null;
+
+        // Iterate through each day in range
+        let current = new Date(startRangeDate);
+        current.setHours(0, 0, 0, 0);
+        
+        while (current <= endRangeDate) {
+            // Range check
+            const dayStart = toDayStart(current);
+            if ((clsStart && dayStart < toDayStart(clsStart)) || (clsEnd && dayStart > toDayStart(clsEnd))) {
+                current.setDate(current.getDate() + 1);
+                continue;
+            }
+
+            const dayToken = normalizeDayToken(getWeekdayName(current));
+            if (dayToken && classDays.includes(dayToken)) {
+                const sessionStart = buildDateAtMinutes(current, startMinutes);
+                if (sessionStart >= startRangeDate && sessionStart <= endRangeDate) {
+                    dates.push(sessionStart);
+                }
+            }
+            current.setDate(current.getDate() + 1);
+        }
+    }
+
+    return dates;
 };
 
 const resolveCompletionWindow = (cls, sessionStart, now = new Date()) => {
@@ -246,5 +349,6 @@ module.exports = {
     buildDateAtMinutes,
     parseOneTimeDate,
     resolveClassSessionStart,
+    resolveClassSessionsInRange, // Added
     resolveCompletionWindow
 };

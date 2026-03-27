@@ -20,7 +20,7 @@ import { useAuth } from '../../../context/AuthContext';
 /**
  * POSCart Component - Manages the cart items, member selection, and training details.
  */
-export default function POSCart({ members, trainers, discountOptions, initiateCheckout, openReceiptTemplatePreview }) {
+export default function POSCart({ members, products, trainers, discountOptions, initiateCheckout, openReceiptTemplatePreview }) {
     const { user } = useAuth();
     const branchTaxRate = user?.gym?.taxRate ?? 12;
     const { currency: globalCurrency } = useCurrency();
@@ -41,7 +41,7 @@ export default function POSCart({ members, trainers, discountOptions, initiateCh
     const {
         cart, selectedMemberId, discount, appliedCoupon,
         removeFromCart, updateQuantity, setSelectedMemberId, setDiscount, setAppliedCoupon,
-        updateTrainingDetails, clearCart
+        updateTrainingDetails, setSelectedBundleItems, clearCart
     } = usePOSStore(useShallow(state => ({
         cart: state.cart,
         selectedMemberId: state.selectedMemberId,
@@ -53,6 +53,7 @@ export default function POSCart({ members, trainers, discountOptions, initiateCh
         setDiscount: state.setDiscount,
         setAppliedCoupon: state.setAppliedCoupon,
         updateTrainingDetails: state.updateTrainingDetails,
+        setSelectedBundleItems: state.setSelectedBundleItems,
         clearCart: state.clearCart
     })));
 
@@ -64,6 +65,7 @@ export default function POSCart({ members, trainers, discountOptions, initiateCh
     const [couponInput, setCouponInput] = useState('');
     const [couponLoading, setCouponLoading] = useState(false);
     const [couponError, setCouponError] = useState('');
+    const [openBundleLineId, setOpenBundleLineId] = useState(null);
 
     const selectedDiscountPresetId = (discountOptions.find((option) => Number(option.rate) === Number(discount)) || {}).id || '';
 
@@ -203,6 +205,83 @@ export default function POSCart({ members, trainers, discountOptions, initiateCh
                                         </button>
                                     </div>
                                     <p className="text-white font-bold text-sm tracking-tighter">{formatPrice(item.price * item.quantity)}</p>
+                                </div>
+                            )}
+
+                            {/* Bundle Details & Item Selection */}
+                            {item.type === 'SERVICE_BUNDLE' && (
+                                <div className="mt-2 space-y-2">
+                                    {(item.buckets || []).map((bucket, bIdx) => {
+                                        const isCategoryBucket = bucket.type === 'PRODUCT' && bucket.productCategory;
+                                        const selectedItems = bucket.selectedItems || [];
+                                        const selectedTotal = selectedItems.reduce((sum, si) => sum + (si.price * si.quantity), 0);
+                                        const needsSelection = isCategoryBucket && selectedTotal < bucket.referencePrice;
+
+                                        return (
+                                            <div key={bIdx} className="bg-white/5 rounded-xl p-2 border border-white/5">
+                                                <div className="flex justify-between items-start mb-1">
+                                                    <div>
+                                                        <p className="text-[10px] text-text-muted uppercase font-bold">
+                                                            Bucket {bIdx + 1}: {isCategoryBucket ? `Category ${bucket.productCategory}` : 'Specific Product'}
+                                                        </p>
+                                                        <p className="text-[11px] text-white">
+                                                            {isCategoryBucket ? `Select up to ${formatPrice(bucket.referencePrice)}` : bucket.product?.name}
+                                                        </p>
+                                                    </div>
+                                                    {isCategoryBucket && (
+                                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${selectedTotal >= bucket.referencePrice ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                                                            {formatPrice(selectedTotal)} / {formatPrice(bucket.referencePrice)}
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                {isCategoryBucket && (
+                                                    <div className="space-y-1.5 mt-2">
+                                                        {selectedItems.map((si, siIdx) => (
+                                                            <div key={siIdx} className="flex justify-between items-center bg-black/20 rounded-lg px-2 py-1">
+                                                                <span className="text-[10px] text-white truncate max-w-[140px]">{si.name} (x{si.quantity})</span>
+                                                                <button 
+                                                                    onClick={() => {
+                                                                        const updated = selectedItems.filter((_, i) => i !== siIdx);
+                                                                        setSelectedBundleItems(item.cartLineId, bIdx, updated);
+                                                                    }}
+                                                                    className="text-text-muted hover:text-red-400"
+                                                                >
+                                                                    <span className="material-icons-round text-sm">remove_circle</span>
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                        
+                                                        {needsSelection && (
+                                                            <select
+                                                                className="w-full bg-surface border border-white/10 rounded-lg px-2 py-1 text-[10px] text-white outline-none focus:border-primary"
+                                                                value=""
+                                                                onChange={(e) => {
+                                                                    const prod = products.find(p => p.id === Number(e.target.value));
+                                                                    if (prod) {
+                                                                        const existing = selectedItems.find(si => si.id === prod.id);
+                                                                        if (existing) {
+                                                                            const updated = selectedItems.map(si => si.id === prod.id ? { ...si, quantity: si.quantity + 1 } : si);
+                                                                            setSelectedBundleItems(item.cartLineId, bIdx, updated);
+                                                                        } else {
+                                                                            setSelectedBundleItems(item.cartLineId, bIdx, [...selectedItems, { ...prod, quantity: 1 }]);
+                                                                        }
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <option value="">+ Add Item from {bucket.productCategory}</option>
+                                                                {products
+                                                                    .filter(p => !bucket.productCategory || p.category === bucket.productCategory)
+                                                                    .map(p => (
+                                                                        <option key={p.id} value={p.id}>{p.name} ({formatPrice(p.price)})</option>
+                                                                    ))}
+                                                            </select>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             )}
 

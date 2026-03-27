@@ -8,7 +8,15 @@ const normalizeCategoryDescription = (value) => String(value || '').trim();
 
 const ensureDefaultCategories = async (tenantId) => {
     if (!tenantId) return;
-    const count = await prisma.category.count({ where: { tenantId } });
+    // Check if any categories exist for this tenant OR any global categories exist at all
+    const count = await prisma.category.count({ 
+        where: { 
+            OR: [
+                { tenantId },
+                { isGlobal: true }
+            ]
+        } 
+    });
     if (count > 0) return;
 
     await prisma.category.createMany({
@@ -45,8 +53,19 @@ const getCategories = async (req, res) => {
     try {
         const tenantId = req.tenantId;
         await ensureDefaultCategories(tenantId);
+        const where = {
+            AND: [
+                {
+                    OR: [
+                        { isGlobal: true },
+                        { tenantId: Number(tenantId) }
+                    ]
+                }
+            ]
+        };
+
         const categories = await prisma.category.findMany({
-            where: { tenantId },
+            where,
             orderBy: { name: 'asc' }
         });
         const response = await buildCategoryResponse(categories, tenantId);
@@ -76,12 +95,15 @@ const createCategory = async (req, res) => {
             return res.status(400).json({ error: 'Category already exists' });
         }
 
+        const userRole = String(req.user?.role || '').toUpperCase();
+        const isAdminOrOwner = ['OWNER', 'ADMIN'].includes(userRole);
+
         const created = await prisma.category.create({
             data: { 
                 name, 
                 description: description || null,
                 tenantId: req.tenantId,
-                isGlobal: req.body.isGlobal === true || String(req.body.isGlobal).toLowerCase() === 'true'
+                isGlobal: isAdminOrOwner ? (req.body.isGlobal === true || String(req.body.isGlobal).toLowerCase() === 'true') : false
             }
         });
 
@@ -124,6 +146,9 @@ const updateCategory = async (req, res) => {
             return res.status(400).json({ error: 'Category already exists' });
         }
 
+        const userRole = String(req.user?.role || '').toUpperCase();
+        const isAdminOrOwner = ['OWNER', 'ADMIN'].includes(userRole);
+
         const previousName = existingCategory.name;
         const updated = await prisma.$transaction(async (tx) => {
             if (previousName.toLowerCase() !== name.toLowerCase()) {
@@ -133,12 +158,14 @@ const updateCategory = async (req, res) => {
                 });
             }
 
+            const isGlobal = isAdminOrOwner ? (req.body.isGlobal === true || String(req.body.isGlobal).toLowerCase() === 'true') : existingCategory.isGlobal;
             return tx.category.update({
-                where: { id, tenantId },
+                where: { id },
                 data: {
                     name,
                     description: description || null,
-                    isGlobal: req.body.isGlobal === true || String(req.body.isGlobal).toLowerCase() === 'true'
+                    isGlobal,
+                    gymId: isGlobal ? null : undefined
                 }
             });
         });

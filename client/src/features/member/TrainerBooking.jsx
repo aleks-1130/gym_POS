@@ -247,8 +247,11 @@ export default function TrainerBooking() {
     const [bookingData, setBookingData] = useState({
         duration: 60,
         notes: '',
-        paymentMethod: 'CASH'
+        paymentMethod: 'CASH',
+        useBundle: false
     });
+    const [memberBundles, setMemberBundles] = useState([]);
+    const [loadingBundles, setLoadingBundles] = useState(false);
     const [selectedDates, setSelectedDates] = useState([]);
     const [selectedTimesByDate, setSelectedTimesByDate] = useState({});
     const [bookingLoading, setBookingLoading] = useState(false);
@@ -328,6 +331,24 @@ export default function TrainerBooking() {
 
         fetchMethods();
     }, [user?.id]);
+
+    useEffect(() => {
+        if (user?.id) {
+            fetchMemberBundles();
+        }
+    }, [user?.id]);
+
+    const fetchMemberBundles = async () => {
+        setLoadingBundles(true);
+        try {
+            const res = await axios.get('/api/members/me/bundles');
+            setMemberBundles(res.data || []);
+        } catch (error) {
+            console.error('Failed to fetch bundles:', error);
+        } finally {
+            setLoadingBundles(false);
+        }
+    };
 
     // Prevent body scroll when modal is open (PWA best practice)
     useEffect(() => {
@@ -573,7 +594,8 @@ export default function TrainerBooking() {
                     date,
                     time: selectedTimesByDate[date]
                 })),
-                ...(bookingData.paymentMethod !== 'CASH' ? { paymentMethodId: Number(selectedMethodId) } : {})
+                ...(bookingData.paymentMethod !== 'CASH' ? { paymentMethodId: Number(selectedMethodId) } : {}),
+                useBundle: bookingData.useBundle
             };
             const response = await axios.post(endpoint, payload);
             const bookedCount = Number(response?.data?.bookedCount || selectedDates.length);
@@ -581,13 +603,13 @@ export default function TrainerBooking() {
                 count: bookedCount,
                 trainerName: selectedTrainer.name,
                 dates: selectedDates,
-                paymentMethod: bookingData.paymentMethod
+                paymentMethod: bookingData.useBundle ? 'Bundle Credit' : bookingData.paymentMethod
             });
             setShowSuccessModal(true);
 
             setShowBookingModal(false);
             setSelectedTrainer(null);
-            setBookingData({ duration: 60, notes: '', paymentMethod: 'CASH' });
+            setBookingData({ duration: 60, notes: '', paymentMethod: 'CASH', useBundle: false });
             setSelectedDates([]);
             setSelectedTimesByDate({});
             fetchTrainers();
@@ -2365,10 +2387,32 @@ export default function TrainerBooking() {
                                         </div>
                                     </div>
 
-                                    <div className="pt-4 border-t border-white/5">
-                                        <div className="flex items-center justify-between mb-6">
-                                            <span className="text-xs font-bold text-white/40 uppercase tracking-[0.2em]">Total Investment</span>
-                                            <span className="text-2xl font-black text-primary">{formatPrice(selectedTrainer.sessionPrice ?? 300)}</span>
+                                    <div className="pt-4 border-t border-white/5 space-y-4">
+                                        {memberBundles.some(mb => mb.status === 'ACTIVE' && mb.buckets?.some(b => b.type === 'TRAINING_SESSION' && b.remaining >= selectedDates.length)) && (
+                                            <div 
+                                                onClick={() => setBookingData(prev => ({ ...prev, useBundle: !prev.useBundle }))}
+                                                className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${bookingData.useBundle ? 'bg-primary/10 border-primary shadow-lg shadow-primary/10' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${bookingData.useBundle ? 'bg-primary text-background' : 'bg-white/10 text-white/40'}`}>
+                                                        <span className="material-icons-round">stars</span>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-sm font-black text-white">Use Training Credit</p>
+                                                        <p className="text-[10px] font-bold text-white/40 uppercase tracking-wider">From your active bundle</p>
+                                                    </div>
+                                                </div>
+                                                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${bookingData.useBundle ? 'bg-primary border-primary' : 'border-white/20'}`}>
+                                                    {bookingData.useBundle && <span className="material-icons-round text-background text-sm">check</span>}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className="text-xs font-bold text-white/40 uppercase tracking-[0.2em]">{bookingData.useBundle ? 'Credit Required' : 'Total Investment'}</span>
+                                            <span className="text-2xl font-black text-primary">
+                                                {bookingData.useBundle ? `${selectedDates.length} Session${selectedDates.length > 1 ? 's' : ''}` : formatPrice(selectedTrainer.sessionPrice ?? 300)}
+                                            </span>
                                         </div>
 
                                         <button

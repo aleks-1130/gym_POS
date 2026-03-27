@@ -21,6 +21,36 @@ const categoryStyles = {
         icon: 'local_offer',
         unreadCard: 'border-emerald-500/35 bg-emerald-500/10',
         readCard: 'border-emerald-500/20 bg-emerald-500/5'
+    },
+    PAYMENT_RECEIPT: {
+        icon: 'receipt',
+        unreadCard: 'border-amber-500/35 bg-amber-500/10',
+        readCard: 'border-amber-500/20 bg-amber-500/5'
+    },
+    BOOKING_CONFIRMED: {
+        icon: 'event_available',
+        unreadCard: 'border-purple-500/35 bg-purple-500/10',
+        readCard: 'border-purple-500/20 bg-purple-500/5'
+    },
+    CLASS_REMINDER: {
+        icon: 'notifications_active',
+        unreadCard: 'border-orange-500/35 bg-orange-500/10',
+        readCard: 'border-orange-500/20 bg-orange-500/5'
+    },
+    WAITLIST_JOINED: {
+        icon: 'hourglass_empty',
+        unreadCard: 'border-slate-500/35 bg-slate-500/10',
+        readCard: 'border-slate-500/20 bg-slate-500/5'
+    },
+    WAITLIST_PROMOTION: {
+        icon: 'auto_awesome',
+        unreadCard: 'border-sky-500/35 bg-sky-500/10',
+        readCard: 'border-sky-500/20 bg-sky-500/5'
+    },
+    TRAINING_REMINDER: {
+        icon: 'fitness_center',
+        unreadCard: 'border-indigo-500/35 bg-indigo-500/10',
+        readCard: 'border-indigo-500/20 bg-indigo-500/5'
     }
 };
 
@@ -41,6 +71,7 @@ const defaultPreferences = {
 };
 
 const ANNOUNCEMENT_TYPES = new Set(['INFO', 'ALERT', 'PROMO', 'ANNOUNCEMENT']);
+const PRIVATE_UPDATE_TYPES = new Set(['PAYMENT_RECEIPT', 'BOOKING_CONFIRMED', 'TRAINING_BOOKED', 'CLASS_REMINDER', 'WAITLIST_JOINED', 'WAITLIST_PROMOTION', 'TRAINING_REMINDER']);
 
 const formatDateTime = (value) => {
     const date = new Date(value);
@@ -54,10 +85,18 @@ const formatDateTime = (value) => {
     });
 };
 
-const isBroadcastAnnouncement = (item) => {
+const isDisplayableNotification = (item) => {
+    if (!item) return false;
     const type = String(item?.type || '').toUpperCase();
     const targetGroup = String(item?.targetGroup || '').toUpperCase();
-    return Boolean(item?.isAnnouncement) && ANNOUNCEMENT_TYPES.has(type) && targetGroup !== 'PRIVATE';
+
+    // 1. Broadcasts (Announcements)
+    const isBroadcast = Boolean(item?.isAnnouncement) && ANNOUNCEMENT_TYPES.has(type) && targetGroup !== 'PRIVATE';
+    
+    // 2. Private but relevant updates (Receipts, Bookings, etc.)
+    const isPrivateUpdate = PRIVATE_UPDATE_TYPES.has(type);
+
+    return isBroadcast || isPrivateUpdate;
 };
 
 export default function MemberAnnouncements() {
@@ -106,8 +145,16 @@ export default function MemberAnnouncements() {
 
     const filteredAnnouncements = useMemo(() => (
         announcements
-            .filter((announcement) => isBroadcastAnnouncement(announcement))
-            .filter((announcement) => filter === 'ALL' || String(announcement?.type || '').toUpperCase() === filter)
+            .filter((announcement) => isDisplayableNotification(announcement))
+            .filter((announcement) => {
+                if (filter === 'ALL') return true;
+                const type = String(announcement?.type || '').toUpperCase();
+                if (filter === 'INFO') {
+                    // Group general info, announcements, and private updates together under "Info"
+                    return type === 'INFO' || type === 'ANNOUNCEMENT' || PRIVATE_UPDATE_TYPES.has(type);
+                }
+                return type === filter;
+            })
             .sort((a, b) => new Date(b?.date || b?.createdAt || 0) - new Date(a?.date || a?.createdAt || 0))
     ), [announcements, filter]);
 

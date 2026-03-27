@@ -184,7 +184,7 @@ const getMembers = async (req, res) => {
         const { search, page, limit, branchId } = req.query;
         const baseWhere = { 
             status: { not: 'DELETED' },
-            tenantId: Number(tenantId)
+            tenantId: Number(tenantId || 1)
         };
 
         if (branchId) {
@@ -231,7 +231,7 @@ const getMembers = async (req, res) => {
                 prisma.member.count({ where: queryOptions.where })
             ]);
 
-            const [globalTotal, expiredByStatus, expiredByDateOnly, active, freezed] = await Promise.all([
+            const [globalTotal, expiredByStatus, expiredByDateOnly, activeBasic, freezedBasic, hasActiveBundles] = await Promise.all([
                 prisma.member.count({ where: baseWhere }),
                 prisma.member.count({ where: { ...baseWhere, status: 'EXPIRED' } }),
                 prisma.member.count({
@@ -254,9 +254,69 @@ const getMembers = async (req, res) => {
                         status: 'FREEZED',
                         OR: [{ expiryDate: null }, { expiryDate: { gte: todayStart } }]
                     }
+                }),
+                // Count members who have at least one ACTIVE bundle
+                prisma.member.count({
+                    where: {
+                        ...baseWhere,
+                        memberBundles: {
+                            some: { status: 'ACTIVE' }
+                        }
+                    }
                 })
             ]);
-            const expired = expiredByStatus + expiredByDateOnly;
+
+            // For totals, we consider "EXPIRED" as someone who is truly expired (no active plan AND no active bundles)
+            // But the current logic is status-based. 
+            // To match the UI (getResolvedStatus), we should be consistent.
+            // If getResolvedStatus returns 'ACTIVE' for someone with an active bundle, they should be in the active count.
+            
+            // Re-calculate more accurately to match UI expectations:
+            const [activeFinal, freezedFinal, expiredFinal] = await Promise.all([
+                // Active: (Status=ACTIVE AND not date-expired) OR (Has active bundles)
+                prisma.member.count({
+                    where: {
+                        ...baseWhere,
+                        OR: [
+                            {
+                                status: 'ACTIVE',
+                                OR: [{ expiryDate: null }, { expiryDate: { gte: todayStart } }]
+                            },
+                            {
+                                memberBundles: {
+                                    some: { status: 'ACTIVE' }
+                                }
+                            }
+                        ]
+                    }
+                }),
+                // Freezed: Status=FREEZED
+                prisma.member.count({
+                    where: {
+                        ...baseWhere,
+                        status: 'FREEZED'
+                    }
+                }),
+                // Expired: Everything else (Status=EXPIRED OR date-expired) AND (No active bundles)
+                prisma.member.count({
+                    where: {
+                        ...baseWhere,
+                        AND: [
+                            {
+                                OR: [
+                                    { status: 'EXPIRED' },
+                                    { expiryDate: { lt: todayStart } }
+                                ]
+                            },
+                            {
+                                memberBundles: {
+                                    none: { status: 'ACTIVE' }
+                                }
+                            }
+                        ]
+                    }
+                })
+            ]);
 
             return res.json({
                 data: members,
@@ -267,9 +327,9 @@ const getMembers = async (req, res) => {
                     totalPages: Math.ceil(total / limit),
                     statusTotals: {
                         total: globalTotal,
-                        active,
-                        freezed,
-                        expired
+                        active: activeFinal,
+                        freezed: freezedFinal,
+                        expired: expiredFinal
                     }
                 }
             });
@@ -424,14 +484,41 @@ const getAvailableClasses = async (req, res) => {
 
         const includedClassSessions = getPlanClassSessions(member.plan);
         const classSessionsPurchased = Number(member.classSessionsPurchased || 0);
-        const classSessionsUsed = Number(member.classSessionsUsed || 0);
-        const ledgerRemaining = Math.max(0, (includedClassSessions + classSessionsPurchased) - classSessionsUsed);
+        const legacySessionsUsed = Number(member.classSessionsUsed || 0);
+
+        // REFINEMENT: Also count sessions used from bundles
+        const bundleUsageCount = await prisma.serviceBundleUsage.count({
+            where: {
+                memberBundle: { memberId },
+                type: 'CLASS_BOOKING'
+            }
+        });
+
+        const classSessionsUsed = legacySessionsUsed + bundleUsageCount;
+
+        // REFINEMENT: Also count remaining sessions from bundles
+        const bundleBuckets = await prisma.memberBundleBucket.findMany({
+            where: {
+                memberBundle: {
+                    memberId,
+                    status: 'ACTIVE'
+                },
+                type: 'CLASS',
+                remaining: { gte: 1 }
+            }
+        });
+        const bundleSessionsRemaining = bundleBuckets.reduce((sum, b) => sum + Number(b.remaining), 0);
+
+        const ledgerRemaining = Math.max(0, (includedClassSessions + classSessionsPurchased) - legacySessionsUsed);
         const storedRemaining = Number(member.classSessionsRemaining || 0);
-        const classSessionsRemaining = Math.max(0, Math.max(storedRemaining, ledgerRemaining));
-        if (classSessionsRemaining !== storedRemaining) {
+        const legacySessionsRemaining = Math.max(0, Math.max(storedRemaining, ledgerRemaining));
+
+        const classSessionsRemaining = legacySessionsRemaining + bundleSessionsRemaining;
+
+        if (legacySessionsRemaining !== storedRemaining) {
             await prisma.member.update({
                 where: { id: memberId },
-                data: { classSessionsRemaining }
+                data: { classSessionsRemaining: legacySessionsRemaining }
             });
         }
         const canBookClasses = classSessionsRemaining > 0;
@@ -446,39 +533,83 @@ const getAvailableClasses = async (req, res) => {
                 .filter((booking) => !booking.sessionDate)
                 .map((booking) => Number(booking.classId))
         );
+        const { date: anchorDateString, viewMode = 'WEEK' } = req.query;
+        const anchorDate = anchorDateString ? new Date(anchorDateString) : now;
 
-        const classRows = await Promise.all(classes.map(async (cls) => {
-            const sessionDate = resolveClassSessionStart(cls, {
-                now,
-                preferToday: false,
-                includePastOneTime: false
-            });
-            if (!sessionDate) return null;
+        let classRows = [];
 
-            const enrolled = await prisma.booking.count({
-                where: {
-                    classId: cls.id,
+        if (viewMode === 'MONTH') {
+            const startOfMonth = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1);
+            const endOfMonth = new Date(anchorDate.getFullYear(), anchorDate.getMonth() + 1, 0, 23, 59, 59, 999);
+
+            const allSessions = await Promise.all(classes.map(async (cls) => {
+                const sessionDates = resolveClassSessionsInRange(cls, startOfMonth, endOfMonth);
+                
+                return Promise.all(sessionDates.map(async (sessionDate) => {
+                    const enrolled = await prisma.booking.count({
+                        where: {
+                            classId: cls.id,
+                            sessionDate,
+                            status: 'CONFIRMED'
+                        }
+                    });
+
+                    const waitlisted = await prisma.booking.count({
+                        where: {
+                            classId: cls.id,
+                            sessionDate,
+                            status: 'WAITLISTED'
+                        }
+                    });
+
+                    return {
+                        ...cls,
+                        sessionDate,
+                        enrolled,
+                        waitlisted,
+                        isBooked: bookKeySet.has(toSessionKey(cls.id, sessionDate)) || legacyBookedClassIds.has(Number(cls.id))
+                    };
+                }));
+            }));
+
+            classRows = allSessions.flat();
+        } else {
+            // Default: WEEK view
+            classRows = await Promise.all(classes.map(async (cls) => {
+                const sessionDate = resolveClassSessionStart(cls, {
+                    now,
+                    anchorDate,
+                    preferToday: false,
+                    includePastOneTime: false,
+                    currentWeekOnly: true
+                });
+                if (!sessionDate) return null;
+
+                const enrolled = await prisma.booking.count({
+                    where: {
+                        classId: cls.id,
+                        sessionDate,
+                        status: 'CONFIRMED'
+                    }
+                });
+
+                const waitlisted = await prisma.booking.count({
+                    where: {
+                        classId: cls.id,
+                        sessionDate,
+                        status: 'WAITLISTED'
+                    }
+                });
+
+                return {
+                    ...cls,
                     sessionDate,
-                    status: 'CONFIRMED'
-                }
-            });
-
-            const waitlisted = await prisma.booking.count({
-                where: {
-                    classId: cls.id,
-                    sessionDate,
-                    status: 'WAITLISTED'
-                }
-            });
-
-            return {
-                ...cls,
-                sessionDate,
-                enrolled,
-                waitlisted,
-                isBooked: bookKeySet.has(toSessionKey(cls.id, sessionDate)) || legacyBookedClassIds.has(Number(cls.id))
-            };
-        }));
+                    enrolled,
+                    waitlisted,
+                    isBooked: bookKeySet.has(toSessionKey(cls.id, sessionDate)) || legacyBookedClassIds.has(Number(cls.id))
+                };
+            }));
+        }
 
         const classesWithBooking = classRows
             .filter(Boolean)
@@ -536,10 +667,12 @@ const bookClass = async (req, res) => {
             }
 
             const resolvedSessionDate = resolveClassSessionStart(cls, {
-                now,
+                now: new Date(),
+                anchorDate: requestedSessionDate, // NEW: anchor to the week of the requested date
                 requestedSessionDate,
                 preferToday: false,
-                includePastOneTime: false
+                includePastOneTime: false,
+                currentWeekOnly: true 
             });
             if (!resolvedSessionDate) {
                 return { error: "No available session date for this class", status: 400 };
@@ -549,19 +682,38 @@ const bookClass = async (req, res) => {
                 return { error: "Invalid class session date", status: 400 };
             }
 
-            const alreadyCompleted = await tx.classHistory.findFirst({
-                where: {
-                    classId: parsedClassId,
-                    date: { gte: sessionBounds.start, lt: sessionBounds.end }
-                }
-            });
             if (alreadyCompleted) {
                 return { error: "This class session is already completed", status: 400 };
             }
 
-            if (Number(member.classSessionsRemaining || 0) <= 0) {
+            // NEW: Prevent booking if class has already started
+            const sessionMoment = new Date(resolvedSessionDate);
+            if (cls.time) {
+                const [h, m] = cls.time.split(':').map(s => parseInt(s));
+                const isPM = cls.time.toUpperCase().includes('PM');
+                let hours = h;
+                if (isPM && hours < 12) hours += 12;
+                if (!isPM && hours === 12) hours = 0;
+                sessionMoment.setHours(hours, m || 0, 0, 0);
+            }
+
+            if (now >= sessionMoment) {
+                return { error: "This class has already started or ended.", status: 400 };
+            }
+
+            const bundleBucket = await tx.memberBundleBucket.findFirst({
+                where: {
+                    memberBundle: { memberId, status: 'ACTIVE' },
+                    type: 'CLASS',
+                    remaining: { gte: 1 },
+                    tenantId
+                },
+                include: { memberBundle: true }
+            });
+
+            if (!bundleBucket && Number(member.classSessionsRemaining || 0) <= 0) {
                 return {
-                    error: "No class sessions remaining. Please purchase a class session package.",
+                    error: "No class sessions remaining. Please purchase a class session package or bundle.",
                     status: 400
                 };
             }
@@ -590,23 +742,52 @@ const bookClass = async (req, res) => {
             const isWaitlist = enrolled >= cls.capacity;
             const status = isWaitlist ? 'WAITLISTED' : 'CONFIRMED';
 
-            await tx.booking.create({
+            // Check if this booking should count as having the "24 hour reminder" sent
+            // If it's for tomorrow or today, the confirmation email IS the reminder.
+            const hoursUntilStart = (sessionMoment.getTime() - now.getTime()) / (1000 * 60 * 60);
+            const isWithin24Hours = hoursUntilStart > 0 && hoursUntilStart <= 24;
+
+            const booking = await tx.booking.create({
                 data: {
                     memberId,
                     classId: parsedClassId,
                     sessionDate: resolvedSessionDate,
-                    status
+                    status,
+                    reminderSent: isWithin24Hours // Mark as sent if it's within 24h to avoid double email from cron
                 }
             });
 
             if (status === 'CONFIRMED') {
-                await tx.member.update({
-                    where: { id: memberId },
-                    data: {
-                        classSessionsRemaining: { decrement: 1 },
-                        classSessionsUsed: { increment: 1 }
-                    }
-                });
+                if (bundleBucket) {
+                    // Use Bundle Credit
+                    await tx.memberBundleBucket.update({
+                        where: { id: bundleBucket.id },
+                        data: { remaining: { decrement: 1 } }
+                    });
+
+                    // Record Usage
+                    await tx.serviceBundleUsage.create({
+                        data: {
+                            memberBundleId: bundleBucket.memberBundleId,
+                            type: 'CLASS_BOOKING',
+                            targetId: booking.id,
+                            quantity: 1,
+                            actualCost: 0, // Classes usually have no direct cost record at redemption
+                            tenantId
+                        }
+                    });
+
+                    await checkAndCompleteBundle(tx, bundleBucket.memberBundleId);
+                } else {
+                    // Fallback to legacy credits
+                    await tx.member.update({
+                        where: { id: memberId },
+                        data: {
+                            classSessionsRemaining: { decrement: 1 },
+                            classSessionsUsed: { increment: 1 }
+                        }
+                    });
+                }
             }
 
             // Notification
@@ -948,10 +1129,28 @@ const bookTrainingSlots = async ({
     const sessionRate = Number(trainer.sessionPrice ?? 300);
     const totalPerSession = (numericDuration / 60) * sessionRate;
     const isCash = String(paymentMethod).toUpperCase() === 'CASH';
+    const isBundle = String(paymentMethod).toUpperCase() === 'BUNDLE' || String(paymentMethod).toUpperCase() === 'BUNDLE_CREDIT';
 
     const createdSessions = [];
 
     await prisma.$transaction(async (tx) => {
+        let bundleBucket = null;
+        if (isBundle) {
+            bundleBucket = await tx.memberBundleBucket.findFirst({
+                where: {
+                    memberBundle: { memberId: numericMemberId, status: 'ACTIVE' },
+                    type: 'TRAINING_SESSION',
+                    remaining: { gte: slots.length }
+                },
+                include: { memberBundle: true }
+            });
+            if (!bundleBucket) {
+                throw createHttpError(400, `Insufficient bundle credits for ${slots.length} PT sessions.`);
+            }
+        }
+
+        const priceToRecord = isBundle ? bundleBucket.referencePrice : totalPerSession;
+
         for (const slot of slots) {
             if (await checkBookingConflictWithClient(tx, numericTrainerId, slot.startDateTime, numericDuration)) {
                 throw createHttpError(409, 'This time slot is already booked by another member', slot.startDateTime.toISOString());
@@ -963,16 +1162,36 @@ const bookTrainingSlots = async ({
                     trainerId: numericTrainerId,
                     date: slot.startDateTime,
                     duration: numericDuration,
-                    price: totalPerSession,
+                    price: priceToRecord,
                     status: 'SCHEDULED',
                     paymentStatus: isCash ? 'UNPAID' : 'PAID',
                     paymentMethod,
-                    paidAt: isCash ? null : new Date(),
-                    notes: appendBookingBatchNote(notes, bookingBatchId)
+                    paidAt: (isCash) ? null : new Date(),
+                    notes: appendBookingBatchNote(notes, bookingBatchId),
+                    tenantId: trainer.tenantId,
+                    gymId: trainer.gymId
                 }
             });
 
-            if (!isCash && createPaymentRecord) {
+            if (isBundle) {
+                // Decrement bucket
+                await tx.memberBundleBucket.update({
+                    where: { id: bundleBucket.id },
+                    data: { remaining: { decrement: 1 } }
+                });
+
+                // Record usage
+                await tx.serviceBundleUsage.create({
+                    data: {
+                        memberBundleId: bundleBucket.memberBundleId,
+                        type: 'TRAINING_SESSION',
+                        targetId: createdSession.id,
+                        quantity: 1,
+                        actualCost: 0, // Recorded at completion
+                        tenantId: trainer.tenantId
+                    }
+                });
+            } else if (!isCash && createPaymentRecord) {
                 await createPaymentCompat(tx, {
                     amount: totalPerSession,
                     type: 'TRAINING',
@@ -983,6 +1202,10 @@ const bookTrainingSlots = async ({
             }
 
             createdSessions.push(createdSession);
+        }
+
+        if (isBundle && bundleBucket) {
+            await checkAndCompleteBundle(tx, bundleBucket.memberBundleId);
         }
     });
 
@@ -1026,7 +1249,7 @@ const normalizeTrainerRating = (trainer) => {
 
 // Book a Trainer Session (Member)
 const bookTraining = async (req, res) => {
-    const { trainerId, date, time, duration, notes, method, bookingBatchId, slots, paymentMethodId } = req.body;
+    const { trainerId, date, time, duration, notes, method, bookingBatchId, slots, paymentMethodId, useBundle } = req.body;
     const memberId = req.user.id;
 
     if (req.user.role !== 'MEMBER') {
@@ -1093,7 +1316,7 @@ const bookTraining = async (req, res) => {
         }
 
         let resolvedPaymentMethod = normalizedMethod;
-        if (normalizedMethod !== 'CASH') {
+        if (!useBundle && normalizedMethod !== 'CASH') {
             const parsedPaymentMethodId = Number(paymentMethodId);
             if (!Number.isInteger(parsedPaymentMethodId)) {
                 return res.status(400).json({ error: "Please select a saved payment method." });
@@ -1113,15 +1336,21 @@ const bookTraining = async (req, res) => {
             resolvedPaymentMethod = mapSavedPaymentMethodToSessionMethod(savedMethod.type);
         }
 
+        // Bundle Credit Logic
+        if (useBundle) {
+            // Note: Credits are now handled inside bookTrainingSlots for consistency
+        }
+
         const { createdSessions, totalAmount } = await bookTrainingSlots({
-            memberId,
+            memberId: Number(memberId),
             trainer,
             duration: numericDuration,
             notes,
             bookingBatchId,
             slots: parsedSlots.slots,
-            paymentMethod: resolvedPaymentMethod,
-            createPaymentRecord: true
+            paymentMethod: useBundle ? 'BUNDLE_CREDIT' : resolvedPaymentMethod,
+            paymentStatus: useBundle ? 'PAID' : 'UNPAID', // Set PAID if using bundle
+            tenantId: Number(req.user.tenantId)
         });
 
         // Immediate Notification
@@ -1307,6 +1536,26 @@ const getMemberProfile = async (req, res) => {
         });
         if (!member) return res.status(404).json({ error: "Member not found or access denied" });
 
+        // REFINEMENT: Also count sessions from bundles
+        const bundleUsageCount = await prisma.serviceBundleUsage.count({
+            where: {
+                memberBundle: { memberId: Number(id) },
+                type: 'CLASS_BOOKING'
+            }
+        });
+
+        const bundleBuckets = await prisma.memberBundleBucket.findMany({
+            where: {
+                memberBundle: {
+                    memberId: Number(id),
+                    status: 'ACTIVE'
+                },
+                type: 'CLASS',
+                remaining: { gte: 1 }
+            }
+        });
+        const bundleSessionsRemaining = bundleBuckets.reduce((sum, b) => sum + Number(b.remaining), 0);
+
         const loyaltyService = require('../../services/loyaltyService');
         await loyaltyService.reconcileMemberHistory({ memberId: Number(id) }).catch(err => console.error('Failed to reconcile loyalty history:', err.message));
 
@@ -1324,7 +1573,13 @@ const getMemberProfile = async (req, res) => {
             }
         });
 
-        res.json(auditedMember);
+        const enhancedMember = {
+            ...auditedMember,
+            classSessionsUsed: Number(auditedMember.classSessionsUsed || 0) + bundleUsageCount,
+            classSessionsRemaining: Number(auditedMember.classSessionsRemaining || 0) + bundleSessionsRemaining
+        };
+
+        res.json(enhancedMember);
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -2584,7 +2839,78 @@ const changePassword = async (req, res) => {
     }
 };
 
+const getMyBundles = async (req, res) => {
+    const { tenantId } = req.user;
+    const memberId = req.params.id ? Number(req.params.id) : Number(req.user.id);
+    console.log(`[DEBUG] getMyBundles for memberId: ${memberId}, tenantId: ${tenantId}`);
+
+    try {
+        const bundles = await prisma.memberBundle.findMany({
+            where: { 
+                memberId, 
+                tenantId 
+            },
+            include: {
+                bundle: true,
+                buckets: {
+                    include: {
+                        product: {
+                            select: {
+                                id: true,
+                                name: true,
+                                imageUrl: true,
+                                price: true
+                            }
+                        },
+                        items: true
+                    }
+                }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+
+        console.log(`[DEBUG] Found ${bundles.length} bundles for memberId: ${memberId}`);
+        res.json(bundles);
+    } catch (e) {
+        console.error("[ERROR] getMyBundles error:", e);
+        res.status(500).json({ error: "Failed to fetch bundles", message: e.message });
+    }
+};
+
+const checkAndCompleteBundle = async (txOrNil, memberBundleId) => {
+    // If first arg is a number, it's likely the memberBundleId and tx was omitted
+    let effectiveTx = prisma;
+    let effectiveId = memberBundleId;
+
+    if (typeof txOrNil === 'number' || typeof txOrNil === 'string') {
+        effectiveId = txOrNil;
+    } else if (txOrNil && typeof txOrNil.memberBundle?.findUnique === 'function') {
+        effectiveTx = txOrNil;
+    }
+
+    const bundle = await effectiveTx.memberBundle.findUnique({
+        where: { id: Number(effectiveId) },
+        include: { buckets: true }
+    });
+
+    if (!bundle || bundle.status !== 'ACTIVE') return;
+
+    const allBucketsDepleted = bundle.buckets.every(bucket => bucket.remaining <= 0);
+    const newStatus = allBucketsDepleted ? 'COMPLETED' : 'ACTIVE';
+
+    if (bundle.status !== newStatus) {
+        await effectiveTx.memberBundle.update({
+            where: { id: bundle.id },
+            data: { 
+                status: newStatus,
+                completedAt: newStatus === 'COMPLETED' ? new Date() : null
+            }
+        });
+    }
+};
+
 module.exports = {
+    checkAndCompleteBundle,
     requireActiveMembership,
     getMembers,
     getAvailableClasses,
@@ -2612,5 +2938,6 @@ module.exports = {
     useGuestPass,
     updateMember,
     changePassword,
-    deleteMember
+    deleteMember,
+    getMyBundles
 };

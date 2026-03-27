@@ -66,6 +66,7 @@ const authenticateToken = async (req, res, next) => {
         let userName = null;
         let userTrainerId = null;
         let userSessionVersion = 0;
+        let member = null;
 
         // 1. Check User (Admin/Staff/Owner/Trainer)
         const user = await prisma.user.findFirst({
@@ -83,9 +84,9 @@ const authenticateToken = async (req, res, next) => {
                 userSessionVersion = Number(user.sessionVersion || 0);
             } else {
                 // 2. Check Member
-                const member = await prisma.member.findFirst({
+                member = await prisma.member.findFirst({
                     where: { email: { equals: email, mode: 'insensitive' } },
-                    select: { id: true, firstName: true, gymId: true, sessionVersion: true }
+                    select: { id: true, firstName: true, gymId: true, tenantId: true, sessionVersion: true }
                 });
                 console.log('[DEBUG] Member Search Result:', member);
 
@@ -115,7 +116,7 @@ const authenticateToken = async (req, res, next) => {
             role: userRole,
             name: userName,
             gymId: req.gymId,
-            tenantId: user?.tenantId || decodedPayload?.tenantId || null,
+            tenantId: user?.tenantId || member?.tenantId || decodedPayload?.tenantId || null,
             trainerId: userTrainerId,
             neonSub: neonUserId,
             sessionVersion: userSessionVersion

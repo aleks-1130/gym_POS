@@ -192,6 +192,21 @@ export const usePOSStore = create((set, get) => ({
         }));
     },
 
+    setSelectedBundleItems: (cartLineId, bucketIndex, selectedItems) => {
+        set((state) => ({
+            cart: state.cart.map(item =>
+                (item.cartLineId === cartLineId)
+                    ? { 
+                        ...item, 
+                        buckets: item.buckets.map((b, idx) => 
+                            idx === bucketIndex ? { ...b, selectedItems } : b
+                        )
+                    }
+                    : item
+            )
+        }));
+    },
+
     // Modal Actions
     openModal: (modalName, data = null) => set((state) => {
         const newState = { modals: { ...state.modals, [modalName]: true } };

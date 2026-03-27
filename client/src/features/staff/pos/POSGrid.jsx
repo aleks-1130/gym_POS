@@ -36,7 +36,7 @@ export default function POSGrid({ products, plans, trainers, classPackages }) {
         ? plans
         : selectedCategory === POS_VIEWS.TRAINERS
             ? trainers
-            : selectedCategory === POS_VIEWS.PACKAGES
+            : selectedCategory === POS_VIEWS.BUNDLES
                 ? classPackages
                 : filteredProducts;
 
@@ -57,8 +57,8 @@ export default function POSGrid({ products, plans, trainers, classPackages }) {
     // Handlers
     const handleAddCatalogItem = async (item) => {
         const isTrainer = selectedCategory === POS_VIEWS.TRAINERS;
-        const isPackage = selectedCategory === POS_VIEWS.PACKAGES;
-        const isSoldOut = !isTrainer && !isPackage && selectedCategory !== POS_VIEWS.MEMBERSHIP && Number(item?.stock || 0) <= 0;
+        const isBundle = selectedCategory === POS_VIEWS.BUNDLES;
+        const isSoldOut = !isTrainer && !isBundle && selectedCategory !== POS_VIEWS.MEMBERSHIP && Number(item?.stock || 0) <= 0;
 
         if (isSoldOut) return;
 
@@ -70,8 +70,8 @@ export default function POSGrid({ products, plans, trainers, classPackages }) {
                 price: item.sessionPrice ?? 0,
                 duration: Number(item.sessionDurations?.split(',')[0]?.trim()) || 60
             }, 'TRAINING');
-        } else if (isPackage) {
-            result = await addToCart(item, 'CLASS_PACKAGE');
+        } else if (isBundle) {
+            result = await addToCart(item, item.type === 'SERVICE_BUNDLE' ? 'SERVICE_BUNDLE' : 'CLASS_PACKAGE');
         } else {
             result = await addToCart(item, selectedCategory === POS_VIEWS.MEMBERSHIP ? 'PLAN' : 'PRODUCT');
         }
@@ -139,9 +139,9 @@ export default function POSGrid({ products, plans, trainers, classPackages }) {
                 )}
                 {searchedDisplayItems.map((item) => {
                     const isTrainer = selectedCategory === 'TRAINERS';
-                    const isPackage = selectedCategory === 'PACKAGES';
+                    const isBundle = selectedCategory === POS_VIEWS.BUNDLES;
                     const isMembership = selectedCategory === POS_VIEWS.MEMBERSHIP;
-                    const isSoldOut = !isTrainer && !isPackage && selectedCategory !== 'MEMBERSHIP' && item.stock <= 0;
+                    const isSoldOut = !isTrainer && !isBundle && selectedCategory !== 'MEMBERSHIP' && item.stock <= 0;
                     const addLabel = isSoldOut ? 'Sold Out' : 'Add';
                     const membershipDurationLabel = getMembershipDurationLabel(item);
 
@@ -203,6 +203,21 @@ export default function POSGrid({ products, plans, trainers, classPackages }) {
                                 <h3 className="text-sm font-bold leading-tight text-white min-h-[2.25rem]">{item.name}</h3>
                                 {isMembership && (
                                     <p className="mt-1 text-[11px] text-text-muted font-medium">{membershipDurationLabel}</p>
+                                )}
+                                {isBundle && item.type === 'SERVICE_BUNDLE' && item.buckets && (
+                                    <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1">
+                                        {item.buckets.map((b, idx) => (
+                                            <span key={idx} className="flex items-center gap-0.5 text-[9px] font-bold text-text-muted uppercase">
+                                                <span className="material-icons-round text-[10px] text-primary">
+                                                    {b.type === 'CLASS' ? 'groups' : b.type === 'TRAINING_SESSION' ? 'person' : 'shopping_bag'}
+                                                </span>
+                                                {b.quantity}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                                {isBundle && item.type === 'CLASS_PACKAGE' && (
+                                    <p className="mt-1 text-[11px] text-text-muted font-medium font-mono">{item.sessions} SESSIONS</p>
                                 )}
                                 <div className="mt-2 flex items-center justify-between">
                                     <p className="text-primary font-bold">{formatPrice(isTrainer ? item.sessionPrice : item.price)}</p>

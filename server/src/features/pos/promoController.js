@@ -88,15 +88,22 @@ const applyPromoCode = async (req, res) => {
 
         const { tenantId, gymId: userGymId } = req.user;
         const gymId = userGymId || req.gymId;
+        const where = {
+            code: code.toUpperCase(),
+            isActive: true, // Promotion must be active
+            OR: [
+                { isGlobal: true },
+                {
+                    AND: [
+                        { tenantId: Number(tenantId) },
+                        ...(gymId && !isNaN(Number(gymId)) ? [{ gymId: Number(gymId) }] : [])
+                    ]
+                }
+            ]
+        };
+
         const promo = await prisma.promoCode.findFirst({
-            where: { 
-                code: code.toUpperCase(),
-                tenantId: tenantId, // Enforce Tenant Isolation
-                OR: [
-                    { gymId: Number(gymId) },
-                    { gymId: null }
-                ]
-            }
+            where
         });
 
         if (!promo) {
@@ -163,16 +170,24 @@ const getPromoCodes = async (req, res) => {
     try {
         const { tenantId, gymId: userGymId } = req.user;
         const gymId = userGymId || req.gymId;
+        const where = {
+            isActive: true,
+            OR: [
+                { isGlobal: true },
+                {
+                    AND: [
+                        { tenantId: Number(tenantId) },
+                        ...(gymId && !isNaN(Number(gymId)) ? [{ gymId: Number(gymId) }] : [])
+                    ]
+                }
+            ]
+        };
+
         const promos = await prisma.promoCode.findMany({ 
-            where: { 
-                tenantId: tenantId, // Enforce Tenant Isolation
-                OR: [
-                    { gymId: Number(gymId) },
-                    { gymId: null }
-                ]
-            },
-            orderBy: { createdAt: 'desc' } 
+            where,
+            orderBy: { createdAt: 'desc' }
         });
+        res.json(promos);
         res.json(promos);
     } catch (e) {
         res.status(500).json({ error: 'Failed to fetch promo codes' });
@@ -188,7 +203,7 @@ const createPromoCode = async (req, res) => {
 
         const { tenantId, gymId: userGymId } = req.user;
         const gymId = userGymId || req.gymId;
-        const targetGymId = isGlobal ? null : Number(gymId);
+        const targetGymId = gymId ? Number(gymId) : null;
 
         const existing = await prisma.promoCode.findFirst({ 
             where: { 
@@ -211,6 +226,7 @@ const createPromoCode = async (req, res) => {
                 productIds: Array.isArray(productIds) ? productIds.map(Number) : [],
                 categories: Array.isArray(categories) ? categories : [],
                 bogoConfig: bogoConfig || null,
+                isGlobal: !!isGlobal,
                 gymId: targetGymId,
                 tenantId: tenantId
             }
@@ -225,10 +241,11 @@ const createPromoCode = async (req, res) => {
 const updatePromoCode = async (req, res) => {
     try {
         const { id } = req.params;
-        const { isActive, description, maxUses, expiryDate, scope, productIds, categories, bogoConfig } = req.body;
+        const { isActive, description, maxUses, expiryDate, scope, productIds, categories, bogoConfig, isGlobal } = req.body;
 
         const { tenantId, gymId: userGymId } = req.user;
         const gymId = userGymId || req.gymId;
+        const targetGymId = (req.body.gymId !== undefined) ? (req.body.gymId ? Number(req.body.gymId) : null) : undefined;
         const promo = await prisma.promoCode.update({
             where: { 
                 id: Number(id),
@@ -246,7 +263,9 @@ const updatePromoCode = async (req, res) => {
                 ...(scope !== undefined && { scope }),
                 ...(productIds !== undefined && { productIds: productIds.map(Number) }),
                 ...(categories !== undefined && { categories }),
-                ...(bogoConfig !== undefined && { bogoConfig })
+                ...(bogoConfig !== undefined && { bogoConfig }),
+                ...(isGlobal !== undefined && { isGlobal: !!isGlobal }),
+                ...(targetGymId !== undefined && { gymId: targetGymId })
             }
         });
         res.json(promo);

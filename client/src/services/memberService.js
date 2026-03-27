@@ -109,5 +109,25 @@ export const memberService = {
     async getMemberPayments(id) {
         const response = await axios.get(withApiBase(`/api/members/${id}/payments`));
         return response.data;
+    },
+
+    /**
+     * Get member active service bundles
+     * @param {number} id - Member ID
+     * @returns {Promise<Array>} Array of member bundles with buckets
+     */
+    async getMemberBundles(id) {
+        const response = await axios.get(withApiBase(`/api/members/${id}/bundles`));
+        return response.data;
+    },
+
+    /**
+     * Claim a product from a bundle bucket
+     * @param {Object} claimData - { memberBundleId, bucketId }
+     * @returns {Promise<Object>} Success message and usage record
+     */
+    async claimBundleProduct(claimData) {
+        const response = await axios.post(withApiBase('/api/shop/claim-bundle-product'), claimData);
+        return response.data;
     }
 };

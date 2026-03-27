@@ -4,6 +4,12 @@ const cors = require('cors');
 const helmet = require('helmet');
 const path = require('path');
 const http = require('http');
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    // Application specific logging, throwing an error, or other logic here
+});
+
 const prisma = require('./src/config/prisma');
 const bcrypt = require('bcryptjs');
 const { authenticateToken, authorize } = require('./src/middleware/authMiddleware');
@@ -159,6 +165,35 @@ app.listen(PORT, '0.0.0.0', async () => {
     console.log(`\n\n=== GYM POS SERVER STARTED ON PORT ${PORT} (0.0.0.0) ===\n\n`);
     try {
         await connectRedis(); // Boot up Redis for POS Cart Cart Holds
+        // Ensure default tenant exists
+        const tenantCount = await prisma.tenant.count();
+        if (tenantCount === 0) {
+            await prisma.tenant.create({
+                data: {
+                    id: 1,
+                    tenantId: 'DEFAULT',
+                    name: 'Default Tenant'
+                }
+            });
+            console.log("Default Tenant created.");
+        }
+
+        // Ensure default gym exists
+        const gymCount = await prisma.gym.count();
+        if (gymCount === 0) {
+            await prisma.gym.create({
+                data: {
+                    id: 1,
+                    tenantId: 1,
+                    companyId: 'DEFAULT_GYM',
+                    name: 'Default Gym',
+                    currency: 'PHP',
+                    timezone: 'Asia/Manila'
+                }
+            });
+            console.log("Default Gym created.");
+        }
+
         const userCount = await prisma.user.count();
         if (userCount === 0) {
             console.log("Force Restart (Production Switch): " + new Date().toISOString());
@@ -167,7 +202,8 @@ app.listen(PORT, '0.0.0.0', async () => {
                     email: process.env.INITIAL_ADMIN_EMAIL || 'admin@gym.com',
                     password: await bcrypt.hash(process.env.INITIAL_ADMIN_PASSWORD || 'password123', 10),
                     name: 'Admin User',
-                    role: 'ADMIN'
+                    role: 'ADMIN',
+                    tenantId: 1
                 }
             });
             console.log(`Database seeded! Admin: ${process.env.INITIAL_ADMIN_EMAIL || 'admin@gym.com'}`);

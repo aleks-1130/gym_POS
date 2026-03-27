@@ -44,7 +44,8 @@ const normalizePlanInput = (body = {}) => {
             freezeLimitCount,
             guestPassEnabled,
             guestPassLimitCount,
-            isGlobal: (body.isGlobal === true || String(body.isGlobal).toLowerCase() === 'true')
+            isGlobal: (body.isGlobal === true || String(body.isGlobal).toLowerCase() === 'true'),
+            gymId: body.gymId !== undefined ? (body.gymId ? Number(body.gymId) : null) : undefined
         }
     };
 };
@@ -52,17 +53,25 @@ const normalizePlanInput = (body = {}) => {
 const getPlans = async (req, res) => {
     try {
         const { tenantId } = req.user;
+        const where = {
+            isActive: true,
+            deletedAt: null,
+            OR: [
+                { isGlobal: true },
+                {
+                    AND: [
+                        { tenantId: Number(tenantId) },
+                        ...(req.query.gymId && !isNaN(Number(req.query.gymId)) ? [{ gymId: Number(req.query.gymId) }] : [])
+                    ]
+                }
+            ]
+        };
+
         const plans = await prisma.plan.findMany({
-            where: {
-                deletedAt: null,
-                isActive: true,
-                OR: [
-                    { tenantId },
-                    { tenantId: null }
-                ]
-            },
+            where,
             orderBy: { price: 'asc' }
         });
+        res.set('Cache-Control', 'no-store');
         res.json(plans);
     } catch (e) {
         console.error('[getPlans] Error ==>', e.message, e);
@@ -81,7 +90,7 @@ const createPlan = async (req, res) => {
         const gymId = userGymId || req.gymId;
         const isOwner = String(role || '').toUpperCase() === 'OWNER';
         const isGlobalPlan = isOwner && parsed.data.isGlobal === true;
-        const targetGymId = isGlobalPlan ? null : Number(gymId);
+        const targetGymId = gymId ? Number(gymId) : null;
 
         const plan = await prisma.plan.create({ 
             data: { 
@@ -188,7 +197,8 @@ const normalizePackageInput = (body = {}) => {
             sessions, 
             price, 
             isActive,
-            isGlobal: (body.isGlobal === true || String(body.isGlobal).toLowerCase() === 'true')
+            isGlobal: (body.isGlobal === true || String(body.isGlobal).toLowerCase() === 'true'),
+            gymId: body.gymId !== undefined ? (body.gymId ? Number(body.gymId) : null) : undefined
         }
     };
 };
@@ -200,8 +210,13 @@ const getClassSessionPackages = async (req, res) => {
             where: {
                 deletedAt: null,
                 OR: [
-                    { tenantId },
-                    { tenantId: null }
+                    { isGlobal: true },
+                    {
+                        AND: [
+                            { tenantId: Number(tenantId) },
+                            ...(req.query.gymId && !isNaN(Number(req.query.gymId)) ? [{ gymId: Number(req.query.gymId) }] : [])
+                        ]
+                    }
                 ]
             },
             orderBy: [{ isActive: 'desc' }, { sessions: 'asc' }]
@@ -221,7 +236,7 @@ const createClassSessionPackage = async (req, res) => {
     try {
         const { tenantId, gymId: userGymId } = req.user;
         const gymId = userGymId || req.gymId;
-        const targetGymId = parsed.data.isGlobal ? null : Number(gymId);
+        const targetGymId = gymId ? Number(gymId) : null;
 
         const created = await prisma.classSessionPackage.create({ 
             data: { 

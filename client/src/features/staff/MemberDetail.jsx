@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useReactToPrint } from 'react-to-print';
@@ -59,11 +59,13 @@ export default function MemberDetail() {
     const [notes, setNotes] = useState([]);
     const [payments, setPayments] = useState([]);
     const [loadingPayments, setLoadingPayments] = useState(false);
-    const [editFormData, setEditFormData] = useState();
-    const [guestPassCountInput, setGuestPassCountInput] = useState('1');
-    const [guestPassCount, setGuestPassCount] = useState(1);
-    const [guestPassAgreementPrinted, setGuestPassAgreementPrinted] = useState(false);
     const [submittingGuestPass, setSubmittingGuestPass] = useState(false);
+    const [memberBundles, setMemberBundles] = useState([]);
+    const [loadingBundles, setLoadingBundles] = useState(false);
+    const [editFormData, setEditFormData] = useState({});
+    const [guestPassAgreementPrinted, setGuestPassAgreementPrinted] = useState(false);
+    const [guestPassCount, setGuestPassCount] = useState(1);
+    const [guestPassCountInput, setGuestPassCountInput] = useState('1');
 
     // Photo Capture
     const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -118,6 +120,7 @@ export default function MemberDetail() {
         fetchMember();
         fetchNotes();
         fetchPayments();
+        fetchBundles();
     }, [id]);
 
     const fetchMember = useCallback(async () => {
@@ -152,6 +155,36 @@ export default function MemberDetail() {
             setLoadingPayments(false);
         }
     }, [id]);
+
+    const fetchBundles = useCallback(async () => {
+        setLoadingBundles(true);
+        try {
+            const data = await memberService.getMemberBundles(id);
+            setMemberBundles(data);
+        } catch (e) {
+            console.error("Failed to fetch bundles", e);
+        } finally {
+            setLoadingBundles(false);
+        }
+    }, [id]);
+
+    const handleClaimProduct = async (bundleId, bucketId) => {
+        const confirmed = await useConfirm().confirm({
+            title: 'Claim Product?',
+            message: 'Confirm product redemption from this bundle?',
+            confirmLabel: 'Claim',
+            type: 'primary'
+        });
+        if (!confirmed) return;
+
+        try {
+            await memberService.claimBundleProduct({ memberBundleId: bundleId, bucketId });
+            showAlert({ title: 'Success', message: 'Product claimed successfully', type: 'success' });
+            fetchBundles();
+        } catch (e) {
+            showAlert({ title: 'Error', message: e.response?.data?.error || 'Failed to claim product', type: 'danger' });
+        }
+    };
 
     const redirectToPosForMember = useCallback((category) => {
         const memberId = Number(member?.id || id);
@@ -1364,6 +1397,108 @@ export default function MemberDetail() {
                             </tbody>
                         </table>
                     </div>
+                </section>
+            )}
+
+            {activeTab === 'bundles' && (
+                <section className="space-y-4">
+                    <div className="flex items-center justify-between px-1">
+                        <div>
+                            <h3 className="text-sm font-bold uppercase tracking-widest text-white/90">Active Service Bundles</h3>
+                            <p className="text-xs text-text-muted mt-1">Managed credits for classes, training, and products.</p>
+                        </div>
+                        <button 
+                            onClick={() => redirectToPosForMember('BUNDLES')}
+                            className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-orange-600 transition-colors"
+                        >
+                            Sell New Bundle
+                        </button>
+                    </div>
+
+                    <div className="grid gap-4 lg:grid-cols-2">
+                        {memberBundles.filter(mb => mb.status === 'ACTIVE').map((mb) => (
+                            <div key={mb.id} className="bg-surface border border-white/10 rounded-2xl overflow-hidden shadow-sm">
+                                <div className="p-4 border-b border-white/5 bg-white/5 flex justify-between items-center">
+                                    <div>
+                                        <h4 className="text-white font-bold">{mb.bundle?.name || 'Service Bundle'}</h4>
+                                        <p className="text-[10px] text-text-muted uppercase">Purchased: {new Date(mb.createdAt).toLocaleDateString()}</p>
+                                    </div>
+                                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-bold border border-emerald-500/20">ACTIVE</span>
+                                </div>
+                                <div className="p-4 space-y-2">
+                                    {mb.buckets?.map((bucket) => (
+                                        <div key={bucket.id} className="flex justify-between items-center py-1.5 border-b border-white/5 last:border-0">
+                                            <div className="flex items-center gap-2">
+                                                <span className="material-icons-round text-primary text-sm">
+                                                    {bucket.type === 'CLASS' ? 'groups' : bucket.type === 'TRAINING_SESSION' ? 'person' : 'shopping_bag'}
+                                                </span>
+                                                <span className="text-[11px] font-bold text-white uppercase tracking-wider">
+                                                    {bucket.type === 'CLASS' ? 'Class sessions (Added to balance)' : bucket.type === 'TRAINING_SESSION' ? 'Training sessions' : `Product (${bucket.product?.name || 'Item'})`}
+                                                </span>
+                                            </div>
+                                            <div className="text-right">
+                                                {bucket.type === 'PRODUCT' ? (
+                                                    bucket.remaining > 0 ? (
+                                                        <button 
+                                                            onClick={() => handleClaimProduct(mb.id, bucket.id)}
+                                                            className="px-3 py-1 rounded bg-primary hover:bg-orange-600 text-background text-[9px] font-black uppercase tracking-wider transition-colors"
+                                                        >
+                                                            Claim
+                                                        </button>
+                                                    ) : (
+                                                        <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest">Redeemed</span>
+                                                    )
+                                                ) : (
+                                                    <p className="text-sm font-black text-white">{bucket.remaining}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                        {memberBundles.length === 0 && !loadingBundles && (
+                            <div className="lg:col-span-2 py-12 text-center bg-black/10 border border-dashed border-white/10 rounded-2xl">
+                                <span className="material-icons-round text-3xl text-white/10 mb-2">inventory_2</span>
+                                <p className="text-text-muted text-xs font-semibold uppercase tracking-widest">No active bundles for this member</p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Past Bundles Section */}
+                    {memberBundles.some(mb => mb.status === 'COMPLETED') && (
+                        <div className="mt-8 pt-8 border-t border-white/5">
+                            <h3 className="text-sm font-bold uppercase tracking-widest text-text-muted mb-4 px-1">Past Bundles</h3>
+                            <div className="grid gap-4 lg:grid-cols-2 opacity-60 grayscale-[0.5]">
+                                {memberBundles.filter(mb => mb.status === 'COMPLETED').map((mb) => (
+                                    <div key={mb.id} className="bg-surface/50 border border-white/5 rounded-2xl overflow-hidden shadow-sm">
+                                        <div className="p-4 border-b border-white/5 bg-white/5 flex justify-between items-center text-text-muted">
+                                            <div>
+                                                <h4 className="font-bold">{mb.bundle?.name || 'Service Bundle'}</h4>
+                                                <p className="text-[10px] uppercase">Completed: {new Date(mb.completedAt || mb.createdAt).toLocaleDateString()}</p>
+                                            </div>
+                                            <span className="px-2 py-0.5 rounded-full bg-white/5 text-text-muted text-[10px] font-bold border border-white/10">COMPLETED</span>
+                                        </div>
+                                        <div className="p-4 space-y-2 opacity-80">
+                                            {mb.buckets?.map((bucket) => (
+                                                <div key={bucket.id} className="flex justify-between items-center py-1.5 border-b border-white/5 last:border-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="material-icons-round text-text-muted text-sm">
+                                                            {bucket.type === 'CLASS' ? 'groups' : bucket.type === 'TRAINING_SESSION' ? 'person' : 'shopping_bag'}
+                                                        </span>
+                                                        <span className="text-[11px] font-bold uppercase tracking-wider">
+                                                            {bucket.type === 'CLASS' ? 'Class sessions (Synced)' : bucket.type === 'TRAINING_SESSION' ? 'Training sessions' : `Product (${bucket.product?.name || 'Item'})`}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-sm font-black">{bucket.remaining}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </section>
             )}
 

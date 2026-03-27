@@ -66,7 +66,7 @@ export default function POS() {
     const [viewMode, setViewMode] = useState('POS');
     const [loading, setLoading] = useState(false);
 
-    const hasClassPackages = cart.some(item => item.type === 'CLASS_PACKAGE');
+    const hasClassPackages = cart.some(item => item.type === 'CLASS_PACKAGE' || item.type === 'SERVICE_BUNDLE');
 
     // Receipt Printing
     const [receiptSettings, setReceiptSettings] = useState(null);
@@ -145,7 +145,7 @@ export default function POS() {
         const stateCategory = location.state?.category;
         const queryCategory = searchParams.get('category');
         const normalizedCategory = String(stateCategory ?? queryCategory ?? '').trim().toUpperCase();
-        const allowedCategories = [POS_VIEWS.MEMBERSHIP, POS_VIEWS.PACKAGES];
+        const allowedCategories = [POS_VIEWS.MEMBERSHIP, POS_VIEWS.BUNDLES];
         if (allowedCategories.includes(normalizedCategory)) {
             setCategory(normalizedCategory);
         }
@@ -173,7 +173,7 @@ export default function POS() {
 
     const fetchProducts = async () => {
         try {
-            const res = await axios.get(withApiBase('/api/products'));
+            const res = await axios.get(withApiBase(`/api/products?gymId=${user?.gymId || ''}`));
             setProducts(normalizeList(res.data));
         } catch {
             console.error("Failed to fetch products");
@@ -183,7 +183,7 @@ export default function POS() {
 
     const fetchPlans = async () => {
         try {
-            const res = await axios.get(withApiBase('/api/plans'));
+            const res = await axios.get(withApiBase(`/api/plans?gymId=${user?.gymId || ''}`));
             setPlans(normalizeList(res.data));
         } catch {
             console.error("Failed to fetch plans");
@@ -193,7 +193,7 @@ export default function POS() {
 
     const fetchTrainers = async () => {
         try {
-            const res = await axios.get(withApiBase('/api/trainers'));
+            const res = await axios.get(withApiBase(`/api/trainers?gymId=${user?.gymId || ''}`));
             setTrainers(normalizeList(res.data));
         } catch {
             console.error("Failed to fetch trainers");
@@ -203,13 +203,23 @@ export default function POS() {
 
     const fetchClassPackages = async () => {
         try {
-            const res = await axios.get(withApiBase('/api/plans/class-session-packages'), {
-                headers: authHeaders()
-            });
-            const packages = normalizeList(res.data);
-            setClassPackages(packages.filter((pkg) => pkg?.isActive));
+            const gymId = user?.gymId || '';
+            const [legacyRes, bundleRes] = await Promise.all([
+                axios.get(withApiBase(`/api/plans/class-session-packages?gymId=${gymId}`), { headers: authHeaders() }),
+                axios.get(withApiBase(`/api/admin/service-bundles?gymId=${gymId}`), { headers: authHeaders() })
+            ]);
+
+            const legacyPackages = normalizeList(legacyRes.data)
+                .filter(pkg => pkg?.isActive)
+                .map(pkg => ({ ...pkg, type: 'CLASS_PACKAGE' }));
+
+            const serviceBundles = normalizeList(bundleRes.data)
+                .filter(bundle => bundle?.isActive)
+                .map(bundle => ({ ...bundle, type: 'SERVICE_BUNDLE', sessions: 0 })); // sessions for legacy compat
+
+            setClassPackages([...legacyPackages, ...serviceBundles]);
         } catch {
-            console.error("Failed to fetch class session packages");
+            console.error("Failed to fetch bundles");
             setClassPackages([]);
         }
     };
@@ -368,6 +378,35 @@ export default function POS() {
                 if (invalidSchedule) {
                     await showAlert({ title: 'Unavailable Slot', message: 'One or more trainer bookings use unavailable time slots or trainer not found. Please reselect time.', type: 'warning' });
                     return;
+                }
+            }
+
+            // Validation for Service Bundles (Flexible Checkout)
+            const hasBundle = cart.some(item => item.type === 'SERVICE_BUNDLE');
+            if (hasBundle) {
+                if (!selectedMemberId) {
+                    await showAlert({ title: 'Member Required', message: 'Select a member for service bundle purchase.', type: 'warning' });
+                    return;
+                }
+
+                for (const item of cart) {
+                    if (item.type !== 'SERVICE_BUNDLE') continue;
+                    const buckets = item.buckets || [];
+                    for (let bIdx = 0; bIdx < buckets.length; bIdx++) {
+                        const bucket = buckets[bIdx];
+                        if (bucket.type === 'PRODUCT' && bucket.productCategory) {
+                            const selectedItems = bucket.selectedItems || [];
+                            const total = selectedItems.reduce((sum, si) => sum + (si.price * si.quantity), 0);
+                            if (total < bucket.referencePrice) {
+                                await showAlert({ 
+                                    title: 'Incomplete Selection', 
+                                    message: `Please select products for ${item.name} - Bucket ${bIdx + 1} (${bucket.productCategory}) until the price of ${formatPrice(bucket.referencePrice)} is met.`, 
+                                    type: 'warning' 
+                                });
+                                return;
+                            }
+                        }
+                    }
                 }
             }
 
@@ -1369,6 +1408,7 @@ export default function POS() {
                 />
                 <POSCart
                     members={members}
+                    products={products}
                     trainers={trainers}
                     discountOptions={discountOptions}
                     initiateCheckout={initiateCheckout}

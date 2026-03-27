@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import Receipt from '../../components/Receipt';
 import { withApiBase } from '../../config/api';
+import { useAuth } from '../../context/AuthContext';
 
 const MIN_PIN_LENGTH = 4;
 
@@ -66,6 +67,7 @@ const normalizeDiscountPresetsForUi = (presets = []) => {
 
 export default function PosSettings() {
     const { alert: showAlert } = useConfirm();
+    const { user } = useAuth();
     const [activeTab, setActiveTab] = useState(TABS.SECURITY);
 
     const [loading, setLoading] = useState(false);
@@ -335,7 +337,8 @@ export default function PosSettings() {
                 buyQty: parseInt(promoDraft.bogoBuyQty) || 1,
                 getQty: parseInt(promoDraft.bogoGetQty) || 1,
                 getProductId: promoDraft.bogoGetProductId ? Number(promoDraft.bogoGetProductId) : null
-            } : null
+            } : null,
+            gymId: user?.gymId
         };
 
         setPromoSaving(true);

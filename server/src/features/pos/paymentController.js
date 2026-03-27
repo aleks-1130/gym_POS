@@ -691,6 +691,105 @@ const createPayment = async (req, res) => {
                                 classSessionsPurchased: { increment: sessionsToAdd }
                             }
                         });
+                    } else if (item.type === 'SERVICE_BUNDLE') {
+                        if (!resolvedMemberId) throw new Error("Member ID required for service bundle purchase");
+                        const bundleId = Number(item.id || item.bundleId || item.productId);
+                        
+                        // Fetch the bundle and its buckets to know what to award
+                        const bundle = await tx.serviceBundle.findUnique({
+                            where: { id: bundleId },
+                            include: { buckets: true }
+                        });
+                        if (!bundle) throw new Error(`Service bundle ${bundleId} not found`);
+
+                        for (let i = 0; i < Number(item.quantity); i++) {
+                            // Create MemberBundle
+                            const memberBundle = await tx.memberBundle.create({
+                                data: {
+                                    memberId: Number(resolvedMemberId),
+                                    bundleId: bundleId,
+                                    totalPrice: Number(item.unitPrice || item.price || 0),
+                                    status: 'ACTIVE',
+                                    gymId: req.user.gymId ? Number(req.user.gymId) : null,
+                                    tenantId: Number(req.user.tenantId)
+                                }
+                            });
+
+                            // Create MemberBundleBucket for each bucket in the bundle
+                            for (let bIdx = 0; bIdx < bundle.buckets.length; bIdx++) {
+                                const bucket = bundle.buckets[bIdx];
+                                let resolvedProductId = bucket.productId;
+
+                                // If it's a PRODUCT bucket with a category but no specific product ID,
+                                // try to find a matching product in the current gym.
+                                if (bucket.type === 'PRODUCT' && bucket.productCategory && !resolvedProductId) {
+                                    const localProduct = await tx.product.findFirst({
+                                        where: {
+                                            category: bucket.productCategory,
+                                            gymId: req.user.gymId,
+                                            tenantId: Number(req.user.tenantId)
+                                        }
+                                    });
+                                    if (localProduct) {
+                                        resolvedProductId = localProduct.id;
+                                    }
+                                }
+
+                                // In flexible checkout, the staff selects specific items for category buckets
+                                const bucketInput = (item.buckets && Array.isArray(item.buckets)) ? item.buckets[bIdx] : null;
+                                const selectedItems = bucketInput?.selectedItems || [];
+
+                                // 1. Deduct stock for each selected item in the bucket
+                                for (const si of selectedItems) {
+                                    const siProductId = Number(si.id || si.productId);
+                                    const siQty = Number(si.quantity || 1);
+                                    
+                                    if (siProductId) {
+                                        const decremented = await tx.product.updateMany({
+                                            where: {
+                                                id: siProductId,
+                                                tenantId: Number(req.user.tenantId),
+                                                stock: { gte: siQty }
+                                            },
+                                            data: { stock: { decrement: siQty } }
+                                        });
+
+                                        if (decremented.count === 0) {
+                                            throw new Error(`Insufficient stock for selected item: ${si.name || 'product'}`);
+                                        }
+                                    }
+                                }
+
+                                // 2. Calculate remaining quantity (Auto-claim products at POS)
+                                // Standard: Products are claimed at POS, Classes/Sessions are claimed later.
+                                const isProduct = bucket.type === 'PRODUCT';
+                                const remaining = isProduct ? 0 : bucket.quantity;
+
+                                await tx.memberBundleBucket.create({
+                                    data: {
+                                        memberBundleId: memberBundle.id,
+                                        type: bucket.type,
+                                        total: bucket.quantity,
+                                        remaining: remaining,
+                                        productId: resolvedProductId,
+                                        productCategory: bucket.productCategory,
+                                        tenantId: Number(req.user.tenantId),
+                                        items: {
+                                            create: selectedItems.map(si => ({
+                                                productId: Number(si.id || si.productId),
+                                                name: si.name,
+                                                quantity: Number(si.quantity || 1),
+                                                priceAtPurchase: Number(si.price || si.priceAtPurchase || 0)
+                                            }))
+                                        }
+                                    }
+                                });
+                            }
+
+                            // Check if bundle is already completed (e.g. only class sessions)
+                            const { checkAndCompleteBundle } = require('../members/memberController');
+                            await checkAndCompleteBundle(tx, memberBundle.id);
+                        }
                     }
                 }
             }

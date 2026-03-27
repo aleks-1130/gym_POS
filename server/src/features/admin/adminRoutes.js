@@ -3,7 +3,7 @@ const router = express.Router();
 const adminController = require('./adminController');
 const branchController = require('./branchController');
 const payrollController = require('./payrollController');
-const payrollConfigController = require('./payrollConfigController');
+const serviceBundleController = require('./serviceBundleController');
 const { authenticateToken, authorize } = require('../../middleware/authMiddleware');
 
 router.get('/owner/audit-logs', authenticateToken, authorize(['OWNER', 'ADMIN']), adminController.getAuditLogs);
@@ -26,8 +26,15 @@ router.get('/payroll/staff', authenticateToken, authorize(['OWNER', 'ADMIN']), p
 router.post('/payroll/pay-commissions', authenticateToken, authorize(['OWNER', 'ADMIN']), payrollController.payCommissions);
 router.post('/payroll/pay-commissions-auto', authenticateToken, authorize(['OWNER', 'ADMIN']), payrollController.payCommissionsAuto);
 
-// Payroll Config Routes
-router.get('/payroll/config', authenticateToken, authorize(['OWNER', 'ADMIN']), payrollConfigController.getPayrollConfig);
-router.post('/payroll/config', authenticateToken, authorize(['OWNER', 'ADMIN']), payrollConfigController.updatePayrollConfig);
+// Service Bundle & Class Package Routes
+router.get('/service-bundles', authenticateToken, authorize(['OWNER', 'ADMIN']), serviceBundleController.getServiceBundles);
+router.post('/service-bundles', authenticateToken, authorize(['OWNER', 'ADMIN']), serviceBundleController.createServiceBundle);
+router.put('/service-bundles/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), serviceBundleController.updateServiceBundle);
+router.delete('/service-bundles/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), serviceBundleController.deleteServiceBundle);
+
+router.get('/class-packages', authenticateToken, authorize(['OWNER', 'ADMIN']), serviceBundleController.getClassPackages);
+router.post('/class-packages', authenticateToken, authorize(['OWNER', 'ADMIN']), serviceBundleController.createClassPackage);
+router.put('/class-packages/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), serviceBundleController.updateClassPackage);
+router.delete('/class-packages/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), serviceBundleController.deleteClassPackage);
 
 module.exports = router;

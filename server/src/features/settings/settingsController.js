@@ -34,7 +34,7 @@ const updateSettings = async (req, res) => {
             currency, taxRate, roundingRule, referencePrefix, companyId 
         } = req.body;
 
-        const updatedGym = await prisma.gym.update({
+        await prisma.gym.updateMany({
             where: { id: gymId, tenantId: req.user.tenantId },
             data: { 
                 name, address, phone, email, website,
@@ -44,6 +44,10 @@ const updateSettings = async (req, res) => {
                 referencePrefix, 
                 companyId 
             }
+        });
+
+        const updatedGym = await prisma.gym.findUnique({
+            where: { id: gymId }
         });
 
         res.json(updatedGym);
