@@ -189,7 +189,7 @@ const getMembers = async (req, res) => {
 
         if (branchId) {
             baseWhere.gymId = Number(branchId);
-        } else if (req.user.role !== 'OWNER' && req.user.gymId) {
+        } else if (!['OWNER', 'ADMIN'].includes(String(req.user.role).toUpperCase()) && req.user.gymId) {
             baseWhere.gymId = Number(req.user.gymId);
         }
         const where = { ...baseWhere };

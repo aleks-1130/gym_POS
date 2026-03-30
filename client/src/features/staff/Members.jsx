@@ -8,6 +8,7 @@ import { withApiBase } from '../../config/api';
 import DataTable from '../../components/common/DataTable';
 import Modal from '../../components/common/Modal';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useAuth } from '../../context/AuthContext';
 
 class ErrorBoundary extends React.Component {
     constructor(props) {
@@ -52,9 +53,10 @@ export default function Members() {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [viewMode, setViewMode] = useState('grid');
+    const { user } = useAuth();
     const [gyms, setGyms] = useState([]);
     const [branchSearch, setBranchSearch] = useState('');
-    const [selectedGymId, setSelectedGymId] = useState('');
+    const [selectedGymId, setSelectedGymId] = useState(user?.gymId ? String(user.gymId) : '');
     const [isBranchDropdownOpen, setIsBranchDropdownOpen] = useState(false);
     const branchDropdownRef = useRef(null);
 

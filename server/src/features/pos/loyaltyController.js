@@ -179,6 +179,7 @@ const managePoints = async (req, res) => {
                     points: type === 'REDEEM' ? -pointAmount : pointAmount,
                     type: transactionType,
                     description: finalDescription,
+                    gymId: Number(req.user.gymId),
                     tenantId
                 }
             });

@@ -100,7 +100,7 @@ const resolveIdsFromQrToken = (rawToken) => {
     throw new Error('INVALID_QR_ENTITY');
 };
 
-const createMemberAccessLog = async (parsedMemberId) => {
+const createMemberAccessLog = async (parsedMemberId, gymIdOverride = null) => {
     const member = await prisma.member.findUnique({
         where: { id: parsedMemberId },
         select: { id: true, status: true, expiryDate: true, freezeStartDate: true, freezeEndDate: true, gymId: true, tenantId: true }
@@ -120,7 +120,7 @@ const createMemberAccessLog = async (parsedMemberId) => {
             memberId: parsedMemberId,
             status: isAllowed ? 'ALLOWED' : 'DENIED',
             checkIn: new Date(),
-            gymId: member.gymId,
+            gymId: gymIdOverride || member.gymId,
             tenantId: member.tenantId
         },
         include: accessLogInclude
@@ -150,7 +150,7 @@ const createMemberAccessLog = async (parsedMemberId) => {
     return { log };
 };
 
-const createTrainerAccessLog = async (parsedTrainerId) => {
+const createTrainerAccessLog = async (parsedTrainerId, gymIdOverride = null) => {
     const trainer = await prisma.trainer.findUnique({
         where: { id: parsedTrainerId },
         select: { id: true, gymId: true, tenantId: true }
@@ -164,7 +164,7 @@ const createTrainerAccessLog = async (parsedTrainerId) => {
             trainerId: parsedTrainerId,
             status: 'ALLOWED',
             checkIn: new Date(),
-            gymId: trainer.gymId,
+            gymId: gymIdOverride || trainer.gymId,
             tenantId: trainer.tenantId
         },
         include: accessLogInclude
@@ -241,7 +241,7 @@ const checkIn = async (req, res) => {
                 return res.status(400).json({ error: "Valid memberId is required" });
             }
 
-            const { log, error } = await createMemberAccessLog(parsedMemberId);
+            const { log, error } = await createMemberAccessLog(parsedMemberId, req.user?.gymId || req.gymId);
             if (error) {
                 setLatestAccessEvent({ status: 'DENIED', reason: error.payload?.error || error.payload?.reason || 'Access denied' });
                 return res.status(error.status).json(error.payload);
@@ -255,7 +255,7 @@ const checkIn = async (req, res) => {
             return res.status(400).json({ error: "Valid trainerId is required" });
         }
 
-        const { log, error } = await createTrainerAccessLog(parsedTrainerId);
+        const { log, error } = await createTrainerAccessLog(parsedTrainerId, req.user?.gymId || req.gymId);
         if (error) {
             setLatestAccessEvent({ status: 'DENIED', reason: error.payload?.error || 'Access denied' });
             return res.status(error.status).json(error.payload);
