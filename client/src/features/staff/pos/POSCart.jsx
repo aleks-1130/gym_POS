@@ -149,9 +149,9 @@ export default function POSCart({ members, products, trainers, discountOptions, 
                     value={selectedMemberId}
                     onChange={(e) => setSelectedMemberId(e.target.value)}
                 >
-                    <option value="">Guest / Walk-in</option>
+                    <option value="" className="bg-[#181B21] text-white">Guest / Walk-in</option>
                     {members.map(m => (
-                        <option key={m.id} value={m.id}>{m.firstName} {m.lastName}</option>
+                        <option key={m.id} value={m.id} className="bg-[#181B21] text-white">{m.firstName} {m.lastName}</option>
                     ))}
                 </select>
             </div>
@@ -269,11 +269,11 @@ export default function POSCart({ members, products, trainers, discountOptions, 
                                                                     }
                                                                 }}
                                                             >
-                                                                <option value="">+ Add Item from {bucket.productCategory}</option>
+                                                                <option value="" className="bg-[#181B21] text-white">+ Add Item from {bucket.productCategory}</option>
                                                                 {products
                                                                     .filter(p => !bucket.productCategory || p.category === bucket.productCategory)
                                                                     .map(p => (
-                                                                        <option key={p.id} value={p.id}>{p.name} ({formatPrice(p.price)})</option>
+                                                                        <option key={p.id} value={p.id} className="bg-[#181B21] text-white">{p.name} ({formatPrice(p.price)})</option>
                                                                     ))}
                                                             </select>
                                                         )}
@@ -344,9 +344,9 @@ export default function POSCart({ members, products, trainers, discountOptions, 
                                             onChange={(e) => updateTrainingDetails(item.cartLineId, 'time', e.target.value)}
                                             className="bg-white/5 border border-white/5 rounded-lg px-2 py-2 text-xs text-white outline-none disabled:opacity-50"
                                         >
-                                            <option value="">Time</option>
+                                            <option value="" className="bg-[#181B21] text-white">Time</option>
                                             {item.date && trainers.find(t => t.id === item.trainerId) && getAvailableTimeSlotsForTrainer(trainers.find(t => t.id === item.trainerId), item.date, item.duration).map(slot => (
-                                                <option key={slot} value={slot}>{formatTimeLabel(slot)}</option>
+                                                <option key={slot} value={slot} className="bg-[#181B21] text-white">{formatTimeLabel(slot)}</option>
                                             ))}
                                         </select>
                                         <select
@@ -358,7 +358,7 @@ export default function POSCart({ members, products, trainers, discountOptions, 
                                             className="bg-white/5 border border-white/5 rounded-lg px-2 py-2 text-xs text-white outline-none"
                                         >
                                             {trainers.find(t => t.id === item.trainerId)?.sessionDurations?.split(',').map(d => (
-                                                <option key={d} value={d.trim()}>{d.trim()} Min</option>
+                                                <option key={d} value={d.trim()} className="bg-[#181B21] text-white">{d.trim()} Min</option>
                                             ))}
                                         </select>
                                     </div>

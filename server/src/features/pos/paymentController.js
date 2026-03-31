@@ -66,8 +66,8 @@ const saveDiscountPresets = async (gymId, presets, tenantId) => {
     } else {
         await prisma.posConfig.create({
             data: {
-                gymId: Number(gymId),
-                tenantId: Number(tenantId),
+                gym: { connect: { id: Number(gymId) } },
+                tenant: { connect: { id: Number(tenantId) } },
                 discountPresets: presets || []
             }
         });
@@ -513,8 +513,8 @@ const createPayment = async (req, res) => {
                 discount: normalizedDiscount,
                 couponCode: appliedCoupon ? appliedCoupon.code : appliedPromo ? appliedPromo.code : null,
                 couponDiscount: Number(couponDiscountValue.toFixed(2)),
-                gymId: req.user.gymId,
-                tenantId: req.user.tenantId
+                gym: { connect: { id: Number(req.user.gymId) } },
+                tenant: { connect: { id: Number(req.user.tenantId) } }
             };
 
             const removableOptionalFields = new Set(['discount', 'cashTendered', 'changeDue', 'externalRef', 'externalDate', 'payableAmount', 'taxAmount', 'taxableAmount', 'roundingAdjustment', 'currency', 'referenceId', 'companyId', 'financialInstitutionId']);
@@ -1427,8 +1427,8 @@ const updatePosSettings = async (req, res) => {
             } else {
                 await prisma.posConfig.create({
                     data: {
-                        gymId: Number(req.user.gymId),
-                        tenantId: Number(req.user.tenantId),
+                        gym: { connect: { id: Number(req.user.gymId) } },
+                        tenant: { connect: { id: Number(req.user.tenantId) } },
                         ...data,
                         discountPresets: normalizeDiscountPresets(config.discountPresets ?? DEFAULT_DISCOUNT_PRESETS)
                     }

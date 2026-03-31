@@ -14,6 +14,12 @@ select, input, textarea {
   color-scheme: dark;
 }
 
+/* Force dark background for dropdown options across all browsers */
+select option {
+  background-color: #181B21 !important;
+  color: white !important;
+}
+
 /* Custom Scrollbar for Dark Theme */
 ::-webkit-scrollbar {
   width: 8px;

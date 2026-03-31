@@ -172,7 +172,8 @@ const checkout = async (req, res) => {
                     status,
                     externalRef: ['GCASH', 'PAYMAYA', 'CARD', 'BANK_TRANSFER'].includes(method) ? (gcashReference || null) : null,
                     externalDate: (['GCASH', 'PAYMAYA', 'CARD', 'BANK_TRANSFER'].includes(method) && gcashDate) ? new Date(gcashDate) : null,
-                    tenantId: req.user.tenantId
+                    tenant: { connect: { id: Number(req.user.tenantId) } },
+                    gym: { connect: { id: Number(require('../../utils/context').getGymId()) } }
                 }
             });
 
@@ -187,7 +188,8 @@ const checkout = async (req, res) => {
                         quantity: item.quantity,
                         unitPrice: Number(product.price),
                         intendedForSessionMaterial,
-                        tenantId: req.user.tenantId
+                        tenantId: req.user.tenantId,
+                        gymId: require('../../utils/context').getGymId()
                     }
                 });
 
