@@ -1,12 +1,15 @@
 const axios = require('axios');
-const SibApiV3Sdk = require('@getbrevo/brevo');
+const { Brevo } = require('@getbrevo/brevo');
 
-// Initialize Brevo API
-const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
+// Initialize Brevo API (v3.0+ SDK)
+const apiInstance = new Brevo.TransactionalEmailsApi();
 if (process.env.BREVO_API_KEY) {
-    apiInstance.setApiKey(SibApiV3Sdk.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
+    apiInstance.setApiKey(Brevo.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
 }
 
+/**
+ * Common webhook helper for n8n
+ */
 const sendEmailWebhook = async (webhookUrl, payload) => {
     if (!webhookUrl) {
         console.warn(`[EmailService] Webhook URL not configured. Skipping email.`);
@@ -29,7 +32,7 @@ const sendEmailWebhook = async (webhookUrl, payload) => {
 
 /**
  * Registration/Activation Email
- * 🛡️ KEEPS USING n8n as requested
+ * 🛡️ KEEPS USING n8n as requested by the user
  */
 const sendActivationEmail = async (email, name, token, planName, expiryDate, phone, birthDate, gender, role = 'MEMBER', gymContext = {}) => {
     const rawFrontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').trim();
@@ -67,7 +70,8 @@ const sendPasswordResetEmail = async (email, name, token, gymContext = {}) => {
 
     const gymName = gymContext?.name || 'our gym';
     
-    const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+    // Create the message object
+    const sendSmtpEmail = new Brevo.SendSmtpEmail();
     sendSmtpEmail.subject = "Reset Your Password - Gym POS";
     sendSmtpEmail.htmlContent = `
         <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
