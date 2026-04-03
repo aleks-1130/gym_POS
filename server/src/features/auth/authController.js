@@ -403,6 +403,10 @@ const resetPassword = async (req, res) => {
         return res.status(400).json({ error: "Token and new password are required" });
     }
 
+    if (newPassword.length < 8) {
+        return res.status(400).json({ error: "Password must be at least 8 characters long" });
+    }
+
     try {
         // Hash the incoming token to look it up in the database
         const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
