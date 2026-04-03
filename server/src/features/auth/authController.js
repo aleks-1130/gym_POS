@@ -349,10 +349,18 @@ const forgotPassword = async (req, res) => {
             isMember = true;
         }
 
-        // We return a generic message even if not found to prevent email enumeration
+        // Generic security message (stops hackers from discovering registered emails)
+        const genericMessage = { message: "If an account with that email exists and is activated, a password reset link has been sent." };
+
         if (!account) {
-            console.log(`[ForgotPassword] Request for unknown email: ${normalizedEmail}`);
-            return res.json({ message: "If an account with that email exists, a password reset link has been sent." });
+            console.log(`[ForgotPassword] Unknown email: ${normalizedEmail}`);
+            return res.json(genericMessage);
+        }
+
+        // SECURITY CHECK: Only allow resets for ACTIVE accounts
+        if (account.status !== 'ACTIVE') {
+            console.log(`[ForgotPassword] Blocked ${account.status} account: ${normalizedEmail}`);
+            return res.json(genericMessage);
         }
 
         // Generate a secure raw token and a hash
