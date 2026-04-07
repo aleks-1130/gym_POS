@@ -677,14 +677,6 @@ const bookClass = async (req, res) => {
             if (!resolvedSessionDate) {
                 return { error: "No available session date for this class", status: 400 };
             }
-            const sessionBounds = getDayBounds(resolvedSessionDate);
-            if (!sessionBounds) {
-                return { error: "Invalid class session date", status: 400 };
-            }
-
-            if (alreadyCompleted) {
-                return { error: "This class session is already completed", status: 400 };
-            }
 
             // NEW: Prevent booking if class has already started
             const sessionMoment = new Date(resolvedSessionDate);
