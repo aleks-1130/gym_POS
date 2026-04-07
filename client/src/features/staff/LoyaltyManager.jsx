@@ -565,7 +565,7 @@ export default function LoyaltyManager() {
                             </div>
                         </div>
 
-                        <div className="flex-1 overflow-hidden">
+                        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
                             <DataTable
                                 data={historyFilter === 'ALL' ? memberHistory : memberHistory.filter(h => h.type === historyFilter)}
                                 isLoading={loadingHistory}
