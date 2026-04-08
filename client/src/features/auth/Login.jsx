@@ -94,15 +94,7 @@ export default function Login() {
                     {isSubmitting ? 'Signing in...' : 'Sign In'}
                 </button>
 
-                <button
-                    type="button"
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-surface px-5 py-3.5 text-sm font-medium text-white transition hover:bg-white/5 focus:outline-none focus:ring-4 focus:ring-white/10"
-                >
-                    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                        <path d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.539-6.033-5.632s2.701-5.632,6.033-5.632c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z" />
-                    </svg>
-                    Sign in with Google
-                </button>
+
             </form>
 
             <p className="mt-7 text-center text-sm text-text-muted">

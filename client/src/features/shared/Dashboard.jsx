@@ -13,7 +13,7 @@ import { withApiBase } from '../../config/api';
 
 export default function Dashboard() {
     const { user, activeGymId, switchBranch } = useAuth();
-    
+
     // Derived state from user context (safe to do before hooks as long as user isn't used in a hook dependency conditionally)
     const isOwner = user?.role === ROLES.OWNER;
     const isOwnerWithoutBranch = isOwner && !activeGymId;
@@ -79,7 +79,7 @@ export default function Dashboard() {
                         <div>
                             <h1 className="text-3xl font-bold text-white">Dashboard</h1>
                             <p className="text-text-muted mt-1">
-                                Welcome back, {user?.name || 'User'} 
+                                Welcome back, {user?.name || 'User'}
                                 {activeGymId && <span className="text-primary font-bold"> • {stats?.gymName || 'Current Branch'}</span>}
                             </p>
                         </div>
@@ -101,7 +101,7 @@ export default function Dashboard() {
                                     Download Report
                                 </button>
                                 <button className="flex-1 sm:flex-none px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium hover:bg-orange-600 transition-colors shadow-lg shadow-primary/20">
-                                    Add Member
+                                    <a href="/admin/members">Manage Member</a>
                                 </button>
                             </div>
                         )}

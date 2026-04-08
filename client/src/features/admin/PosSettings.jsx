@@ -338,7 +338,8 @@ export default function PosSettings() {
                 getQty: parseInt(promoDraft.bogoGetQty) || 1,
                 getProductId: promoDraft.bogoGetProductId ? Number(promoDraft.bogoGetProductId) : null
             } : null,
-            gymId: user?.gymId
+            gymId: promoDraft.isGlobal ? null : user?.gymId,
+            tenantId: user?.tenantId
         };
 
         setPromoSaving(true);

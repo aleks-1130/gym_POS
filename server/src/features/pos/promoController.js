@@ -90,15 +90,11 @@ const applyPromoCode = async (req, res) => {
         const gymId = userGymId || req.gymId;
         const where = {
             code: code.toUpperCase(),
-            isActive: true, // Promotion must be active
+            isActive: true,
+            tenantId: Number(tenantId),
             OR: [
-                { isGlobal: true },
-                {
-                    AND: [
-                        { tenantId: Number(tenantId) },
-                        ...(gymId && !isNaN(Number(gymId)) ? [{ gymId: Number(gymId) }] : [])
-                    ]
-                }
+                { gymId: null },
+                { gymId: Number(gymId) }
             ]
         };
 
@@ -172,14 +168,10 @@ const getPromoCodes = async (req, res) => {
         const gymId = userGymId || req.gymId;
         const where = {
             isActive: true,
+            tenantId: Number(tenantId),
             OR: [
-                { isGlobal: true },
-                {
-                    AND: [
-                        { tenantId: Number(tenantId) },
-                        ...(gymId && !isNaN(Number(gymId)) ? [{ gymId: Number(gymId) }] : [])
-                    ]
-                }
+                { gymId: null },
+                { gymId: Number(gymId) }
             ]
         };
 
@@ -187,7 +179,6 @@ const getPromoCodes = async (req, res) => {
             where,
             orderBy: { createdAt: 'desc' }
         });
-        res.json(promos);
         res.json(promos);
     } catch (e) {
         res.status(500).json({ error: 'Failed to fetch promo codes' });

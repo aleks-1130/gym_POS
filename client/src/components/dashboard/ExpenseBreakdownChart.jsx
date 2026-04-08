@@ -15,7 +15,8 @@ const ExpenseBreakdownChart = ({ data }) => {
                 data: data?.map(item => item.amount) || [],
                 backgroundColor: ['#F59E0B', '#3B82F6', '#EF4444', '#8B5CF6', '#10B981', '#6B7280'], // Amber, Blue, Red, Purple, Emerald, Gray
                 borderColor: '#1F2937', // Match bg-surface roughly
-                borderWidth: 2 }
+                borderWidth: 2
+            }
         ]
     };
 
@@ -50,7 +51,7 @@ const ExpenseBreakdownChart = ({ data }) => {
             {(!data || data.length === 0) ? (
                 <div className="h-[300px] flex flex-col items-center justify-center text-text-muted">
                     <span className="material-icons-round text-4xl mb-2 opacity-50">pie_chart</span>
-                    <p>No expense data</p>
+                    <p className="text-center">No expense data for this month</p>
                 </div>
             ) : (
                 <div className="h-[300px] flex items-center justify-center">

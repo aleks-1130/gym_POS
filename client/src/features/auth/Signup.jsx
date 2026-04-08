@@ -43,13 +43,17 @@ export default function Signup() {
                     ))}
                 </div>
 
-                <div className="mt-10 pt-8 border-t border-white/10">
-                    <p className="text-center text-gray-400 text-sm">
+                <div className="mt-10 pt-8 border-t border-white/10 space-y-4 text-center">
+                    <p className="text-gray-400 text-sm">
                         Already a member?
                         <Link to="/login" className="text-primary font-bold hover:underline ml-1">
                             Sign In
                         </Link>
                     </p>
+                    <Link to="/" className="inline-flex items-center gap-2 text-xs text-text-muted hover:text-white transition-colors uppercase tracking-widest font-black">
+                        <span className="material-icons-round text-sm">arrow_back</span>
+                        Back
+                    </Link>
                 </div>
             </div>
         </div>
