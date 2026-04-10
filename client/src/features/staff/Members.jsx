@@ -9,6 +9,7 @@ import DataTable from '../../components/common/DataTable';
 import Modal from '../../components/common/Modal';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useAuth } from '../../context/AuthContext';
+import { queryClient } from '../../config/queryClient';
 
 class ErrorBoundary extends React.Component {
     constructor(props) {
@@ -150,12 +151,22 @@ export default function Members() {
         setError(null);
         try {
             const url = withApiBase(`/api/members?page=${page}&limit=${LIMIT}&search=${search}${branchId ? `&branchId=${branchId}` : ''}`);
-            const res = await axios.get(url);
-            if (res.data.meta) {
-                setMembers(res.data.data);
-                setTotalPages(res.data.meta.totalPages);
-                setTotalMembers(Number(res.data.meta.total || res.data.data?.length || 0));
-                const totals = res.data.meta.statusTotals;
+            
+            // Utilize the React Query persistent cache specifically for the paginated view
+            const data = await queryClient.fetchQuery({
+                queryKey: ['members-page', page, search, branchId],
+                queryFn: async () => {
+                    const res = await axios.get(url);
+                    return res.data;
+                },
+                staleTime: 5 * 60 * 1000 // Cache for 5 minutes
+            });
+
+            if (data.meta) {
+                setMembers(data.data);
+                setTotalPages(data.meta.totalPages);
+                setTotalMembers(Number(data.meta.total || data.data?.length || 0));
+                const totals = data.meta.statusTotals;
                 setStatusTotals(totals && typeof totals === 'object' ? {
                     total: Number(totals.total || 0),
                     active: Number(totals.active || 0),
@@ -164,8 +175,8 @@ export default function Members() {
                 } : null);
             } else {
                 // Fallback for non-paginated API (shouldn't happen with updated backend)
-                setMembers(res.data);
-                setTotalMembers(Array.isArray(res.data) ? res.data.length : 0);
+                setMembers(data);
+                setTotalMembers(Array.isArray(data) ? data.length : 0);
                 setStatusTotals(null);
             }
         } catch (e) {

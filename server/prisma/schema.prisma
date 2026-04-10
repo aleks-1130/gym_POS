@@ -480,6 +480,7 @@ model PaymentItem {
 
   @@index([gymId])
   @@index([tenantId])
+  @@index([tenantId, gymId])
 }
 
 model Supplier {
@@ -557,6 +558,7 @@ model ProductStock {
   @@unique([productId, gymId])
   @@index([gymId])
   @@index([tenantId])
+  @@index([tenantId, gymId])
 }
 
 model Category {

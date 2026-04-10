@@ -8,6 +8,7 @@ import { useReactToPrint } from 'react-to-print';
 import Receipt from '../../components/Receipt';
 import { withApiBase } from '../../config/api';
 import { useAuth } from '../../context/AuthContext';
+import { queryClient } from '../../config/queryClient';
 import { PAYMENT_METHODS } from '../../config/businessConfig';
 
 import { usePOSStore } from '../../stores/usePOSStore';
@@ -46,11 +47,11 @@ export default function POS() {
     const effectiveCartTotal = cartTotal;
 
 
-    const [products, setProducts] = useState([]);
-    const [plans, setPlans] = useState([]);
-    const [trainers, setTrainers] = useState([]);
-    const [classPackages, setClassPackages] = useState([]);
-    const [members, setMembers] = useState([]);
+    const [products, setProducts] = useState(() => queryClient.getQueryData(['pos', 'products', user?.gymId]) || []);
+    const [plans, setPlans] = useState(() => queryClient.getQueryData(['pos', 'plans', user?.gymId]) || []);
+    const [trainers, setTrainers] = useState(() => queryClient.getQueryData(['pos', 'trainers', user?.gymId]) || []);
+    const [classPackages, setClassPackages] = useState(() => queryClient.getQueryData(['pos', 'classPackages', user?.gymId]) || []);
+    const [members, setMembers] = useState(() => queryClient.getQueryData(['pos', 'members']) || []);
     const [discountOptions, setDiscountOptions] = useState([]);
     const [historySearch, setHistorySearch] = useState('');
     const [historyStatusFilter, setHistoryStatusFilter] = useState('ALL');
@@ -173,8 +174,14 @@ export default function POS() {
 
     const fetchProducts = async () => {
         try {
-            const res = await axios.get(withApiBase(`/api/products?gymId=${user?.gymId || ''}`));
-            setProducts(normalizeList(res.data));
+            const data = await queryClient.fetchQuery({
+                queryKey: ['pos', 'products', user?.gymId],
+                queryFn: async () => {
+                    const res = await axios.get(withApiBase(`/api/products?gymId=${user?.gymId || ''}`));
+                    return normalizeList(res.data);
+                }
+            });
+            setProducts(data);
         } catch {
             console.error("Failed to fetch products");
             setProducts([]);
@@ -183,8 +190,14 @@ export default function POS() {
 
     const fetchPlans = async () => {
         try {
-            const res = await axios.get(withApiBase(`/api/plans?gymId=${user?.gymId || ''}`));
-            setPlans(normalizeList(res.data));
+            const data = await queryClient.fetchQuery({
+                queryKey: ['pos', 'plans', user?.gymId],
+                queryFn: async () => {
+                    const res = await axios.get(withApiBase(`/api/plans?gymId=${user?.gymId || ''}`));
+                    return normalizeList(res.data);
+                }
+            });
+            setPlans(data);
         } catch {
             console.error("Failed to fetch plans");
             setPlans([]);
@@ -193,8 +206,14 @@ export default function POS() {
 
     const fetchTrainers = async () => {
         try {
-            const res = await axios.get(withApiBase(`/api/trainers?gymId=${user?.gymId || ''}`));
-            setTrainers(normalizeList(res.data));
+            const data = await queryClient.fetchQuery({
+                queryKey: ['pos', 'trainers', user?.gymId],
+                queryFn: async () => {
+                    const res = await axios.get(withApiBase(`/api/trainers?gymId=${user?.gymId || ''}`));
+                    return normalizeList(res.data);
+                }
+            });
+            setTrainers(data);
         } catch {
             console.error("Failed to fetch trainers");
             setTrainers([]);
@@ -226,8 +245,14 @@ export default function POS() {
 
     const fetchMembers = async () => {
         try {
-            const res = await axios.get(withApiBase('/api/members'));
-            setMembers(normalizeList(res.data));
+            const data = await queryClient.fetchQuery({
+                queryKey: ['pos', 'members'],
+                queryFn: async () => {
+                    const res = await axios.get(withApiBase('/api/members'));
+                    return normalizeList(res.data);
+                }
+            });
+            setMembers(data);
         } catch {
             console.error("Failed to fetch members");
             setMembers([]);

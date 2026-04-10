@@ -66,38 +66,45 @@ const authenticateToken = async (req, res, next) => {
         let userName = null;
         let userTrainerId = null;
         let userSessionVersion = 0;
-        let member = null;
+        const cacheService = require('../services/cacheService');
+        const userCacheKey = `userLookup:${email.toLowerCase()}`;
 
-        // 1. Check User (Admin/Staff/Owner/Trainer)
-        const user = await prisma.user.findFirst({
-            where: { email: { equals: email, mode: 'insensitive' } },
-            select: { id: true, role: true, name: true, gymId: true, tenantId: true, trainerId: true, sessionVersion: true }
-        });
-        console.log('[DEBUG] User Search Result:', user);
+        const cachedLookup = await cacheService.getOrSet(userCacheKey, async () => {
+            const fetchedUser = await prisma.user.findFirst({
+                where: { email: { equals: email, mode: 'insensitive' } },
+                select: { id: true, role: true, name: true, gymId: true, tenantId: true, trainerId: true, sessionVersion: true }
+            });
 
-            if (user) {
-                userId = user.id;
-                userRole = user.role;
-                userName = user.name;
-                req.gymId = user.gymId || decodedPayload?.gymId || null;
-                userTrainerId = user.trainerId;
-                userSessionVersion = Number(user.sessionVersion || 0);
-            } else {
-                // 2. Check Member
-                member = await prisma.member.findFirst({
+            let fetchedMember = null;
+            if (!fetchedUser) {
+                fetchedMember = await prisma.member.findFirst({
                     where: { email: { equals: email, mode: 'insensitive' } },
                     select: { id: true, firstName: true, gymId: true, tenantId: true, sessionVersion: true }
                 });
-                console.log('[DEBUG] Member Search Result:', member);
-
-                if (member) {
-                    userId = member.id;
-                    userRole = 'MEMBER';
-                    userName = member.firstName;
-                    req.gymId = member.gymId || decodedPayload?.gymId || null;
-                    userSessionVersion = Number(member.sessionVersion || 0);
-                }
             }
+            return { user: fetchedUser, member: fetchedMember };
+        }, 30000); // 30 second TTL stops burst querying from frontend parallel fetches
+
+        const { user, member } = cachedLookup || {};
+        
+        if (process.env.ENABLE_CACHE !== 'true') {
+            console.log(user ? '[DEBUG] User Search Result:' : '[DEBUG] Member Search Result:', user || member);
+        }
+
+        if (user) {
+            userId = user.id;
+            userRole = user.role;
+            userName = user.name;
+            req.gymId = user.gymId || decodedPayload?.gymId || null;
+            userTrainerId = user.trainerId;
+            userSessionVersion = Number(user.sessionVersion || 0);
+        } else if (member) {
+            userId = member.id;
+            userRole = 'MEMBER';
+            userName = member.firstName;
+            req.gymId = member.gymId || decodedPayload?.gymId || null;
+            userSessionVersion = Number(member.sessionVersion || 0);
+        }
 
         if (!userRole) {
             console.log('[DEBUG] User not found in local DB. Email:', email);

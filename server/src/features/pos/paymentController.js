@@ -4,6 +4,7 @@ const { getReceiptSettings, saveReceiptSettings } = require('../../services/rece
 const notificationService = require('../../services/notificationService');
 const bcrypt = require('bcryptjs');
 const { calculateDiscount } = require('./promoController');
+const cacheService = require('../../services/cacheService');
 
 const POS_PIN_MIN_LENGTH = 4;
 const MAX_DISCOUNT_PRESETS = 50;
@@ -42,11 +43,13 @@ const normalizeDiscountPresets = (rawPresets) => {
 
 const getStoredDiscountPresets = async (gymId, tenantId) => {
     // We can use Prisma Client since we added gymId to PosConfig
-    const config = await prisma.posConfig.findFirst({
-        where: { 
-            gymId: Number(gymId),
-            tenantId: Number(tenantId)
-        }
+    const config = await cacheService.getOrSet(`posConfig:${tenantId}:${gymId}`, async () => {
+        return await prisma.posConfig.findFirst({
+            where: { 
+                gymId: Number(gymId),
+                tenantId: Number(tenantId)
+            }
+        });
     });
     return normalizeDiscountPresets(config?.discountPresets ?? DEFAULT_DISCOUNT_PRESETS);
 };
@@ -72,6 +75,7 @@ const saveDiscountPresets = async (gymId, presets, tenantId) => {
             }
         });
     }
+    cacheService.del(`posConfig:${tenantId}:${gymId}`);
 };
 
 const getPlanClassSessions = (plan) => {
@@ -374,9 +378,11 @@ const createPayment = async (req, res) => {
         }
 
         // --- Multi-Tenancy: Fetch Gym Settings ---
-        const gym = await prisma.gym.findUnique({
-            where: { id: req.user.gymId },
-            include: { tenant: true }
+        const gym = await cacheService.getOrSet(`gym:${req.user.tenantId}:${req.user.gymId}`, async () => {
+            return await prisma.gym.findUnique({
+                where: { id: req.user.gymId },
+                include: { tenant: true }
+            });
         });
         if (!gym) badRequest("Gym configuration not found");
 
