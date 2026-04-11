@@ -5,7 +5,7 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 // Configure global axios default to send httpOnly cookies automatically
 axios.defaults.withCredentials = true;
 
-const BRANCH_SWITCH_ROLES = new Set(['OWNER']);
+const BRANCH_SWITCH_ROLES = new Set(['OWNER', 'MEMBER']);
 const BRANCH_LOCKED_ROLES = new Set(['STAFF', 'TRAINER']);
 
 const parseStoredUser = () => {

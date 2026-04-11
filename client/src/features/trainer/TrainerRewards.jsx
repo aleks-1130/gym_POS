@@ -4,6 +4,7 @@ import { useConfirm } from '../../context/ConfirmContext';
 import { REWARD_CATEGORIES } from '../../constants/categories';
 import DataTable from '../../components/common/DataTable';
 import TrainerPageHeader from './components/TrainerPageHeader';
+import CustomSelect from '../../components/common/CustomSelect';
 
 const mapMethodLabel = (method) => {
     const normalized = String(method || '').toUpperCase();
@@ -155,19 +156,14 @@ export default function TrainerRewards() {
             {activeTab === 'SHOP' ? (
                 <>
                     <div className="space-y-2">
-                        <div className="sm:hidden">
-                            <label className="block text-[11px] text-text-muted font-semibold mb-1">Category</label>
-                            <select
+                        <div className="sm:hidden relative z-[100]">
+                            <label className="block text-[11px] text-white/50 font-semibold mb-1">Category</label>
+                            <CustomSelect
                                 value={filter}
-                                onChange={(event) => setFilter(event.target.value)}
-                                className="w-full bg-surface border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-primary"
-                            >
-                                {categories.map((category) => (
-                                    <option key={category} value={category} style={{ color: '#111', backgroundColor: '#fff' }}>
-                                        {category === 'all' ? 'All Rewards' : category}
-                                    </option>
-                                ))}
-                            </select>
+                                onChange={(e) => setFilter(e.target.value)}
+                                options={categories.map(cat => ({ value: cat, label: cat === 'all' ? 'All Rewards' : cat }))}
+                                className="w-full"
+                            />
                         </div>
 
                         <div className="hidden sm:grid grid-cols-5 gap-2">

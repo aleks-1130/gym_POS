@@ -4,6 +4,7 @@ import { useCurrency } from '../../context/CurrencyContext';
 import { useNavigate } from 'react-router-dom';
 import { useConfirm } from '../../context/ConfirmContext';
 import TrainerPageHeader from './components/TrainerPageHeader';
+import CustomSelect from '../../components/common/CustomSelect';
 
 const STORAGE_KEYS = {
     cart: 'trainerShopCart',
@@ -334,7 +335,7 @@ export default function TrainerShop() {
                 icon="storefront"
             />
 
-            <div className="mt-4 mb-3 space-y-2.5">
+            <div className="mt-4 mb-3 space-y-2.5 relative z-[100]">
                 <div className="flex gap-2">
                     <div className="relative flex-1">
                         <span className="material-icons-round text-base text-text-muted absolute left-2.5 top-1/2 -translate-y-1/2">search</span>
@@ -349,24 +350,27 @@ export default function TrainerShop() {
                             <button
                                 type="button"
                                 onClick={() => setSearchQuery('')}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 rounded bg-white/10 text-text-muted hover:text-white"
+                                className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 rounded bg-white/10 text-white/50 hover:text-white"
                                 aria-label="Clear search"
                             >
                                 <span className="material-icons-round text-sm leading-none">close</span>
                             </button>
                         )}
                     </div>
-                    <select
-                        value={sortBy}
-                        onChange={(e) => setSortBy(e.target.value)}
-                        className="bg-surface border border-white/10 rounded-lg h-10 px-2.5 text-xs font-semibold text-white focus:outline-none focus:border-primary/50"
-                    >
-                        <option value="featured">Featured</option>
-                        <option value="price-asc">Price: Low-High</option>
-                        <option value="price-desc">Price: High-Low</option>
-                        <option value="name-az">Name A-Z</option>
-                        <option value="stock-desc">Most Stock</option>
-                    </select>
+                    <div className="w-[140px] shrink-0">
+                        <CustomSelect
+                            value={sortBy}
+                            onChange={(e) => setSortBy(e.target.value)}
+                            options={[
+                                { value: 'featured', label: 'Featured' },
+                                { value: 'price-asc', label: 'Price: Low-High' },
+                                { value: 'price-desc', label: 'Price: High-Low' },
+                                { value: 'name-az', label: 'Name A-Z' },
+                                { value: 'stock-desc', label: 'Most Stock' }
+                            ]}
+                            className="w-full"
+                        />
+                    </div>
                 </div>
 
                 <div className="flex items-center justify-between gap-2">

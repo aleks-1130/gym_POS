@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import MemberPageHeader from './components/MemberPageHeader';
+import CustomSelect from '../../components/common/CustomSelect';
 
 const parseSessionExceptionFlags = (session) => {
     const rawStatus = String(session?.status || '').toUpperCase();
@@ -2496,27 +2497,17 @@ export default function TrainerBooking() {
 
                             <div>
                                 <label className="block text-sm font-bold text-white mb-2">New Time *</label>
-                                <select
+                                <CustomSelect
                                     value={rescheduleForm.time}
                                     onChange={(e) => setRescheduleForm((prev) => ({ ...prev, time: e.target.value }))}
-                                    className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-primary cursor-pointer"
                                     disabled={!rescheduleForm.date || rescheduleAvailableSlots.length === 0}
-                                >
-                                    <option style={{ color: '#111', backgroundColor: '#fff' }} value="">
-                                        {!rescheduleForm.date
-                                            ? 'Select date first'
-                                            : (rescheduleAvailableSlots.length === 0 ? 'No available time slots' : 'Select available time')}
-                                    </option>
-                                    {rescheduleAvailableSlots.map((slot) => (
-                                        <option
-                                            key={slot}
-                                            value={slot}
-                                            style={{ color: '#111', backgroundColor: '#fff' }}
-                                        >
-                                            {formatTimeLabel(slot)}
-                                        </option>
-                                    ))}
-                                </select>
+                                    placeholder={!rescheduleForm.date ? 'Select date first' : (rescheduleAvailableSlots.length === 0 ? 'No available time slots' : 'Select available time')}
+                                    options={rescheduleAvailableSlots.map((slot) => ({
+                                        value: slot,
+                                        label: formatTimeLabel(slot)
+                                    }))}
+                                    className="w-full"
+                                />
                             </div>
 
                             <div>

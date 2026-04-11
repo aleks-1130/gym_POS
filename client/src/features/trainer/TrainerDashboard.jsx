@@ -207,7 +207,7 @@ export default function TrainerDashboard() {
             />
 
             {/* Digital Trainer Pass - Wallet Style Redesign */}
-            <div className="relative overflow-hidden bg-gradient-to-br from-[#1e1b4b] to-[#0f172a] p-6 rounded-[2.5rem] border border-white/10 shadow-2xl group transition-all duration-500 hover:shadow-primary/10">
+            <div className="relative overflow-hidden bg-gradient-to-br from-[#1e1b4b] to-[#0f172a] p-5 sm:p-6 rounded-[2rem] sm:rounded-[2.5rem] border border-white/10 shadow-2xl group transition-all duration-500 hover:shadow-primary/10 max-w-[340px] sm:max-w-md mx-auto w-full">
                 {/* Decorative background elements */}
                 <div className="absolute top-0 right-0 w-64 h-64 bg-primary/10 blur-[80px] -mr-32 -mt-32 rounded-full animate-pulse" />
                 <div className="absolute bottom-0 left-0 w-48 h-48 bg-primary/5 blur-[60px] -ml-24 -mb-24 rounded-full" />
@@ -230,16 +230,15 @@ export default function TrainerDashboard() {
                         <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent -translate-x-full group-hover/qr:translate-x-full transition-transform duration-1000 pointer-events-none" />
                         
                         {dynamicQr.qrValue ? (
-                            <div className="relative z-10 p-1 bg-white rounded-lg">
+                            <div className="relative z-10 p-1 bg-white rounded-xl w-full max-w-[150px] sm:max-w-[180px] aspect-square flex items-center justify-center mx-auto">
                                 <QRCode 
                                     value={dynamicQr.qrValue} 
                                     size={180}
-                                    qrStyle="dots"
-                                    eyeRadius={10}
+                                    style={{ height: "auto", maxWidth: "100%", width: "100%" }}
                                 />
                             </div>
                         ) : (
-                            <div className="w-[180px] h-[180px] flex items-center justify-center text-sm text-gray-400 font-medium">
+                            <div className="w-[150px] sm:w-[180px] h-[150px] sm:h-[180px] flex items-center justify-center text-sm text-gray-400 font-medium mx-auto">
                                 {dynamicQr.loading ? (
                                     <div className="flex flex-col items-center gap-2">
                                         <div className="w-8 h-8 border-3 border-primary/30 border-t-primary rounded-full animate-spin" />
@@ -250,7 +249,7 @@ export default function TrainerDashboard() {
                         )}
                     </div>
 
-                    <div className="mt-8 w-full max-w-xs">
+                    <div className="mt-6 sm:mt-8 w-full max-w-xs mx-auto">
                         <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2.5">
                             <span>Your Digital Key</span>
                             <span className={isQrTimerLow ? 'text-orange-400' : 'text-primary'}>

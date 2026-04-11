@@ -130,12 +130,12 @@ const authenticateToken = async (req, res, next) => {
         };
         req.tenantId = req.user.tenantId;
 
-        // Cross-gym access for OWNER via header override
+        // Cross-gym access for OWNER and MEMBER via header override
         const gymHeader = req.headers['x-gym-id'];
-        if (gymHeader && userRole === 'OWNER') {
+        if (gymHeader && (userRole === 'OWNER' || userRole === 'MEMBER')) {
             const requestedGymId = Number(gymHeader);
             if (!Number.isNaN(requestedGymId)) {
-                // VERIFY: The requested gym must belong to the owner's tenant
+                // VERIFY: The requested gym must belong to the user's tenant
                 const targetGym = await prisma.gym.findFirst({
                     where: { id: requestedGymId, tenantId: req.user.tenantId },
                     select: { id: true }
@@ -144,7 +144,7 @@ const authenticateToken = async (req, res, next) => {
                     req.gymId = requestedGymId;
                     req.user.gymId = requestedGymId;
                 } else {
-                    console.warn(`[SECURITY] OWNER ${email} attempted to access gym ${requestedGymId} outside their tenant ${req.user.tenantId}`);
+                    console.warn(`[SECURITY] ${userRole} ${email} attempted to access gym ${requestedGymId} outside their tenant ${req.user.tenantId}`);
                     // Fallback to original gymId or reject? 
                     // Usually we just ignore the header if it's invalid for this tenant.
                 }

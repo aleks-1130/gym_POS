@@ -16,7 +16,8 @@ export default function Dashboard() {
 
     // Derived state from user context (safe to do before hooks as long as user isn't used in a hook dependency conditionally)
     const isOwner = user?.role === ROLES.OWNER;
-    const isOwnerWithoutBranch = isOwner && !activeGymId;
+    const isMember = user?.role === ROLES.MEMBER;
+    const isBranchSelectionRequired = (isOwner || isMember) && !activeGymId;
     const isStaff = user?.role === ROLES.STAFF;
     const isAdmin = user?.role === ROLES.ADMIN || user?.role === ROLES.OWNER;
     const showSharedDashboardHeader = user?.role !== ROLES.MEMBER && user?.role !== ROLES.TRAINER;
@@ -38,8 +39,8 @@ export default function Dashboard() {
 
     if (!user) return null;
 
-    const isEffectivelyLoading = loading && !isOwnerWithoutBranch;
-    const hasCriticalError = error && !isOwnerWithoutBranch;
+    const isEffectivelyLoading = loading && !isBranchSelectionRequired;
+    const hasCriticalError = error && !isBranchSelectionRequired;
 
     if (isEffectivelyLoading) return (
         <div className="flex items-center justify-center min-h-[50vh]">
@@ -64,7 +65,7 @@ export default function Dashboard() {
     return (
         <div className="relative min-h-[80vh]">
             {/* Branch Selector Overlay */}
-            {isOwnerWithoutBranch && (
+            {isBranchSelectionRequired && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-8 bg-black/60 backdrop-blur-md animate-fade-in">
                     <div className="w-full max-w-6xl max-h-[90vh] overflow-y-auto custom-scrollbar bg-[#0f1115] border border-white/5 rounded-[3rem] shadow-2xl shadow-black/50 p-4">
                         <BranchSelector onSelect={switchBranch} />
@@ -118,8 +119,8 @@ export default function Dashboard() {
                     </header>
                 )}
 
-                {/* Only render actual dashboard content if we are not waiting for the owner to pick a branch */}
-                {!isOwnerWithoutBranch && (
+                {/* Only render actual dashboard content if we are not waiting for the user to pick a branch */}
+                {!isBranchSelectionRequired && (
                     user.role === ROLES.MEMBER ? (
                         <MemberDashboard stats={stats} user={user} />
                     ) : user.role === ROLES.TRAINER ? (
