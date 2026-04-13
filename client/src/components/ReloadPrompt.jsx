@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
+import { queryClient } from '../config/queryClient';
 
 function ReloadPrompt() {
   const {
@@ -16,9 +17,30 @@ function ReloadPrompt() {
   });
 
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [isDismissed, setIsDismissed] = useState(false);
 
   useEffect(() => {
-    const handleOnline = () => setIsOffline(false);
+    const handleOnline = () => {
+      setIsOffline(false);
+      setIsDismissed(false); // Reset dismissal when back online
+      
+      // 1. Resume any paused offline mutations (standard React Query behavior)
+      queryClient.resumePausedMutations().then(() => {
+        console.log('Offline Sync: Resumed all paused mutations.');
+      });
+
+      // 2. Explicitly retry any mutations that actually FAILED (error status)
+      // This ensures "SYNC FAILED" items get a second chance automatically
+      const mutationCache = queryClient.getMutationCache();
+      const failedMutations = mutationCache.getAll().filter(m => m.state.status === 'error');
+      
+      if (failedMutations.length > 0) {
+        console.log(`Offline Sync: Auto-retrying ${failedMutations.length} failed mutations...`);
+        failedMutations.forEach(mutation => {
+          mutation.continue().catch(err => console.error('Auto-retry failed:', err));
+        });
+      }
+    };
     const handleOffline = () => setIsOffline(true);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
@@ -44,10 +66,11 @@ function ReloadPrompt() {
   const close = () => {
     setOfflineReady(false);
     setNeedRefresh(false);
+    setIsDismissed(true);
   };
 
-  // If nothing to show, return null
-  if (!offlineReady && !needRefresh && !isOffline) return null;
+  // If nothing to show or if the user manually dismissed the offline warning, return null
+  if (!offlineReady && !needRefresh && (!isOffline || isDismissed)) return null;
 
   return (
     <div className="fixed bottom-4 right-4 z-[9999] animate-fade-in-up">

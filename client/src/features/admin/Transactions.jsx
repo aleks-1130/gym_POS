@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import { Link } from 'react-router-dom';
+import { useMutationState } from '@tanstack/react-query';
 import { useCurrency } from '../../context/CurrencyContext';
 import DataTable from '../../components/common/DataTable';
 
@@ -14,6 +16,42 @@ export default function Transactions() {
     const [appliedStartDate, setAppliedStartDate] = useState('');
     const [appliedEndDate, setAppliedEndDate] = useState('');
     const LIMIT = 15;
+
+    // Get pending mutations from React Query state
+    const pendingMutations = useMutationState({
+        filters: { 
+            // Include both 'pending' (waiting) and 'error' (failed syncs)
+            predicate: (mutation) => {
+                const isCorrectType = ['checkout', 'bookTraining'].includes(mutation.options.mutationKey?.[0]);
+                const isRelevantStatus = mutation.state.status === 'pending' || mutation.state.status === 'error';
+                return isCorrectType && isRelevantStatus;
+            }
+        },
+        select: (mutation) => {
+            const payload = mutation.state.variables;
+            const status = mutation.state.status === 'error' ? 'SYNC_FAILED' : 'PENDING_SYNC';
+            return {
+                id: `pending-${mutation.mutationId}`,
+                date: new Date().toISOString(),
+                type: payload?.type || 'POS_SALE',
+                amount: payload?.amount,
+                method: payload?.method,
+                status: status,
+                member: payload?.memberId ? { firstName: 'Pending', lastName: 'Member' } : null,
+                cashier: { name: 'Local Staff' },
+                isOfflinePending: true,
+                error: (mutation.state.error && typeof mutation.state.error === 'object' && 'message' in mutation.state.error) 
+                    ? String(mutation.state.error.message) 
+                    : String(mutation.state.error || '')
+            };
+        }
+    });
+
+    const mergedHistory = useMemo(() => {
+        // Only show pending on the first page
+        if (currentPage !== 1) return history;
+        return [...pendingMutations, ...history];
+    }, [pendingMutations, history, currentPage]);
 
     useEffect(() => {
         fetchHistory(currentPage, appliedStartDate, appliedEndDate);
@@ -44,15 +82,16 @@ export default function Transactions() {
     };
 
     const summary = useMemo(() => {
-        const counts = { completed: 0, voided: 0, returned: 0 };
-        for (const payment of history) {
+        const counts = { completed: 0, voided: 0, returned: 0, pending: 0 };
+        for (const payment of mergedHistory) {
             const status = String(payment?.status || 'COMPLETED').toUpperCase();
             if (status === 'VOIDED') counts.voided += 1;
             else if (status === 'RETURNED') counts.returned += 1;
+            else if (status === 'PENDING_SYNC') counts.pending += 1;
             else counts.completed += 1;
         }
         return counts;
-    }, [history]);
+    }, [mergedHistory]);
 
     const applyDateFilters = () => {
         setCurrentPage(1);
@@ -74,6 +113,30 @@ export default function Transactions() {
         if (value === 'VOIDED') return <span className={`${base} bg-red-500/10 text-red-400 border border-red-500/20`}>VOIDED</span>;
         if (value === 'RETURNED') return <span className={`${base} bg-amber-500/10 text-amber-400 border border-amber-500/20`}>RETURNED</span>;
         if (value === 'PENDING') return <span className={`${base} bg-yellow-500/10 text-yellow-400 border border-yellow-500/20`}>PENDING</span>;
+        if (value === 'PENDING_SYNC') return (
+            <span className={`${base} bg-blue-500/10 text-blue-400 border border-blue-500/20 animate-pulse flex items-center justify-center gap-1`}>
+                <span className="material-icons-round text-[10px]">sync</span> PENDING SYNC
+            </span>
+        );
+        if (value === 'SYNC_FAILED') return (
+            <div className="flex flex-col gap-1 items-center">
+                <span className={`${base} bg-red-500/10 text-red-400 border border-red-500/20 flex items-center justify-center gap-1`}>
+                    <span className="material-icons-round text-[10px]">error_outline</span> SYNC FAILED
+                </span>
+                <button 
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        queryClient.resumePausedMutations();
+                        // Also trigger the custom recovery logic
+                        const failed = queryClient.getMutationCache().getAll().filter(m => m.state.status === 'error');
+                        failed.forEach(m => m.continue());
+                    }}
+                    className="text-[10px] text-blue-400 hover:text-blue-300 underline font-bold"
+                >
+                    Retry Sync
+                </button>
+            </div>
+        );
         return <span className={`${base} bg-emerald-500/10 text-emerald-400 border border-emerald-500/20`}>COMPLETED</span>;
     };
 
@@ -127,22 +190,22 @@ export default function Transactions() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <SummaryCard
-                    label="Completed Transactions"
+                    label="Completed / Finalized"
                     value={summary.completed}
                     icon="check_circle"
                     toneClass="text-emerald-300"
                     badgeClass="bg-emerald-500/15 border-emerald-500/30 text-emerald-300"
                 />
                 <SummaryCard
-                    label="Voided Transactions"
-                    value={summary.voided}
-                    icon="cancel"
-                    toneClass="text-red-300"
-                    badgeClass="bg-red-500/15 border-red-500/30 text-red-300"
+                    label="Pending Sync (Offline)"
+                    value={summary.pending}
+                    icon="sync"
+                    toneClass="text-blue-300"
+                    badgeClass="bg-blue-500/15 border-blue-500/30 text-blue-300"
                 />
                 <SummaryCard
-                    label="Returned Transactions"
-                    value={summary.returned}
+                    label="Returned / Voided"
+                    value={summary.returned + summary.voided}
                     icon="undo"
                     toneClass="text-amber-300"
                     badgeClass="bg-amber-500/15 border-amber-500/30 text-amber-300"
@@ -184,15 +247,15 @@ export default function Transactions() {
                         accessor: (pay) => renderStatusBadge(pay.status)
                     }
                 ]}
-                data={history}
+                data={mergedHistory}
                 actions={(pay) => (
-                    <a
-                        href={`/pos/transactions/${pay.id}`}
+                    <Link
+                        to={`/pos/transactions/${pay.id}`}
                         className="text-primary hover:text-orange-400 font-medium text-xs flex items-center gap-1 transition-colors"
                     >
                         <span className="material-icons-round text-sm">receipt</span>
                         View
-                    </a>
+                    </Link>
                 )}
                 isLoading={loading}
                 emptyMessage="No transactions found."

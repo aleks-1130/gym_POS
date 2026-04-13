@@ -67,10 +67,33 @@ export const Receipt = React.forwardRef(({ transaction, items, member, cashierNa
         || 'WALK-IN CUSTOMER';
     const customerTin = member?.tin || transaction?.customerTin || 'N/A';
     
+    // Helper to format long reference IDs for the receipt (exactly 10-12 chars for clean alignment)
+    const formatDisplayId = (id) => {
+        if (!id) return 'PENDING';
+        const strId = String(id);
+        if (strId.startsWith('LOCAL-')) {
+            // e.g. LOCAL-1712999999999 -> 2999-999999
+            const suffix = strId.slice(-10);
+            return `${suffix.slice(0, 4)}-${suffix.slice(4)}`.toUpperCase();
+        }
+        if (strId.length > 20) {
+            // It's a UUID, show just the last 10 chars with a hyphen in the middle
+            const clean = strId.replace(/-/g, '').toUpperCase();
+            const last10 = clean.slice(-10);
+            return `${last10.slice(0, 5)}-${last10.slice(5)}`;
+        }
+        return strId.toUpperCase();
+    };
+
+
+
     // Dynamic Invoice Logic
-    const invoiceNo = transaction?.referenceId || String(transaction?.id || 'PENDING');
+    const rawInvoiceNo = transaction?.referenceId || String(transaction?.id || 'PENDING');
+    const invoiceNo = formatDisplayId(rawInvoiceNo);
     const companyId = receiptSettings?.companyId || transaction?.companyId || user?.gym?.companyId || 'FITOS_GYM_001';
     const serialNo = settings.serialNo ? `${settings.serialNo}${invoiceNo}` : invoiceNo;
+
+
 
     return (
         <div ref={ref} className="bg-white text-black p-8 font-mono text-sm w-fit min-w-[360px] max-w-full mx-auto border border-gray-200 shadow-sm print:border-0 print:shadow-none">

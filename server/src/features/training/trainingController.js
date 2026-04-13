@@ -411,7 +411,7 @@ const createPaymentCompat = async (tx, data) => {
 
 // Staff/Admin book a trainer session for a member
 const bookTraining = async (req, res) => {
-    const { memberId, trainerId, date, time, duration, notes, method, externalRef, externalDate } = req.body;
+    const { memberId, trainerId, date, time, duration, notes, method, externalRef, externalDate, referenceId: clientReferenceId } = req.body;
     if (!memberId || !trainerId || !date || !time || !duration || !method) {
         return res.status(400).json({ error: "Missing required booking details" });
     }
@@ -421,6 +421,22 @@ const bookTraining = async (req, res) => {
     }
 
     try {
+        // --- IDEMPOTENCY CHECK ---
+        // If the client provided a referenceId, check whether this booking was already created.
+        // This prevents duplicate sessions when React Query retries after a network failure.
+        if (clientReferenceId) {
+            const existing = await prisma.trainingSession.findFirst({
+                where: {
+                    referenceId: String(clientReferenceId),
+                    tenantId: Number(req.user.tenantId)
+                },
+                include: { member: true, trainer: true }
+            });
+            if (existing) {
+                return res.status(200).json({ ...existing, _idempotent: true, message: "Training session booked and paid" });
+            }
+        }
+
         const trainer = await prisma.trainer.findUnique({ where: { id: Number(trainerId) } });
         if (!trainer) return res.status(404).json({ error: "Trainer not found" });
 
@@ -454,6 +470,7 @@ const bookTraining = async (req, res) => {
                     paymentMethod: method,
                     paidAt: new Date(),
                     notes: notes || null,
+                    referenceId: clientReferenceId ? String(clientReferenceId) : null,
                     gymId: Number(req.user.gymId),
                     tenantId: Number(req.user.tenantId)
                 }

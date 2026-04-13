@@ -10,6 +10,18 @@ export default function Sidebar() {
     const { user, logout } = useAuth();
     const { isSidebarCollapsed: isCollapsed, toggleSidebar } = useUIStore();
     const [isMobileOpen, setIsMobileOpen] = useState(false);
+    const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+    React.useEffect(() => {
+        const handleStatusChange = () => setIsOnline(navigator.onLine);
+        window.addEventListener('online', handleStatusChange);
+        window.addEventListener('offline', handleStatusChange);
+        return () => {
+            window.removeEventListener('online', handleStatusChange);
+            window.removeEventListener('offline', handleStatusChange);
+        };
+    }, []);
+
     const { data: notifications } = useQuery({
         queryKey: ['notifications'],
         queryFn: async () => {
@@ -223,6 +235,29 @@ export default function Sidebar() {
                 ${isMobileOpen ? 'w-64 translate-x-0 shadow-2xl' : 'w-20 -translate-x-full lg:translate-x-0'}
                 ${isCollapsed ? 'lg:w-20' : 'lg:w-64'}
             `}>
+                {/* Status Indicator */}
+                <div className={`
+                    flex items-center gap-2 px-4 py-2 transition-all duration-300 border-b border-white/5
+                    ${isOnline ? 'bg-emerald-500/5' : 'bg-red-500/15'}
+                    ${isCollapsed ? 'justify-center px-0' : 'justify-start'}
+                `}>
+                    <div className="relative flex items-center justify-center">
+                        <div className={`
+                            w-2 h-2 rounded-full shadow-[0_0_8px] transition-colors duration-500
+                            ${isOnline ? 'bg-emerald-500 shadow-emerald-500/50' : 'bg-red-500 shadow-red-500/50'}
+                        `}></div>
+                        <div className={`
+                            absolute inset-0 w-2 h-2 rounded-full animate-ping opacity-75
+                            ${isOnline ? 'bg-emerald-500' : 'bg-red-500'}
+                        `}></div>
+                    </div>
+                    {!isCollapsed && (
+                        <span className={`text-[11px] font-black uppercase tracking-widest transition-colors duration-500 ${isOnline ? 'text-emerald-400/80' : 'text-red-400'}`}>
+                            {isOnline ? 'System Online' : 'OFFLINE MODE'}
+                        </span>
+                    )}
+                </div>
+
                 {/* Header */}
                 <div className={`flex items-center justify-between px-4 border-b border-white/5 ${isDenseSidebar ? 'py-4' : 'py-5'}`}>
                     <div className="flex items-center gap-3 min-w-0">

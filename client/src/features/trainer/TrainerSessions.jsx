@@ -10,30 +10,6 @@ export default function TrainerSessions() {
     const { alert: showAlert } = useConfirm();
     const [sessions, setSessions] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [activeView, setActiveView] = useState('calendar'); // calendar | history
-    const [activeDay, setActiveDay] = useState('');
-    const [completingId, setCompletingId] = useState(null);
-    const [editingSession, setEditingSession] = useState(null);
-    const [notesDraft, setNotesDraft] = useState('');
-    const [refundModalSession, setRefundModalSession] = useState(null);
-    const [refundReason, setRefundReason] = useState('OTHER');
-    const [refundDetails, setRefundDetails] = useState('');
-    const [refundSubmitting, setRefundSubmitting] = useState(false);
-    const [refundError, setRefundError] = useState('');
-    const [refundNotice, setRefundNotice] = useState('');
-    const [unavailableModalSession, setUnavailableModalSession] = useState(null);
-    const [unavailableForm, setUnavailableForm] = useState({ reason: '', preferredDate: '', preferredTime: '' });
-    const [unavailableLoading, setUnavailableLoading] = useState(false);
-    const [unavailableError, setUnavailableError] = useState('');
-    const [noShowModalSession, setNoShowModalSession] = useState(null);
-    const [noShowNote, setNoShowNote] = useState('');
-    const [noShowSubmitting, setNoShowSubmitting] = useState(false);
-    const [noShowError, setNoShowError] = useState('');
-    const [monthCursor, setMonthCursor] = useState(() => {
-        const now = new Date();
-        return new Date(now.getFullYear(), now.getMonth(), 1);
-    });
-    const [draggingId, setDraggingId] = useState(null);
 
     useEffect(() => {
         const fetchSessions = async () => {
@@ -71,6 +47,31 @@ export default function TrainerSessions() {
         await axios.patch(`/api/trainer/me/sessions/${sessionId}`, payload);
         await refreshSessions();
     };
+
+    const [activeView, setActiveView] = useState('calendar'); // calendar | history
+    const [activeDay, setActiveDay] = useState('');
+    const [completingId, setCompletingId] = useState(null);
+    const [editingSession, setEditingSession] = useState(null);
+    const [notesDraft, setNotesDraft] = useState('');
+    const [refundModalSession, setRefundModalSession] = useState(null);
+    const [refundReason, setRefundReason] = useState('OTHER');
+    const [refundDetails, setRefundDetails] = useState('');
+    const [refundSubmitting, setRefundSubmitting] = useState(false);
+    const [refundError, setRefundError] = useState('');
+    const [refundNotice, setRefundNotice] = useState('');
+    const [unavailableModalSession, setUnavailableModalSession] = useState(null);
+    const [unavailableForm, setUnavailableForm] = useState({ reason: '', preferredDate: '', preferredTime: '' });
+    const [unavailableLoading, setUnavailableLoading] = useState(false);
+    const [unavailableError, setUnavailableError] = useState('');
+    const [noShowModalSession, setNoShowModalSession] = useState(null);
+    const [noShowNote, setNoShowNote] = useState('');
+    const [noShowSubmitting, setNoShowSubmitting] = useState(false);
+    const [noShowError, setNoShowError] = useState('');
+    const [monthCursor, setMonthCursor] = useState(() => {
+        const now = new Date();
+        return new Date(now.getFullYear(), now.getMonth(), 1);
+    });
+    const [draggingId, setDraggingId] = useState(null);
 
     const handleOpenNoShowModal = (session) => {
         setNoShowModalSession(session);
@@ -425,16 +426,7 @@ export default function TrainerSessions() {
                                             {new Date(session.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {session.duration} min
                                         </p>
                                         <div className="flex gap-2 mt-2">
-                                            <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${session.status === 'COMPLETED'
-                                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                                                : session.status === 'SCHEDULED'
-                                                    ? 'bg-primary/10 text-primary border-primary/20'
-                                                    : session.status === 'RESCHEDULED'
-                                                        ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20'
-                                                        : session.status === 'NO_SHOW'
-                                                            ? 'bg-rose-500/10 text-rose-300 border-rose-500/20'
-                                                            : 'bg-red-500/10 text-red-500 border-red-500/20'
-                                                }`}>
+                                            <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${getStatusBadgeClass(session.status)}`}>
                                                 {session.status}
                                             </span>
                                             <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest border ${session.paymentStatus === 'PAID'

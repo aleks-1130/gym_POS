@@ -1,11 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
+import { useMutationState, useQueryClient } from '@tanstack/react-query';
 import { useReactToPrint } from 'react-to-print';
 import Receipt from '../../components/Receipt';
 import { useCurrency } from '../../context/CurrencyContext';
 import { withApiBase } from '../../config/api';
 import { useConfirm } from '../../context/ConfirmContext';
+import { usePaymentData, useReceiptSettings } from '../../hooks/usePaymentData';
 
 export default function TransactionDetail() {
     const { id } = useParams();
@@ -13,6 +15,17 @@ export default function TransactionDetail() {
     const navigate = useNavigate();
     const { formatPrice } = useCurrency();
     const { alert: showAlert } = useConfirm();
+    
+    // Check if we are looking for a pending offline transaction
+    const isPendingId = String(id).startsWith('pending-');
+    const mutationId = isPendingId ? Number(id.replace('pending-', '')) : null;
+
+    // Retrieve pending mutation from cache
+    const pendingMutation = useMutationState({
+        filters: { status: 'pending' },
+        select: (mutation) => mutation.mutationId === mutationId ? mutation.state.variables : null
+    }).find(m => m !== null);
+
     const [payment, setPayment] = useState(null);
     const [loading, setLoading] = useState(true);
     const [returnModalOpen, setReturnModalOpen] = useState(false);
@@ -22,46 +35,47 @@ export default function TransactionDetail() {
     const [cashTendered, setCashTendered] = useState('');
     const [returnQuantities, setReturnQuantities] = useState();
     const [actionLoading, setActionLoading] = useState(false);
-    const [receiptSettings, setReceiptSettings] = useState(null);
     const receiptRef = useRef();
 
     const handlePrint = useReactToPrint({
         content: () => receiptRef.current });
 
+    const queryClient = useQueryClient();
+    const { data: fetchedPayment, isLoading: isPaymentLoading, refetch: refetchPayment } = usePaymentData(id);
+    const { data: receiptSettings } = useReceiptSettings();
+
     useEffect(() => {
-        fetchPayment();
-        fetchReceiptSettings();
-    }, [id]);
-
-    const authHeaders = () => {
-        
-        return undefined;
-    };
-
-    const fetchPayment = async () => {
-        setLoading(true);
-        try {
-            const res = await axios.get(withApiBase(`/api/payments/${id}`), {
-                headers: authHeaders()
-            });
-            setPayment(res.data);
-        } catch (e) {
-            console.error('Failed to fetch payment', e);
-        } finally {
+        if (isPendingId) {
+            if (pendingMutation) {
+                // Normalize pending payload to look like a payment record
+                setPayment({
+                    id: `PENDING-${mutationId}`,
+                    date: new Date().toISOString(),
+                    status: 'PENDING_SYNC',
+                    type: pendingMutation.type || 'POS_SALE',
+                    amount: pendingMutation.amount,
+                    method: pendingMutation.method,
+                    cashTendered: pendingMutation.cashTendered,
+                    changeDue: (pendingMutation.cashTendered || 0) - (pendingMutation.amount || 0),
+                    items: pendingMutation.items || [],
+                    member: pendingMutation.memberId ? { firstName: 'Pending', lastName: 'Member' } : null,
+                    cashier: { name: 'Local Staff' }
+                });
+                setLoading(false);
+            } else {
+                setLoading(false);
+                setPayment(null);
+            }
+        } else if (fetchedPayment) {
+            setPayment(fetchedPayment);
+            setLoading(false);
+        } else if (!isPaymentLoading) {
             setLoading(false);
         }
-    };
+    }, [id, isPendingId, pendingMutation, fetchedPayment, isPaymentLoading]);
 
-    const fetchReceiptSettings = async () => {
-        try {
-            const res = await axios.get(withApiBase('/api/payments/receipt-settings'), {
-                headers: authHeaders()
-            });
-            setReceiptSettings(res.data || null);
-        } catch (e) {
-            console.error('Failed to fetch receipt settings', e);
-            setReceiptSettings(null);
-        }
+    const authHeaders = () => {
+        return undefined;
     };
 
     const openReturnModal = () => {
@@ -145,7 +159,7 @@ export default function TransactionDetail() {
                 headers: authHeaders()
             });
             await showAlert({ title: 'Payment Completed!', message: 'The transaction has been marked as completed.', type: 'success' });
-            fetchPayment();
+            refetchPayment();
             closeModals();
         } catch (e) {
             await showAlert({ title: 'Completion Failed', message: e.response?.data?.error || 'Completion failed', type: 'danger' });
@@ -188,7 +202,9 @@ export default function TransactionDetail() {
         COMPLETED: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
         PENDING: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30',
         RETURNED: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
-        VOIDED: 'bg-red-500/15 text-red-300 border-red-500/30'
+        VOIDED: 'bg-red-500/15 text-red-300 border-red-500/30',
+        PENDING_SYNC: 'bg-blue-500/15 text-blue-300 border-blue-500/30 animate-pulse',
+        SYNC_FAILED: 'bg-red-600/15 text-red-400 border-red-500/30'
     };
     const statusClass = statusStyles[statusValue] || 'bg-slate-500/15 text-slate-300 border-slate-500/30';
     const totalItemQuantity = receiptItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
@@ -391,7 +407,7 @@ export default function TransactionDetail() {
                                 )}
                                 <button
                                     onClick={openReturnModal}
-                                    disabled={payment.status === 'VOIDED'}
+                                    disabled={payment.status === 'VOIDED' || payment.status === 'PENDING_SYNC'}
                                     className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500/10 text-amber-400 font-bold border border-amber-500/20 hover:bg-amber-500/20 disabled:opacity-40 transition-colors"
                                 >
                                     <span className="material-icons-round text-base">undo</span>
@@ -399,7 +415,7 @@ export default function TransactionDetail() {
                                 </button>
                                 <button
                                     onClick={openVoidModal}
-                                    disabled={payment.status !== 'COMPLETED'}
+                                    disabled={payment.status !== 'COMPLETED' || payment.status === 'PENDING_SYNC'}
                                     className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-red-500/10 text-red-400 font-bold border border-red-500/20 hover:bg-red-500/20 disabled:opacity-40 transition-colors"
                                 >
                                     <span className="material-icons-round text-base">block</span>

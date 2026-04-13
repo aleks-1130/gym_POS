@@ -10,7 +10,7 @@ import { withApiBase } from '../../config/api';
 import { useAuth } from '../../context/AuthContext';
 import { queryClient } from '../../config/queryClient';
 import { PAYMENT_METHODS } from '../../config/businessConfig';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useMutationState } from '@tanstack/react-query';
 
 import { usePOSStore } from '../../stores/usePOSStore';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -100,6 +100,34 @@ export default function POS() {
             return normalizeList(res.data);
         }
     });
+
+    // Get pending mutations from React Query state (Offline Sync Queue)
+    const pendingPosMutations = useMutationState({
+        filters: { 
+            // Include both 'pending' (waiting) and 'error' (failed syncs)
+            predicate: (mutation) => {
+                const isCorrectType = ['checkout', 'bookTraining'].includes(mutation.options.mutationKey?.[0]);
+                const isRelevantStatus = mutation.state.status === 'pending' || mutation.state.status === 'error';
+                return isCorrectType && isRelevantStatus;
+            }
+        },
+        select: (mutation) => {
+            const payload = mutation.state.variables;
+            const status = mutation.state.status === 'error' ? 'SYNC_FAILED' : 'PENDING_SYNC';
+            return {
+                id: `pending-${mutation.mutationId}`,
+                date: new Date().toISOString(),
+                type: payload?.type || 'POS_SALE',
+                amount: payload?.amount,
+                method: payload?.method,
+                status: status,
+                member: payload?.memberId ? members.find(m => m.id === payload.memberId) : null,
+                cashier: { name: 'Local Staff' },
+                isOfflinePending: true,
+                error: mutation.state.error
+            };
+        }
+    });
     const [discountOptions, setDiscountOptions] = useState([]);
     const [historySearch, setHistorySearch] = useState('');
     const [historyStatusFilter, setHistoryStatusFilter] = useState('ALL');
@@ -142,6 +170,7 @@ export default function POS() {
 
 
     const bookTrainingMutation = useMutation({
+        mutationKey: ['bookTraining'],
         mutationFn: async (payload) => {
             const res = await axios.post(withApiBase('/api/staff/book-training'), payload, { headers: authHeaders() });
             return res.data;
@@ -149,10 +178,13 @@ export default function POS() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['staff-trainer-sessions'] });
             queryClient.invalidateQueries({ queryKey: ['pos'] });
+            queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+            queryClient.invalidateQueries({ queryKey: ['analytics'] });
         }
     });
 
     const checkoutMutation = useMutation({
+        mutationKey: ['checkout'],
         mutationFn: async (payload) => {
             const res = await axios.post(withApiBase('/api/payments'), payload, { headers: authHeaders() });
             return res.data;
@@ -187,6 +219,8 @@ export default function POS() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['pos', 'products'] });
             queryClient.invalidateQueries({ queryKey: ['payments'] });
+            queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+            queryClient.invalidateQueries({ queryKey: ['analytics'] });
         }
     });
 
@@ -482,6 +516,10 @@ export default function POS() {
                 if (!memberId) throw new Error("Member is required for training sessions");
 
                 for (const item of trainingItems) {
+                    // Generate a unique ID per booking BEFORE the call.
+                    // React Query will replay this exact payload on retries, so the
+                    // server's idempotency check will detect and ignore duplicates.
+                    const bookingReferenceId = crypto.randomUUID();
                     await bookTrainingMutation.mutateAsync({
                         memberId,
                         trainerId: item.trainerId,
@@ -490,6 +528,7 @@ export default function POS() {
                         duration: item.duration,
                         notes: item.notes,
                         method: finalMethod,
+                        referenceId: bookingReferenceId,
                         externalRef: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(finalMethod) ? gcashReference : null,
                         externalDate: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(finalMethod) ? externalDate : null,
                         collections: finalMethod === 'SPLIT' ? finalCollections : undefined
@@ -521,27 +560,26 @@ export default function POS() {
                     sessionId: usePOSStore.getState().sessionId,
                     externalRef: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(finalMethod) ? gcashReference : null,
                     externalDate: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(finalMethod) ? externalDate : null,
-                    collections: finalMethod === 'SPLIT' ? finalCollections : undefined
+                    collections: finalMethod === 'SPLIT' ? finalCollections : undefined,
+                    // Client-generated idempotency key. Generated here (outside mutationFn) so
+                    // React Query replays the same UUID on every retry attempt.
+                    referenceId: crypto.randomUUID()
                 };
 
-                if (!navigator.onLine) {
-                    // OFFLINE MODE: Fire-and-forget mutate (queues to IndexedDB)
-                    checkoutMutation.mutate(mutationPayload);
-                    mainTransaction = { 
-                        id: `OFFLINE-${Date.now()}`, 
-                        amount: effectiveCartTotal, 
-                        type: paymentType, 
-                        method: finalMethod,
-                        date: new Date().toISOString(),
-                        isOfflinePending: true
-                    };
-                    // Show a non-blocking toast or info if available
-                    console.log("Offline transaction queued.");
-                } else {
-                    // ONLINE MODE: Await full server response
-                    const resData = await checkoutMutation.mutateAsync(mutationPayload);
-                    mainTransaction = resData;
-                }
+                // LOCAL-FIRST APPROACH: Always queue the mutation first
+                // React Query will handle the actual network attempt in the background
+                checkoutMutation.mutate(mutationPayload);
+                
+                mainTransaction = { 
+                    id: `LOCAL-${Date.now()}`, 
+                    amount: effectiveCartTotal, 
+                    type: paymentType, 
+                    method: finalMethod,
+                    date: new Date().toISOString(),
+                    isOfflinePending: true
+                };
+                
+                console.log("Transaction secured in local sync queue.");
             }
 
             // Summary Receipt Data
@@ -628,7 +666,13 @@ export default function POS() {
     const historyMethodOptions = ['ALL', ...Array.from(new Set(history.map((payment) => String(payment?.method || '').toUpperCase()).filter(Boolean)))];
     const historyTypeOptions = ['ALL', ...Array.from(new Set(history.map((payment) => String(payment?.type || '').toUpperCase()).filter(Boolean)))];
     const historyPageSize = 15;
-    const filteredHistory = history.filter((payment) => {
+    
+    // Merge server history with local pending mutations
+    const combinedHistory = useMemo(() => {
+        return [...pendingPosMutations, ...history];
+    }, [pendingPosMutations, history]);
+
+    const filteredHistory = combinedHistory.filter((payment) => {
         if (!historyQuery) return true;
 
         const buyer = getBuyerLabel(payment);

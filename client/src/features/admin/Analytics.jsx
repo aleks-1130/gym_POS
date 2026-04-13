@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
+import { withApiBase } from '../../config/api';
 import AnalyticsHeader from '../../components/analytics/AnalyticsHeader';
 import OverviewView from '../../components/analytics/OverviewView';
 import ProductPerformanceView from '../../components/analytics/ProductPerformanceView';
@@ -8,35 +10,27 @@ import TrainerPerformanceView from '../../components/analytics/TrainerPerformanc
 import OperationsView from '../../components/analytics/OperationsView';
 
 const Analytics = () => {
-    const [data, setData] = useState(null);
-    const [loading, setLoading] = useState(true);
     const [dateRange, setDateRange] = useState({
         start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 days default
         end: new Date().toISOString().split('T')[0]
     });
     const [viewMode, setViewMode] = useState('OVERVIEW');
 
-    useEffect(() => {
-        fetchAnalytics();
-    }, [dateRange]);
-
-    const fetchAnalytics = async () => {
-        setLoading(true);
-        try {
-                        const response = await axios.get('/api/analytics', {
-                
+    const { data, isLoading: loading, error } = useQuery({
+        queryKey: ['analytics', dateRange],
+        queryFn: async () => {
+            const response = await axios.get(withApiBase('/api/analytics'), {
                 params: {
                     startDate: dateRange.start,
                     endDate: dateRange.end
                 }
             });
-            setData(response.data);
-        } catch (error) {
-            console.error('Error fetching analytics:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
+            return response.data;
+        },
+        staleTime: 30000, // 30 seconds
+        refetchOnWindowFocus: true
+    });
+
 
     const handlePrint = () => {
         let reportType = '';

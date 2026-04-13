@@ -1,4 +1,5 @@
 import React from 'react';
+import { queryClient } from '../../../config/queryClient';
 
 /**
  * Helper to get Authorization headers from session or local storage.
@@ -252,8 +253,33 @@ export const renderStatusBadge = (status) => {
     const value = status || 'COMPLETED';
     const base = "px-2 py-1 rounded text-xs font-bold";
     if (value === 'VOIDED') return <span className={`${base} bg-red-500/10 text-red-400 border border-red-500/20`}>VOIDED</span>;
-    if (value === 'RETURNED') return <span className={`${base} bg-amber-500/10 text-amber-400 border border-amber-500/20`}>RETURNED</span>;
+    if (value === 'RETURNED') return <span className={`${base} bg-amber-500/10 text-amber-400 border border-red-500/20`}>RETURNED</span>;
     if (value === 'PENDING') return <span className={`${base} bg-yellow-500/10 text-yellow-400 border border-yellow-500/20`}>PENDING</span>;
+    if (value === 'PENDING_SYNC') return (
+        <span className={`${base} bg-blue-500/10 text-blue-400 border border-blue-500/20 animate-pulse flex items-center justify-center gap-1`}>
+            <span className="material-icons-round text-[10px]">sync</span> PENDING SYNC
+        </span>
+    );
+    if (value === 'SYNC_FAILED') return (
+        <div className="flex flex-col gap-1 items-center">
+            <span className={`${base} bg-red-500/10 text-red-400 border border-red-500/20 flex items-center justify-center gap-1`}>
+                <span className="material-icons-round text-[10px]">error_outline</span> SYNC FAILED
+            </span>
+            <button 
+                onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    queryClient.resumePausedMutations();
+                    // Also trigger the custom recovery logic for error status items
+                    const failed = queryClient.getMutationCache().getAll().filter(m => m.state.status === 'error');
+                    failed.forEach(m => m.continue());
+                }}
+                className="text-[10px] text-blue-400 hover:text-blue-300 underline font-bold"
+            >
+                Retry Sync
+            </button>
+        </div>
+    );
     return <span className={`${base} bg-emerald-500/10 text-emerald-400 border border-emerald-500/20`}>COMPLETED</span>;
 };
 

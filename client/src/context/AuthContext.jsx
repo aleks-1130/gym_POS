@@ -205,17 +205,21 @@ export const AuthProvider = ({ children }) => {
                     setUser(backendUser);
                     localStorage.setItem('user', JSON.stringify(backendUser));
                 } else {
-                    // Only clear if the server explicitly says "No User" (not a network error)
+                    // Only clear if the server explicitly says "No User" AND we are definitely online
+                    // Status 0 means network failure/CORS/offline, so we don't logout
                     if (navigator.onLine) {
                         clearLocalSession();
                     }
                 }
             } catch (e) {
-                // If the error is network-related, we don't logout! 
-                // We keep the local user and wait for "online" event.
-                console.error("Session restoration failed:", e);
-                if (navigator.onLine && e.response?.status !== 0) {
+                // If it's a 401, the session is definitely invalid
+                if (e.response?.status === 401) {
+                    console.log("Session expired (401). Logging out.");
                     logout();
+                } else {
+                    // For network errors (status 0), timeouts, or 500s, 
+                    // we stay logged in locally to support offline mode.
+                    console.warn("Session restoration deferred due to network or server error:", e.message);
                 }
             }
             setLoading(false);

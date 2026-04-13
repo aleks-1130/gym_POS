@@ -129,17 +129,6 @@ const getPaymentDetails = async (req, res) => {
         });
         if (!payment) return res.status(404).json({ error: "Payment not found" });
 
-        // Staff constraint (optional)
-        if (
-            req.user.role === 'STAFF' &&
-            payment.cashierId !== req.user.id &&
-            !['IN_APP_PURCHASE', 'STORE_SALE'].includes(String(payment.type || '').toUpperCase())
-        ) {
-            // Allow Staff to view but restrict if needed.
-            // Original logic had strict check here:
-            return res.status(403).json({ error: "Access denied" });
-        }
-
         let trainingSessions = [];
         const isTrainingPayment = String(payment.type || '').toUpperCase() === 'TRAINING';
         if (isTrainingPayment && payment.memberId) {
@@ -201,7 +190,7 @@ const getPaymentDetails = async (req, res) => {
 
 // POS Payment Creation
 const createPayment = async (req, res) => {
-    const { amount, type, method, memberId, items, discount, cashTendered, changeDue, externalRef, externalDate, couponCode, currency, collections: bodyCollections } = req.body;
+    const { amount, type, method, memberId, items, discount, cashTendered, changeDue, externalRef, externalDate, couponCode, currency, collections: bodyCollections, referenceId: clientReferenceId } = req.body;
     const resolvedMemberId = req.user.role === 'MEMBER'
         ? req.user.id
         : (memberId ? Number(memberId) : null);
@@ -211,6 +200,21 @@ const createPayment = async (req, res) => {
     let classPackageById = new Map();
 
     try {
+        // --- IDEMPOTENCY CHECK ---
+        // If client sent a referenceId, check if we already processed this exact request.
+        // This prevents duplicate charges on network retries.
+        if (clientReferenceId) {
+            const existing = await prisma.payment.findFirst({
+                where: {
+                    referenceId: String(clientReferenceId),
+                    gym: { tenantId: req.user.tenantId }
+                },
+                include: { items: true, collections: true }
+            });
+            if (existing) {
+                return res.status(200).json({ ...existing, _idempotent: true });
+            }
+        }
         const badRequest = (message) => {
             const err = new Error(message);
             err.status = 400;
@@ -461,7 +465,10 @@ const createPayment = async (req, res) => {
         }
 
         const referencePrefix = gym.referencePrefix || 'A321';
-        const referenceId = `${referencePrefix}-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
+        // Use client-provided referenceId for idempotency; fall back to a random one.
+        const referenceId = clientReferenceId
+            ? String(clientReferenceId)
+            : `${referencePrefix}-${Math.random().toString(36).substring(2, 9).toUpperCase()}`;
         
         // Resolve Financial Institution ID from current gym settings
         const fi = await prisma.financialInstitution.findFirst({

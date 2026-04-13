@@ -377,6 +377,7 @@ model TrainingSession {
   paymentMethod        String?
   paidAt               DateTime?
   notes                String?
+  referenceId          String?
   createdAt            DateTime          @default(now())
   updatedAt            DateTime          @updatedAt
   memberRatedAt        DateTime?
@@ -394,6 +395,7 @@ model TrainingSession {
   tenant               Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   trainer              Trainer           @relation(fields: [trainerId], references: [id])
 
+  @@unique([tenantId, referenceId])
   @@index([date])
   @@index([trainerId])
   @@index([memberId])
