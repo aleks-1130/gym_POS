@@ -75,19 +75,24 @@ export const usePOSStore = create((set, get) => ({
 
         // Stock Check for Products via API (allocates Redis memory)
         if (type === 'PRODUCT') {
-             try {
-                 await axios.post(withApiBase('/api/pos/reserve'), {
-                     sessionId: sid,
-                     productId: item.id,
-                     quantity: newQty
-                 }, { headers: authHeaders() });
-             } catch (err) {
-                 const currentQty = existing ? existing.quantity : 0;
-                 if (item.availableStock !== undefined && (currentQty + 1) > item.availableStock) {
-                     return { success: false, error: `Not enough stock! Only ${item.availableStock} left.` };
+             if (!navigator.onLine) {
+                 // Offline Mode: Skip synchronous stock reservation.
+                 // The checkoutMutation will handle the offline queue and final validation.
+             } else {
+                 try {
+                     await axios.post(withApiBase('/api/pos/reserve'), {
+                         sessionId: sid,
+                         productId: item.id,
+                         quantity: newQty
+                     }, { headers: authHeaders() });
+                 } catch (err) {
+                     const currentQty = existing ? existing.quantity : 0;
+                     if (item.availableStock !== undefined && (currentQty + 1) > item.availableStock) {
+                         return { success: false, error: `Not enough stock! Only ${item.availableStock} left.` };
+                     }
+                     const msg = err.response?.data?.error || 'Failed to reserve stock';
+                     return { success: false, error: msg };
                  }
-                 const msg = err.response?.data?.error || 'Failed to reserve stock';
-                 return { success: false, error: msg };
              }
         }
 
@@ -118,7 +123,7 @@ export const usePOSStore = create((set, get) => ({
 
     removeFromCart: async (cartLineId) => {
         const item = get().cart.find(i => i.cartLineId === cartLineId);
-        if (item && item.type === 'PRODUCT') {
+        if (item && item.type === 'PRODUCT' && navigator.onLine) {
             try {
                 await axios.delete(withApiBase(`/api/pos/reserve/${get().sessionId}/${item.productId}`), { headers: authHeaders() });
             } catch (e) {
@@ -135,17 +140,21 @@ export const usePOSStore = create((set, get) => ({
         const item = get().cart.find(i => i.cartLineId === cartLineId);
         
         if (item && item.type === 'PRODUCT') {
-            try {
-                await axios.post(withApiBase('/api/pos/reserve'), {
-                    sessionId: get().sessionId,
-                    productId: item.productId,
-                    quantity
-                }, { headers: authHeaders() });
-            } catch (err) {
-                 if (stockLimit && quantity > stockLimit) {
-                     return { success: false, error: `Cannot exceed available stock (${stockLimit})` };
-                 }
-                return { success: false, error: err.response?.data?.error || 'Failed to reserve stock' };
+            if (!navigator.onLine) {
+                // Offline Mode: Bypass sync reservation update
+            } else {
+                try {
+                    await axios.post(withApiBase('/api/pos/reserve'), {
+                        sessionId: get().sessionId,
+                        productId: item.productId,
+                        quantity
+                    }, { headers: authHeaders() });
+                } catch (err) {
+                     if (stockLimit && quantity > stockLimit) {
+                         return { success: false, error: `Cannot exceed available stock (${stockLimit})` };
+                     }
+                    return { success: false, error: err.response?.data?.error || 'Failed to reserve stock' };
+                }
             }
         }
 
@@ -159,7 +168,7 @@ export const usePOSStore = create((set, get) => ({
 
     clearCart: async () => {
         const sid = get().sessionId;
-        if (sid) {
+        if (sid && navigator.onLine) {
             try {
                 await axios.delete(withApiBase(`/api/pos/reserve/${sid}`), { headers: authHeaders() });
             } catch (e) {

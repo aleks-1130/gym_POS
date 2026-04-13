@@ -1,4 +1,4 @@
-﻿import { useConfirm } from '../../context/ConfirmContext';
+import { useConfirm } from '../../context/ConfirmContext';
 import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
@@ -175,7 +175,7 @@ export default function Trainers() {
             return axios.post('/api/trainers', newTrainer);
         },
         onSuccess: () => {
-            queryClient.invalidateQueries(['trainers']);
+            queryClient.invalidateQueries({ queryKey: ['trainers'] });
             setShowForm(false);
         },
         onError: (error) => {
@@ -188,7 +188,7 @@ export default function Trainers() {
             return axios.put(`/api/trainers/${id}`, data);
         },
         onSuccess: () => {
-            queryClient.invalidateQueries(['trainers']);
+            queryClient.invalidateQueries({ queryKey: ['trainers'] });
             setShowForm(false);
         },
         onError: (error) => {
@@ -201,7 +201,7 @@ export default function Trainers() {
             return axios.delete(`/api/trainers/${id}`);
         },
         onSuccess: () => {
-            queryClient.invalidateQueries(['trainers']);
+            queryClient.invalidateQueries({ queryKey: ['trainers'] });
         },
         onError: (error) => {
             showAlert({ title: 'Delete Failed', message: error?.response?.data?.error || 'Failed to delete trainer.', type: 'danger' });
@@ -213,7 +213,7 @@ export default function Trainers() {
             return axios.post(`/api/staff/training-sessions/${resolveModalSession.id}/trainer-change-request/resolve`, payload);
         },
         onSuccess: () => {
-            queryClient.invalidateQueries(['trainer-change-requests']);
+            queryClient.invalidateQueries({ queryKey: ['trainer-change-requests'] });
             setResolveModalSession(null);
             showAlert({ title: 'Resolved', message: 'Session change request resolved.', type: 'success' });
         },
@@ -241,8 +241,8 @@ export default function Trainers() {
             return axios.post(`/api/trainers/change-requests/${id}/admin-review`, { action });
         },
         onSuccess: () => {
-            queryClient.invalidateQueries(['trainer-profile-change-requests']);
-            queryClient.invalidateQueries(['trainers']);
+            queryClient.invalidateQueries({ queryKey: ['trainer-profile-change-requests'] });
+            queryClient.invalidateQueries({ queryKey: ['trainers'] });
             showAlert({ title: 'Updated', message: 'Admin decision saved.', type: 'success' });
         },
         onError: (error) => {

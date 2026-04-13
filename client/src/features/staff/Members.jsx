@@ -10,6 +10,7 @@ import Modal from '../../components/common/Modal';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useAuth } from '../../context/AuthContext';
 import { queryClient } from '../../config/queryClient';
+import { useMutation } from '@tanstack/react-query';
 
 class ErrorBoundary extends React.Component {
     constructor(props) {
@@ -60,6 +61,27 @@ export default function Members() {
     const [selectedGymId, setSelectedGymId] = useState(user?.gymId ? String(user.gymId) : '');
     const [isBranchDropdownOpen, setIsBranchDropdownOpen] = useState(false);
     const branchDropdownRef = useRef(null);
+
+    const registerMemberMutation = useMutation({
+        mutationFn: async (payload) => {
+            const res = await axios.post(withApiBase('/api/members'), payload);
+            return res.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['members-page'] });
+            queryClient.invalidateQueries({ queryKey: ['pos', 'members'] });
+        }
+    });
+
+    const deleteMemberMutation = useMutation({
+        mutationFn: async (id) => {
+            await axios.delete(withApiBase(`/api/members/${id}`));
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['members-page'] });
+            queryClient.invalidateQueries({ queryKey: ['pos', 'members'] });
+        }
+    });
 
     const [error, setError] = useState(null);
 
@@ -247,9 +269,9 @@ export default function Members() {
                 sex: formData.sex || null,
                 ...paymentInfo
             };
-            const res = await axios.post(withApiBase('/api/members'), payload);
-            const member = res.data?.member || res.data;
-            const payment = res.data?.payment || null;
+            const resData = await registerMemberMutation.mutateAsync(payload);
+            const member = resData?.member || resData;
+            const payment = resData?.payment || null;
             setNewMember(member);
             setIsModalOpen(false);
             setFormData({ firstName: '', lastName: '', email: '', phone: '', planId: '', birthDate: '', sex: '', imageUrl: '', agreedToTC: false, paymentMethod: 'CASH' });
@@ -290,7 +312,7 @@ export default function Members() {
         if (!memberToDelete) return;
         setIsDeleting(true);
         try {
-            await axios.delete(withApiBase(`/api/members/${memberToDelete.id}`));
+            await deleteMemberMutation.mutateAsync(memberToDelete.id);
             // Update local state
             setMembers(members.filter(m => m.id !== memberToDelete.id));
             setIsDeleteModalOpen(false);

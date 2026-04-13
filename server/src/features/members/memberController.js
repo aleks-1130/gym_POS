@@ -424,6 +424,11 @@ const deleteMember = async (req, res) => {
             const deletedTrainingSessions = await tx.trainingSession.deleteMany({ where: { memberId } });
             const deletedPayments = await tx.payment.deleteMany({ where: { memberId } });
             const deletedOrders = await tx.order.deleteMany({ where: { memberId } });
+            const deletedMemberBundles = await tx.memberBundle.deleteMany({ where: { memberId } });
+            const deletedLoyaltyTransactions = await tx.loyaltyTransaction.deleteMany({ where: { memberId } });
+            const deletedCoupons = await tx.coupon.deleteMany({ where: { memberId } });
+            const deletedNotifications = await tx.notification.deleteMany({ where: { memberId } });
+            await tx.notificationPreference.delete({ where: { memberId } }).catch(() => null);
             await tx.member.delete({ where: { id: memberId } });
 
             return {
@@ -437,7 +442,11 @@ const deleteMember = async (req, res) => {
                 deletedPaymentMethods: deletedPaymentMethods.count,
                 deletedPayments: deletedPayments.count,
                 deletedSessionMaterials: deletedSessionMaterials.count,
-                deletedTrainingSessions: deletedTrainingSessions.count
+                deletedTrainingSessions: deletedTrainingSessions.count,
+                deletedMemberBundles: deletedMemberBundles.count,
+                deletedLoyaltyTransactions: deletedLoyaltyTransactions.count,
+                deletedCoupons: deletedCoupons.count,
+                deletedNotifications: deletedNotifications.count
             };
         });
 

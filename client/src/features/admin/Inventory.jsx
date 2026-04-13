@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import DataTable from '../../components/common/DataTable';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useCurrency } from '../../context/CurrencyContext';
@@ -137,60 +138,46 @@ function InventoryTabsPage({ user, navigate, location }) {
 function ProductsTab({ navigate }) {
     const { formatPrice } = useCurrency();
     const { alert: showAlert, confirm: showConfirm } = useConfirm();
-    const [products, setProducts] = useState([]);
-    const [loading, setLoading] = useState(false);
+    const queryClient = useQueryClient();
     const [page, setPage] = useState(1);
-    const [totalPages, setTotalPages] = useState(1);
-    const [totalCount, setTotalCount] = useState(0);
     const [viewMode, setViewMode] = useState('list');
     const [searchTerm, setSearchTerm] = useState('');
     const [categoryFilter, setCategoryFilter] = useState('');
-    const [categories, setCategories] = useState([]);
 
-    const fetchProducts = async (targetPage = page, targetSearch = searchTerm, targetCategory = categoryFilter) => {
-        setLoading(true);
-        try {
+    const { data: categories = [] } = useQuery({
+        queryKey: ['adminCategories'],
+        queryFn: async () => {
+            const res = await axios.get('/api/inventory/categories');
+            return Array.isArray(res.data) ? res.data : [];
+        }
+    });
+
+    const { data: productsData = {}, isLoading: loading } = useQuery({
+        queryKey: ['adminProducts', { page, search: searchTerm, category: categoryFilter }],
+        queryFn: async () => {
             const qs = new URLSearchParams();
-            qs.set('page', String(targetPage));
+            qs.set('page', String(page));
             qs.set('limit', String(PRODUCT_PAGE_SIZE));
-            if (targetSearch.trim()) qs.set('search', targetSearch.trim());
-            if (targetCategory.trim()) qs.set('category', targetCategory.trim());
+            if (searchTerm.trim()) qs.set('search', searchTerm.trim());
+            if (categoryFilter.trim()) qs.set('category', categoryFilter.trim());
 
             const res = await axios.get(`/api/products?${qs.toString()}`);
             if (res.data?.meta) {
-                setProducts(res.data.data || []);
-                setPage(res.data.meta.page || 1);
-                setTotalPages(res.data.meta.totalPages || 1);
-                setTotalCount(res.data.meta.total || 0);
-            } else {
-                const rows = Array.isArray(res.data) ? res.data : [];
-                setProducts(rows);
-                setPage(1);
-                setTotalPages(1);
-                setTotalCount(rows.length);
+                return {
+                    products: res.data.data || [],
+                    page: res.data.meta.page || 1,
+                    totalPages: res.data.meta.totalPages || 1,
+                    totalCount: res.data.meta.total || 0
+                };
             }
-        } catch (error) {
-            await showAlert({ title: 'Load Failed', message: 'Failed to fetch products', type: 'danger' });
-        } finally {
-            setLoading(false);
+            const rows = Array.isArray(res.data) ? res.data : [];
+            return { products: rows, page: 1, totalPages: 1, totalCount: rows.length };
         }
-    };
+    });
 
-    useEffect(() => {
-        fetchProducts(page, searchTerm, categoryFilter);
-    }, [page, searchTerm, categoryFilter]);
-
-    useEffect(() => {
-        const fetchCategories = async () => {
-            try {
-                const res = await axios.get('/api/inventory/categories');
-                setCategories(Array.isArray(res.data) ? res.data : []);
-            } catch {
-                setCategories([]);
-            }
-        };
-        fetchCategories();
-    }, []);
+    const products = productsData.products || [];
+    const totalPages = productsData.totalPages || 1;
+    const totalCount = productsData.totalCount || 0;
 
     const applySearch = (event) => {
         const value = event.target.value;
@@ -204,6 +191,12 @@ function ProductsTab({ navigate }) {
         setCategoryFilter(value);
     };
 
+    const deleteProductMutation = useMutation({
+        mutationFn: async (id) => axios.delete(`/api/products/${id}`),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['adminProducts'] }),
+        onError: (error) => showAlert({ title: 'Delete Failed', message: error.response?.data?.error || 'Failed to delete product', type: 'danger' })
+    });
+
     const handleDelete = async (id) => {
         const confirmed = await showConfirm({
             title: 'Delete Product?',
@@ -212,13 +205,7 @@ function ProductsTab({ navigate }) {
             type: 'danger'
         });
         if (!confirmed) return;
-
-        try {
-            await axios.delete(`/api/products/${id}`);
-            await fetchProducts(page);
-        } catch (error) {
-            await showAlert({ title: 'Delete Failed', message: error.response?.data?.error || 'Failed to delete product', type: 'danger' });
-        }
+        deleteProductMutation.mutate(id);
     };
 
     return (
@@ -454,8 +441,7 @@ function ProductsTab({ navigate }) {
 
 function CategoriesTab({ user }) {
     const { alert: showAlert, confirm: showConfirm } = useConfirm();
-    const [categories, setCategories] = useState([]);
-    const [loading, setLoading] = useState(false);
+    const queryClient = useQueryClient();
     const [showForm, setShowForm] = useState(false);
     const [editingCategory, setEditingCategory] = useState(null);
     const [formData, setFormData] = useState({ name: '', description: '', isGlobal: false });
@@ -464,21 +450,13 @@ function CategoriesTab({ user }) {
     const [page, setPage] = useState(1);
     const pageSize = 8;
 
-    const fetchCategories = async () => {
-        setLoading(true);
-        try {
+    const { data: categories = [], isLoading: loading } = useQuery({
+        queryKey: ['adminCategories'],
+        queryFn: async () => {
             const res = await axios.get('/api/inventory/categories');
-            setCategories(Array.isArray(res.data) ? res.data : []);
-        } catch (error) {
-            await showAlert({ title: 'Load Failed', message: 'Failed to fetch categories', type: 'danger' });
-        } finally {
-            setLoading(false);
+            return Array.isArray(res.data) ? res.data : [];
         }
-    };
-
-    useEffect(() => {
-        fetchCategories();
-    }, []);
+    });
 
     const filteredCategories = useMemo(() => {
         const keyword = searchTerm.trim().toLowerCase();
@@ -519,20 +497,33 @@ function CategoriesTab({ user }) {
         setFormData({ name: '', description: '', isGlobal: false });
     };
 
+    const saveCategoryMutation = useMutation({
+        mutationFn: async (vars) => {
+            if (vars.isEdit) {
+                return axios.put(`/api/inventory/categories/${vars.id}`, formData);
+            } else {
+                return axios.post('/api/inventory/categories', formData);
+            }
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['adminCategories'] });
+            closeForm();
+        },
+        onError: (error) => {
+            showAlert({ title: 'Save Failed', message: error.response?.data?.error || 'Failed to save category', type: 'danger' });
+        }
+    });
+
     const submitCategory = async (event) => {
         event.preventDefault();
-        try {
-            if (editingCategory) {
-                await axios.put(`/api/inventory/categories/${editingCategory.id}`, formData);
-            } else {
-                await axios.post('/api/inventory/categories', formData);
-            }
-            closeForm();
-            await fetchCategories();
-        } catch (error) {
-            await showAlert({ title: 'Save Failed', message: error.response?.data?.error || 'Failed to save category', type: 'danger' });
-        }
+        saveCategoryMutation.mutate({ isEdit: !!editingCategory, id: editingCategory?.id });
     };
+
+    const deleteCategoryMutation = useMutation({
+        mutationFn: async (id) => axios.delete(`/api/inventory/categories/${id}`),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['adminCategories'] }),
+        onError: (error) => showAlert({ title: 'Delete Failed', message: error.response?.data?.error || 'Failed to delete category', type: 'danger' })
+    });
 
     const deleteCategory = async (category) => {
         const confirmed = await showConfirm({
@@ -542,13 +533,7 @@ function CategoriesTab({ user }) {
             type: 'danger'
         });
         if (!confirmed) return;
-
-        try {
-            await axios.delete(`/api/inventory/categories/${category.id}`);
-            await fetchCategories();
-        } catch (error) {
-            await showAlert({ title: 'Delete Failed', message: error.response?.data?.error || 'Failed to delete category', type: 'danger' });
-        }
+        deleteCategoryMutation.mutate(category.id);
     };
 
     return (
@@ -762,10 +747,8 @@ function CategoriesTab({ user }) {
 function StockOrdersTab({ user, navigate }) {
     const { formatPrice } = useCurrency();
     const { alert: showAlert, confirm: showConfirm } = useConfirm();
-    const [orders, setOrders] = useState([]);
-    const [loading, setLoading] = useState(false);
+    const queryClient = useQueryClient();
     const [page, setPage] = useState(1);
-    const [totalPages, setTotalPages] = useState(1);
     const [statusFilter, setStatusFilter] = useState('ALL');
     const [selectedOrder, setSelectedOrder] = useState(null);
     const [viewMode, setViewMode] = useState('list');
@@ -773,27 +756,24 @@ function StockOrdersTab({ user, navigate }) {
     const canManageOrder = user?.role === 'ADMIN' || user?.role === 'OWNER';
     const canEditOrder = user?.role === 'ADMIN' || user?.role === 'OWNER' || user?.role === 'STAFF';
 
-    const fetchOrders = async (targetPage = page, targetStatus = statusFilter) => {
-        setLoading(true);
-        try {
+    const { data: stockOrderData = {}, isLoading: loading } = useQuery({
+        queryKey: ['adminStockOrders', { page, status: statusFilter }],
+        queryFn: async () => {
             const qs = new URLSearchParams();
-            qs.set('page', String(targetPage));
+            qs.set('page', String(page));
             qs.set('limit', String(STOCK_ORDER_PAGE_SIZE));
-            if (targetStatus !== 'ALL') qs.set('status', targetStatus);
+            if (statusFilter !== 'ALL') qs.set('status', statusFilter);
             const res = await axios.get(`/api/inventory/stock-orders?${qs.toString()}`);
-            setOrders(res.data?.data || []);
-            setPage(res.data?.meta?.page || 1);
-            setTotalPages(res.data?.meta?.totalPages || 1);
-        } catch (error) {
-            await showAlert({ title: 'Load Failed', message: 'Failed to fetch stock orders', type: 'danger' });
-        } finally {
-            setLoading(false);
+            return {
+                orders: res.data?.data || [],
+                page: res.data?.meta?.page || 1,
+                totalPages: res.data?.meta?.totalPages || 1
+            };
         }
-    };
+    });
 
-    useEffect(() => {
-        fetchOrders(page, statusFilter);
-    }, [page, statusFilter]);
+    const orders = stockOrderData.orders || [];
+    const totalPages = stockOrderData.totalPages || 1;
 
     const filteredOrders = useMemo(() => {
         const keyword = searchTerm.trim().toLowerCase();
@@ -803,6 +783,18 @@ function StockOrdersTab({ user, navigate }) {
         );
     }, [orders, searchTerm]);
 
+    const receiveOrderMutation = useMutation({
+        mutationFn: async (id) => axios.put(`/api/inventory/stock-orders/${id}/receive`),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['adminStockOrders'] }),
+        onError: (error) => showAlert({ title: 'Receive Failed', message: error.response?.data?.error || 'Failed to receive order', type: 'danger' })
+    });
+
+    const cancelOrderMutation = useMutation({
+        mutationFn: async (id) => axios.put(`/api/inventory/stock-orders/${id}/cancel`),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['adminStockOrders'] }),
+        onError: (error) => showAlert({ title: 'Cancel Failed', message: error.response?.data?.error || 'Failed to cancel order', type: 'danger' })
+    });
+
     const markReceived = async (order) => {
         const confirmed = await showConfirm({
             title: 'Mark As Received?',
@@ -811,13 +803,7 @@ function StockOrdersTab({ user, navigate }) {
             type: 'success'
         });
         if (!confirmed) return;
-
-        try {
-            await axios.put(`/api/inventory/stock-orders/${order.id}/receive`);
-            await fetchOrders(page, statusFilter);
-        } catch (error) {
-            await showAlert({ title: 'Receive Failed', message: error.response?.data?.error || 'Failed to receive order', type: 'danger' });
-        }
+        receiveOrderMutation.mutate(order.id);
     };
 
     const cancelOrder = async (order) => {
@@ -828,13 +814,7 @@ function StockOrdersTab({ user, navigate }) {
             type: 'danger'
         });
         if (!confirmed) return;
-
-        try {
-            await axios.put(`/api/inventory/stock-orders/${order.id}/cancel`);
-            await fetchOrders(page, statusFilter);
-        } catch (error) {
-            await showAlert({ title: 'Cancel Failed', message: error.response?.data?.error || 'Failed to cancel order', type: 'danger' });
-        }
+        cancelOrderMutation.mutate(order.id);
     };
 
     return (

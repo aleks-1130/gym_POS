@@ -1,6 +1,7 @@
 import { useConfirm } from '../../context/ConfirmContext';
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useAuth } from '../../context/AuthContext';
 import DataTable from '../../components/common/DataTable';
@@ -9,9 +10,7 @@ const Payroll = () => {
     const { alert: showAlert } = useConfirm();
     const { formatPrice } = useCurrency();
     const { user: currentUser } = useAuth();
-    const [stats, setStats] = useState({ totalPayrollThisMonth: 0, pendingCommissions: 0, pendingMaterialDeductions: 0 });
-    const [trainers, setTrainers] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const queryClient = useQueryClient();
     const activeTab = 'TRAINERS';
     const [trainerFilter, setTrainerFilter] = useState('ALL'); // ALL, FREELANCER, FULLTIME
 
@@ -85,29 +84,23 @@ const Payroll = () => {
     const [selectedSessions, setSelectedSessions] = useState([]); // Array of session IDs
     const [selectedClasses, setSelectedClasses] = useState([]); // Array of ClassHistory IDs
 
-    const fetchData = useCallback(async () => {
-        try {
-            setLoading(true);
+    const { data: payrollData, isLoading: loading } = useQuery({
+        queryKey: ['adminPayroll', dateRange.start, dateRange.end],
+        queryFn: async () => {
             const params = { startDate: dateRange.start, endDate: dateRange.end };
-
             const [statsRes, trainersRes] = await Promise.all([
                 axios.get('/api/admin/payroll/stats', { params }),
                 axios.get('/api/admin/payroll/trainers', { params })
             ]);
-
-            setStats(statsRes.data);
-            setTrainers(trainersRes.data);
-            setLoading(false);
-        } catch (error) {
-            console.error("Failed to fetch payroll data", error);
-            setLoading(false);
+            return {
+                stats: statsRes.data,
+                trainers: trainersRes.data
+            };
         }
-    }, [dateRange.end, dateRange.start]);
+    });
 
-    useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        fetchData();
-    }, [fetchData]);
+    const stats = payrollData?.stats || { totalPayrollThisMonth: 0, pendingCommissions: 0, pendingMaterialDeductions: 0 };
+    const trainers = payrollData?.trainers || [];
 
     const handleRecordPayment = (user, type) => {
         setSelectedUser({ ...user, type });
@@ -145,68 +138,67 @@ const Payroll = () => {
         );
     };
 
+    const salaryMutation = useMutation({
+        mutationFn: async (payload) => axios.post('/api/expenses', payload),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['adminPayroll'] });
+            queryClient.invalidateQueries({ queryKey: ['expenses'] });
+            setShowModal(false);
+            showAlert({ title: 'Payment Recorded', message: 'Salary payment recorded successfully!', type: 'success' });
+        },
+        onError: (error) => showAlert({ title: 'Payment Failed', message: error.response?.data?.error || "Failed to record payment", type: 'danger' })
+    });
+
     const submitSalaryPayment = async (e) => {
         e.preventDefault();
-        try {
-                        const base = parseFloat(salaryDetails.baseSalary) || 0;
-            const bonus = parseFloat(salaryDetails.bonus) || 0;
-            const deductions = parseFloat(salaryDetails.deductions) || 0;
-            const netPay = base + bonus - deductions;
+        const base = parseFloat(salaryDetails.baseSalary) || 0;
+        const bonus = parseFloat(salaryDetails.bonus) || 0;
+        const deductions = parseFloat(salaryDetails.deductions) || 0;
+        const netPay = base + bonus - deductions;
 
-            const notes = `Base: ${formatPrice(base)}, Bonus: ${formatPrice(bonus)}, Deductions: -${formatPrice(deductions)}. ${salaryDetails.notes}`;
+        const notes = `Base: ${formatPrice(base)}, Bonus: ${formatPrice(bonus)}, Deductions: -${formatPrice(deductions)}. ${salaryDetails.notes}`;
 
-            const data = {
-                title: `Salary Payment: ${selectedUser.name}`,
-                amount: netPay,
-                category: 'SALARY',
-                date: new Date().toISOString(),
-                notes: notes,
-                trainerId: selectedUser.id
-            };
-
-            await axios.post('/api/expenses', data);
-
-            showAlert({ title: 'Payment Recorded', message: 'Salary payment recorded successfully!', type: 'success' });
-            setShowModal(false);
-            fetchData();
-        } catch (error) {
-            console.error("Payment Error:", error);
-            showAlert({ title: 'Payment Failed', message: error.response?.data?.error || "Failed to record payment", type: 'danger' });
-        }
+        salaryMutation.mutate({
+            title: `Salary Payment: ${selectedUser.name}`,
+            amount: netPay,
+            category: 'SALARY',
+            date: new Date().toISOString(),
+            notes: notes,
+            trainerId: selectedUser.id
+        });
     };
+
+    const commissionMutation = useMutation({
+        mutationFn: async (payload) => axios.post('/api/admin/payroll/pay-commissions', payload),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['adminPayroll'] });
+            setShowModal(false);
+            showAlert({ title: 'Paid!', message: 'Commissions paid successfully!', type: 'success' });
+        },
+        onError: () => showAlert({ title: "Payment Failed", message: "Failed to pay commissions", type: "danger" })
+    });
+
+    const autoCommissionMutation = useMutation({
+        mutationFn: async (trainerId) => axios.post('/api/admin/payroll/pay-commissions-auto', { trainerId }),
+        onSuccess: (_, trainerId) => {
+            queryClient.invalidateQueries({ queryKey: ['adminPayroll'] });
+            setShowModal(false);
+            showAlert({ title: "Auto-Pay Complete", message: `Auto payout completed.`, type: "success" });
+        },
+        onError: (error) => showAlert({ title: "Auto-Pay Failed", message: error.response?.data?.error || "Failed to auto pay commissions", type: "danger" })
+    });
 
     const submitCommissionPayment = async () => {
         if (selectedSessions.length === 0 && selectedClasses.length === 0) { await showAlert({ title: "Select Items", message: "Please select at least one item to pay.", type: "warning" }); return; }
-
-        try {
-            await axios.post('/api/admin/payroll/pay-commissions', {
-                trainerId: selectedUser.id,
-                sessionIds: selectedSessions,
-                classHistoryIds: selectedClasses
-            });
-
-            showAlert({ title: 'Paid!', message: 'Commissions paid successfully!', type: 'success' });
-            setShowModal(false);
-            fetchData();
-        } catch (error) {
-            console.error("Commission Payment Error:", error);
-            showAlert({ title: "Payment Failed", message: "Failed to pay commissions", type: "danger" });
-        }
+        commissionMutation.mutate({
+            trainerId: selectedUser.id,
+            sessionIds: selectedSessions,
+            classHistoryIds: selectedClasses
+        });
     };
 
     const submitAutoCommissionPayment = async (trainerId, trainerName) => {
-        try {
-            await axios.post('/api/admin/payroll/pay-commissions-auto', {
-                trainerId
-            });
-
-            showAlert({ title: "Auto-Pay Complete", message: `Auto payout completed for ${trainerName}.`, type: "success" });
-            setShowModal(false);
-            fetchData();
-        } catch (error) {
-            console.error("Auto Commission Payment Error:", error);
-            showAlert({ title: "Auto-Pay Failed", message: error.response?.data?.error || "Failed to auto pay commissions", type: "danger" });
-        }
+        autoCommissionMutation.mutate(trainerId);
     };
 
     // Helper to calculate total of selected sessions
@@ -299,7 +291,7 @@ const Payroll = () => {
             );
             const successCount = results.filter((entry) => entry.status === 'fulfilled').length;
             const failedCount = results.length - successCount;
-            await fetchData();
+            queryClient.invalidateQueries({ queryKey: ['adminPayroll'] });
             await showAlert({
                 title: 'Batch Settle Complete',
                 message: `Settled ${successCount} trainer(s)${failedCount ? `, ${failedCount} failed.` : '.'}`,
@@ -392,7 +384,7 @@ const Payroll = () => {
                                     ? 'text-blue-300 hover:bg-white/5'
                                     : 'cursor-not-allowed text-text-muted'
                                     }`}
-                                disabled={!canPaySalary(row)}
+                                disabled={!canPaySalary(row) || salaryMutation.isPending}
                                 title={!canPaySalary(row) ? "Only Owner can pay Admins" : ""}
                             >
                                 Pay Salary
@@ -639,9 +631,10 @@ const Payroll = () => {
                                     </button>
                                     <button
                                         type="submit"
-                                        className="flex-1 py-2.5 bg-primary text-background font-bold rounded-xl hover:bg-orange-600"
+                                        disabled={salaryMutation.isPending}
+                                        className="flex-1 py-2.5 bg-primary text-background font-bold rounded-xl hover:bg-orange-600 disabled:opacity-50"
                                     >
-                                        Pay Salary
+                                        {salaryMutation.isPending ? 'Saving...' : 'Pay Salary'}
                                     </button>
                                 </div>
                             </form>

@@ -2,13 +2,13 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useConfirm } from '../../context/ConfirmContext';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import DataTable from '../../components/common/DataTable';
 
 const Suppliers = () => {
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
     const { alert: showAlert, confirm: showConfirm } = useConfirm();
-    const [suppliers, setSuppliers] = useState([]);
-    const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [formData, setFormData] = useState({
         name: '',
@@ -19,37 +19,42 @@ const Suppliers = () => {
     });
     const [editingId, setEditingId] = useState(null);
 
-    const fetchSuppliers = useCallback(async () => {
-        try {
+    const { data: suppliers = [], isLoading: loading } = useQuery({
+        queryKey: ['adminSuppliers'],
+        queryFn: async () => {
             const res = await axios.get('/api/suppliers');
-            setSuppliers(res.data);
-            setLoading(false);
-        } catch (e) {
-            console.error("Failed to fetch suppliers", e);
-            setLoading(false);
+            return res.data;
         }
-    }, []);
+    });
 
-    useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        fetchSuppliers();
-    }, [fetchSuppliers]);
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        try {
-                        if (editingId) {
-                await axios.put(`/api/suppliers/${editingId}`, formData);
+    const saveSupplierMutation = useMutation({
+        mutationFn: async (payload) => {
+            if (payload.isEdit) {
+                return axios.put(`/api/suppliers/${payload.id}`, payload.data);
             } else {
-                await axios.post('/api/suppliers', formData);
+                return axios.post('/api/suppliers', payload.data);
             }
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['adminSuppliers'] });
             setShowModal(false);
             setFormData({ name: '', contact: '', email: '', address: '', notes: '' });
             setEditingId(null);
-            fetchSuppliers();
-        } catch {
-            await showAlert({ title: 'Save Failed', message: 'Operation failed. Please try again.', type: 'danger' });
+        },
+        onError: (error) => {
+            showAlert({ title: 'Save Failed', message: error.response?.data?.error || 'Operation failed. Please try again.', type: 'danger' });
         }
+    });
+
+    const deleteSupplierMutation = useMutation({
+        mutationFn: async (id) => axios.delete(`/api/suppliers/${id}`),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['adminSuppliers'] }),
+        onError: (error) => showAlert({ title: 'Delete Failed', message: error.response?.data?.error || 'Failed to delete supplier. It may have linked products.', type: 'danger' })
+    });
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        saveSupplierMutation.mutate({ isEdit: !!editingId, id: editingId, data: formData });
     };
 
     const handleEdit = (supplier) => {
@@ -67,12 +72,7 @@ const Suppliers = () => {
     const handleDelete = async (id) => {
         const confirmed = await showConfirm({ title: 'Delete Supplier?', message: 'Delete this supplier? Suppliers with linked products cannot be deleted.', confirmLabel: 'Delete', type: 'danger' });
         if (!confirmed) return;
-        try {
-                        await axios.delete(`/api/suppliers/${id}`);
-            fetchSuppliers();
-        } catch {
-            await showAlert({ title: 'Delete Failed', message: 'Failed to delete supplier. It may have linked products.', type: 'danger' });
-        }
+        deleteSupplierMutation.mutate(id);
     };
 
     const columns = useMemo(() => [

@@ -10,6 +10,7 @@ import { withApiBase } from '../../config/api';
 import { useAuth } from '../../context/AuthContext';
 import { queryClient } from '../../config/queryClient';
 import { PAYMENT_METHODS } from '../../config/businessConfig';
+import { useMutation, useQuery } from '@tanstack/react-query';
 
 import { usePOSStore } from '../../stores/usePOSStore';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -47,11 +48,58 @@ export default function POS() {
     const effectiveCartTotal = cartTotal;
 
 
-    const [products, setProducts] = useState(() => queryClient.getQueryData(['pos', 'products', user?.gymId]) || []);
-    const [plans, setPlans] = useState(() => queryClient.getQueryData(['pos', 'plans', user?.gymId]) || []);
-    const [trainers, setTrainers] = useState(() => queryClient.getQueryData(['pos', 'trainers', user?.gymId]) || []);
-    const [classPackages, setClassPackages] = useState(() => queryClient.getQueryData(['pos', 'classPackages', user?.gymId]) || []);
-    const [members, setMembers] = useState(() => queryClient.getQueryData(['pos', 'members']) || []);
+    const { data: products = [], refetch: fetchProducts } = useQuery({
+        queryKey: ['pos', 'products', user?.gymId],
+        queryFn: async () => {
+            const res = await axios.get(withApiBase(`/api/products?gymId=${user?.gymId || ''}`));
+            return normalizeList(res.data);
+        }
+    });
+
+    const { data: plans = [], refetch: fetchPlans } = useQuery({
+        queryKey: ['pos', 'plans', user?.gymId],
+        queryFn: async () => {
+            const res = await axios.get(withApiBase(`/api/plans?gymId=${user?.gymId || ''}`));
+            return normalizeList(res.data);
+        }
+    });
+
+    const { data: trainers = [], refetch: fetchTrainers } = useQuery({
+        queryKey: ['pos', 'trainers', user?.gymId],
+        queryFn: async () => {
+            const res = await axios.get(withApiBase(`/api/trainers?gymId=${user?.gymId || ''}`), { headers: authHeaders() });
+            return normalizeList(res.data);
+        }
+    });
+
+    const { data: classPackages = [], refetch: fetchClassPackages } = useQuery({
+        queryKey: ['pos', 'classPackages', user?.gymId],
+        queryFn: async () => {
+            const gymId = user?.gymId || '';
+            const [legacyRes, bundleRes] = await Promise.all([
+                axios.get(withApiBase(`/api/plans/class-session-packages?gymId=${gymId}`), { headers: authHeaders() }),
+                axios.get(withApiBase(`/api/admin/service-bundles?gymId=${gymId}`), { headers: authHeaders() })
+            ]);
+
+            const legacyPackages = normalizeList(legacyRes.data)
+                .filter(pkg => pkg?.isActive)
+                .map(pkg => ({ ...pkg, type: 'CLASS_PACKAGE' }));
+
+            const serviceBundles = normalizeList(bundleRes.data)
+                .filter(bundle => bundle?.isActive)
+                .map(bundle => ({ ...bundle, type: 'SERVICE_BUNDLE', sessions: 0 }));
+
+            return [...legacyPackages, ...serviceBundles];
+        }
+    });
+
+    const { data: members = [], refetch: fetchMembers } = useQuery({
+        queryKey: ['pos', 'members'],
+        queryFn: async () => {
+            const res = await axios.get(withApiBase('/api/members'));
+            return normalizeList(res.data);
+        }
+    });
     const [discountOptions, setDiscountOptions] = useState([]);
     const [historySearch, setHistorySearch] = useState('');
     const [historyStatusFilter, setHistoryStatusFilter] = useState('ALL');
@@ -61,11 +109,86 @@ export default function POS() {
     const [collectSearch, setCollectSearch] = useState('');
     const [collectViewMode, setCollectViewMode] = useState('LIST');
     const [history, setHistory] = useState([]);
-    const [trainingBookings, setTrainingBookings] = useState([]);
-    const [pendingInAppPurchases, setPendingInAppPurchases] = useState([]);
-
     const [viewMode, setViewMode] = useState('POS');
     const [loading, setLoading] = useState(false);
+
+    const { data: trainingBookings = [] } = useQuery({
+        queryKey: ['staff-training-sessions', 'UNPAID'],
+        queryFn: async () => {
+            const res = await axios.get(withApiBase('/api/staff/training-sessions'), {
+                params: { status: 'UNPAID' },
+                headers: authHeaders()
+            });
+            return res.data || [];
+        },
+        refetchInterval: viewMode === 'TRAINING_BOOKINGS' ? 10000 : 30000
+    });
+
+    const { data: pendingInAppPurchases = [] } = useQuery({
+        queryKey: ['pending-inapp-purchases'],
+        queryFn: async () => {
+            const res = await axios.get(withApiBase('/api/payments'), {
+                headers: authHeaders()
+            });
+            const payments = normalizeList(res.data);
+            return payments.filter((payment) =>
+                String(payment?.status || '').toUpperCase() === 'PENDING' &&
+                String(payment?.method || '').toUpperCase() === 'CASH' &&
+                String(payment?.type || '').toUpperCase() !== 'TRAINING'
+            );
+        },
+        refetchInterval: viewMode === 'TRAINING_BOOKINGS' ? 10000 : 30000
+    });
+
+
+    const bookTrainingMutation = useMutation({
+        mutationFn: async (payload) => {
+            const res = await axios.post(withApiBase('/api/staff/book-training'), payload, { headers: authHeaders() });
+            return res.data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['staff-trainer-sessions'] });
+            queryClient.invalidateQueries({ queryKey: ['pos'] });
+        }
+    });
+
+    const checkoutMutation = useMutation({
+        mutationFn: async (payload) => {
+            const res = await axios.post(withApiBase('/api/payments'), payload, { headers: authHeaders() });
+            return res.data;
+        },
+        onMutate: async (newTransaction) => {
+            // Cancel any outgoing refetches (so they don't overwrite our optimistic update)
+            await queryClient.cancelQueries({ queryKey: ['pos', 'products'] });
+
+            // Snapshot the previous value
+            const previousProducts = queryClient.getQueryData(['pos', 'products', user?.gymId]);
+
+            // Optimistically update to the new value
+            if (previousProducts && newTransaction.items) {
+                const updatedProducts = previousProducts.map(product => {
+                    const cartItem = newTransaction.items.find(item => item.id === product.id && item.type === 'PRODUCT');
+                    if (cartItem) {
+                        return { ...product, availableStock: Math.max(0, (product.availableStock || 0) - cartItem.quantity) };
+                    }
+                    return product;
+                });
+                queryClient.setQueryData(['pos', 'products', user?.gymId], updatedProducts);
+            }
+
+            return { previousProducts };
+        },
+        onError: (err, newTransaction, context) => {
+            // Rollback on error
+            if (context?.previousProducts) {
+                queryClient.setQueryData(['pos', 'products', user?.gymId], context.previousProducts);
+            }
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['pos', 'products'] });
+            queryClient.invalidateQueries({ queryKey: ['payments'] });
+        }
+    });
 
     const hasClassPackages = cart.some(item => item.type === 'CLASS_PACKAGE' || item.type === 'SERVICE_BUNDLE');
 
@@ -152,112 +275,18 @@ export default function POS() {
         }
     }, [location.search, location.state, setSelectedMemberId, setCategory]);
 
-    useEffect(() => {
-        const fetchCollectCashData = async () => {
-            await Promise.all([
-                fetchTrainingBookings(),
-                fetchPendingInAppPurchases()
-            ]);
-        };
-
-        fetchCollectCashData();
-        const intervalMs = viewMode === 'TRAINING_BOOKINGS' ? 10000 : 30000;
-        const intervalId = setInterval(fetchCollectCashData, intervalMs);
-        return () => clearInterval(intervalId);
-    }, [viewMode]);
-
+    // Training Bookings & Pending Purchases now managed natively by useQuery above
     useEffect(() => {
         if (!modals.receiptPreview) return;
         fetchReceiptSettings();
     }, [modals.receiptPreview]);
 
 
-    const fetchProducts = async () => {
-        try {
-            const data = await queryClient.fetchQuery({
-                queryKey: ['pos', 'products', user?.gymId],
-                queryFn: async () => {
-                    const res = await axios.get(withApiBase(`/api/products?gymId=${user?.gymId || ''}`));
-                    return normalizeList(res.data);
-                }
-            });
-            setProducts(data);
-        } catch {
-            console.error("Failed to fetch products");
-            setProducts([]);
-        }
-    };
+    // Legacy fetch functions converted to useQuery above.
+    // They are replaced with internal useQuery refs.
+    const noop = () => {};
 
-    const fetchPlans = async () => {
-        try {
-            const data = await queryClient.fetchQuery({
-                queryKey: ['pos', 'plans', user?.gymId],
-                queryFn: async () => {
-                    const res = await axios.get(withApiBase(`/api/plans?gymId=${user?.gymId || ''}`));
-                    return normalizeList(res.data);
-                }
-            });
-            setPlans(data);
-        } catch {
-            console.error("Failed to fetch plans");
-            setPlans([]);
-        }
-    };
 
-    const fetchTrainers = async () => {
-        try {
-            const data = await queryClient.fetchQuery({
-                queryKey: ['pos', 'trainers', user?.gymId],
-                queryFn: async () => {
-                    const res = await axios.get(withApiBase(`/api/trainers?gymId=${user?.gymId || ''}`));
-                    return normalizeList(res.data);
-                }
-            });
-            setTrainers(data);
-        } catch {
-            console.error("Failed to fetch trainers");
-            setTrainers([]);
-        }
-    };
-
-    const fetchClassPackages = async () => {
-        try {
-            const gymId = user?.gymId || '';
-            const [legacyRes, bundleRes] = await Promise.all([
-                axios.get(withApiBase(`/api/plans/class-session-packages?gymId=${gymId}`), { headers: authHeaders() }),
-                axios.get(withApiBase(`/api/admin/service-bundles?gymId=${gymId}`), { headers: authHeaders() })
-            ]);
-
-            const legacyPackages = normalizeList(legacyRes.data)
-                .filter(pkg => pkg?.isActive)
-                .map(pkg => ({ ...pkg, type: 'CLASS_PACKAGE' }));
-
-            const serviceBundles = normalizeList(bundleRes.data)
-                .filter(bundle => bundle?.isActive)
-                .map(bundle => ({ ...bundle, type: 'SERVICE_BUNDLE', sessions: 0 })); // sessions for legacy compat
-
-            setClassPackages([...legacyPackages, ...serviceBundles]);
-        } catch {
-            console.error("Failed to fetch bundles");
-            setClassPackages([]);
-        }
-    };
-
-    const fetchMembers = async () => {
-        try {
-            const data = await queryClient.fetchQuery({
-                queryKey: ['pos', 'members'],
-                queryFn: async () => {
-                    const res = await axios.get(withApiBase('/api/members'));
-                    return normalizeList(res.data);
-                }
-            });
-            setMembers(data);
-        } catch {
-            console.error("Failed to fetch members");
-            setMembers([]);
-        }
-    }
 
     const fetchPosDiscountOptions = async () => {
         try {
@@ -301,36 +330,6 @@ export default function POS() {
             console.error("Failed to fetch history");
         }
     }
-
-    const fetchTrainingBookings = async () => {
-        try {
-            const res = await axios.get(withApiBase('/api/staff/training-sessions'), {
-                params: { status: 'UNPAID' },
-                headers: authHeaders()
-            });
-            setTrainingBookings(res.data || []);
-        } catch {
-            console.error("Failed to fetch training bookings");
-        }
-    };
-
-    const fetchPendingInAppPurchases = async () => {
-        try {
-            const res = await axios.get(withApiBase('/api/payments'), {
-                headers: authHeaders()
-            });
-            const payments = normalizeList(res.data);
-            const pendingCash = payments.filter((payment) =>
-                String(payment?.status || '').toUpperCase() === 'PENDING' &&
-                String(payment?.method || '').toUpperCase() === 'CASH' &&
-                String(payment?.type || '').toUpperCase() !== 'TRAINING'
-            );
-            setPendingInAppPurchases(pendingCash);
-        } catch {
-            console.error("Failed to fetch pending in-app purchases");
-            setPendingInAppPurchases([]);
-        }
-    };
 
     // Cart logic now handled by usePOSStore
 
@@ -483,7 +482,7 @@ export default function POS() {
                 if (!memberId) throw new Error("Member is required for training sessions");
 
                 for (const item of trainingItems) {
-                    await axios.post(withApiBase('/api/staff/book-training'), {
+                    await bookTrainingMutation.mutateAsync({
                         memberId,
                         trainerId: item.trainerId,
                         date: item.date,
@@ -494,7 +493,7 @@ export default function POS() {
                         externalRef: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(finalMethod) ? gcashReference : null,
                         externalDate: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(finalMethod) ? externalDate : null,
                         collections: finalMethod === 'SPLIT' ? finalCollections : undefined
-                    }, { headers: authHeaders() });
+                    });
 
                     if (!mainTransaction) {
                         mainTransaction = { id: 'TRAINING', amount: cartTotal, type: 'TRAINING', method: finalMethod };
@@ -508,7 +507,7 @@ export default function POS() {
                 const hasPackage = otherItems.some(item => item.type === 'CLASS_PACKAGE');
                 const paymentType = hasPlan ? 'MEMBERSHIP' : hasPackage ? 'CLASS_PACKAGE' : 'POS_SALE';
 
-                const res = await axios.post(withApiBase('/api/payments'), {
+                const mutationPayload = {
                     amount: effectiveCartTotal,
                     type: paymentType,
                     method: finalMethod,
@@ -523,9 +522,26 @@ export default function POS() {
                     externalRef: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(finalMethod) ? gcashReference : null,
                     externalDate: ['GCASH', 'PAYMAYA', 'BANK_TRANSFER', 'CARD'].includes(finalMethod) ? externalDate : null,
                     collections: finalMethod === 'SPLIT' ? finalCollections : undefined
-                }, { headers: authHeaders() });
+                };
 
-                mainTransaction = res.data;
+                if (!navigator.onLine) {
+                    // OFFLINE MODE: Fire-and-forget mutate (queues to IndexedDB)
+                    checkoutMutation.mutate(mutationPayload);
+                    mainTransaction = { 
+                        id: `OFFLINE-${Date.now()}`, 
+                        amount: effectiveCartTotal, 
+                        type: paymentType, 
+                        method: finalMethod,
+                        date: new Date().toISOString(),
+                        isOfflinePending: true
+                    };
+                    // Show a non-blocking toast or info if available
+                    console.log("Offline transaction queued.");
+                } else {
+                    // ONLINE MODE: Await full server response
+                    const resData = await checkoutMutation.mutateAsync(mutationPayload);
+                    mainTransaction = resData;
+                }
             }
 
             // Summary Receipt Data
@@ -552,6 +568,11 @@ export default function POS() {
             setLoading(false);
 
         } catch (e) {
+            // Avoid failing the whole UI if the error is just a disconnection (which Query handles)
+            if (!navigator.onLine && e.message === "Network Error") {
+                console.warn("Caught network error while offline - UI should proceed via mutation queue.");
+                return;
+            }
             await showAlert({ title: 'Transaction Failed', message: e.response?.data?.error || e.message, type: 'danger' });
             setLoading(false);
         }

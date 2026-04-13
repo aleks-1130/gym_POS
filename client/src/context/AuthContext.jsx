@@ -23,7 +23,14 @@ try {
 }
 
 export const AuthProvider = ({ children }) => {
-    const [user, setUser] = useState(null);
+    const [user, setUser] = useState(() => {
+        try {
+            const saved = localStorage.getItem('user');
+            return saved ? JSON.parse(saved) : null;
+        } catch {
+            return null;
+        }
+    });
     const [activeGymId, setActiveGymId] = useState(localStorage.getItem('activeGymId') || null);
     const [loading, setLoading] = useState(true);
 
@@ -175,6 +182,12 @@ export const AuthProvider = ({ children }) => {
     // Initialize session check
     useEffect(() => {
         const initSession = async () => {
+            // If offline, we trust the localStorage version we already loaded in useState
+            if (!navigator.onLine) {
+                setLoading(false);
+                return;
+            }
+
             if (!isAuthClientReady) {
                 if (authClientInitError) {
                     console.error("Skipping session restore because auth client failed to initialize.", authClientInitError);
@@ -187,17 +200,33 @@ export const AuthProvider = ({ children }) => {
                 const backendUser = await syncUserWithBackend();
                 if (backendUser) {
                     setUser(backendUser);
+                    localStorage.setItem('user', JSON.stringify(backendUser));
                 } else {
-                    setUser(null);
+                    // Only clear if the server explicitly says "No User" (not a network error)
+                    if (navigator.onLine) {
+                        clearLocalSession();
+                    }
                 }
             } catch (e) {
+                // If the error is network-related, we don't logout! 
+                // We keep the local user and wait for "online" event.
                 console.error("Session restoration failed:", e);
-                logout();
+                if (navigator.onLine && e.response?.status !== 0) {
+                    logout();
+                }
             }
             setLoading(false);
         };
 
         initSession();
+
+        // Listen for return to online status to re-sync
+        const handleOnline = () => {
+            console.log("Internet restored. Re-syncing session...");
+            initSession();
+        };
+        window.addEventListener('online', handleOnline);
+        return () => window.removeEventListener('online', handleOnline);
     }, [isAuthClientReady]);
 
     return (

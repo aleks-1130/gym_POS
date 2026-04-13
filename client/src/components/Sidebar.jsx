@@ -4,30 +4,24 @@ import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
 import { useUIStore } from '../stores/useUIStore';
 import axios from 'axios';
+import { useQuery } from '@tanstack/react-query';
 
 export default function Sidebar() {
     const { user, logout } = useAuth();
     const { isSidebarCollapsed: isCollapsed, toggleSidebar } = useUIStore();
     const [isMobileOpen, setIsMobileOpen] = useState(false);
-    const [unreadCount, setUnreadCount] = useState(0);
+    const { data: notifications } = useQuery({
+        queryKey: ['notifications'],
+        queryFn: async () => {
+            const res = await axios.get('/api/notifications');
+            return res.data;
+        },
+        enabled: !!user,
+        refetchInterval: 60000,
+    });
+
+    const unreadCount = notifications ? notifications.filter(n => !n.isRead).length : 0;
     const isDenseSidebar = user?.role === ROLES.ADMIN;
-
-    React.useEffect(() => {
-        if (!user) return;
-        const fetchUnreadCount = async () => {
-            try {
-                const res = await axios.get('/api/notifications');
-                const unread = res.data.filter(n => !n.isRead).length;
-                setUnreadCount(unread);
-            } catch (error) {
-                console.error("Failed to fetch notification count");
-            }
-        };
-
-        fetchUnreadCount();
-        const interval = setInterval(fetchUnreadCount, 60000);
-        return () => clearInterval(interval);
-    }, [user]);
 
     const NavItem = ({ to, icon, label }) => (
         <NavLink

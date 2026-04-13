@@ -1,6 +1,7 @@
 import { useConfirm } from '../../context/ConfirmContext';
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Receipt from '../../components/Receipt';
 import { withApiBase } from '../../config/api';
 import { useAuth } from '../../context/AuthContext';
@@ -68,11 +69,9 @@ const normalizeDiscountPresetsForUi = (presets = []) => {
 export default function PosSettings() {
     const { alert: showAlert } = useConfirm();
     const { user } = useAuth();
+    const queryClient = useQueryClient();
     const [activeTab, setActiveTab] = useState(TABS.SECURITY);
 
-    const [loading, setLoading] = useState(false);
-    const [receiptSaving, setReceiptSaving] = useState(false);
-    const [discountSaving, setDiscountSaving] = useState(false);
     const [status, setStatus] = useState({ hasVoidPin: false, hasReturnPin: false });
     const [voidPin, setVoidPin] = useState('');
     const [returnPin, setReturnPin] = useState('');
@@ -82,8 +81,6 @@ export default function PosSettings() {
     const [discountPresets, setDiscountPresets] = useState([]);
     const [discountDraft, setDiscountDraft] = useState({ name: '', rate: '', icon: 'local_offer' });
     
-    // Promo Codes State
-    const [promoCodes, setPromoCodes] = useState([]);
     const [promoDraft, setPromoDraft] = useState({
         code: '',
         type: 'PERCENTAGE',
@@ -91,47 +88,53 @@ export default function PosSettings() {
         description: '',
         maxUses: '',
         expiryDate: '',
-        scope: 'ORDER', // 'ORDER', 'PRODUCT', 'CATEGORY'
-        productIds: '', // comma separated IDs for simplicity
-        categories: '', // comma separated categories
+        scope: 'ORDER',
+        productIds: '',
+        categories: '',
         bogoBuyQty: 1,
         bogoGetQty: 1,
         bogoGetProductId: '',
         isGlobal: false
     });
-    const [promoSaving, setPromoSaving] = useState(false);
-    const [promoLoading, setPromoLoading] = useState(false);
 
+    const authHeaders = () => undefined;
 
-    const authHeaders = () => {
-                return undefined;
-    };
+    const { data: posSettingsData, isLoading: loadingInfo } = useQuery({
+        queryKey: ['adminPosSettings'],
+        queryFn: async () => {
+            const res = await axios.get(withApiBase('/api/pos/settings'), { headers: authHeaders() });
+            return res.data;
+        }
+    });
 
     useEffect(() => {
-        fetchPosSettings();
-        fetchPromoCodes();
-    }, []);
-
-
-    const fetchPosSettings = async () => {
-        try {
-            const res = await axios.get(withApiBase('/api/pos/settings'), {
-                headers: authHeaders()
-            });
+        if (posSettingsData) {
             setStatus({
-                hasVoidPin: Boolean(res.data?.hasVoidPin),
-                hasReturnPin: Boolean(res.data?.hasReturnPin)
+                hasVoidPin: Boolean(posSettingsData.hasVoidPin),
+                hasReturnPin: Boolean(posSettingsData.hasReturnPin)
             });
-            setReceiptSettings((prev) => ({
-                ...prev,
-                ...(res.data?.receiptSettings || {})
-            }));
-            setDiscountPresets(normalizeDiscountPresetsForUi(res.data?.discountPresets));
-        } catch (e) {
-            console.error('Failed to load POS settings', e);
+            setReceiptSettings(prev => ({ ...prev, ...(posSettingsData.receiptSettings || {}) }));
+            setDiscountPresets(normalizeDiscountPresetsForUi(posSettingsData.discountPresets));
         }
-    };
+    }, [posSettingsData]);
 
+    const { data: promoCodes = [], isLoading: promoLoading } = useQuery({
+        queryKey: ['adminPromoCodes'],
+        queryFn: async () => {
+            const res = await axios.get(withApiBase('/api/pos/promo-codes'), { headers: authHeaders() });
+            return res.data;
+        }
+    });
+
+
+    const saveSettingsMutation = useMutation({
+        mutationFn: async (payload) => {
+            return axios.post(withApiBase('/api/pos/settings'), payload, { headers: authHeaders() });
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['adminPosSettings'] });
+        }
+    });
 
     const handleSavePins = async (e) => {
         e.preventDefault();
@@ -159,23 +162,18 @@ export default function PosSettings() {
             await showAlert({ title: 'No Changes', message: 'Nothing to update.', type: 'info' }); return;
         }
 
-        setLoading(true);
-        try {
-            await axios.post(withApiBase('/api/pos/settings'), payload, {
-                headers: authHeaders()
-            });
-
-            setVoidPin('');
-            setReturnPin('');
-            setClearVoidPin(false);
-            setClearReturnPin(false);
-            await fetchPosSettings();
-            await showAlert({ title: 'Settings Saved', message: 'POS PIN settings updated.', type: 'success' });
-        } catch (e) {
-            await showAlert({ title: 'Update Failed', message: e.response?.data?.error || 'Failed to update POS settings', type: 'danger' });
-        } finally {
-            setLoading(false);
-        }
+        saveSettingsMutation.mutate(payload, {
+            onSuccess: () => {
+                setVoidPin('');
+                setReturnPin('');
+                setClearVoidPin(false);
+                setClearReturnPin(false);
+                showAlert({ title: 'Settings Saved', message: 'POS PIN settings updated.', type: 'success' });
+            },
+            onError: (e) => {
+                showAlert({ title: 'Update Failed', message: e.response?.data?.error || 'Failed to update POS settings', type: 'danger' });
+            }
+        });
     };
 
     const handleSaveReceipt = async (e) => {
@@ -191,20 +189,14 @@ export default function PosSettings() {
             await showAlert({ title: 'Required', message: 'Branch address is required for the receipt.', type: 'warning' }); return;
         }
 
-        setReceiptSaving(true);
-        try {
-            await axios.post(withApiBase('/api/pos/settings'), {
-                receiptSettings
-            }, {
-                headers: authHeaders()
-            });
-            await fetchPosSettings();
-            await showAlert({ title: 'Settings Saved', message: 'Receipt settings updated.', type: 'success' });
-        } catch (e) {
-            await showAlert({ title: 'Update Failed', message: e.response?.data?.error || 'Failed to update receipt settings', type: 'danger' });
-        } finally {
-            setReceiptSaving(false);
-        }
+        saveSettingsMutation.mutate({ receiptSettings }, {
+            onSuccess: () => {
+                showAlert({ title: 'Settings Saved', message: 'Receipt settings updated.', type: 'success' });
+            },
+            onError: (e) => {
+                showAlert({ title: 'Update Failed', message: e.response?.data?.error || 'Failed to update receipt settings', type: 'danger' });
+            }
+        });
     };
 
     const updateReceiptField = (key, value) => {
@@ -289,38 +281,33 @@ export default function PosSettings() {
             return;
         }
 
-        setDiscountSaving(true);
-        try {
-            await axios.post(withApiBase('/api/pos/settings'), {
-                discountPresets: normalizedPresets.map((preset) => ({
-                    ...preset,
-                    rate: Number(preset.rate.toFixed(2))
-                }))
-            }, {
-                headers: authHeaders()
-            });
-            await fetchPosSettings();
-            await showAlert({ title: 'Settings Saved', message: 'POS discount presets updated.', type: 'success' });
-        } catch (e) {
-            await showAlert({ title: 'Update Failed', message: e.response?.data?.error || 'Failed to update discount presets', type: 'danger' });
-        } finally {
-            setDiscountSaving(false);
-        }
+        saveSettingsMutation.mutate({
+            discountPresets: normalizedPresets.map((preset) => ({
+                ...preset,
+                rate: Number(preset.rate.toFixed(2))
+            }))
+        }, {
+            onSuccess: () => {
+                showAlert({ title: 'Settings Saved', message: 'POS discount presets updated.', type: 'success' });
+            },
+            onError: (e) => {
+                showAlert({ title: 'Update Failed', message: e.response?.data?.error || 'Failed to update discount presets', type: 'danger' });
+            }
+        });
     };
 
-    const fetchPromoCodes = async () => {
-        setPromoLoading(true);
-        try {
-            const res = await axios.get(withApiBase('/api/pos/promo-codes'), {
-                headers: authHeaders()
-            });
-            setPromoCodes(res.data);
-        } catch (e) {
-            console.error('Failed to load promo codes', e);
-        } finally {
-            setPromoLoading(false);
-        }
-    };
+    const promoMutation = useMutation({
+        mutationFn: async ({ id, payload, action }) => {
+            if (action === 'CREATE') {
+                return axios.post(withApiBase('/api/pos/promo-codes'), payload, { headers: authHeaders() });
+            } else if (action === 'TOGGLE') {
+                return axios.put(withApiBase(`/api/pos/promo-codes/${id}`), payload, { headers: authHeaders() });
+            } else if (action === 'DELETE') {
+                return axios.delete(withApiBase(`/api/pos/promo-codes/${id}`), { headers: authHeaders() });
+            }
+        },
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['adminPromoCodes'] })
+    });
 
     const handleCreatePromoCode = async (e) => {
         e.preventDefault();
@@ -342,30 +329,21 @@ export default function PosSettings() {
             tenantId: user?.tenantId
         };
 
-        setPromoSaving(true);
-        try {
-            await axios.post(withApiBase('/api/pos/promo-codes'), payload, {
-                headers: authHeaders()
-            });
-            setPromoDraft({ code: '', type: 'PERCENTAGE', value: '', description: '', maxUses: '', expiryDate: '', scope: 'ORDER', productIds: '', categories: '', bogoBuyQty: 1, bogoGetQty: 1, bogoGetProductId: '', isGlobal: false });
-            await fetchPromoCodes();
-            await showAlert({ title: 'Success', message: 'Promo code created successfully.', type: 'success' });
-        } catch (e) {
-            await showAlert({ title: 'Error', message: e.response?.data?.error || 'Failed to create promo code', type: 'danger' });
-        } finally {
-            setPromoSaving(false);
-        }
+        promoMutation.mutate({ payload, action: 'CREATE' }, {
+            onSuccess: () => {
+                setPromoDraft({ code: '', type: 'PERCENTAGE', value: '', description: '', maxUses: '', expiryDate: '', scope: 'ORDER', productIds: '', categories: '', bogoBuyQty: 1, bogoGetQty: 1, bogoGetProductId: '', isGlobal: false });
+                showAlert({ title: 'Success', message: 'Promo code created successfully.', type: 'success' });
+            },
+            onError: (e) => {
+                showAlert({ title: 'Error', message: e.response?.data?.error || 'Failed to create promo code', type: 'danger' });
+            }
+        });
     };
 
     const togglePromoStatus = async (promo) => {
-        try {
-            await axios.put(withApiBase(`/api/pos/promo-codes/${promo.id}`), {
-                isActive: !promo.isActive
-            }, { headers: authHeaders() });
-            await fetchPromoCodes();
-        } catch {
-            await showAlert({ title: 'Error', message: 'Failed to update promo status', type: 'danger' });
-        }
+        promoMutation.mutate({ id: promo.id, payload: { isActive: !promo.isActive }, action: 'TOGGLE' }, {
+            onError: () => showAlert({ title: 'Error', message: 'Failed to update promo status', type: 'danger' })
+        });
     };
 
     const deletePromoCode = async (id) => {
@@ -377,14 +355,9 @@ export default function PosSettings() {
         });
         if (!confirmed) return;
 
-        try {
-            await axios.delete(withApiBase(`/api/pos/promo-codes/${id}`), {
-                headers: authHeaders()
-            });
-            await fetchPromoCodes();
-        } catch {
-            await showAlert({ title: 'Error', message: 'Failed to delete promo code', type: 'danger' });
-        }
+        promoMutation.mutate({ id, action: 'DELETE' }, {
+            onError: () => showAlert({ title: 'Error', message: 'Failed to delete promo code', type: 'danger' })
+        });
     };
 
     const receiptPreviewData = useMemo(() => ({
@@ -536,11 +509,11 @@ export default function PosSettings() {
                             <div className="flex justify-end border-t border-white/10 pt-4">
                                 <button
                                     type="submit"
-                                    disabled={loading}
+                                    disabled={saveSettingsMutation.isPending}
                                     className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 font-bold text-white shadow-lg shadow-primary/20 transition-colors hover:bg-orange-600 disabled:opacity-50"
                                 >
-                                    <span className="material-icons-round text-base">{loading ? 'sync' : 'save'}</span>
-                                    {loading ? 'Saving...' : 'Save PIN Settings'}
+                                    <span className="material-icons-round text-base">{saveSettingsMutation.isPending ? 'sync' : 'save'}</span>
+                                    {saveSettingsMutation.isPending ? 'Saving...' : 'Save PIN Settings'}
                                 </button>
                             </div>
                         </form>
@@ -664,11 +637,11 @@ export default function PosSettings() {
                             <div className="flex justify-end border-t border-white/10 pt-4">
                                 <button
                                     type="submit"
-                                    disabled={receiptSaving}
+                                    disabled={saveSettingsMutation.isPending}
                                     className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary hover:bg-orange-600 text-white font-bold shadow-lg shadow-primary/20 disabled:opacity-50"
                                 >
-                                    <span className="material-icons-round text-base">{receiptSaving ? 'sync' : 'save'}</span>
-                                    {receiptSaving ? 'Saving...' : 'Save Receipt Settings'}
+                                    <span className="material-icons-round text-base">{saveSettingsMutation.isPending ? 'sync' : 'save'}</span>
+                                    {saveSettingsMutation.isPending ? 'Saving...' : 'Save Receipt Settings'}
                                 </button>
                             </div>
                         </form>
@@ -814,12 +787,12 @@ export default function PosSettings() {
                         <div className="flex justify-end border-t border-white/10 pt-5">
                             <button
                                 type="button"
-                                disabled={discountSaving}
                                 onClick={handleSaveDiscountPresets}
-                                className="px-6 py-3 rounded-xl bg-primary hover:bg-orange-600 text-white font-bold shadow-lg shadow-primary/20 disabled:opacity-50 inline-flex items-center gap-2"
+                                disabled={saveSettingsMutation.isPending}
+                                className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3 font-bold text-white shadow-lg shadow-primary/20 transition-colors hover:bg-orange-600 disabled:opacity-50"
                             >
-                                <span className="material-icons-round text-base">{discountSaving ? 'sync' : 'save'}</span>
-                                {discountSaving ? 'Saving...' : 'Save Discount Presets'}
+                                <span className="material-icons-round text-base">{saveSettingsMutation.isPending ? 'sync' : 'save'}</span>
+                                {saveSettingsMutation.isPending ? 'Saving...' : 'Save Changes'}
                             </button>
                         </div>
                     </div>
@@ -976,10 +949,10 @@ export default function PosSettings() {
                                 <div className={`flex items-end ${promoDraft.scope !== 'ORDER' ? 'lg:col-start-4' : ''}`}>
                                     <button
                                         type="submit"
-                                        disabled={promoSaving}
-                                        className="w-full bg-primary hover:bg-orange-600 text-white font-bold py-2 rounded-xl transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
+                                        disabled={promoMutation.isPending}
+                                        className="w-full sm:w-auto px-6 py-3 rounded-xl bg-primary hover:bg-orange-600 text-white font-bold transition-colors disabled:opacity-50 shadow-lg shadow-primary/20"
                                     >
-                                        {promoSaving ? 'Saving...' : 'Create Promo'}
+                                        {promoMutation.isPending ? 'Saving...' : 'Create Promo Code'}
                                     </button>
                                 </div>
                             </div>

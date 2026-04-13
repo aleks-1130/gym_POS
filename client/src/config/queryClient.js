@@ -1,5 +1,6 @@
 import { QueryClient } from '@tanstack/react-query';
-import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
+import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
+import { get, set, del } from 'idb-keyval';
 
 export const queryClient = new QueryClient({
     defaultOptions: {
@@ -8,12 +9,19 @@ export const queryClient = new QueryClient({
             gcTime: 24 * 60 * 60 * 1000, // 24 hours (formerly cacheTime)
             refetchOnWindowFocus: true,
             retry: 1,
+            networkMode: 'offlineFirst',
         },
+        mutations: {
+            networkMode: 'offlineFirst',
+        }
     },
 });
 
-// For larger storage in offline mode we could use IndexedDB (via idb-keyval), 
-// but localStorage works perfectly for initial high-speed config caching.
-export const persister = createSyncStoragePersister({
-    storage: window.localStorage,
+// Use IndexedDB to securely hold larger data limits and allow async queues
+export const persister = createAsyncStoragePersister({
+    storage: {
+        getItem: async (key) => await get(key),
+        setItem: async (key, value) => await set(key, value),
+        removeItem: async (key) => await del(key),
+    },
 });
