@@ -49,8 +49,11 @@ export const AuthProvider = ({ children }) => {
             const res = await axios.get(withApiBase('/api/auth/me'));
             return res.data; 
         } catch (e) {
-            console.error("Failed to sync user with backend. Error data:", e.response?.data);
-            console.error("Error Message:", e.message);
+            // 401 is expected when no session exists (e.g. initial page load before login)
+            if (e.response?.status !== 401) {
+                console.error("Failed to sync user with backend. Error data:", e.response?.data);
+                console.error("Error Message:", e.message);
+            }
             return null;
         }
     };
@@ -156,7 +159,7 @@ export const AuthProvider = ({ children }) => {
 
     const switchBranch = async (gymId) => {
         const role = String(user?.role || '').toUpperCase();
-        if (role !== 'OWNER') {
+        if (role !== 'OWNER' && role !== 'MEMBER') {
             return false;
         }
 

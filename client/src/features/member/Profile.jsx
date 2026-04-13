@@ -4,24 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import { ROLES } from '../../constants/roles';
-
-const formatPlanDate = (value) => {
-    if (!value) return 'N/A';
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return 'N/A';
-    return parsed.toLocaleDateString();
-};
-
-const calculatePlanProgress = (startDate, endDate, now = new Date()) => {
-    if (!startDate || !endDate) return 0;
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
-    const total = end - start;
-    if (total <= 0) return 100;
-    const elapsed = now - start;
-    return Math.min(100, Math.max(0, (elapsed / total) * 100));
-};
+import { formatPlanDate, calculatePlanProgress } from '../../utils/memberUtils';
 
 export default function Profile() {
     const { user, logout, logoutAllSessions } = useAuth();
@@ -58,11 +41,10 @@ export default function Profile() {
                 let profileData = null;
 
                 try {
-                    const meRes = await axios.get('/api/members/me');
-                    profileData = meRes.data?.member || meRes.data || null;
-                } catch {
                     const fallbackRes = await axios.get(`/api/members/${user.id}`);
                     profileData = fallbackRes.data?.member || fallbackRes.data || null;
+                } catch {
+                    // Member profile not found
                 }
 
                 try {
@@ -80,8 +62,11 @@ export default function Profile() {
                     // Keep defaults if preferences endpoint is not available
                 }
                 try {
-                    const gymRes = await axios.get('/api/settings');
-                    setGymProfile(gymRes.data || null);
+                    // Only OWNER/ADMIN can access /api/settings — skip for members
+                    if (!isMember) {
+                        const gymRes = await axios.get('/api/settings');
+                        setGymProfile(gymRes.data || null);
+                    }
                 } catch {
                     setGymProfile(null);
                 }

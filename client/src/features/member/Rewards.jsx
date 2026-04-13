@@ -5,6 +5,7 @@ import { REWARD_CATEGORIES } from '../../constants/categories';
 import { useConfirm } from '../../context/ConfirmContext';
 import DataTable from '../../components/common/DataTable';
 import MemberPageHeader from './components/MemberPageHeader';
+import CustomSelect from '../../components/common/CustomSelect';
 
 export default function Rewards() {
     const { user } = useAuth();
@@ -164,17 +165,15 @@ export default function Rewards() {
                     <div className="space-y-2">
                         <div className="sm:hidden">
                             <label className="block text-[11px] text-text-muted font-semibold mb-1">Category</label>
-                            <select
+                            <CustomSelect
                                 value={filter}
-                                onChange={(event) => setFilter(event.target.value)}
-                                className="w-full bg-surface border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white outline-none focus:border-primary"
-                            >
-                                {categories.map((cat) => (
-                                    <option key={cat} value={cat} style={{ color: '#111', backgroundColor: '#fff' }}>
-                                        {cat === 'all' ? 'All Rewards' : cat}
-                                    </option>
-                                ))}
-                            </select>
+                                onChange={(e) => setFilter(e.target.value)}
+                                options={categories.map((cat) => ({
+                                    value: cat,
+                                    label: cat === 'all' ? 'All Rewards' : cat
+                                }))}
+                                className="w-full"
+                            />
                         </div>
 
                         <div className="hidden sm:grid grid-cols-5 gap-2">

@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useConfirm } from '../../context/ConfirmContext';
+import TrainerPageHeader from './components/TrainerPageHeader';
+import CustomSelect from '../../components/common/CustomSelect';
 
 export default function TrainerSessions() {
     const COMPLETE_GRACE_MINUTES = 5;
@@ -280,7 +282,7 @@ export default function TrainerSessions() {
             <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-white">My Sessions</h1>
-                    <p className="text-text-muted mt-1">Personal training bookings with members</p>
+                    <p className="text-white/60 font-medium mt-1">Personal training bookings with members</p>
                     {refundNotice && (
                         <p className="text-emerald-300 text-xs mt-2">{refundNotice}</p>
                     )}
@@ -635,7 +637,7 @@ export default function TrainerSessions() {
                         <div className="p-5 border-b border-white/10 flex items-center justify-between">
                             <div>
                                 <h2 className="text-lg font-bold text-white">Session Notes</h2>
-                                <p className="text-text-muted text-xs mt-1">
+                                <p className="text-white/60 text-xs mt-1 font-medium">
                                     {editingSession.member?.firstName} {editingSession.member?.lastName}
                                 </p>
                             </div>
@@ -679,7 +681,7 @@ export default function TrainerSessions() {
                         <div className="p-5 border-b border-white/10 flex items-center justify-between">
                             <div>
                                 <h2 className="text-lg font-bold text-white">Request Refund Exception</h2>
-                                <p className="text-text-muted text-xs mt-1">
+                                <p className="text-white/60 text-xs mt-1 font-medium">
                                     {refundModalSession.member?.firstName} {refundModalSession.member?.lastName}
                                 </p>
                             </div>
@@ -693,17 +695,18 @@ export default function TrainerSessions() {
                         <div className="p-5 space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-white mb-2">Reason</label>
-                                <select
+                                <CustomSelect
                                     value={refundReason}
                                     onChange={(e) => setRefundReason(e.target.value)}
-                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white cursor-pointer focus:outline-none focus:border-primary"
-                                >
-                                    <option style={{ color: '#111', backgroundColor: '#fff' }} value="OTHER">Other</option>
-                                    <option style={{ color: '#111', backgroundColor: '#fff' }} value="TRAINER_ABSENT">Trainer Absent</option>
-                                    <option style={{ color: '#111', backgroundColor: '#fff' }} value="GYM_CLOSURE">Gym Closure</option>
-                                    <option style={{ color: '#111', backgroundColor: '#fff' }} value="SYSTEM_ERROR">System Error</option>
-                                    <option style={{ color: '#111', backgroundColor: '#fff' }} value="MEDICAL_EMERGENCY">Medical Emergency</option>
-                                </select>
+                                    options={[
+                                        { value: 'OTHER', label: 'Other' },
+                                        { value: 'TRAINER_ABSENT', label: 'Trainer Absent' },
+                                        { value: 'GYM_CLOSURE', label: 'Gym Closure' },
+                                        { value: 'SYSTEM_ERROR', label: 'System Error' },
+                                        { value: 'MEDICAL_EMERGENCY', label: 'Medical Emergency' }
+                                    ]}
+                                    className="w-full"
+                                />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-white mb-2">Details (optional)</label>
@@ -720,7 +723,7 @@ export default function TrainerSessions() {
                                     {refundError}
                                 </div>
                             )}
-                            <p className="text-xs text-text-muted">
+                            <p className="text-xs text-white/50 font-medium tracking-wide">
                                 Refunds are exception-based and require staff/admin approval.
                             </p>
                         </div>

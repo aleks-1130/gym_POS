@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import MemberPageHeader from './components/MemberPageHeader';
+import CustomSelect from '../../components/common/CustomSelect';
 
 export default function MemberShop() {
     const { user } = useAuth();
@@ -364,7 +365,7 @@ export default function MemberShop() {
 
             <div className="mt-8 mb-8 space-y-6">
                 {/* Unified Search & Filters */}
-                <div className="rounded-[32px] border border-white/10 bg-white/5 backdrop-blur-xl p-3 sm:p-4 shadow-2xl flex flex-col md:flex-row gap-4">
+                <div className="relative z-[100] rounded-[32px] border border-white/10 bg-white/5 backdrop-blur-xl p-3 sm:p-4 shadow-2xl flex flex-col md:flex-row gap-4">
                     <div className="relative flex-1 group">
                         <span className="material-icons-round text-xl text-primary absolute left-4 top-1/2 -translate-y-1/2 group-focus-within:scale-110 transition-transform">search</span>
                         <input
@@ -387,19 +388,19 @@ export default function MemberShop() {
                     </div>
                     
                     <div className="flex gap-2">
-                        <div className="relative flex-1 md:flex-none">
-                            <select
+                        <div className="flex-1 md:w-48 md:flex-none">
+                            <CustomSelect
                                 value={sortBy}
                                 onChange={(e) => setSortBy(e.target.value)}
-                                className="w-full md:w-48 appearance-none bg-white/5 border border-white/5 rounded-2xl h-14 pl-5 pr-12 text-[13px] font-black uppercase tracking-widest text-white cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
-                            >
-                                <option value="featured">Featured</option>
-                                <option value="price-asc">Price: Low-High</option>
-                                <option value="price-desc">Price: High-Low</option>
-                                <option value="name-az">Name A-Z</option>
-                                <option value="stock-desc">Stock Status</option>
-                            </select>
-                            <span className="material-icons-round text-xl text-text-muted absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">expand_more</span>
+                                options={[
+                                    { value: 'featured', label: 'Featured' },
+                                    { value: 'price-asc', label: 'Price: Low-High' },
+                                    { value: 'price-desc', label: 'Price: High-Low' },
+                                    { value: 'name-az', label: 'Name A-Z' },
+                                    { value: 'stock-desc', label: 'Stock Status' }
+                                ]}
+                                className="w-full"
+                            />
                         </div>
 
                         <div className="flex items-center gap-1.5 bg-white/5 border border-white/5 rounded-2xl p-1.5 shrink-0">

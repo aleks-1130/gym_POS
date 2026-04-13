@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import MemberPageHeader from './components/MemberPageHeader';
+import CustomSelect from '../../components/common/CustomSelect';
 
 const CardIcon = ({ className = 'w-5 h-5' }) => (
     <svg viewBox="0 0 24 24" fill="none" className={className}>
@@ -214,14 +215,17 @@ export default function PaymentMethods() {
 
                 {activeForm === 'E_WALLET' ? (
                     <form className="grid grid-cols-1 sm:grid-cols-2 gap-3" onSubmit={handleAddWallet}>
-                        <select
-                            className="bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white sm:col-span-2"
-                            value={walletForm.provider}
-                            onChange={(e) => setWalletForm((prev) => ({ ...prev, provider: e.target.value }))}
-                        >
-                            <option style={{ color: '#111', backgroundColor: '#fff' }} value="GCASH">GCash</option>
-                            <option style={{ color: '#111', backgroundColor: '#fff' }} value="MAYA">Maya</option>
-                        </select>
+                        <div className="sm:col-span-2">
+                            <CustomSelect
+                                className="w-full"
+                                value={walletForm.provider}
+                                onChange={(e) => setWalletForm((prev) => ({ ...prev, provider: e.target.value }))}
+                                options={[
+                                    { value: 'GCASH', label: 'GCash' },
+                                    { value: 'MAYA', label: 'Maya' }
+                                ]}
+                            />
+                        </div>
                         <input className="bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white" placeholder="Label (optional)" value={walletForm.label} onChange={(e) => setWalletForm((prev) => ({ ...prev, label: e.target.value }))} />
                         <input className="bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white" placeholder="Account Name" value={walletForm.name} onChange={(e) => setWalletForm((prev) => ({ ...prev, name: e.target.value }))} required />
                         <input className="bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white sm:col-span-2" placeholder="Mobile Number" value={walletForm.phone} onChange={(e) => setWalletForm((prev) => ({ ...prev, phone: e.target.value }))} required />

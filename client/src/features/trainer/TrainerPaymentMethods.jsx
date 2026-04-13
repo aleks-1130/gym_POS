@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import TrainerPageHeader from './components/TrainerPageHeader';
+import CustomSelect from '../../components/common/CustomSelect';
 
 const STORAGE_KEY = 'trainerPaymentMethods';
 
@@ -155,14 +156,17 @@ export default function TrainerPaymentMethods() {
 
                 {activeForm === 'E_WALLET' ? (
                     <form className="grid grid-cols-1 sm:grid-cols-3 gap-3" onSubmit={addWallet}>
-                        <select
-                            className="bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white sm:col-span-3"
-                            value={walletForm.provider}
-                            onChange={(e) => setWalletForm((p) => ({ ...p, provider: e.target.value }))}
-                        >
-                            <option style={{ color: '#111', backgroundColor: '#fff' }} value="GCASH">GCash</option>
-                            <option style={{ color: '#111', backgroundColor: '#fff' }} value="MAYA">Maya</option>
-                        </select>
+                        <div className="sm:col-span-3 relative z-[100]">
+                            <CustomSelect
+                                value={walletForm.provider}
+                                onChange={(e) => setWalletForm((p) => ({ ...p, provider: e.target.value }))}
+                                options={[
+                                    { value: 'GCASH', label: 'GCash' },
+                                    { value: 'MAYA', label: 'Maya' }
+                                ]}
+                                className="w-full"
+                            />
+                        </div>
                         <input className="bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white" placeholder="Label" value={walletForm.label} onChange={(e) => setWalletForm((p) => ({ ...p, label: e.target.value }))} />
                         <input className="bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white" placeholder="Account Name" value={walletForm.name} onChange={(e) => setWalletForm((p) => ({ ...p, name: e.target.value }))} required />
                         <input className="bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white" placeholder="Phone" value={walletForm.phone} onChange={(e) => setWalletForm((p) => ({ ...p, phone: e.target.value }))} required />

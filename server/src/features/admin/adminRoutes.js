@@ -14,8 +14,8 @@ router.delete('/users/:id', authenticateToken, authorize(['OWNER', 'ADMIN']), ad
 router.post('/owner/role-change', authenticateToken, authorize('OWNER'), adminController.changeUserRole);
 router.post('/owner/transfer-ownership', authenticateToken, authorize('OWNER'), adminController.transferOwnership);
 
-// Branch Management (Owner/Admin)
-router.get('/branches', authenticateToken, authorize(['OWNER', 'ADMIN']), branchController.getBranches);
+// Branch Management (Owner/Admin/Member)
+router.get('/branches', authenticateToken, authorize(['OWNER', 'ADMIN', 'MEMBER']), branchController.getBranches);
 router.post('/branches', authenticateToken, authorize(['OWNER']), branchController.createBranch);
 router.put('/branches/:id', authenticateToken, authorize(['OWNER']), branchController.updateBranch);
 
