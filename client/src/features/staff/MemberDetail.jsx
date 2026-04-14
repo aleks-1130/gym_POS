@@ -4,6 +4,7 @@ import axios from 'axios';
 import { useReactToPrint } from 'react-to-print';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useConfirm } from '../../context/ConfirmContext';
+import { queryClient } from '../../config/queryClient';
 
 // Custom Hooks
 import { useMemberStats } from '../../hooks/useMemberStats';
@@ -181,6 +182,8 @@ export default function MemberDetail() {
             await memberService.claimBundleProduct({ memberBundleId: bundleId, bucketId });
             showAlert({ title: 'Success', message: 'Product claimed successfully', type: 'success' });
             fetchBundles();
+            queryClient.invalidateQueries({ queryKey: ['members-page'] });
+            queryClient.invalidateQueries({ queryKey: ['pos', 'members'] });
         } catch (e) {
             showAlert({ title: 'Error', message: e.response?.data?.error || 'Failed to claim product', type: 'danger' });
         }
@@ -240,6 +243,8 @@ export default function MemberDetail() {
                 stopCamera();
                 setShowPhotoModal(false);
                 fetchMember();
+                queryClient.invalidateQueries({ queryKey: ['members-page'] });
+                queryClient.invalidateQueries({ queryKey: ['pos', 'members'] });
             } catch {
                 showAlert({ title: "Photo Error", message: "Failed to update photo", type: "danger" });
             } finally {
@@ -256,6 +261,9 @@ export default function MemberDetail() {
             });
             setShowFreezeModal(false);
             fetchMember();
+            queryClient.invalidateQueries({ queryKey: ['members-page'] });
+            queryClient.invalidateQueries({ queryKey: ['pos', 'members'] });
+            queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
         } catch (error) {
             showAlert({
                 title: "Status Error",
@@ -294,6 +302,8 @@ export default function MemberDetail() {
             await memberService.updateMember(id, editFormData);
             setShowEditModal(false);
             fetchMember();
+            queryClient.invalidateQueries({ queryKey: ['members-page'] });
+            queryClient.invalidateQueries({ queryKey: ['pos', 'members'] });
             showAlert({ title: "Updated!", message: "Member details updated!", type: "success" });
         } catch {
             showAlert({ title: "Update Failed", message: "Failed to update member", type: "danger" });
@@ -403,6 +413,8 @@ export default function MemberDetail() {
         try {
             const result = await memberService.useGuestPass(id, guestPassCount);
             await fetchMember();
+            queryClient.invalidateQueries({ queryKey: ['members-page'] });
+            queryClient.invalidateQueries({ queryKey: ['pos', 'members'] });
             const remaining = Number(result?.usage?.remainingCount);
             const hasRemaining = Number.isFinite(remaining);
             resetGuestPassWorkflow();
@@ -434,7 +446,11 @@ export default function MemberDetail() {
 
     const initials = `${member.firstName?.[0] || ''}${member.lastName?.[0] || ''}`;
     const totalSpent = payments.reduce((sum, pay) => sum + Number(pay.amount || 0), 0);
-    const normalizedStatus = String(member.status || '').toUpperCase();
+    
+    // UI Consistency: Prioritize computed expiration even if DB status lags
+    const rawStatus = String(member.status || '').toUpperCase();
+    const normalizedStatus = stats.isExpired ? 'EXPIRED' : rawStatus;
+
     const statusTone = normalizedStatus === 'ACTIVE'
         ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
         : normalizedStatus === 'FREEZED'
@@ -629,7 +645,7 @@ export default function MemberDetail() {
                                     Member ID #{member.id} | Since {memberSinceLabel}
                                 </p>
                                 <div className="flex flex-wrap gap-1.5 mt-2">
-                                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${statusTone}`}>{member.status}</span>
+                                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${statusTone}`}>{normalizedStatus}</span>
                                     <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-primary/15 text-primary border border-primary/30">{stats.combinedPlanLabel || 'No plan'}</span>
                                     <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-yellow-500/15 text-yellow-300 border border-yellow-500/30">{member?.points || 0} pts</span>
                                     {normalizedStatus === 'FREEZED' && (

@@ -2,6 +2,7 @@ const prisma = require('../../config/prisma');
 
 const getAnalytics = async (req, res) => {
     try {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
         const { startDate, endDate } = req.query;
 
         // 1. Current Period
@@ -100,7 +101,20 @@ const getAnalytics = async (req, res) => {
                 } 
             }),
             // All Products (to get current Stock)
-            prisma.product.findMany({ where: { tenantId, ...gymFilter } }),
+            prisma.product.findMany({ 
+                where: { 
+                    tenantId, 
+                    ...(effectiveGymId ? {
+                        OR: [
+                            { gymId: effectiveGymId },
+                            { isGlobal: true }
+                        ]
+                    } : {})
+                },
+                include: {
+                    stocks: effectiveGymId ? { where: { gymId: effectiveGymId } } : false
+                }
+            }),
             // All Members (allowed to filter active/expired in memory for stats)
             prisma.member.findMany({ 
                 where: { tenantId, ...gymFilter },
@@ -232,8 +246,12 @@ const getAnalytics = async (req, res) => {
                     pName = originalProd.name;
                     pCat = originalProd.category || 'Uncategorized';
                     pPrice = originalProd.price;
-                    currentStock = originalProd.stock;
-                    minStock = originalProd.minStock;
+                    currentStock = (originalProd.stocks && originalProd.stocks.length > 0)
+                        ? originalProd.stocks[0].quantity
+                        : originalProd.stock;
+                    minStock = (originalProd.stocks && originalProd.stocks.length > 0)
+                        ? originalProd.stocks[0].minQuantity
+                        : originalProd.minStock;
                 } else {
                     // Handle unlinked items (custom items, deleted products, or non-product types)
                     if (item.type === 'PLAN') pCat = 'Memberships';

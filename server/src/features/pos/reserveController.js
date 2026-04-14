@@ -45,20 +45,30 @@ const reserveStock = async (req, res) => {
             }
         }
 
-        // Product's actual stock in DB
+        const gymId = req.user?.gymId || req.gymId;
+
+        // Product's actual stock in DB (Check branch first)
         const product = await prisma.product.findUnique({
             where: { 
                 id: Number(productId),
                 tenantId: Number(tenantId)
+            },
+            include: {
+                stocks: gymId ? { where: { gymId: Number(gymId) } } : false
             }
         });
 
         if (!product) return res.status(404).json({ error: 'Product not found' });
 
+        // Prioritize branch-specific stock, fall back to global
+        const currentDbStock = (product.stocks && product.stocks.length > 0)
+            ? product.stocks[0].quantity
+            : product.stock;
+
         // Calculate available stock taking into account all global holds,
         // EXCEPT we give back the hold we currently have on this product for this session
         // so that we can accurately assess if we can increase to the new requested qty.
-        const availableStock = product.stock - (globalHold - myCurrentHold);
+        const availableStock = currentDbStock - (globalHold - myCurrentHold);
 
         if (availableStock < qty) {
             return res.status(400).json({ 

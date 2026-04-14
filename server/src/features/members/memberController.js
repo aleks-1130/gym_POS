@@ -178,14 +178,92 @@ const applyPlanClassSessions = async ({ tx, memberId, plan }) => {
     });
 };
 
+/**
+ * Reconciles a member's status against their expiry date and freeze period.
+ * Handles ACTIVE -> EXPIRED and FREEZED -> ACTIVE/EXPIRED transitions.
+ */
+const reconcileMemberStatus = async (memberId) => {
+    try {
+        const member = await prisma.member.findUnique({
+            where: { id: Number(memberId) },
+            include: { gym: true }
+        });
+
+        if (!member || !member.status) return;
+
+        // Use gym timezone or default to Asia/Manila
+        const timezone = member.gym?.timezone || 'Asia/Manila';
+        
+        // Get Today at 00:00:00 in gym's timezone
+        const now = new Date();
+        const todayStr = now.toLocaleDateString('sv-SE', { timeZone: timezone }); // 'YYYY-MM-DD'
+        const todayStart = new Date(todayStr);
+
+        const status = member.status.toUpperCase();
+        const expiryDate = member.expiryDate ? new Date(member.expiryDate) : null;
+        const freezeEndDate = member.freezeEndDate ? new Date(member.freezeEndDate) : null;
+
+        let newStatus = status;
+
+        if (status === 'ACTIVE' && expiryDate && expiryDate < todayStart) {
+            newStatus = 'EXPIRED';
+        } else if (status === 'FREEZED' && freezeEndDate && freezeEndDate < todayStart) {
+            // Freeze period has ended
+            if (expiryDate && expiryDate < todayStart) {
+                newStatus = 'EXPIRED';
+            } else {
+                newStatus = 'ACTIVE';
+            }
+        }
+
+        if (newStatus !== status) {
+            await prisma.member.update({
+                where: { id: Number(memberId) },
+                data: { status: newStatus }
+            });
+            console.log(`[RECONCILE] Member #${memberId} status corrected: ${status} -> ${newStatus} (Today: ${todayStr})`);
+        }
+    } catch (e) {
+        console.error(`[RECONCILE] Failed for Member #${memberId}:`, e.message);
+    }
+};
+
+/**
+ * Batch reconciles member statuses for a list.
+ */
+const reconcileMembersStatusBatch = async (members) => {
+    if (!Array.isArray(members) || members.length === 0) return;
+
+    try {
+        // Since batch members usually share a gym or fallback to one, 
+        // we'll use a conservative local-date comparison for batching efficiency
+        // unless we want to iterate and check each (which is safer).
+        // Let's iterate so we can handle BOTH Active and Frozen transitions.
+        
+        const tasks = members.map(m => reconcileMemberStatus(m.id));
+        await Promise.allSettled(tasks); // Background processing
+    } catch (e) {
+        console.error(`[RECONCILE] Batch update failed:`, e.message);
+    }
+};
+
 const getMembers = async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     try {
         const { tenantId } = req.user;
         const { search, page, limit, branchId } = req.query;
+        
+        const finalTenantId = Number(tenantId || 1);
+        const resolvedTenantId = Number.isNaN(finalTenantId) ? 1 : finalTenantId;
+
         const baseWhere = { 
             status: { not: 'DELETED' },
-            tenantId: Number(tenantId || 1)
+            tenantId: resolvedTenantId
         };
+
+        console.log('[DEBUG] getMembers Input:', { search, page, limit, branchId, user: req.user.email, resolvedTenantId });
 
         if (branchId) {
             baseWhere.gymId = Number(branchId);
@@ -215,6 +293,8 @@ const getMembers = async (req, res) => {
             orderBy: { createdAt: 'desc' }
         };
 
+        console.log('[DEBUG] getMembers Final Where:', JSON.stringify(where, null, 2));
+
         if (page && limit) {
             const pageNum = Math.max(1, Number(page));
             const limitNum = Math.max(1, Number(limit));
@@ -230,6 +310,9 @@ const getMembers = async (req, res) => {
                 }),
                 prisma.member.count({ where: queryOptions.where })
             ]);
+
+            // Background reconcile statuses to keep data healthy
+            reconcileMembersStatusBatch(members);
 
             const [globalTotal, expiredByStatus, expiredByDateOnly, activeBasic, freezedBasic, hasActiveBundles] = await Promise.all([
                 prisma.member.count({ where: baseWhere }),
@@ -319,6 +402,16 @@ const getMembers = async (req, res) => {
             ]);
 
             return res.json({
+                members: members,
+                totalMembers: total,
+                totalPages: Math.ceil(total / limit),
+                statusTotals: {
+                    total: globalTotal,
+                    active: activeFinal,
+                    freezed: freezedFinal,
+                    expired: expiredFinal
+                },
+                // Keep 'data' and 'meta' for backward compatibility if needed
                 data: members,
                 meta: {
                     total,
@@ -1514,6 +1607,10 @@ const bookTrainingCash = async (req, res) => {
 
 // Members can see their own profile; Staff/Admin can see any
 const getMemberProfile = async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
     const { id } = req.params;
     const { tenantId, role: userRole, id: userId } = req.user;
 
@@ -1522,10 +1619,14 @@ const getMemberProfile = async (req, res) => {
         return res.sendStatus(403);
     }
 
-    try {
+        const memberIdNum = Number(id);
+        
+        // Reconcile status before returning to ensure UI consistency
+        await reconcileMemberStatus(memberIdNum);
+
         const member = await prisma.member.findFirst({
             where: { 
-                id: Number(id),
+                id: memberIdNum,
                 gym: { tenantId: tenantId } // Enforce Tenant Isolation
             },
             include: { 
@@ -2911,6 +3012,8 @@ const checkAndCompleteBundle = async (txOrNil, memberBundleId) => {
 };
 
 module.exports = {
+    reconcileMemberStatus,
+    reconcileMembersStatusBatch,
     checkAndCompleteBundle,
     requireActiveMembership,
     getMembers,

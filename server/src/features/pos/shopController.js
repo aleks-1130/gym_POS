@@ -196,7 +196,9 @@ const checkout = async (req, res) => {
                 // Pending cash checkout should not consume stock until cashier accepts payment.
                 if (!isPendingCash) {
                     const gymId = require('../../utils/context').getGymId();
-                    const updated = await tx.productStock.updateMany({
+                    
+                    // 1. Deduct from branch-specific stock
+                    const updatedBranch = await tx.productStock.updateMany({
                         where: {
                             productId: item.productId,
                             gymId,
@@ -205,9 +207,15 @@ const checkout = async (req, res) => {
                         },
                         data: { quantity: { decrement: item.quantity } }
                     });
-                    if (updated.count === 0) {
+                    if (updatedBranch.count === 0) {
                         throw new Error(`Insufficient stock for ${product.name}`);
                     }
+
+                    // 2. Deduct from global product stock
+                    await tx.product.update({
+                        where: { id: item.productId },
+                        data: { stock: { decrement: item.quantity } }
+                    });
                 }
             }
 
@@ -357,7 +365,13 @@ const claimBundleProduct = async (req, res) => {
                 data: { quantity: { decrement: 1 } }
             });
 
-            // 5. Record usage
+            // 5. Synchronize global product stock
+            await tx.product.update({
+                where: { id: product.id },
+                data: { stock: { decrement: 1 } }
+            });
+
+            // 6. Record usage
             const usage = await tx.serviceBundleUsage.create({
                 data: {
                     memberBundleId: bucket.memberBundleId,

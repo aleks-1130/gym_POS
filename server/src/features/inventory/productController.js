@@ -33,7 +33,9 @@ const normalizeProductPayload = (payload = {}) => {
             price,
             imageUrl: payload.imageUrl || null,
             sku: barcode || null,
-            isGlobal
+            isGlobal,
+            stock,
+            minStock
         },
         stockData: {
             quantity: stock,
@@ -64,6 +66,7 @@ const serializeProduct = (product) => {
 
 const getAllProducts = async (req, res) => {
     try {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
         const page = Number.parseInt(req.query.page, 10);
         const limit = Number.parseInt(req.query.limit, 10);
         const category = String(req.query.category || '').trim();
@@ -202,6 +205,7 @@ const getAllProducts = async (req, res) => {
 };
 
 const getProductById = async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) {
         return res.status(400).json({ error: "Invalid product id" });

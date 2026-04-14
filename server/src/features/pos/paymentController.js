@@ -687,6 +687,12 @@ const createPayment = async (req, res) => {
                             data: { quantity: { decrement: item.quantity } }
                         });
                         if (updated.count === 0) throw new Error(`Insufficient stock for product ${item.productId}`);
+
+                        // Synchronize global product stock reduction
+                        await tx.product.update({
+                            where: { id: item.productId },
+                            data: { stock: { decrement: item.quantity } }
+                        });
                     } else if (item.type === 'CLASS_PACKAGE') {
                         if (!resolvedMemberId) throw new Error("Member ID required for class package purchase");
                         const packageId = Number(item.id || item.classPackageId || item.packageId || item.productId);
@@ -758,7 +764,23 @@ const createPayment = async (req, res) => {
                                     const siQty = Number(si.quantity || 1);
                                     
                                     if (siProductId) {
-                                        const decremented = await tx.product.updateMany({
+                                        // 1a. Deduct from branch-specific stock
+                                        const branchDecremented = await tx.productStock.updateMany({
+                                            where: {
+                                                productId: siProductId,
+                                                gymId: req.user.gymId,
+                                                tenantId: Number(req.user.tenantId),
+                                                quantity: { gte: siQty }
+                                            },
+                                            data: { quantity: { decrement: siQty } }
+                                        });
+
+                                        if (branchDecremented.count === 0) {
+                                            throw new Error(`Insufficient branch stock for selected item: ${si.name || 'product'}`);
+                                        }
+
+                                        // 1b. Deduct from global product stock
+                                        const globalDecremented = await tx.product.updateMany({
                                             where: {
                                                 id: siProductId,
                                                 tenantId: Number(req.user.tenantId),
@@ -767,8 +789,9 @@ const createPayment = async (req, res) => {
                                             data: { stock: { decrement: siQty } }
                                         });
 
-                                        if (decremented.count === 0) {
-                                            throw new Error(`Insufficient stock for selected item: ${si.name || 'product'}`);
+                                        if (globalDecremented.count === 0) {
+                                            // Fallback: If global was somehow lower but branch had it, still error for consistency
+                                            throw new Error(`Insufficient global stock for selected item: ${si.name || 'product'}`);
                                         }
                                     }
                                 }

@@ -10,7 +10,7 @@ import Modal from '../../components/common/Modal';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useAuth } from '../../context/AuthContext';
 import { queryClient } from '../../config/queryClient';
-import { useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 
 class ErrorBoundary extends React.Component {
     constructor(props) {
@@ -50,17 +50,79 @@ export default function Members() {
     const navigate = useNavigate();
     const { formatPrice } = useCurrency();
     const { alert: showAlert } = useConfirm();
-    const [members, setMembers] = useState([]);
-    const [plans, setPlans] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const { user } = useAuth();
+    
+    // Page state
     const [searchTerm, setSearchTerm] = useState('');
     const [viewMode, setViewMode] = useState('grid');
-    const { user } = useAuth();
-    const [gyms, setGyms] = useState([]);
     const [branchSearch, setBranchSearch] = useState('');
     const [selectedGymId, setSelectedGymId] = useState(user?.gymId ? String(user.gymId) : '');
     const [isBranchDropdownOpen, setIsBranchDropdownOpen] = useState(false);
     const branchDropdownRef = useRef(null);
+
+    // Click outside handler for branch dropdown
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (branchDropdownRef.current && !branchDropdownRef.current.contains(event.target)) {
+                setIsBranchDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    // Queries
+    const { data: plans = [] } = useQuery({
+        queryKey: ['plans'],
+        queryFn: async () => {
+            const res = await axios.get(withApiBase('/api/plans'));
+            return res.data;
+        }
+    });
+
+    const { data: gyms = [] } = useQuery({
+        queryKey: ['admin-branches'],
+        queryFn: async () => {
+            const res = await axios.get(withApiBase('/api/admin/branches'));
+            return res.data;
+        }
+    });
+
+    // Pagination State
+    const [currentPage, setCurrentPage] = useState(1);
+    const LIMIT = 12; // Items per page
+
+    const { data: queryData, isLoading: loading, error: queryError } = useQuery({
+        queryKey: ['members-page', currentPage, searchTerm, selectedGymId],
+        queryFn: async () => {
+            const url = withApiBase(`/api/members?page=${currentPage}&limit=${LIMIT}&search=${searchTerm}${selectedGymId ? `&branchId=${selectedGymId}` : ''}`);
+            const res = await axios.get(url);
+            return res.data;
+        },
+        placeholderData: (previousData) => previousData
+    });
+
+    const members = queryData?.members || [];
+    const totalPages = queryData?.totalPages || 1;
+    const totalMembers = queryData?.totalMembers || 0;
+    const statusTotals = queryData?.statusTotals || null;
+
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        if (queryError) {
+            setError(queryError.response?.data?.error || queryError.message || "Failed to fetch data");
+        } else {
+            setError(null);
+        }
+    }, [queryError]);
+
+    // Reset to page 1 on search
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm, selectedGymId]);
+
+
 
     const registerMemberMutation = useMutation({
         mutationFn: async (payload) => {
@@ -83,17 +145,10 @@ export default function Members() {
         }
     });
 
-    const [error, setError] = useState(null);
-
-    // Pagination State
-    const [currentPage, setCurrentPage] = useState(1);
-    const [totalPages, setTotalPages] = useState(1);
-    const [totalMembers, setTotalMembers] = useState(0);
-    const [statusTotals, setStatusTotals] = useState(null);
-    const LIMIT = 12; // Items per page
 
     // Standard State
     const [isModalOpen, setIsModalOpen] = useState(false);
+
     const [formData, setFormData] = useState({ firstName: '', lastName: '', email: '', phone: '', planId: '', birthDate: '', sex: '', imageUrl: '', agreedToTC: false, paymentMethod: 'CASH' });
     const [submitting, setSubmitting] = useState(false);
     const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -124,97 +179,12 @@ export default function Members() {
     const [memberToDelete, setMemberToDelete] = useState(null);
     const [isDeleting, setIsDeleting] = useState(false);
 
-    // Debounce Search
-    useEffect(() => {
-        const delaySearch = setTimeout(() => {
-            setCurrentPage(1); // Reset to page 1 on search
-            fetchData(1, searchTerm, selectedGymId);
-        }, 500);
-
-        return () => clearTimeout(delaySearch);
-    }, [searchTerm, selectedGymId]);
-
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (branchDropdownRef.current && !branchDropdownRef.current.contains(event.target)) {
-                setIsBranchDropdownOpen(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
-    useEffect(() => {
-        // We handle initial load in the debounce effect for search term ''
-        // But we need to fetch plans and gyms once
-        fetchPlans();
-        fetchGyms();
-    }, []);
-
-    const fetchGyms = async () => {
-        try {
-            const res = await axios.get(withApiBase('/api/admin/branches'));
-            setGyms(res.data);
-        } catch {
-            console.error("Failed to fetch gyms");
-        }
-    };
-
-    const fetchPlans = async () => {
-        try {
-            const res = await axios.get(withApiBase('/api/plans'));
-            setPlans(res.data);
-        } catch {
-            console.error("Failed to fetch plans");
-        }
-    };
-
-    const fetchData = async (page = 1, search = '', branchId = '') => {
-        setLoading(true);
-        setError(null);
-        try {
-            const url = withApiBase(`/api/members?page=${page}&limit=${LIMIT}&search=${search}${branchId ? `&branchId=${branchId}` : ''}`);
-            
-            // Utilize the React Query persistent cache specifically for the paginated view
-            const data = await queryClient.fetchQuery({
-                queryKey: ['members-page', page, search, branchId],
-                queryFn: async () => {
-                    const res = await axios.get(url);
-                    return res.data;
-                },
-                staleTime: 5 * 60 * 1000 // Cache for 5 minutes
-            });
-
-            if (data.meta) {
-                setMembers(data.data);
-                setTotalPages(data.meta.totalPages);
-                setTotalMembers(Number(data.meta.total || data.data?.length || 0));
-                const totals = data.meta.statusTotals;
-                setStatusTotals(totals && typeof totals === 'object' ? {
-                    total: Number(totals.total || 0),
-                    active: Number(totals.active || 0),
-                    freezed: Number(totals.freezed || 0),
-                    expired: Number(totals.expired || 0)
-                } : null);
-            } else {
-                // Fallback for non-paginated API (shouldn't happen with updated backend)
-                setMembers(data);
-                setTotalMembers(Array.isArray(data) ? data.length : 0);
-                setStatusTotals(null);
-            }
-        } catch (e) {
-            console.error("Failed to fetch members", e);
-            setError(e.response?.data?.error || e.message || "Failed to load members");
-        } finally {
-            setLoading(false);
-        }
-    };
-
     const handlePageChange = (newPage) => {
         if (newPage >= 1 && newPage <= totalPages) {
             setCurrentPage(newPage);
-            fetchData(newPage, searchTerm, selectedGymId);
         }
     };
+
 
     const startCamera = async () => {
         setIsCameraOpen(true);
@@ -276,7 +246,6 @@ export default function Members() {
             setIsModalOpen(false);
             setFormData({ firstName: '', lastName: '', email: '', phone: '', planId: '', birthDate: '', sex: '', imageUrl: '', agreedToTC: false, paymentMethod: 'CASH' });
 
-            fetchData(); // Refresh list
             if (payment) {
                 setTransactionInfo(payment);
                 setShowTransactionModal(true);

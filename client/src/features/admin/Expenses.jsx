@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCurrency } from '../../context/CurrencyContext';
 import { EXPENSE_CATEGORIES } from '../../constants/categories';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -39,8 +40,8 @@ const getGroupMeta = (expense, mode) => {
 const Expenses = () => {
     const { confirm, alert: showAlert } = useConfirm();
     const { formatPrice } = useCurrency();
-    const [expenses, setExpenses] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const queryClient = useQueryClient();
+
     const [showModal, setShowModal] = useState(false);
     const [editingExpense, setEditingExpense] = useState(null);
     const [viewMode, setViewMode] = useState('LIST');
@@ -59,9 +60,53 @@ const Expenses = () => {
         notes: ''
     });
 
-    useEffect(() => {
-        fetchExpenses();
-    }, []);
+    // Queries
+    const { data: expenses = [], isLoading: loading } = useQuery({
+        queryKey: ['adminExpenses'],
+        queryFn: async () => {
+            const res = await axios.get('/api/expenses');
+            return res.data || [];
+        }
+    });
+
+    // Mutations
+    const submitMutation = useMutation({
+        mutationFn: async (payload) => {
+            if (editingExpense) {
+                return axios.put(`/api/expenses/${editingExpense.id}`, payload);
+            }
+            return axios.post('/api/expenses', payload);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['adminExpenses'] });
+            queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+            setShowModal(false);
+            resetForm();
+            showAlert({ 
+                title: editingExpense ? 'Updated' : 'Saved', 
+                message: editingExpense ? 'Expense updated successfully.' : 'Expense recorded successfully.', 
+                type: 'success' 
+            });
+        },
+        onError: () => {
+            showAlert({ 
+                title: 'Submission Failed', 
+                message: editingExpense ? 'Failed to update expense.' : 'Failed to add expense. Please check your inputs.', 
+                type: 'danger' 
+            });
+        }
+    });
+
+    const deleteMutation = useMutation({
+        mutationFn: async (id) => axios.delete(`/api/expenses/${id}`),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['adminExpenses'] });
+            queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+        },
+        onError: () => {
+            showAlert({ title: 'Delete Failed', message: 'Failed to delete expense. Please try again.', type: 'danger' });
+        }
+    });
 
     useEffect(() => {
         if (dateFilterType !== 'CUSTOM') return;
@@ -70,18 +115,6 @@ const Expenses = () => {
             setCustomDateRange((prev) => ({ ...prev, end: prev.start }));
         }
     }, [customDateRange.end, customDateRange.start, dateFilterType]);
-
-    const fetchExpenses = async () => {
-        try {
-            setLoading(true);
-                        const res = await axios.get('/api/expenses');
-            setExpenses(res.data || []);
-        } catch (error) {
-            console.error(error);
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const resetForm = () => {
         setFormData({
@@ -113,38 +146,17 @@ const Expenses = () => {
             type: 'danger',
             confirmLabel: 'Delete'
         });
-        if (!isConfirmed) return;
-
-        try {
-                        await axios.delete(`/api/expenses/${id}`);
-            await fetchExpenses();
-        } catch {
-            await showAlert({ title: 'Delete Failed', message: 'Failed to delete expense. Please try again.', type: 'danger' });
+        if (isConfirmed) {
+            deleteMutation.mutate(id);
         }
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        try {
-            const payload = { ...formData, amount: Number(formData.amount) };
-
-            if (editingExpense) {
-                await axios.put(`/api/expenses/${editingExpense.id}`, payload);
-                setShowModal(false);
-                resetForm();
-                await fetchExpenses();
-                await showAlert({ title: 'Updated', message: 'Expense updated successfully.', type: 'success' });
-            } else {
-                await axios.post('/api/expenses', payload);
-                setShowModal(false);
-                resetForm();
-                await fetchExpenses();
-                await showAlert({ title: 'Saved', message: 'Expense recorded successfully.', type: 'success' });
-            }
-        } catch {
-            await showAlert({ title: 'Submission Failed', message: editingExpense ? 'Failed to update expense.' : 'Failed to add expense. Please check your inputs.', type: 'danger' });
-        }
+        const payload = { ...formData, amount: Number(formData.amount) };
+        submitMutation.mutate(payload);
     };
+
 
     const filteredExpenses = useMemo(() => {
         const now = new Date();

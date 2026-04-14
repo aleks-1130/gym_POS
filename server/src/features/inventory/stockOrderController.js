@@ -86,6 +86,8 @@ const serializeStockOrder = (order) => ({
 
 const listStockOrders = async (req, res) => {
     try {
+        // Prevent browser caching for inventory lists
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
         const page = Number.parseInt(req.query.page, 10) || 1;
         const limit = Number.parseInt(req.query.limit, 10) || 10;
         const status = String(req.query.status || '').trim().toUpperCase();
@@ -128,6 +130,7 @@ const listStockOrders = async (req, res) => {
 };
 
 const getStockOrderById = async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) {
         return res.status(400).json({ error: 'Invalid stock order id' });
@@ -405,11 +408,16 @@ const markStockOrderReceived = async (req, res) => {
     }
 
     try {
+        const gymId = req.gymId || req.user?.gymId;
+        if (!gymId) {
+            return res.status(400).json({ error: 'Gym context required to receive stock' });
+        }
+
         const order = await prisma.stockOrder.findFirst({
             where: { 
                 id,
                 tenantId: req.user.tenantId,
-                gymId: req.user.gymId
+                gymId
             },
             include: {
                 supplier: { select: { name: true } },
@@ -424,20 +432,27 @@ const markStockOrderReceived = async (req, res) => {
         }
 
         const updatedOrder = await prisma.$transaction(async (tx) => {
-            const gymId = req.gymId || req.user?.gymId;
-            if (!gymId) throw new Error("Gym context required to receive stock");
-
             for (const item of order.items) {
+                const productId = Number(item.productId);
+                const quantity = Number(item.quantity);
+
+                // Update branch-specific stock
                 await tx.productStock.upsert({
-                    where: { productId_gymId: { productId: Number(item.productId), gymId } },
-                    update: { quantity: { increment: Number(item.quantity) } },
+                    where: { productId_gymId: { productId, gymId } },
+                    update: { quantity: { increment: quantity } },
                     create: {
-                        productId: Number(item.productId),
+                        productId,
                         gymId,
-                        quantity: Number(item.quantity),
+                        quantity,
                         minQuantity: 5, // Default min stock
                         tenantId: req.user.tenantId
                     }
+                });
+
+                // Synchronize global product stock field
+                await tx.product.update({
+                    where: { id: productId },
+                    data: { stock: { increment: quantity } }
                 });
             }
 

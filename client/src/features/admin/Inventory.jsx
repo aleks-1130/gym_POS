@@ -785,15 +785,24 @@ function StockOrdersTab({ user, navigate }) {
 
     const receiveOrderMutation = useMutation({
         mutationFn: async (id) => axios.put(`/api/inventory/stock-orders/${id}/receive`),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['adminStockOrders'] }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['adminStockOrders'], refetchType: 'all' });
+            queryClient.invalidateQueries({ queryKey: ['adminProducts'], refetchType: 'all' });
+            queryClient.invalidateQueries({ queryKey: ['adminExpenses'], refetchType: 'all' });
+            queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], refetchType: 'all' });
+        },
         onError: (error) => showAlert({ title: 'Receive Failed', message: error.response?.data?.error || 'Failed to receive order', type: 'danger' })
     });
 
     const cancelOrderMutation = useMutation({
         mutationFn: async (id) => axios.put(`/api/inventory/stock-orders/${id}/cancel`),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['adminStockOrders'] }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['adminStockOrders'], refetchType: 'all' });
+            queryClient.invalidateQueries({ queryKey: ['dashboard-stats'], refetchType: 'all' });
+        },
         onError: (error) => showAlert({ title: 'Cancel Failed', message: error.response?.data?.error || 'Failed to cancel order', type: 'danger' })
     });
+
 
     const markReceived = async (order) => {
         const confirmed = await showConfirm({
@@ -1106,6 +1115,7 @@ function StockOrdersTab({ user, navigate }) {
 }
 
 function ProductFormPage({ productId, onCancel, onSaved, user }) {
+    const queryClient = useQueryClient();
     const { alert: showAlert } = useConfirm();
     const { formatPrice } = useCurrency();
     const [loading, setLoading] = useState(false);
@@ -1210,6 +1220,7 @@ function ProductFormPage({ productId, onCancel, onSaved, user }) {
                 message: isEditing ? 'Product details saved successfully.' : 'New product created successfully.',
                 type: 'success'
             });
+            queryClient.invalidateQueries({ queryKey: ['adminProducts'] });
             onSaved();
         } catch (error) {
             await showAlert({ title: 'Save Failed', message: error.response?.data?.error || 'Failed to save product', type: 'danger' });
@@ -1453,6 +1464,7 @@ function ProductFormPage({ productId, onCancel, onSaved, user }) {
 }
 
 function CreateStockOrderPage({ onCancel, onCreated, orderId }) {
+    const queryClient = useQueryClient();
     const { formatPrice } = useCurrency();
     const { alert: showAlert } = useConfirm();
     const [loading, setLoading] = useState(false);
@@ -1638,6 +1650,7 @@ function CreateStockOrderPage({ onCancel, onCreated, orderId }) {
                     : 'Order has been added to stock orders.',
                 type: 'success'
             });
+            queryClient.invalidateQueries({ queryKey: ['adminStockOrders'] });
             onCreated();
         } catch (error) {
             await showAlert({

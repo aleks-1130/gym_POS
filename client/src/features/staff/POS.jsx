@@ -136,9 +136,9 @@ export default function POS() {
     const [historyPage, setHistoryPage] = useState(1);
     const [collectSearch, setCollectSearch] = useState('');
     const [collectViewMode, setCollectViewMode] = useState('LIST');
-    const [history, setHistory] = useState([]);
     const [viewMode, setViewMode] = useState('POS');
     const [loading, setLoading] = useState(false);
+
 
     const { data: trainingBookings = [] } = useQuery({
         queryKey: ['staff-training-sessions', 'UNPAID'],
@@ -150,6 +150,16 @@ export default function POS() {
             return res.data || [];
         },
         refetchInterval: viewMode === 'TRAINING_BOOKINGS' ? 10000 : 30000
+    });
+
+    const { data: history = [] } = useQuery({
+        queryKey: ['payments'],
+        queryFn: async () => {
+            const res = await axios.get(withApiBase('/api/payments'), {
+                headers: authHeaders()
+            });
+            return normalizeList(res.data);
+        }
     });
 
     const { data: pendingInAppPurchases = [] } = useQuery({
@@ -169,6 +179,7 @@ export default function POS() {
     });
 
 
+
     const bookTrainingMutation = useMutation({
         mutationKey: ['bookTraining'],
         mutationFn: async (payload) => {
@@ -178,6 +189,7 @@ export default function POS() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['staff-trainer-sessions'] });
             queryClient.invalidateQueries({ queryKey: ['pos'] });
+            queryClient.invalidateQueries({ queryKey: ['members-page'] });
             queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
             queryClient.invalidateQueries({ queryKey: ['analytics'] });
         }
@@ -217,7 +229,8 @@ export default function POS() {
             }
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['pos', 'products'] });
+            queryClient.invalidateQueries({ queryKey: ['pos'] });
+            queryClient.invalidateQueries({ queryKey: ['members-page'] });
             queryClient.invalidateQueries({ queryKey: ['payments'] });
             queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
             queryClient.invalidateQueries({ queryKey: ['analytics'] });
@@ -354,16 +367,7 @@ export default function POS() {
         }
     };
 
-    const fetchHistory = async () => {
-        try {
-            const res = await axios.get(withApiBase('/api/payments'), {
-                headers: authHeaders()
-            });
-            setHistory(normalizeList(res.data));
-        } catch {
-            console.error("Failed to fetch history");
-        }
-    }
+
 
     // Cart logic now handled by usePOSStore
 
@@ -741,7 +745,6 @@ export default function POS() {
 
 
     const openHistoryView = () => {
-        fetchHistory();
         setHistoryPage(1);
         setViewMode('HISTORY');
     };

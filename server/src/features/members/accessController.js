@@ -2,6 +2,7 @@ const prisma = require('../../config/prisma');
 const { logAudit } = require('../../services/auditService');
 const jwt = require('jsonwebtoken');
 const { randomUUID } = require('crypto');
+const { reconcileMemberStatus } = require('./memberController');
 
 const ACCESS_QR_SECRET = process.env.ACCESS_QR_SECRET || process.env.JWT_SECRET;
 const ACCESS_QR_TTL_SECONDS = Number(process.env.ACCESS_QR_TTL_SECONDS || 45);
@@ -101,10 +102,15 @@ const resolveIdsFromQrToken = (rawToken) => {
 };
 
 const createMemberAccessLog = async (parsedMemberId, gymIdOverride = null) => {
+    // 1. RECONCILE: Ensure status is up-to-date before checking access
+    await reconcileMemberStatus(parsedMemberId);
+
+    // 2. FETCH: Get the most current member state
     const member = await prisma.member.findUnique({
         where: { id: parsedMemberId },
         select: { id: true, status: true, expiryDate: true, freezeStartDate: true, freezeEndDate: true, gymId: true, tenantId: true }
     });
+    
     if (!member) {
         return { error: { status: 404, payload: { error: "Member not found" } } };
     }
