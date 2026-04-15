@@ -282,8 +282,7 @@ export default function Members() {
         setIsDeleting(true);
         try {
             await deleteMemberMutation.mutateAsync(memberToDelete.id);
-            // Update local state
-            setMembers(members.filter(m => m.id !== memberToDelete.id));
+            // invalidateQueries in onSuccess handles the refresh
             setIsDeleteModalOpen(false);
             setMemberToDelete(null);
         } catch (e) {

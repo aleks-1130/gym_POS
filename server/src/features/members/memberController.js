@@ -463,6 +463,19 @@ const deleteMember = async (req, res) => {
                 return null;
             }
 
+            // Find all related entities first to avoid nested relation filters during deletion
+            const payments = await tx.payment.findMany({ where: { memberId }, select: { id: true } });
+            const paymentIds = payments.map(p => p.id);
+            
+            const orders = await tx.order.findMany({ where: { memberId }, select: { id: true } });
+            const orderIds = orders.map(o => o.id);
+
+            const bundles = await tx.memberBundle.findMany({ where: { memberId }, select: { id: true } });
+            const bundleIds = bundles.map(b => b.id);
+
+            const trainingSessions = await tx.trainingSession.findMany({ where: { memberId }, select: { id: true } });
+            const trainingSessionIds = trainingSessions.map(ts => ts.id);
+
             // Keep class slot counts accurate before removing bookings.
             const confirmedBookings = await tx.booking.findMany({
                 where: { memberId, status: 'CONFIRMED' },
@@ -491,24 +504,15 @@ const deleteMember = async (req, res) => {
                 }
             }
 
-            const deletedSessionMaterials = await tx.sessionMaterial.deleteMany({
-                where: {
-                    session: { memberId }
-                }
-            });
+            // DELETE CHILDREN FIRST
+            const deletedSessionMaterials = await tx.sessionMaterial.deleteMany({ where: { sessionId: { in: trainingSessionIds } } });
+            const deletedPaymentItems = await tx.paymentItem.deleteMany({ where: { paymentId: { in: paymentIds } } });
+            const deletedOrderItems = await tx.orderItem.deleteMany({ where: { orderId: { in: orderIds } } });
+            const deletedServiceBundleUsages = await tx.serviceBundleUsage.deleteMany({ where: { memberBundleId: { in: bundleIds } } });
+            const deletedBundleBuckets = await tx.memberBundleBucket.deleteMany({ where: { memberBundleId: { in: bundleIds } } });
+            const deletedPaymentCollections = await tx.paymentCollection.deleteMany({ where: { paymentId: { in: paymentIds } } });
 
-            const deletedPaymentItems = await tx.paymentItem.deleteMany({
-                where: {
-                    payment: { memberId }
-                }
-            });
-
-            const deletedOrderItems = await tx.orderItem.deleteMany({
-                where: {
-                    order: { memberId }
-                }
-            });
-
+            // DELETE DIRECT RELATIONS
             const deletedAccessLogs = await tx.accessLog.deleteMany({ where: { memberId } });
             const deletedPaymentMethods = await tx.paymentMethod.deleteMany({ where: { memberId } });
             const deletedMemberNotes = await tx.memberNote.deleteMany({ where: { memberId } });
@@ -521,6 +525,7 @@ const deleteMember = async (req, res) => {
             const deletedLoyaltyTransactions = await tx.loyaltyTransaction.deleteMany({ where: { memberId } });
             const deletedCoupons = await tx.coupon.deleteMany({ where: { memberId } });
             const deletedNotifications = await tx.notification.deleteMany({ where: { memberId } });
+            
             await tx.notificationPreference.delete({ where: { memberId } }).catch(() => null);
             await tx.member.delete({ where: { id: memberId } });
 
@@ -539,7 +544,10 @@ const deleteMember = async (req, res) => {
                 deletedMemberBundles: deletedMemberBundles.count,
                 deletedLoyaltyTransactions: deletedLoyaltyTransactions.count,
                 deletedCoupons: deletedCoupons.count,
-                deletedNotifications: deletedNotifications.count
+                deletedNotifications: deletedNotifications.count,
+                deletedServiceBundleUsages: deletedServiceBundleUsages.count,
+                deletedBundleBuckets: deletedBundleBuckets.count,
+                deletedPaymentCollections: deletedPaymentCollections.count
             };
         });
 
@@ -549,6 +557,7 @@ const deleteMember = async (req, res) => {
 
         res.json({ message: "Member and related data deleted successfully", deletedSummary });
     } catch (e) {
+        console.error("[Delete Member Error]:", e);
         res.status(500).json({ error: "Failed to delete member", detail: e.message });
     }
 };
@@ -1619,6 +1628,7 @@ const getMemberProfile = async (req, res) => {
         return res.sendStatus(403);
     }
 
+    try {
         const memberIdNum = Number(id);
         
         // Reconcile status before returning to ensure UI consistency

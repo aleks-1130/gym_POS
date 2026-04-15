@@ -140,7 +140,7 @@ export default function POS() {
     const [loading, setLoading] = useState(false);
 
 
-    const { data: trainingBookings = [] } = useQuery({
+    const { data: trainingBookings = [], refetch: fetchTrainingBookings } = useQuery({
         queryKey: ['staff-training-sessions', 'UNPAID'],
         queryFn: async () => {
             const res = await axios.get(withApiBase('/api/staff/training-sessions'), {
@@ -152,7 +152,7 @@ export default function POS() {
         refetchInterval: viewMode === 'TRAINING_BOOKINGS' ? 10000 : 30000
     });
 
-    const { data: history = [] } = useQuery({
+    const { data: history = [], refetch: fetchHistory } = useQuery({
         queryKey: ['payments'],
         queryFn: async () => {
             const res = await axios.get(withApiBase('/api/payments'), {
@@ -162,7 +162,7 @@ export default function POS() {
         }
     });
 
-    const { data: pendingInAppPurchases = [] } = useQuery({
+    const { data: pendingInAppPurchases = [], refetch: fetchPendingInAppPurchases } = useQuery({
         queryKey: ['pending-inapp-purchases'],
         queryFn: async () => {
             const res = await axios.get(withApiBase('/api/payments'), {
@@ -203,7 +203,7 @@ export default function POS() {
         },
         onMutate: async (newTransaction) => {
             // Cancel any outgoing refetches (so they don't overwrite our optimistic update)
-            await queryClient.cancelQueries({ queryKey: ['pos', 'products'] });
+            await queryClient.cancelQueries({ queryKey: ['pos', 'products', user?.gymId] });
 
             // Snapshot the previous value
             const previousProducts = queryClient.getQueryData(['pos', 'products', user?.gymId]);
@@ -613,6 +613,7 @@ export default function POS() {
             // Avoid failing the whole UI if the error is just a disconnection (which Query handles)
             if (!navigator.onLine && e.message === "Network Error") {
                 console.warn("Caught network error while offline - UI should proceed via mutation queue.");
+                setLoading(false);
                 return;
             }
             await showAlert({ title: 'Transaction Failed', message: e.response?.data?.error || e.message, type: 'danger' });

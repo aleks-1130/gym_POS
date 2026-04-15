@@ -124,7 +124,7 @@ const canFinalizeAttendanceStatus = (status) => {
     return ['SCHEDULED', 'RESCHEDULED'].includes(String(status || '').toUpperCase());
 };
 
-const checkBookingConflict = async (trainerId, startDateTime, durationMinutes, excludeSessionId = null) => {
+const checkBookingConflict = async (trainerId, startDateTime, durationMinutes, excludeSessionId = null, tenantId = 1, gymId = 1) => {
     const endDateTime = new Date(startDateTime.getTime() + durationMinutes * 60000);
     const startOfDay = new Date(startDateTime);
     startOfDay.setHours(0, 0, 0, 0);
@@ -139,8 +139,8 @@ const checkBookingConflict = async (trainerId, startDateTime, durationMinutes, e
                 lt: endOfDay
             },
             status: { notIn: FINALIZED_SESSION_STATUSES },
-            tenantId: Number(req.user?.tenantId || 1),
-            gymId: Number(req.user?.gymId || 1),
+            tenantId: Number(tenantId),
+            gymId: Number(gymId),
             ...(excludeSessionId ? { id: { not: Number(excludeSessionId) } } : {})
         }
     });
@@ -175,12 +175,12 @@ const shouldTemporarilyOpenTrainerForDate = async ({ trainerId, date, now = new 
     return Boolean(session);
 };
 
-const getTrainerUserId = async (trainerId) => {
+const getTrainerUserId = async (trainerId, tenantId = 1) => {
     if (!Number.isInteger(Number(trainerId))) return null;
     const trainerUser = await prisma.user.findFirst({
         where: { 
             trainerId: Number(trainerId),
-            tenantId: Number(req.user?.tenantId || 1)
+            tenantId: Number(tenantId)
         },
         select: { id: true }
     });
@@ -302,7 +302,7 @@ const completeSession = async (req, res) => {
         // Calculate total material cost if not provided manually
         let calculatedMatCost = parseFloat(materialsCost) || 0;
 
-        const trainerUserId = await getTrainerUserId(session.trainerId);
+        const trainerUserId = await getTrainerUserId(session.trainerId, req.user.tenantId);
 
         // Process Materials (Inventory & Expense)
         // --- Atomic transaction: all DB writes succeed or all roll back ---
@@ -498,7 +498,7 @@ const updateSession = async (req, res) => {
             }))) {
                 return res.status(400).json({ error: "Selected schedule is outside trainer availability" });
             }
-            if (await checkBookingConflict(Number(session.trainerId), composed, Number(session.duration), session.id)) {
+            if (await checkBookingConflict(Number(session.trainerId), composed, Number(session.duration), session.id, req.user.tenantId, req.user.gymId)) {
                 return res.status(409).json({ error: "This time slot overlaps another session" });
             }
             nextDateTime = composed;
@@ -588,6 +588,17 @@ const cancelSession = async (req, res) => {
                 id: sessionId,
                 tenantId: Number(req.user.tenantId),
                 gymId: req.user.role === 'OWNER' ? undefined : Number(req.user.gymId)
+            },
+            select: {
+                id: true,
+                date: true,
+                status: true,
+                paymentStatus: true,
+                memberId: true,
+                trainerId: true,
+                gymId: true,
+                tenantId: true,
+                notes: true
             }
         });
 
@@ -714,7 +725,7 @@ const getSessionMaterialCandidates = async (req, res) => {
             return res.status(403).json({ error: "Access denied" });
         }
 
-        const trainerUserId = await getTrainerUserId(session.trainerId);
+        const trainerUserId = await getTrainerUserId(session.trainerId, req.user.tenantId);
         if (!trainerUserId) {
             return res.json([]);
         }
@@ -841,7 +852,7 @@ const memberRescheduleSession = async (req, res) => {
             return res.status(400).json({ error: "Selected schedule is outside trainer availability" });
         }
 
-        if (await checkBookingConflict(Number(session.trainerId), nextDateTime, Number(session.duration), session.id)) {
+        if (await checkBookingConflict(Number(session.trainerId), nextDateTime, Number(session.duration), session.id, req.user.tenantId, session.gymId)) {
             return res.status(409).json({ error: "This time slot overlaps another session" });
         }
 
