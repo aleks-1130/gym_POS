@@ -11,6 +11,7 @@ import {
     Filler
 } from 'chart.js';
 import { Line, Doughnut } from 'react-chartjs-2';
+import { useCurrency } from '../../context/CurrencyContext';
 
 ChartJS.register(
     CategoryScale,
@@ -26,8 +27,7 @@ import { TrendingUp, DollarSign, PieChart } from 'lucide-react';
 
 const ProfitabilityView = ({ data, dateRange }) => {
     const { summary, trends, topCategories, topTrainers, topProducts, revenueBySource } = data;
-
-    const formatPrice = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val);
+    const { formatPrice } = useCurrency();
 
     // Profit Trend Chart (Net Profit over time)
     const profitTrendData = {

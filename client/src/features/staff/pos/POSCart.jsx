@@ -16,6 +16,7 @@ import axios from 'axios';
 import { withApiBase } from '../../../config/api';
 import { authHeaders } from './POSUtils';
 import { useAuth } from '../../../context/AuthContext';
+import { LOYALTY_CONFIG } from '../../../config/businessConfig';
 
 /**
  * POSCart Component - Manages the cart items, member selection, and training details.
@@ -421,7 +422,7 @@ export default function POSCart({ members, products, trainers, discountOptions, 
                             <span className="text-white font-bold">Total Due</span>
                             {selectedMemberId && cartTotal > 0 && (
                                 <span className="text-[10px] text-emerald-400 font-bold tracking-wide mt-0.5">
-                                    Earn +{Math.floor(cartTotal * 0.1)} Points
+                                    Earn +{Math.floor(cartTotal * (posSettings?.loyaltyPointsRate ?? 0.1))} Points
                                 </span>
                             )}
                         </div>

@@ -38,7 +38,7 @@ export default function TransactionDetail() {
     const receiptRef = useRef();
 
     const handlePrint = useReactToPrint({
-        content: () => receiptRef.current });
+        contentRef: receiptRef });
 
     const queryClient = useQueryClient();
     const { data: fetchedPayment, isLoading: isPaymentLoading, refetch: refetchPayment } = usePaymentData(id);

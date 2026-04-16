@@ -968,6 +968,7 @@ model PosConfig {
   returnPinHash   String?
   updatedAt       DateTime @updatedAt
   discountPresets Json?
+  loyaltyPointsRate Float    @default(0.1)
   gymId           Int?
   isGlobal        Boolean  @default(false)
   tenantId        Int      @default(1)

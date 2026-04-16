@@ -92,12 +92,19 @@ export default function POS() {
             return [...legacyPackages, ...serviceBundles];
         }
     });
-
     const { data: members = [], refetch: fetchMembers } = useQuery({
         queryKey: ['pos', 'members'],
         queryFn: async () => {
             const res = await axios.get(withApiBase('/api/members'));
             return normalizeList(res.data);
+        }
+    });
+    
+    const { data: posSettings } = useQuery({
+        queryKey: ['adminPosSettings'],
+        queryFn: async () => {
+            const res = await axios.get(withApiBase('/api/payments/settings'), { headers: authHeaders() });
+            return res.data;
         }
     });
 
@@ -292,7 +299,7 @@ export default function POS() {
     }, [trainingBookings]);
 
     const handlePrint = useReactToPrint({
-        content: () => receiptRef.current });
+        contentRef: receiptRef });
 
     useEffect(() => {
         fetchProducts();
@@ -574,12 +581,16 @@ export default function POS() {
                 // React Query will handle the actual network attempt in the background
                 checkoutMutation.mutate(mutationPayload);
                 
+                const effectiveRate = posSettings?.loyaltyPointsRate ?? 0.1;
+                const pointsAwarded = memberId ? Math.floor(effectiveCartTotal * effectiveRate) : 0;
+
                 mainTransaction = { 
                     id: `LOCAL-${Date.now()}`, 
                     amount: effectiveCartTotal, 
                     type: paymentType, 
                     method: finalMethod,
                     date: new Date().toISOString(),
+                    pointsAwarded,
                     isOfflinePending: true
                 };
                 
@@ -647,7 +658,7 @@ export default function POS() {
                 type: 'POS_PREVIEW',
                 method: 'CASH',
                 date: new Date().toISOString(),
-                pointsAwarded: usePOSStore.getState().selectedMemberId ? Math.floor(Math.max(0, previewSubtotal - previewDiscount - usePOSStore.getState().getTotals().couponDiscount) * 0.1) : 0,
+                pointsAwarded: usePOSStore.getState().selectedMemberId ? Math.floor(Math.max(0, previewSubtotal - previewDiscount - usePOSStore.getState().getTotals().couponDiscount) * (posSettings?.loyaltyPointsRate ?? 0.1)) : 0,
                 couponCode: usePOSStore.getState().appliedCoupon ? (usePOSStore.getState().appliedCoupon.label || usePOSStore.getState().appliedCoupon.code) : null,
                 couponDiscount: usePOSStore.getState().appliedCoupon ? usePOSStore.getState().getTotals().couponDiscount : 0
             },
@@ -1502,6 +1513,7 @@ export default function POS() {
                 />
                 <POSCart
                     members={members}
+                    posSettings={posSettings}
                     products={products}
                     trainers={trainers}
                     discountOptions={discountOptions}

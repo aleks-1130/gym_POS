@@ -500,7 +500,9 @@ const createPayment = async (req, res) => {
         }
 
         const { LOYALTY_CONFIG } = require('../../config/businessConfig');
-        const pointsAwarded = resolvedMemberId ? Math.floor(finalPayableAmount * LOYALTY_CONFIG.POINTS_PER_CURRENCY_UNIT) : 0;
+        const posConfig = await getPosConfig(req.user.gymId, req.user.tenantId);
+        const effectiveRate = posConfig.loyaltyPointsRate ?? LOYALTY_CONFIG.POINTS_PER_CURRENCY_UNIT;
+        const pointsAwarded = resolvedMemberId ? Math.floor(finalPayableAmount * effectiveRate) : 0;
         const resolvedCashierId = req.user.role === 'MEMBER' ? null : req.user.id;
 
         const payment = await prisma.$transaction(async (tx) => {
@@ -1387,9 +1389,10 @@ const getPosSettings = async (req, res) => {
         const discountPresets = await getStoredDiscountPresets(req.user.gymId, req.user.tenantId);
         res.json({
             hasVoidPin: Boolean(config.voidPinHash),
-            hasReturnPin: Boolean(config.returnPinHash),
+            hasReturnPin: Boolean(config.hasReturnPin || config.returnPinHash),
             receiptSettings,
-            discountPresets
+            discountPresets,
+            loyaltyPointsRate: config.loyaltyPointsRate ?? 0.1
         });
     } catch (e) {
         res.status(500).json({ error: "Failed to load POS settings" });
@@ -1397,15 +1400,16 @@ const getPosSettings = async (req, res) => {
 };
 
 const updatePosSettings = async (req, res) => {
-    const { voidPin, returnPin, receiptSettings, discountPresets } = req.body;
+    const { voidPin, returnPin, receiptSettings, discountPresets, loyaltyPointsRate } = req.body;
     try {
         const body = req.body || {};
         const hasVoidPinInput = Object.prototype.hasOwnProperty.call(body, 'voidPin');
         const hasReturnPinInput = Object.prototype.hasOwnProperty.call(body, 'returnPin');
         const hasReceiptSettingsInput = Object.prototype.hasOwnProperty.call(body, 'receiptSettings');
         const hasDiscountPresetsInput = Object.prototype.hasOwnProperty.call(body, 'discountPresets');
+        const hasLoyaltyRateInput = Object.prototype.hasOwnProperty.call(body, 'loyaltyPointsRate');
 
-        if (!hasVoidPinInput && !hasReturnPinInput && !hasReceiptSettingsInput && !hasDiscountPresetsInput) {
+        if (!hasVoidPinInput && !hasReturnPinInput && !hasReceiptSettingsInput && !hasDiscountPresetsInput && !hasLoyaltyRateInput) {
             const [config, currentReceiptSettings] = await Promise.all([
                 getPosConfig(req.user.gymId, req.user.tenantId),
                 getReceiptSettings(req.user.gymId, req.user.tenantId)
@@ -1450,6 +1454,14 @@ const updatePosSettings = async (req, res) => {
             } catch (validationError) {
                 return res.status(400).json({ error: validationError.message });
             }
+        }
+
+        if (hasLoyaltyRateInput) {
+            const rate = Number(loyaltyPointsRate);
+            if (isNaN(rate) || rate < 0) {
+                return res.status(400).json({ error: "Loyalty points rate must be a non-negative number" });
+            }
+            data.loyaltyPointsRate = rate;
         }
 
         const config = await getPosConfig(req.user.gymId, req.user.tenantId);

@@ -14,6 +14,7 @@ async function getPosConfig(gymId, tenantId) {
             voidPinHash: null,
             returnPinHash: null,
             discountPresets: DEFAULT_DISCOUNT_PRESETS,
+            loyaltyPointsRate: 0.1,
             gymId: null,
             tenantId: tenantId ? Number(tenantId) : 1
         };
@@ -35,7 +36,8 @@ async function getPosConfig(gymId, tenantId) {
         data: {
             gymId: normalizedGymId,
             tenantId: normalizedTenantId,
-            discountPresets: DEFAULT_DISCOUNT_PRESETS
+            discountPresets: DEFAULT_DISCOUNT_PRESETS,
+            loyaltyPointsRate: 0.1
         }
     });
 

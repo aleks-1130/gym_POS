@@ -80,6 +80,7 @@ export default function PosSettings() {
     const [receiptSettings, setReceiptSettings] = useState(DEFAULT_RECEIPT_SETTINGS);
     const [discountPresets, setDiscountPresets] = useState([]);
     const [discountDraft, setDiscountDraft] = useState({ name: '', rate: '', icon: 'local_offer' });
+    const [loyaltyPointsRate, setLoyaltyPointsRate] = useState(0.1);
     
     const [promoDraft, setPromoDraft] = useState({
         code: '',
@@ -115,6 +116,9 @@ export default function PosSettings() {
             });
             setReceiptSettings(prev => ({ ...prev, ...(posSettingsData.receiptSettings || {}) }));
             setDiscountPresets(normalizeDiscountPresetsForUi(posSettingsData.discountPresets));
+            if (Number.isFinite(posSettingsData.loyaltyPointsRate)) {
+                setLoyaltyPointsRate(posSettingsData.loyaltyPointsRate);
+            }
         }
     }, [posSettingsData]);
 
@@ -292,6 +296,23 @@ export default function PosSettings() {
             },
             onError: (e) => {
                 showAlert({ title: 'Update Failed', message: e.response?.data?.error || 'Failed to update discount presets', type: 'danger' });
+            }
+        });
+    };
+
+    const handleSaveLoyaltyRate = async () => {
+        const rate = Number(loyaltyPointsRate);
+        if (isNaN(rate) || rate < 0) {
+            await showAlert({ title: 'Invalid Rate', message: 'Loyalty points rate must be a non-negative number.', type: 'warning' });
+            return;
+        }
+
+        saveSettingsMutation.mutate({ loyaltyPointsRate: rate }, {
+            onSuccess: () => {
+                showAlert({ title: 'Settings Saved', message: 'Loyalty points rate updated.', type: 'success' });
+            },
+            onError: (e) => {
+                showAlert({ title: 'Update Failed', message: e.response?.data?.error || 'Failed to update loyalty rate', type: 'danger' });
             }
         });
     };
@@ -794,6 +815,44 @@ export default function PosSettings() {
                                 <span className="material-icons-round text-base">{saveSettingsMutation.isPending ? 'sync' : 'save'}</span>
                                 {saveSettingsMutation.isPending ? 'Saving...' : 'Save Changes'}
                             </button>
+                        </div>
+                    </div>
+
+                    <div className="rounded-3xl border border-white/5 bg-surface p-6 shadow-sm mt-6">
+                        <div className="mb-5 flex items-center justify-between">
+                            <h3 className="text-xl font-black text-white flex items-center gap-2">
+                                <span className="material-icons-round text-primary">stars</span>
+                                Loyalty Configuration
+                            </h3>
+                        </div>
+                        <p className="text-text-muted text-sm mb-6">Configure how many loyalty points members earn per currency unit spend.</p>
+                        
+                        <div className="max-w-md space-y-4">
+                            <div className="rounded-2xl border border-white/10 bg-surfaceHighlight/70 p-4">
+                                <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-text-secondary">Points per Currency Unit</label>
+                                <div className="flex gap-3">
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        className="flex-1 rounded-xl border border-white/10 bg-surface px-4 py-3 text-white outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+                                        placeholder="e.g., 0.1 for 1 point per 10 currency"
+                                        value={loyaltyPointsRate}
+                                        onChange={(e) => setLoyaltyPointsRate(e.target.value)}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={handleSaveLoyaltyRate}
+                                        disabled={saveSettingsMutation.isPending}
+                                        className="rounded-xl bg-primary px-6 py-3 font-bold text-white shadow-lg shadow-primary/20 transition-colors hover:bg-orange-600 disabled:opacity-50"
+                                    >
+                                        Save
+                                    </button>
+                                </div>
+                                <p className="mt-2 text-xs text-text-muted italic">
+                                    Example: 0.1 means a member earns 10 points for a 100 PHP/SGD transaction.
+                                </p>
+                            </div>
                         </div>
                     </div>
 

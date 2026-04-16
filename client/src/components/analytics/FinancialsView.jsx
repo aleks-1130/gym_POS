@@ -2,10 +2,11 @@ import React from 'react';
 import { Line, Doughnut } from 'react-chartjs-2';
 import { TrendingUp, DollarSign, Activity, ShoppingBag } from 'lucide-react';
 import DataTable from '../common/DataTable';
+import { useCurrency } from '../../context/CurrencyContext';
 
 const FinancialsView = ({ data, dateRange }) => {
     const { summary, trends, topCategories, revenueBySource } = data;
-    const formatPrice = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val);
+    const { formatPrice } = useCurrency();
 
     // -- Calculations for Display --
     const dailyAvg = summary.revenue / (trends.labels?.length || 7);
