@@ -105,7 +105,10 @@ export default function POS() {
         queryFn: async () => {
             const res = await axios.get(withApiBase('/api/payments/settings'), { headers: authHeaders() });
             return res.data;
-        }
+        },
+        staleTime: 60 * 60 * 1000, // 1 hour
+        gcTime: 24 * 60 * 60 * 1000, // 24 hours
+        networkMode: 'offlineFirst'
     });
 
     // Get pending mutations from React Query state (Offline Sync Queue)

@@ -21,7 +21,7 @@ import { LOYALTY_CONFIG } from '../../../config/businessConfig';
 /**
  * POSCart Component - Manages the cart items, member selection, and training details.
  */
-export default function POSCart({ members, products, trainers, discountOptions, initiateCheckout, openReceiptTemplatePreview }) {
+export default function POSCart({ members, posSettings, products, trainers, discountOptions, initiateCheckout, openReceiptTemplatePreview }) {
     const { user } = useAuth();
     const branchTaxRate = user?.gym?.taxRate ?? 12;
     const { currency: globalCurrency } = useCurrency();
