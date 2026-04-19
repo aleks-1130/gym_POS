@@ -246,7 +246,7 @@ const Payroll = () => {
                 .toLowerCase();
 
             return haystack.includes(normalizedSearch);
-        });
+        }).sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
     }, [trainers, trainerFilter, trainerSearch]);
     const trainerGrossPending = filteredTrainers.reduce((sum, trainer) => sum + Number(trainer.unpaidCommissions || 0), 0);
     const trainerOutstandingDeductions = filteredTrainers.reduce((sum, trainer) => sum + Number(trainer.outstandingMaterialDeductions || 0), 0);

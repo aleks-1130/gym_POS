@@ -92,9 +92,6 @@ export default function PurchaseHistory() {
     };
 
     const filteredTransactions = allTransactions.filter((transaction) => {
-        const isRemovedStatus = ['VOIDED', 'RETURNED', 'CANCELLED'].includes(transaction.status);
-        if (isRemovedStatus) return false;
-
         const purchaseChannel = transaction.__purchaseChannel || getPurchaseChannel(transaction);
         if (activeTab === 'counter' && purchaseChannel !== 'COUNTER') return false;
         if (activeTab === 'in_app' && purchaseChannel !== 'IN_APP_PURCHASE') return false;
@@ -134,9 +131,20 @@ export default function PurchaseHistory() {
     const getTypeLabel = (item) => prettifyLabel(item.type);
 
     const getStatusBadge = (item) => {
-        if (item.status === 'PENDING') return 'bg-yellow-500/20 text-yellow-300';
-        if (item.status === 'VOIDED' || item.status === 'CANCELLED') return 'bg-red-500/20 text-red-300';
+        const normalized = String(item?.status || '').toUpperCase();
+        if (normalized === 'PENDING') return 'bg-yellow-500/20 text-yellow-300';
+        if (normalized === 'VOIDED' || normalized === 'CANCELLED' || normalized === 'DECLINED') return 'bg-red-500/20 text-red-300';
+        if (normalized === 'RETURNED') return 'bg-amber-500/20 text-amber-300';
         return 'bg-emerald-500/20 text-emerald-300';
+    };
+
+    const getStatusLabel = (item) => {
+        const normalized = String(item?.status || '').toUpperCase();
+        if (normalized === 'VOIDED' || normalized === 'DECLINED') return 'Rejected';
+        if (normalized === 'CANCELLED') return 'Cancelled';
+        if (normalized === 'PENDING') return 'Pending';
+        if (normalized === 'RETURNED') return 'Returned';
+        return 'Completed';
     };
 
     return (
@@ -284,7 +292,7 @@ export default function PurchaseHistory() {
                                         </td>
                                         <td className="px-4 sm:px-6 py-4">
                                             <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-bold ${getStatusBadge(item)}`}>
-                                                {prettifyLabel(item.status || 'COMPLETED')}
+                                                {getStatusLabel(item)}
                                             </span>
                                         </td>
                                         <td className="px-4 sm:px-6 py-4 text-right">
@@ -329,7 +337,7 @@ export default function PurchaseHistory() {
 
                                 <div>
                                     <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold ${getStatusBadge(item)}`}>
-                                        {prettifyLabel(item.status || 'COMPLETED')}
+                                        {getStatusLabel(item)}
                                     </span>
                                 </div>
 

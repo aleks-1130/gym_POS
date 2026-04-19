@@ -1,21 +1,22 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 
 const TrainerPerformanceView = ({ data }) => {
     const { topTrainers } = data;
     const [activeTab, setActiveTab] = useState('active');
 
     const formatPrice = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val);
+    const sortByName = (list = []) => [...list].sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
 
-    const activeTrainers = topTrainers.filter(t => t.sessions > 0);
-    const inactiveTrainers = topTrainers.filter(t => t.sessions === 0);
+    const activeTrainers = useMemo(() => sortByName(topTrainers.filter((t) => t.sessions > 0)), [topTrainers]);
+    const inactiveTrainers = useMemo(() => sortByName(topTrainers.filter((t) => t.sessions === 0)), [topTrainers]);
+    const allTrainers = useMemo(() => sortByName(topTrainers), [topTrainers]);
 
-    let displayTrainers = topTrainers;
+    let displayTrainers = allTrainers;
     if (activeTab === 'active') displayTrainers = activeTrainers;
     if (activeTab === 'inactive') displayTrainers = inactiveTrainers;
 
     return (
         <div className="space-y-6">
-            {/* Tabs Navigation */}
             <div className="flex space-x-2 border-b border-white/10 pb-4">
                 <button
                     onClick={() => setActiveTab('active')}
@@ -51,8 +52,8 @@ const TrainerPerformanceView = ({ data }) => {
                                 </div>
                             </div>
                             {t.sessions > 0 && (
-                                <span className={`text-xs font-bold px-3 py-1 rounded-full ${i === 0 && activeTab !== 'inactive' ? 'bg-amber-500/10 text-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-emerald-500/10 text-emerald-400'}`}>
-                                    {i === 0 && activeTab !== 'inactive' ? '🏆 Top Performer' : `Rank #${i + 1}`}
+                                <span className="text-xs font-bold px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400">
+                                    Active
                                 </span>
                             )}
                             {t.sessions === 0 && (

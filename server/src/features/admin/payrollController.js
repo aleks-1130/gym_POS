@@ -248,6 +248,7 @@ const getTrainers = async (req, res) => {
                 tenantId: Number(req.user.tenantId),
                 gymId: Number(req.gymId || req.user.gymId)
             },
+            orderBy: { name: 'asc' },
             include: {
                 user: { select: { id: true } },
                 expenses: {
@@ -361,6 +362,7 @@ const getStaff = async (req, res) => {
                 tenantId: Number(req.user.tenantId),
                 gymId: Number(req.gymId || req.user.gymId)
             },
+            orderBy: { name: 'asc' },
             include: {
                 expenses: {
                     where: expenseFilter

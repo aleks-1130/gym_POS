@@ -9,6 +9,14 @@ import { withApiBase } from '../../config/api';
 import { useConfirm } from '../../context/ConfirmContext';
 import { usePaymentData, useReceiptSettings } from '../../hooks/usePaymentData';
 
+const getItemImageSrc = (item) => {
+    if (!item) return null;
+    const path = item.image || item.photo || item.imageUrl || item.thumbnail || item?.product?.imageUrl;
+    if (!path) return null;
+    if (String(path).startsWith('http') || String(path).startsWith('data:')) return path;
+    return String(path).startsWith('/') ? path : `/${path}`;
+};
+
 export default function TransactionDetail() {
     const { id } = useParams();
     const location = useLocation();
@@ -182,20 +190,23 @@ export default function TransactionDetail() {
             name: item.name,
             price: item.unitPrice,
             quantity: item.quantity,
-            returnedQuantity: Number(item.returnedQuantity || 0)
+            returnedQuantity: Number(item.returnedQuantity || 0),
+            imageUrl: getItemImageSrc(item)
         }))
         : trainingSessions.length > 0
             ? trainingSessions.map((session, index) => ({
                 name: `${session.trainer?.name || 'Trainer'} Session #${index + 1} (${new Date(session.date).toLocaleDateString()} ${new Date(session.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`,
                 price: Number(session.price || 0),
                 quantity: 1,
-                returnedQuantity: 0
+                returnedQuantity: 0,
+                imageUrl: null
             }))
             : [{
                 name: String(payment.type || 'Transaction').replaceAll('_', ' '),
                 price: Number(payment.amount || 0),
                 quantity: 1,
-                returnedQuantity: 0
+                returnedQuantity: 0,
+                imageUrl: null
             }];
     const statusValue = String(payment.status || 'COMPLETED').toUpperCase();
     const statusStyles = {
@@ -314,7 +325,18 @@ export default function TransactionDetail() {
                         {receiptItems.map((item, index) => (
                                 <div key={`${item.name}-${index}`} className="grid grid-cols-1 md:grid-cols-12 gap-2 md:gap-4 px-4 py-3 bg-white/[0.02]">
                                     <div className="md:col-span-6 min-w-0">
-                                        <p className="text-sm text-white font-semibold truncate">{item.name}</p>
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <div className="h-10 w-10 rounded-lg overflow-hidden border border-white/10 bg-black/20 flex-shrink-0">
+                                                {item.imageUrl ? (
+                                                    <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover" />
+                                                ) : (
+                                                    <div className="h-full w-full flex items-center justify-center text-white/30">
+                                                        <span className="material-icons-round text-base">inventory_2</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <p className="text-sm text-white font-semibold truncate">{item.name}</p>
+                                        </div>
                                     </div>
                                     <div className="md:col-span-2 text-left md:text-right">
                                         <p className="text-sm text-white">{item.quantity}</p>

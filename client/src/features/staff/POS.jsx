@@ -25,6 +25,7 @@ import {
     authHeaders, normalizeList, extractBookingBatchId,
     getAvailableTimeSlotsForTrainer,
     getBuyerLabel, getMethodLabel, getTransactionTypeLabel,
+    getItemImageSrc,
     renderStatusBadge, renderTransactionTypeBadge
 } from './pos/POSUtils';
 
@@ -96,7 +97,11 @@ export default function POS() {
         queryKey: ['pos', 'members'],
         queryFn: async () => {
             const res = await axios.get(withApiBase('/api/members'));
-            return normalizeList(res.data);
+            return normalizeList(res.data).sort((a, b) => {
+                const nameA = `${String(a?.firstName || '').trim()} ${String(a?.lastName || '').trim()}`.trim().toLowerCase();
+                const nameB = `${String(b?.firstName || '').trim()} ${String(b?.lastName || '').trim()}`.trim().toLowerCase();
+                return nameA.localeCompare(nameB);
+            });
         }
     });
     
@@ -733,6 +738,20 @@ export default function POS() {
         return [buyer, payment?.type, payment?.status, payment?.amount, payment?.method]
             .some((field) => String(field || '').toLowerCase().includes(collectQuery));
     });
+    const getDisplayItems = (payment) => (
+        Array.isArray(payment?.items)
+            ? payment.items.filter((item) => Number(item?.quantity || 0) > 0)
+            : []
+    );
+    const getItemsSummaryLabel = (payment, maxItems = 2) => {
+        const items = getDisplayItems(payment);
+        if (items.length === 0) return 'No item details';
+        const base = items
+            .slice(0, maxItems)
+            .map((item) => `${Number(item.quantity || 0)}x ${item.name}`)
+            .join(', ');
+        return items.length > maxItems ? `${base}, +${items.length - maxItems} more` : base;
+    };
 
     const collectNotificationCount = groupedTrainingBookings.length + pendingInAppPurchases.length;
     const collectNotificationLabel = collectNotificationCount > 99 ? '99+' : String(collectNotificationCount);
@@ -872,6 +891,7 @@ export default function POS() {
                                 <tr>
                                     <th className="px-4 py-3">Date</th>
                                     <th className="px-4 py-3">Type</th>
+                                    <th className="px-4 py-3">Items</th>
                                     <th className="px-4 py-3">Amount</th>
                                     <th className="px-4 py-3">Method</th>
                                     <th className="px-4 py-3">Member</th>
@@ -883,16 +903,31 @@ export default function POS() {
                             </thead>
                             <tbody className="divide-y divide-white/5">
                                 {filteredHistory.length === 0 && (
-                                    <tr><td colSpan="9" className="p-6 text-center text-text-muted">No transactions found.</td></tr>
+                                    <tr><td colSpan="10" className="p-6 text-center text-text-muted">No transactions found.</td></tr>
                                 )}
                                 {paginatedHistory.map((pay) => {
                                     const methodLabel = getMethodLabel(pay.method);
+                                    const displayItems = getDisplayItems(pay);
                                     return (
                                         <tr key={pay.id} className="hover:bg-white/5 transition-colors">
                                             <td className="px-4 py-2.5 text-white font-medium whitespace-nowrap">
                                                 {new Date(pay.date).toLocaleDateString()} <span className="text-text-muted font-normal text-[10px]">{new Date(pay.date).toLocaleTimeString()}</span>
                                             </td>
                                             <td className="px-4 py-2.5">{renderTransactionTypeBadge(pay.type)}</td>
+                                            <td className="px-4 py-2.5">
+                                                {displayItems.length > 0 ? (
+                                                    <div className="space-y-1">
+                                                        <span className="text-[11px] text-text-secondary">
+                                                            {displayItems.length} item{displayItems.length === 1 ? '' : 's'}
+                                                        </span>
+                                                        <p className="max-w-[220px] truncate text-[10px] text-text-muted" title={getItemsSummaryLabel(pay, 4)}>
+                                                            {getItemsSummaryLabel(pay, 2)}
+                                                        </p>
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-[11px] text-text-muted">No item details</span>
+                                                )}
+                                            </td>
                                             <td className="px-4 py-2.5 text-white font-bold whitespace-nowrap">{formatPrice(pay.amount)}</td>
                                             <td className="px-4 py-2.5 text-text-secondary whitespace-nowrap">
                                                 <span className="inline-block max-w-[108px] truncate align-middle" title={methodLabel}>{methodLabel}</span>
@@ -1033,6 +1068,12 @@ export default function POS() {
                                                     <p className="text-text-muted uppercase tracking-wider">Amount Due</p>
                                                     <p className="mt-1 text-base font-bold text-white">{formatPrice(payment.amount)}</p>
                                                 </div>
+                                                <div className="col-span-2">
+                                                    <p className="text-text-muted uppercase tracking-wider">Items</p>
+                                                    <p className="mt-1 text-white text-xs" title={getItemsSummaryLabel(payment, 6)}>
+                                                        {getItemsSummaryLabel(payment, 3)}
+                                                    </p>
+                                                </div>
                                             </div>
                                             <div className="mt-auto pt-4 flex items-center gap-2">
                                                 <button
@@ -1075,6 +1116,7 @@ export default function POS() {
                                                 <th className="px-3 py-2.5">Date</th>
                                                 <th className="px-3 py-2.5">Buyer</th>
                                                 <th className="px-3 py-2.5">Type</th>
+                                                <th className="px-3 py-2.5">Items</th>
                                                 <th className="px-3 py-2.5">Amount</th>
                                                 <th className="px-3 py-2.5">Status</th>
                                                 <th className="w-[140px] px-3 py-2.5">Actions</th>
@@ -1090,6 +1132,11 @@ export default function POS() {
                                                         <span className="inline-block max-w-[150px] truncate align-middle" title={getBuyerLabel(payment)}>{getBuyerLabel(payment)}</span>
                                                     </td>
                                                     <td className="px-3 py-2.5">{renderTransactionTypeBadge(payment.type)}</td>
+                                                    <td className="px-3 py-2.5 text-white">
+                                                        <span className="inline-block max-w-[200px] truncate align-middle text-[11px]" title={getItemsSummaryLabel(payment, 6)}>
+                                                            {getItemsSummaryLabel(payment, 2)}
+                                                        </span>
+                                                    </td>
                                                     <td className="px-3 py-2.5 text-white font-bold whitespace-nowrap">{formatPrice(payment.amount)}</td>
                                                     <td className="px-3 py-2.5">{renderStatusBadge(payment.status)}</td>
                                                     <td className="px-3 py-2.5">
@@ -1387,6 +1434,40 @@ export default function POS() {
                                     <div className="flex justify-between items-center">
                                         <span className="text-text-muted">Amount Due</span>
                                         <span className="text-white font-bold text-lg">{formatPrice(collectData.purchase.amount)}</span>
+                                    </div>
+                                    <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                                        <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted mb-2">Transaction Preview</p>
+                                        <div className="max-h-44 overflow-y-auto space-y-2 pr-1">
+                                            {getDisplayItems(collectData.purchase).length > 0 ? (
+                                                getDisplayItems(collectData.purchase).map((item, idx) => {
+                                                    const imageSource = getItemImageSrc(item?.product || item);
+                                                    const quantity = Number(item?.quantity || 0);
+                                                    const unitPrice = Number(item?.unitPrice || item?.price || 0);
+                                                    return (
+                                                        <div key={`collect-purchase-item-${idx}`} className="flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 p-2">
+                                                            <div className="h-10 w-10 overflow-hidden rounded-md border border-white/10 bg-black/30 flex-shrink-0">
+                                                                {imageSource ? (
+                                                                    <img src={imageSource} alt={item?.name || 'Item'} className="h-full w-full object-cover" />
+                                                                ) : (
+                                                                    <div className="h-full w-full flex items-center justify-center text-white/30">
+                                                                        <span className="material-icons-round text-sm">inventory_2</span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            <div className="min-w-0 flex-1">
+                                                                <p className="truncate text-xs font-semibold text-white">{item?.name || 'Item'}</p>
+                                                                <p className="text-[11px] text-text-muted">
+                                                                    {quantity} x {formatPrice(unitPrice)}
+                                                                </p>
+                                                            </div>
+                                                            <p className="text-xs font-bold text-white">{formatPrice(quantity * unitPrice)}</p>
+                                                        </div>
+                                                    );
+                                                })
+                                            ) : (
+                                                <p className="text-xs text-text-muted">No item details available for this transaction.</p>
+                                            )}
+                                        </div>
                                     </div>
                                     <div>
                                         <label className="block text-text-muted text-sm font-medium mb-2">Cash Tendered</label>

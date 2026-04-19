@@ -290,7 +290,11 @@ const getMembers = async (req, res) => {
                 plan: true,
                 gym: { select: { id: true, name: true } }
             },
-            orderBy: { createdAt: 'desc' }
+            orderBy: [
+                { firstName: 'asc' },
+                { lastName: 'asc' },
+                { createdAt: 'desc' }
+            ]
         };
 
         console.log('[DEBUG] getMembers Final Where:', JSON.stringify(where, null, 2));

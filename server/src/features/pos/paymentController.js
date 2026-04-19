@@ -122,7 +122,16 @@ const getPaymentDetails = async (req, res) => {
             },
             include: {
                 member: true,
-                items: true,
+                items: {
+                    include: {
+                        product: {
+                            select: {
+                                id: true,
+                                imageUrl: true
+                            }
+                        }
+                    }
+                },
                 cashier: { select: { id: true, name: true, role: true } },
                 collections: true
             }
@@ -984,6 +993,20 @@ const createPayment = async (req, res) => {
 
 const getAllPayments = async (req, res) => {
     const { tenantId } = req.user;
+    const paymentHistoryInclude = {
+        member: true,
+        cashier: { select: { id: true, name: true, role: true } },
+        items: {
+            include: {
+                product: {
+                    select: {
+                        id: true,
+                        imageUrl: true
+                    }
+                }
+            }
+        }
+    };
 
     // Member: see own payments
     if (req.user.role === 'MEMBER') {
@@ -993,7 +1016,8 @@ const getAllPayments = async (req, res) => {
                 gym: { tenantId } // Enforce Tenant Isolation
             },
             take: 50,
-            orderBy: { date: 'desc' }
+            orderBy: { date: 'desc' },
+            include: paymentHistoryInclude
         });
         return res.json(payments);
     }
@@ -1013,10 +1037,7 @@ const getAllPayments = async (req, res) => {
             },
             take: 50,
             orderBy: { date: 'desc' },
-            include: {
-                member: true,
-                cashier: { select: { id: true, name: true, role: true } }
-            }
+            include: paymentHistoryInclude
         });
         return res.json(payments);
     }
@@ -1073,10 +1094,7 @@ const getAllPayments = async (req, res) => {
                 skip,
                 take: limitNum,
                 orderBy: { date: 'desc' },
-                include: {
-                    member: true,
-                    cashier: { select: { id: true, name: true, role: true } }
-                }
+                include: paymentHistoryInclude
             }),
             prisma.payment.count({ where })
         ]);
@@ -1096,10 +1114,7 @@ const getAllPayments = async (req, res) => {
         where,
         take: (startDate || endDate) ? undefined : 50,
         orderBy: { date: 'desc' },
-        include: {
-            member: true,
-            cashier: { select: { id: true, name: true, role: true } }
-        }
+        include: paymentHistoryInclude
     });
     res.json(payments);
 };

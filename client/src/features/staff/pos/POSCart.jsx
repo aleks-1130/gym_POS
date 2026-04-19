@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { usePOSStore } from '../../../stores/usePOSStore';
 import { useCurrency } from '../../../context/CurrencyContext';
@@ -67,6 +67,13 @@ export default function POSCart({ members, posSettings, products, trainers, disc
     const [couponLoading, setCouponLoading] = useState(false);
     const [couponError, setCouponError] = useState('');
     const [openBundleLineId, setOpenBundleLineId] = useState(null);
+    const sortedMembers = useMemo(() => {
+        return [...(Array.isArray(members) ? members : [])].sort((a, b) => {
+            const nameA = `${String(a?.firstName || '').trim()} ${String(a?.lastName || '').trim()}`.trim().toLowerCase();
+            const nameB = `${String(b?.firstName || '').trim()} ${String(b?.lastName || '').trim()}`.trim().toLowerCase();
+            return nameA.localeCompare(nameB);
+        });
+    }, [members]);
 
     const selectedDiscountPresetId = (discountOptions.find((option) => Number(option.rate) === Number(discount)) || {}).id || '';
 
@@ -151,7 +158,7 @@ export default function POSCart({ members, posSettings, products, trainers, disc
                     onChange={(e) => setSelectedMemberId(e.target.value)}
                 >
                     <option value="" className="bg-[#181B21] text-white">Guest / Walk-in</option>
-                    {members.map(m => (
+                    {sortedMembers.map(m => (
                         <option key={m.id} value={m.id} className="bg-[#181B21] text-white">{m.firstName} {m.lastName}</option>
                     ))}
                 </select>

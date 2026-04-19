@@ -1,23 +1,9 @@
 const rateLimit = require('express-rate-limit');
 
-// 1. Global Rate Limiter
-// Applied to all routes to prevent general DoS attacks.
-const globalLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 200, // Increased for development/pos usage
-    message: {
-        error: "Too many requests from this IP, please try again after 15 minutes",
-        status: 429
-    },
-    standardHeaders: true,
-    legacyHeaders: false,
-});
-
-// 2. Auth Rate Limiter
-// Applied strictly to login and signup routes to prevent brute-force attacks.
+// Applied only to authentication endpoints to prevent brute-force attacks.
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Increased from 10 to 100 to support AuthContext checks
+    max: 100,
     message: {
         error: "Too many authentication attempts, please try again after 15 minutes",
         status: 429
@@ -27,6 +13,5 @@ const authLimiter = rateLimit({
 });
 
 module.exports = {
-    globalLimiter,
     authLimiter
 };

@@ -49,16 +49,11 @@ app.use(cors({
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Cookie', 'x-gym-id', 'x-tenant-id']
 }));
-const { globalLimiter } = require('./src/middleware/rateLimiter');
-
 // Essential Security Headers
 app.use(helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" }, // Allow images/resources to be loaded from other origins if needed
     contentSecurityPolicy: false, // Temporarily disabled if you have inline scripts or external CDNs in your frontend that break
 }));
-
-// Apply global rate limiting to all API routes
-app.use('/api', globalLimiter);
 
 app.use(express.json());
 app.use(cookieParser());
