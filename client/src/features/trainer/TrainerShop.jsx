@@ -124,7 +124,7 @@ export default function TrainerShop() {
 
             if (newQuantity > (product.stock || 0)) {
                 await showAlert({ title: 'Stock Limit', message: `Cannot add more than available stock (${product.stock}).`, type: 'warning' });
-                return;
+                return false;
             }
 
             
@@ -146,6 +146,7 @@ export default function TrainerShop() {
             }
             saveCart(updatedCart);
             showAddToCartPopup(product.name);
+            return true;
         } catch (error) {
             console.error("Failed to reserve stock", error);
             await showAlert({ 
@@ -153,9 +154,18 @@ export default function TrainerShop() {
                 message: error.response?.data?.error || 'Failed to add item to cart due to stock limits.', 
                 type: 'warning' 
             });
+            return false;
         } finally {
             setAddingToCart((prev) => ({ ...prev, [product.id]: false }));
         }
+    };
+
+    const handleBuyNow = async (product) => {
+        if (!product) return;
+        const alreadyInCart = cart.some((item) => item.id === product.id);
+        const added = alreadyInCart ? true : await addToCart(product);
+        if (!added) return;
+        handleCheckoutInit();
     };
 
     const updateCartQuantity = async (productId, newQuantity) => {
@@ -413,7 +423,7 @@ export default function TrainerShop() {
                 </div>
             </div>
 
-            <div className={`grid ${isDetailedView ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4' : 'grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3'}`}>
+            <div className={`grid ${isDetailedView ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4' : 'grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2.5'}`}>
                 {products.length === 0 ? (
                     <div className="col-span-full text-center py-16">
                         <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-3">
@@ -433,13 +443,29 @@ export default function TrainerShop() {
                         const isSoldOut = !p.stock || p.stock === 0;
                         const cartQuantity = getCartItemQuantity(p.id);
                         const isAdding = Boolean(addingToCart?.[p.id]);
+                        const stockCount = Number(p.stock || 0);
+                        const stockLabel = isSoldOut
+                            ? 'Out of stock'
+                            : p.stock <= 5
+                                ? `Only ${stockCount} left`
+                                : `${stockCount} available`;
+                        const stockChipClass = isSoldOut
+                            ? 'bg-rose-500/10 border-rose-500/25 text-rose-200'
+                            : p.stock <= 5
+                                ? 'bg-amber-500/10 border-amber-500/25 text-amber-200'
+                                : 'bg-emerald-500/10 border-emerald-500/25 text-emerald-200';
+                        const stockDotClass = isSoldOut
+                            ? 'bg-rose-400'
+                            : p.stock <= 5
+                                ? 'bg-amber-300'
+                                : 'bg-emerald-300';
 
                         return (
                             <div
                                 key={p.id}
                                 className={`${isDetailedView ? 'rounded-2xl border-white/10' : 'rounded-xl border-white/5'} overflow-hidden border flex flex-col transition-all group ${isSoldOut ? 'bg-black/40 opacity-60' : 'bg-surface hover:border-primary/30'}`}
                             >
-                                <div className={`${isDetailedView ? 'aspect-[4/3]' : 'aspect-square'} bg-white/5 overflow-hidden relative`}>
+                                <div className={`${isDetailedView ? 'aspect-[4/3]' : 'aspect-[4/5]'} bg-white/5 overflow-hidden relative`}>
                                     {p.imageUrl ? (
                                         <img src={p.imageUrl} alt={p.name} className={`w-full h-full object-cover ${!isSoldOut && 'group-hover:scale-105 transition-transform duration-300'}`} />
                                     ) : (
@@ -470,34 +496,42 @@ export default function TrainerShop() {
                                     )}
                                 </div>
 
-                                <div className="p-3 flex flex-col flex-1">
-                                    <h3 className={`${isDetailedView ? 'text-base min-h-[2.75rem]' : 'text-sm min-h-[2.5rem]'} font-bold text-white line-clamp-2 mb-2`}>{p.name}</h3>
-                                    <p className={`text-text-muted ${isDetailedView ? 'text-sm line-clamp-3' : 'text-xs line-clamp-2'} mb-3 flex-1`}>{p.description || 'No description available'}</p>
+                                <div className={`${isDetailedView ? 'p-3' : 'p-2'} flex flex-col flex-1`}>
+                                    <h3 className={`${isDetailedView ? 'text-base min-h-[2.75rem]' : 'text-[12px] min-h-[2rem]'} font-bold text-white line-clamp-2`}>{p.name}</h3>
+                                    <div className={`text-primary font-bold ${isDetailedView ? 'text-lg mt-1 mb-2' : 'text-sm mt-0.5 mb-1.5'}`}>{formatPrice(p.price)}</div>
+                                    <p className={`text-text-muted ${isDetailedView ? 'text-sm line-clamp-3 mb-2' : 'text-[10px] line-clamp-2 mb-1.5'}`}>{p.description || 'No description available'}</p>
 
-                                    <div className="space-y-2">
-                                        <div className={`text-primary font-bold ${isDetailedView ? 'text-lg' : 'text-base'}`}>{formatPrice(p.price)}</div>
-                                        <div className={`text-xs font-medium ${isSoldOut ? 'text-red-400/70' : p.stock <= 5 ? 'text-yellow-400' : 'text-green-400'}`}>
-                                            {isSoldOut ? 'Out of Stock' : p.stock <= 5 ? `Only ${p.stock} left` : `${p.stock} in stock`}
+                                    <div className="mt-auto">
+                                        <div className={`${isDetailedView ? 'mb-2.5' : 'mb-2'}`}>
+                                            <div className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 ${stockChipClass}`}>
+                                                <span className={`h-1.5 w-1.5 rounded-full ${stockDotClass}`}></span>
+                                                <span className={`${isDetailedView ? 'text-[11px]' : 'text-[10px]'} font-semibold`}>
+                                                    {stockLabel}
+                                                </span>
+                                            </div>
                                         </div>
-                                        {!isSoldOut && (
+
+                                        <div className={`pt-2 flex items-center gap-2 ${isSoldOut ? 'invisible pointer-events-none' : ''}`}>
+                                            <button
+                                                onClick={() => handleBuyNow(p)}
+                                                className={`${isDetailedView ? 'py-2.5 text-sm' : 'py-2 text-[11px]'} flex-1 bg-primary hover:bg-primary-hover active:scale-95 text-white rounded-lg px-3 font-semibold transition-all`}
+                                            >
+                                                Buy
+                                            </button>
                                             <button
                                                 onClick={() => addToCart(p)}
                                                 disabled={isAdding}
-                                                className="w-full bg-primary hover:bg-primary-hover active:scale-95 text-white rounded-lg py-2.5 px-3 text-sm font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-50 mt-3"
+                                                className={`${isDetailedView ? 'w-10 h-10' : 'w-9 h-9'} bg-white/10 hover:bg-white/15 rounded-lg border border-white/10 text-white flex items-center justify-center transition-all disabled:opacity-50`}
+                                                aria-label={`Add ${p.name} to cart`}
+                                                title="Add to cart"
                                             >
                                                 {isAdding ? (
-                                                    <>
-                                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                                        <span>Adding...</span>
-                                                    </>
+                                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                                                 ) : (
-                                                    <>
-                                                        <span className="material-icons-round text-lg">add_shopping_cart</span>
-                                                        <span>Add to Cart</span>
-                                                    </>
+                                                    <span className="material-icons-round text-lg">add_shopping_cart</span>
                                                 )}
                                             </button>
-                                        )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -507,13 +541,15 @@ export default function TrainerShop() {
             </div>
 
             {cartPopup.show && (
-                <div className="fixed right-4 sm:right-6 bottom-[10.25rem] sm:bottom-24 z-40 pointer-events-none">
-                    <div className="bg-emerald-500/95 border border-emerald-300/40 text-white rounded-xl px-3 py-2 shadow-2xl shadow-black/40 animate-bounce">
-                        <div className="flex items-center gap-1.5 text-xs font-bold">
-                            <span className="material-icons-round text-base">check_circle</span>
-                            Added to cart
+                <div className="fixed right-6 bottom-32 z-[60] pointer-events-none animate-in fade-in slide-in-from-right-4 duration-300">
+                    <div className="bg-emerald-500 border border-emerald-400/30 text-white rounded-[24px] px-5 py-4 shadow-[0_20px_40px_rgba(16,185,129,0.3)] backdrop-blur-xl flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center uppercase font-black text-xs">
+                            <span className="material-icons-round text-xl">done</span>
                         </div>
-                        <p className="text-[11px] text-white/90 mt-0.5 max-w-[180px] truncate">{cartPopup.itemName}</p>
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-100/80 leading-none mb-1">Added to Basket</p>
+                            <p className="text-[13px] font-bold text-white max-w-[180px] truncate">{cartPopup.itemName}</p>
+                        </div>
                     </div>
                 </div>
             )}
@@ -521,60 +557,96 @@ export default function TrainerShop() {
             <button
                 type="button"
                 onClick={() => setShowCartModal(true)}
-                className="fixed right-4 sm:right-6 bottom-[5.25rem] sm:bottom-6 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-2xl shadow-primary/30 hover:brightness-110 active:scale-95 transition-all flex items-center justify-center"
+                className="fixed right-6 bottom-28 z-50 w-16 h-16 rounded-[24px] bg-primary text-background shadow-[0_20px_40px_rgba(var(--primary-rgb),0.3)] hover:scale-110 active:scale-90 transition-all duration-300 flex items-center justify-center group"
                 aria-label="Open cart"
             >
-                <span className="material-icons-round text-2xl">shopping_cart</span>
+                <span className="material-icons-round text-2xl group-hover:rotate-12 transition-transform">shopping_basket</span>
                 {getTotalItems() > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-white text-primary text-[11px] font-bold flex items-center justify-center border border-primary/20">
+                    <span className="absolute -top-2 -right-2 min-w-[24px] h-6 px-1.5 rounded-xl bg-white text-background text-[11px] font-black flex items-center justify-center shadow-lg animate-in zoom-in border border-primary/10">
                         {getTotalItems()}
                     </span>
                 )}
             </button>
 
+            {/* Cart Drawer-style Modal */}
             {showCartModal && (
-                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
-                    <div className="bg-surface border border-white/10 rounded-t-2xl sm:rounded-2xl w-full max-w-2xl max-h-[85vh] sm:max-h-[80vh] flex flex-col shadow-2xl animate-slide-up" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-between p-4 border-b border-white/10">
-                            <div className="flex items-center gap-3">
-                                <span className="material-icons-round text-primary text-2xl">shopping_cart</span>
-                                <div>
-                                    <h2 className="text-lg font-bold text-white">Shopping Cart</h2>
-                                    <p className="text-text-muted text-xs">{getTotalItems()} items in cart</p>
-                                </div>
+                <div className="fixed inset-0 z-[100] flex items-end sm:items-stretch sm:justify-end">
+                    <div className="absolute inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowCartModal(false)} />
+                    <div className="relative w-full h-[72vh] sm:h-full sm:max-w-md bg-[#14161a] border-t sm:border-t-0 sm:border-l border-white/5 rounded-t-3xl sm:rounded-none sm:rounded-l-3xl shadow-2xl flex flex-col animate-in slide-in-from-bottom sm:slide-in-from-right duration-500">
+                        <div className="sm:hidden pt-2 pb-1 flex justify-center">
+                            <div className="h-1 w-12 rounded-full bg-white/20"></div>
+                        </div>
+                        {/* Drawer Header */}
+                        <div className="p-3.5 sm:p-4 flex items-center justify-between">
+                            <div>
+                                <p className="text-[9px] text-primary font-bold uppercase tracking-[0.16em] mb-1">Your Basket</p>
+                                <h2 className="text-2xl sm:text-[26px] leading-tight font-extrabold tracking-tight text-white">Ready to checkout</h2>
                             </div>
-                            <button onClick={() => setShowCartModal(false)} className="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center transition-all">
-                                <span className="material-icons-round text-white/70">close</span>
+                            <button
+                                onClick={() => setShowCartModal(false)}
+                                className="w-8 h-8 rounded-lg bg-transparent border border-white/10 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/5 transition-all active:scale-90"
+                            >
+                                <span className="material-icons-round text-[18px]">close</span>
                             </button>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto p-4">
+                        {/* Cart Items */}
+                        <div className="flex-1 overflow-y-auto px-3 sm:px-4 py-1.5 space-y-2.5 custom-scrollbar">
                             {cart.length === 0 ? (
-                                <div className="text-center py-16">
-                                    <div className="w-20 h-20 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                                        <span className="material-icons-round text-4xl text-text-muted">shopping_cart</span>
+                                <div className="h-full flex flex-col items-center justify-center text-center space-y-3 opacity-40">
+                                    <div className="w-20 h-20 rounded-3xl bg-white/5 flex items-center justify-center">
+                                        <span className="material-icons-round text-4xl">remove_shopping_cart</span>
                                     </div>
-                                    <p className="text-text-muted text-sm mb-2">Your cart is empty</p>
+                                    <p className="text-xs font-bold text-white px-8">Your basket is empty. Add a few items to continue.</p>
                                 </div>
                             ) : (
-                                <div className="space-y-3">
-                                    {cart.map((item) => (
-                                        <div key={item.id} className="bg-black/20 border border-white/5 rounded-xl p-3 flex gap-3">
-                                            <div className="w-20 h-20 bg-white/5 rounded-lg overflow-hidden flex-shrink-0">
-                                                {item.imageUrl ? <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center"><span className="material-icons-round text-2xl text-white/10">shopping_bag</span></div>}
+                                <div className="space-y-2.5">
+                                    {cart.map(item => (
+                                        <div key={item.id} className="group relative bg-white/[0.03] border border-white/10 rounded-xl p-2.5 flex gap-2.5 transition-all hover:bg-white/[0.06]">
+                                            {/* Media */}
+                                            <div className="w-12 h-12 bg-black/40 rounded-lg overflow-hidden flex-shrink-0 border border-white/10">
+                                                {item.imageUrl ? (
+                                                    <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <div className="w-full h-full flex items-center justify-center text-white/10">
+                                                        <span className="material-icons-round text-2xl">inventory_2</span>
+                                                    </div>
+                                                )}
                                             </div>
-                                            <div className="flex-1 min-w-0">
-                                                <h3 className="font-semibold text-white text-sm mb-1 line-clamp-1">{item.name}</h3>
-                                                <p className="text-primary font-bold text-sm mb-2">{formatPrice(item.price)}</p>
+
+                                            {/* Details */}
+                                            <div className="flex-1 min-w-0 py-0.5">
+                                                <h3 className="font-semibold text-white text-sm mb-0.5 line-clamp-1">{item.name}</h3>
+                                                <p className="text-primary font-semibold text-xs mb-1.5">{formatPrice(item.price)}</p>
+
                                                 <div className="flex items-center gap-2">
-                                                    <button onClick={() => updateCartQuantity(item.id, item.quantity - 1)} className="w-7 h-7 bg-white/10 hover:bg-white/15 rounded-lg flex items-center justify-center transition-all"><span className="material-icons-round text-white text-sm">remove</span></button>
-                                                    <span className="text-white font-semibold text-sm min-w-[2rem] text-center">{item.quantity}</span>
-                                                    <button onClick={() => updateCartQuantity(item.id, item.quantity + 1)} className="w-7 h-7 bg-white/10 hover:bg-white/15 rounded-lg flex items-center justify-center transition-all"><span className="material-icons-round text-white text-sm">add</span></button>
+                                                    <div className="flex items-center bg-black/50 border border-white/10 rounded-lg p-1 w-[104px]">
+                                                        <button
+                                                            onClick={() => updateCartQuantity(item.id, item.quantity - 1)}
+                                                            className="w-6 h-6 rounded-md flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 transition-all active:scale-75"
+                                                        >
+                                                            <span className="material-icons-round text-xs">remove</span>
+                                                        </button>
+                                                        <span className="text-sm font-semibold text-white w-full text-center">{item.quantity}</span>
+                                                        <button
+                                                            onClick={() => updateCartQuantity(item.id, item.quantity + 1)}
+                                                            className="w-6 h-6 rounded-md flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 transition-all active:scale-75"
+                                                        >
+                                                            <span className="material-icons-round text-xs">add</span>
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
-                                            <div className="flex flex-col items-end justify-between">
-                                                <button onClick={() => removeFromCart(item.id)} className="w-7 h-7 bg-red-500/10 hover:bg-red-500/20 rounded-lg flex items-center justify-center transition-all"><span className="material-icons-round text-red-400 text-sm">delete</span></button>
-                                                <p className="text-white font-bold text-sm">{formatPrice(item.price * item.quantity)}</p>
+
+                                            {/* Row Total & Remove */}
+                                            <div className="flex flex-col items-end justify-between py-0.5">
+                                                <button
+                                                    onClick={() => removeFromCart(item.id)}
+                                                    className="w-6 h-6 rounded-md bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 flex items-center justify-center transition-all opacity-70 hover:opacity-100"
+                                                >
+                                                    <span className="material-icons-round text-sm text-rose-500">close</span>
+                                                </button>
+                                                <p className="text-lg leading-none font-bold text-white">{formatPrice(item.price * item.quantity)}</p>
                                             </div>
                                         </div>
                                     ))}
@@ -582,15 +654,31 @@ export default function TrainerShop() {
                             )}
                         </div>
 
+                        {/* Footer */}
                         {cart.length > 0 && (
-                            <div className="p-4 border-t border-white/10 space-y-3">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-text-muted text-sm">Total ({getTotalItems()} items)</span>
-                                    <span className="text-white font-bold text-xl">{formatPrice(getCartTotal())}</span>
+                            <div className="p-3.5 sm:p-4 border-t border-white/10 bg-black/20 space-y-3">
+                                <div className="space-y-2 text-[13px]">
+                                    <div className="flex items-center justify-between text-text-muted">
+                                        <span>Items selected</span>
+                                        <span>{getTotalItems()} items</span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-text-muted">
+                                        <span>Subtotal</span>
+                                        <span>{formatPrice(getCartTotal())}</span>
+                                    </div>
                                 </div>
-                                <button onClick={handleCheckoutInit} className="w-full bg-primary hover:bg-primary-hover active:scale-95 text-white rounded-xl py-3.5 px-4 font-bold text-base transition-all flex items-center justify-center gap-2">
-                                    <span className="material-icons-round">shopping_bag</span>
-                                    <span>Proceed to Checkout</span>
+                                <div className="border-t border-white/10" />
+                                <div className="flex items-end justify-between">
+                                    <p className="text-[10px] text-text-muted font-semibold uppercase tracking-[0.16em]">Order Total</p>
+                                    <p className="text-3xl sm:text-[34px] leading-none font-extrabold text-white">{formatPrice(getCartTotal())}</p>
+                                </div>
+
+                                <button
+                                    onClick={handleCheckoutInit}
+                                    className="w-full h-12 rounded-xl bg-primary text-background font-semibold text-xs tracking-[0.08em] shadow-2xl shadow-primary/20 hover:brightness-110 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                                >
+                                    <span className="material-icons-round">payments</span>
+                                    <span>Continue to payment</span>
                                 </button>
                             </div>
                         )}
@@ -599,15 +687,11 @@ export default function TrainerShop() {
             )}
 
             {showPaymentModal && (
-                <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[60] flex items-center justify-center p-4 overflow-y-auto">
+                <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[130] flex items-center justify-center p-4 overflow-y-auto">
                     <div className="bg-[#111111] border border-white/5 rounded-3xl w-full max-w-md p-6 space-y-6 my-auto shadow-2xl">
                         <div className="space-y-1">
                             <h2 className="text-xl font-bold text-white">Order Details</h2>
-                            <p className="text-text-muted text-xs">
-                                {markAsSessionMaterial
-                                    ? 'Review your items. Cost will be deducted during commission payout.'
-                                    : 'Review your items and choose payment method'}
-                            </p>
+                            <p className="text-text-muted text-xs">Review your items and choose payment method</p>
                         </div>
 
                         <div className="bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 space-y-4">
@@ -640,7 +724,7 @@ export default function TrainerShop() {
                             </div>
                         </div>
 
-                        <div className={`bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 space-y-4 ${markAsSessionMaterial ? 'opacity-60' : ''}`}>
+                        <div className="bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 space-y-4">
                             <div className="flex justify-between items-center">
                                 <h3 className="text-white font-bold text-sm">Payment Method</h3>
                                 <button
@@ -683,7 +767,7 @@ export default function TrainerShop() {
                                     cardMethods.length === 0 ? (
                                         <div className="text-center py-6 border border-white/5 rounded-xl bg-black/20">
                                             <p className="text-white text-xs mb-1">No linked cards found</p>
-                                            <p className="text-text-muted text-[10px]">Please add one in Trainer Payment Methods.</p>
+                                            <p className="text-text-muted text-[10px]">Please add one in Payment Methods.</p>
                                         </div>
                                     ) : (
                                         <div className="space-y-2">
@@ -710,7 +794,7 @@ export default function TrainerShop() {
                                     walletMethods.length === 0 ? (
                                         <div className="text-center py-6 border border-white/5 rounded-xl bg-black/20">
                                             <p className="text-white text-xs mb-1">No linked e-wallets found</p>
-                                            <p className="text-text-muted text-[10px]">Please add GCash or Maya in Trainer Payment Methods.</p>
+                                            <p className="text-text-muted text-[10px]">Please add GCash or Maya in Payment Methods.</p>
                                         </div>
                                     ) : (
                                         <div className="space-y-2">
@@ -735,7 +819,15 @@ export default function TrainerShop() {
                             </div>
                         </div>
 
-                        <div className="bg-[#1a1a1a] border border-white/5 rounded-2xl p-4">
+                        <div className="bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 space-y-2">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-white font-bold text-sm">Trainer Option</h3>
+                                {markAsSessionMaterial && (
+                                    <span className="text-[9px] bg-primary/20 text-primary px-2 py-1 rounded-md font-black uppercase tracking-wider">
+                                        Commission Mode
+                                    </span>
+                                )}
+                            </div>
                             <label className="flex items-start gap-3 cursor-pointer">
                                 <input
                                     type="checkbox"
@@ -752,17 +844,27 @@ export default function TrainerShop() {
                             </label>
                         </div>
 
-                        <div className="space-y-3 pt-2">
+                        <div className="space-y-4 pt-2">
                             <button
                                 onClick={handleConfirmCheckout}
                                 disabled={isCheckingOut || (!markAsSessionMaterial && ((selectedPaymentType === 'CARD' || selectedPaymentType === 'E_WALLET') && !selectedMethodId))}
-                                className="w-full bg-primary hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl transition-all shadow-xl shadow-primary/20 active:scale-95 flex items-center justify-center gap-2 text-base"
+                                className="w-full h-14 rounded-[1.25rem] bg-primary text-background font-black text-[12px] uppercase tracking-[0.16em] shadow-2xl shadow-primary/20 hover:brightness-110 active:scale-[0.98] disabled:opacity-40 transition-all flex items-center justify-center gap-3"
                             >
-                                {isCheckingOut
-                                    ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /><span>Processing...</span></>
-                                    : <span>{markAsSessionMaterial ? 'Save For Commission Deduction' : 'Place Order'}</span>}
+                                {isCheckingOut ? (
+                                    <div className="w-5 h-5 border-4 border-background/30 border-t-background rounded-full animate-spin" />
+                                ) : (
+                                    <>
+                                        <span className="material-icons-round">verified</span>
+                                        <span>{markAsSessionMaterial ? 'Save For Commission Deduction' : 'Confirm Payment'}</span>
+                                    </>
+                                )}
                             </button>
-                            <button onClick={() => setShowPaymentModal(false)} className="w-full bg-white/5 hover:bg-white/10 text-text-muted font-bold py-4 rounded-2xl transition-all active:scale-95 text-base">Cancel</button>
+                            <button
+                                onClick={() => setShowPaymentModal(false)}
+                                className="w-full h-12 rounded-[1.25rem] bg-white/5 border border-white/10 text-[11px] font-black uppercase tracking-[0.16em] text-white/60 hover:text-white hover:bg-white/10 transition-all"
+                            >
+                                Cancel Transaction
+                            </button>
                         </div>
                     </div>
                 </div>

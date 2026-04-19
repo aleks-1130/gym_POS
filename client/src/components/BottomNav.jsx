@@ -95,11 +95,9 @@ export default function BottomNav() {
     const memberPrimaryNav = [
         { to: "/dashboard", icon: "dashboard", label: "Home" },
         { to: "/attendance", icon: "fact_check", label: "Attendance" },
-        { to: "/trainer-booking", icon: "sports_gymnastics", label: "Trainers" },
-        { to: "/gym-traffic", icon: "timeline", label: "Traffic" },
+        { to: "/trainer-booking", icon: "sports_gymnastics", label: "Trainer" },
         { to: "/schedule", icon: "calendar_month", label: "Classes" },
         { to: "/shop", icon: "storefront", label: "Shop" },
-        { to: "/profile", icon: "person", label: "Profile" },
     ];
     const trainerPrimaryNav = [
         { to: "/dashboard", icon: "dashboard", label: "Home" },
@@ -118,6 +116,8 @@ export default function BottomNav() {
 
     // Secondary navigation items (hamburger menu)
     const memberSecondaryNav = [
+        { to: "/profile", icon: "person", label: "Profile" },
+        { to: "/gym-traffic", icon: "timeline", label: "Gym Traffic" },
         { to: "/announcements", icon: "campaign", label: "Announcements" },
         { to: "/payment-methods", icon: "wallet", label: "Payment Methods" },
         { to: "/loyalty", icon: "card_giftcard", label: "Rewards & Loyalty" },
@@ -244,7 +244,7 @@ export default function BottomNav() {
             {/* Bottom Navigation Bar */}
             <nav className={`fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur-md z-40 border-t border-white/5 ${(!isMember && !isTrainer) && 'lg:hidden'}`}>
                 <div className="relative max-w-full mx-auto">
-                    {/* Scrollable Container - allows horizontal scroll if items overflow */}
+                    {/* Fixed width container - all nav items are visible without horizontal scrolling */}
                     <div 
                         ref={scrollRef}
                         onMouseDown={handleMouseDown}
@@ -252,9 +252,8 @@ export default function BottomNav() {
                         onMouseUp={handleMouseUp}
                         onMouseMove={handleMouseMove}
                         className={`
-                            relative h-16 bg-surface/50 overflow-x-auto scrollbar-hide
-                            select-none touch-pan-x
-                            ${isDragging ? 'cursor-grabbing' : 'cursor-grab active:cursor-grabbing'}
+                            relative h-16 bg-surface/50 overflow-x-hidden scrollbar-hide
+                            select-none touch-pan-y cursor-default
                         `}
                     >
                         {/* 
@@ -272,7 +271,8 @@ export default function BottomNav() {
                                         to={item.to}
                                         onClick={handleItemClick}
                                         onDragStart={(e) => e.preventDefault()}
-                                        className="flex-1 min-w-[90px] flex-shrink-0 h-full transition-all duration-200 relative group"
+                                        className="h-full transition-all duration-200 relative group"
+                                        style={{ width: `${itemWidthPercent}%` }}
                                     >
                                         <div className="w-full h-full flex flex-col items-center justify-center gap-1 relative z-10">
                                             {/* Icon Container with active effects */}
@@ -332,7 +332,8 @@ export default function BottomNav() {
                                         setShowMenu(!showMenu);
                                     }}
                                     onDragStart={(e) => e.preventDefault()}
-                                    className="flex-1 min-w-[90px] flex-shrink-0 h-full transition-all duration-200 relative group"
+                                    className="h-full transition-all duration-200 relative group"
+                                    style={{ width: `${itemWidthPercent}%` }}
                                 >
                                     <div className="w-full h-full flex flex-col items-center justify-center gap-1 relative z-10">
                                         <div className={`

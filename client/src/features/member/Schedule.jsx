@@ -118,6 +118,22 @@ const handleClassImageError = (event) => {
     event.currentTarget.src = fallbackClassImage;
 };
 
+const getDayButtonValueFromDate = (dateValue) => {
+    const date = new Date(dateValue);
+    if (Number.isNaN(date.getTime())) return null;
+
+    const dayMap = {
+        0: 'SUN',
+        1: 'M',
+        2: 'T',
+        3: 'W',
+        4: 'TH',
+        5: 'F',
+        6: 'S'
+    };
+    return dayMap[date.getDay()] || null;
+};
+
 export default function Schedule() {
     const { alert: showAlert, confirm: showConfirm } = useConfirm();
     const sessionPolicyNote = [
@@ -140,12 +156,12 @@ export default function Schedule() {
     const [filter, setFilter] = useState('all');
     const [showClassFilters, setShowClassFilters] = useState(false);
     const [classSearch, setClassSearch] = useState('');
-    const [selectedDay, setSelectedDay] = useState(null);
+    const [selectedDay, setSelectedDay] = useState(() => getDayButtonValueFromDate(new Date()));
     const [classHistory, setClassHistory] = useState([]);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [historyError, setHistoryError] = useState('');
     const [historyFilter, setHistoryFilter] = useState('all');
-    const [viewMode, setViewMode] = useState('WEEK'); // 'WEEK' or 'MONTH'
+    const viewMode = 'WEEK';
     const [anchorDate, setAnchorDate] = useState(new Date());
 
     const getViewRangeLabel = (date, mode = 'WEEK') => {
@@ -448,6 +464,32 @@ export default function Schedule() {
         { value: 'S', label: 'S' },
         { value: 'SUN', label: 'SUN' }
     ];
+    const selectedDayDateLabel = useMemo(() => {
+        if (!selectedDay) return getViewRangeLabel(anchorDate, viewMode);
+
+        const dayOffsets = {
+            M: 0,
+            T: 1,
+            W: 2,
+            TH: 3,
+            F: 4,
+            S: 5,
+            SUN: 6
+        };
+        const targetOffset = dayOffsets[selectedDay];
+        if (targetOffset === undefined) return getViewRangeLabel(anchorDate, viewMode);
+
+        const weekAnchor = new Date(anchorDate);
+        const day = weekAnchor.getDay();
+        const diff = (day + 6) % 7;
+        weekAnchor.setHours(0, 0, 0, 0);
+        weekAnchor.setDate(weekAnchor.getDate() - diff);
+
+        const selectedDate = new Date(weekAnchor);
+        selectedDate.setDate(weekAnchor.getDate() + targetOffset);
+
+        return selectedDate.toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+    }, [selectedDay, anchorDate, viewMode]);
     const visibleClasses = activeTab === 'my-classes' ? filteredJoinedClasses : filteredClasses;
 
     const showSessionPolicy = async () => {
@@ -494,158 +536,6 @@ export default function Schedule() {
                     </button>
                 )}
             />
-
-            {(activeTab === 'schedule' || activeTab === 'my-classes') && (
-                <div className="space-y-3">
-                    <div className="flex items-center gap-2 p-1 bg-surface/50 backdrop-blur-sm border border-white/10 rounded-2xl">
-                        <button
-                            type="button"
-                            onClick={() => { setViewMode('WEEK'); }}
-                            className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-xl text-[10px] font-black tracking-widest uppercase transition-all ${viewMode === 'WEEK' ? 'bg-primary text-black shadow-lg shadow-primary/20' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
-                        >
-                            <span className="material-icons-round text-sm">view_week</span>
-                            Weekly
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => { setViewMode('MONTH'); }}
-                            className={`flex-1 flex items-center justify-center gap-2 py-1.5 rounded-xl text-[10px] font-black tracking-widest uppercase transition-all ${viewMode === 'MONTH' ? 'bg-primary text-black shadow-lg shadow-primary/20' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
-                        >
-                            <span className="material-icons-round text-sm">calendar_view_month</span>
-                            Calendar
-                        </button>
-                    </div>
-
-                    <div className="flex items-center justify-between bg-surface/50 backdrop-blur-sm border border-white/10 rounded-2xl p-2 sm:p-3">
-                        <button
-                            type="button"
-                            onClick={() => {
-                                const d = new Date(anchorDate);
-                                if (viewMode === 'MONTH') {
-                                    d.setMonth(d.getMonth() - 1);
-                                    d.setDate(1);
-                                } else {
-                                    d.setDate(d.getDate() - 7);
-                                }
-                                setAnchorDate(d);
-                            }}
-                            className="h-9 w-9 flex items-center justify-center rounded-xl bg-surface border border-white/10 text-white hover:bg-white/5 active:scale-90 transition-all"
-                        >
-                            <span className="material-icons-round">chevron_left</span>
-                        </button>
-                        <div className="text-center group cursor-pointer" onClick={() => {
-                            const today = new Date();
-                            setAnchorDate(today);
-                        }}>
-                            <p className="text-[10px] uppercase font-black tracking-widest text-primary mb-0.5 group-hover:text-white transition-colors">
-                                {viewMode === 'WEEK' ? 'Weekly Schedule' : 'Calendar Picker'}
-                            </p>
-                            <p className="text-sm font-bold text-white whitespace-nowrap">{getViewRangeLabel(anchorDate, viewMode)}</p>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                const d = new Date(anchorDate);
-                                if (viewMode === 'MONTH') {
-                                    d.setMonth(d.getMonth() + 1);
-                                    d.setDate(1);
-                                } else {
-                                    d.setDate(d.getDate() + 7);
-                                }
-                                setAnchorDate(d);
-                            }}
-                            className="h-9 w-9 flex items-center justify-center rounded-xl bg-surface border border-white/10 text-white hover:bg-white/5 active:scale-90 transition-all shadow-lg"
-                        >
-                            <span className="material-icons-round">chevron_right</span>
-                        </button>
-                    </div>
-
-                    {/* Today Shortcut */}
-                    {anchorDate.toDateString() !== new Date().toDateString() && (
-                        <div className="flex justify-center mb-4">
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setAnchorDate(new Date());
-                                    // Optionally stay in same viewMode
-                                }}
-                                className="px-4 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-black uppercase tracking-widest hover:bg-primary hover:text-background transition-all active:scale-95 flex items-center gap-2"
-                            >
-                                <span className="material-icons-round text-sm">today</span>
-                                Back to Today
-                            </button>
-                        </div>
-                    )}
-
-                    {viewMode === 'MONTH' && (
-                        <div className="max-w-sm mx-auto w-full bg-surface/50 backdrop-blur-sm border border-white/10 rounded-2xl p-4 animate-in fade-in slide-in-from-top-2 duration-300 shadow-2xl">
-                            <div className="grid grid-cols-7 gap-1 mb-2">
-                                {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, idx) => (
-                                    <div key={idx} className="text-[10px] font-black text-white/30 text-center py-1">
-                                        {day}
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="grid grid-cols-7 gap-1">
-                                {(() => {
-                                    const year = anchorDate.getFullYear();
-                                    const month = anchorDate.getMonth();
-                                    const firstDay = new Date(year, month, 1);
-                                    const lastDay = new Date(year, month + 1, 0);
-                                    
-                                    // Get Monday-aligned start
-                                    const startOffset = (firstDay.getDay() + 6) % 7;
-                                    const days = [];
-                                    
-                                    // Pad start
-                                    for (let i = 0; i < startOffset; i++) {
-                                        days.push(<div key={`pad-${i}`} />);
-                                    }
-                                    
-                                    // Actual days
-                                    const today = new Date();
-                                    today.setHours(0,0,0,0);
-                                    
-                                    for (let d = 1; d <= lastDay.getDate(); d++) {
-                                        const currentDay = new Date(year, month, d);
-                                        const isToday = currentDay.getTime() === today.getTime();
-                                        const isSelected = anchorDate.getDate() === d;
-                                        
-                                        const sessionsOnThisDay = classes.filter(cls => {
-                                            const dDate = getClassSessionDate(cls);
-                                            return dDate && dDate.getFullYear() === year && dDate.getMonth() === month && dDate.getDate() === d;
-                                        });
-
-                                        days.push(
-                                            <button
-                                                key={d}
-                                                type="button"
-                                                onClick={() => {
-                                                    setAnchorDate(new Date(year, month, d));
-                                                    setViewMode('WEEK');
-                                                }}
-                                                className={`aspect-square flex flex-col items-center justify-center rounded-full text-xs font-bold transition-all hover:bg-white/10 active:scale-95 relative ${
-                                                    isSelected 
-                                                        ? 'bg-primary text-background shadow-[0_0_15px_rgba(var(--primary-rgb),0.5)]' 
-                                                        : isToday 
-                                                            ? 'bg-primary/10 text-primary border-2 border-primary/50' 
-                                                            : 'text-white/70'
-                                                }`}
-                                            >
-                                                {d}
-                                                {sessionsOnThisDay.length > 0 && (
-                                                    <div className={`absolute bottom-1 w-1 h-1 rounded-full ${isSelected ? 'bg-background' : 'bg-primary'}`} />
-                                                )}
-                                            </button>
-                                        );
-                                    }
-                                    return days;
-                                })()}
-                            </div>
-                        </div>
-                    )}
-                </div>
-            )}
 
             <section className="space-y-3">
                 <div className="grid grid-cols-3 gap-2 rounded-2xl p-1 bg-surface/80 border border-white/10 shadow-inner">
@@ -713,27 +603,25 @@ export default function Schedule() {
                     <div className="space-y-3">
                         {activeTab === 'schedule' ? (
                             <>
-                                {viewMode === 'WEEK' && (
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <div className={`w-full rounded-xl px-3 py-2.5 text-xs font-bold border ${sessionInfo.classSessionsRemaining > 0
-                                            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                                            : 'border-red-500/30 bg-red-500/10 text-red-300'
-                                            }`}>
-                                            <p className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide opacity-90">
-                                                <span className="material-icons-round text-sm">event_available</span>
-                                                Sessions Left
-                                            </p>
-                                            <p className="mt-1 text-lg font-extrabold">{sessionInfo.classSessionsRemaining}</p>
-                                        </div>
-                                        <div className="w-full rounded-xl px-3 py-2.5 border border-red-500/30 bg-red-500/10 text-red-300">
-                                            <p className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-red-200">
-                                                <span className="material-icons-round text-sm">history</span>
-                                                Sessions Used
-                                            </p>
-                                            <p className="mt-1 text-lg font-extrabold text-red-300">{sessionInfo.classSessionsUsed}</p>
-                                        </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div className={`w-full rounded-xl px-3 py-2.5 text-xs font-bold border ${sessionInfo.classSessionsRemaining > 0
+                                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                                        : 'border-red-500/30 bg-red-500/10 text-red-300'
+                                        }`}>
+                                        <p className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide opacity-90">
+                                            <span className="material-icons-round text-sm">event_available</span>
+                                            Sessions Left
+                                        </p>
+                                        <p className="mt-1 text-lg font-extrabold">{sessionInfo.classSessionsRemaining}</p>
                                     </div>
-                                )}
+                                    <div className="w-full rounded-xl px-3 py-2.5 border border-red-500/30 bg-red-500/10 text-red-300">
+                                        <p className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-red-200">
+                                            <span className="material-icons-round text-sm">history</span>
+                                            Sessions Used
+                                        </p>
+                                        <p className="mt-1 text-lg font-extrabold text-red-300">{sessionInfo.classSessionsUsed}</p>
+                                    </div>
+                                </div>
                                 {sessionInfo.classSessionsRemaining <= 0 && (
                                     <p className="text-xs text-red-400">No class sessions left. Buy a class session package at the front desk to join again.</p>
                                 )}
@@ -824,8 +712,39 @@ export default function Schedule() {
                             <p className="text-[11px] text-text-muted">Showing only classes you already joined.</p>
                         )}
 
-                        {viewMode === 'WEEK' && (
-                            <div className="grid grid-cols-7 gap-2">
+                        <div className="bg-surface/50 backdrop-blur-sm border border-white/10 rounded-2xl p-2 sm:p-3">
+                            <div className="flex items-center justify-between">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const d = new Date(anchorDate);
+                                        d.setDate(d.getDate() - 7);
+                                        setAnchorDate(d);
+                                    }}
+                                    className="h-9 w-9 flex items-center justify-center rounded-xl bg-surface border border-white/10 text-white hover:bg-white/5 active:scale-90 transition-all"
+                                >
+                                    <span className="material-icons-round">chevron_left</span>
+                                </button>
+                                <div className="text-center">
+                                    <p className="text-[10px] uppercase font-black tracking-widest text-primary mb-0.5">
+                                        Weekly Schedule
+                                    </p>
+                                    <p className="text-sm font-bold text-white whitespace-nowrap">{selectedDayDateLabel}</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const d = new Date(anchorDate);
+                                        d.setDate(d.getDate() + 7);
+                                        setAnchorDate(d);
+                                    }}
+                                    className="h-9 w-9 flex items-center justify-center rounded-xl bg-surface border border-white/10 text-white hover:bg-white/5 active:scale-90 transition-all shadow-lg"
+                                >
+                                    <span className="material-icons-round">chevron_right</span>
+                                </button>
+                            </div>
+
+                            <div className="mt-2 border-t border-white/10 pt-2 grid grid-cols-7 gap-2">
                                 {dayButtons.map((day) => (
                                     <button
                                         key={day.value}
@@ -840,7 +759,7 @@ export default function Schedule() {
                                     </button>
                                 ))}
                             </div>
-                        )}
+                        </div>
                     </div>
 
                     <div className="space-y-3">

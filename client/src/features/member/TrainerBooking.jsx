@@ -1177,7 +1177,8 @@ export default function TrainerBooking() {
         });
     };
 
-    const renderCalendar = (month, setMonth, selected, setSelected, isDateAvailable) => {
+    const renderCalendar = (month, setMonth, selected, setSelected, isDateAvailable, options = {}) => {
+        const isFlat = Boolean(options?.isFlat);
         const start = new Date(month.getFullYear(), month.getMonth(), 1);
         const end = new Date(month.getFullYear(), month.getMonth() + 1, 0);
         const leading = start.getDay();
@@ -1189,37 +1190,37 @@ export default function TrainerBooking() {
         while (cells.length % 7 !== 0) cells.push(null);
 
         return (
-            <div className="bg-white/5 backdrop-blur-md rounded-3xl p-6 border border-white/10 shadow-2xl">
-                <div className="flex items-center justify-between mb-8">
+            <div className={`${isFlat ? 'p-1 sm:p-2' : 'bg-white/5 backdrop-blur-md rounded-2xl p-4 sm:p-5 border border-white/10 shadow-2xl'}`}>
+                <div className="flex items-center justify-between mb-5">
                     <button
                         type="button"
                         onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}
-                        className="w-12 h-12 rounded-2xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white transition-all active:scale-95 border border-white/5"
+                        className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white transition-all active:scale-95 border border-white/5"
                     >
                         <span className="material-icons-round">chevron_left</span>
                     </button>
                     <div className="text-center">
                         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/60 mb-1">Select Date</p>
-                        <p className="text-lg font-black text-white px-4">
+                        <p className="text-base sm:text-lg font-black text-white px-3">
                             {month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
                         </p>
                     </div>
                     <button
                         type="button"
                         onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}
-                        className="w-12 h-12 rounded-2xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white transition-all active:scale-95 border border-white/5"
+                        className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white transition-all active:scale-95 border border-white/5"
                     >
                         <span className="material-icons-round">chevron_right</span>
                     </button>
                 </div>
                 
-                <div className="grid grid-cols-7 gap-2 mb-4 text-center">
+                <div className="grid grid-cols-7 gap-1.5 mb-3 text-center">
                     {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
                         <div key={i} className="text-xs font-black text-white/40 uppercase tracking-widest">{d}</div>
                     ))}
                 </div>
 
-                <div className="grid grid-cols-7 gap-2">
+                <div className="grid grid-cols-7 gap-1.5">
                     {cells.map((day, idx) => {
                         if (!day) return <div key={`blank-${idx}`} className="aspect-square" />;
                         const iso = toIsoDate(day);
@@ -1248,9 +1249,9 @@ export default function TrainerBooking() {
                                     });
                                 }}
                                 disabled={isPast || !isAvailable}
-                                    className={`aspect-square rounded-2xl text-lg font-black transition-all duration-300 relative group ${
+                                    className={`aspect-square rounded-xl text-sm sm:text-base font-bold transition-all duration-300 relative group ${
                                     isSelected
-                                        ? 'bg-primary text-background shadow-lg shadow-primary/30 scale-110 z-10'
+                                        ? 'bg-primary text-background shadow-lg shadow-primary/30 scale-105 z-10'
                                         : (isPast || !isAvailable)
                                             ? 'text-white/20 cursor-not-allowed opacity-60 bg-white/[0.02] border border-white/5'
                                             : 'bg-white/5 text-white hover:bg-white/10 hover:border-white/20 border border-white/10 shadow-sm'
@@ -1353,6 +1354,16 @@ export default function TrainerBooking() {
         }
         return slots;
     }, [selectedTrainer, bookingData.duration]);
+
+    const handleRemoveSelectedDate = useCallback((dateIso) => {
+        setSelectedDates((prev) => prev.filter((d) => d !== dateIso));
+        setSelectedTimesByDate((prev) => {
+            if (!(dateIso in prev)) return prev;
+            const next = { ...prev };
+            delete next[dateIso];
+            return next;
+        });
+    }, []);
 
     useEffect(() => {
         if (selectedDates.length === 0) return;
@@ -2304,31 +2315,97 @@ export default function TrainerBooking() {
                             <div className="bg-[#1e293b]/50 backdrop-blur-xl rounded-[2.5rem] border border-white/5 p-6 shadow-2xl">
                                 {/* Integrated Scheduling Logic (Calendar + Times) */}
                                 <div className="space-y-8">
-                                    <div className="bg-white/5 rounded-3xl p-2 border border-white/5">
-                                        {/* Reuse existing Calendar UI but styled SOFT */}
-                                        {renderCalendar(calendarMonth, setCalendarMonth, selectedDates, setSelectedDates, (date) => isTrainerDateAvailable(selectedTrainer, date))}
-                                    </div>
+                                    {/* Reuse existing Calendar UI but styled SOFT */}
+                                    {renderCalendar(
+                                        calendarMonth,
+                                        setCalendarMonth,
+                                        selectedDates,
+                                        setSelectedDates,
+                                        (date) => isTrainerDateAvailable(selectedTrainer, date)
+                                    )}
 
                                     {selectedDates.length > 0 && (
                                         <div className="space-y-4 animate-in fade-in slide-in-from-top-4">
-                                            <h4 className="text-[10px] font-black uppercase tracking-widest text-primary px-2">Pick Your Time</h4>
-                                            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                                                {selectedDates.map(dateIso => {
+                                            <div className="px-2 flex items-center justify-between gap-3">
+                                                <h4 className="text-[10px] font-black uppercase tracking-widest text-primary">Pick Your Time</h4>
+                                                <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/50">
+                                                    {selectedDates.filter((dateIso) => Boolean(selectedTimesByDate[dateIso])).length}/{selectedDates.length} selected
+                                                </span>
+                                            </div>
+
+                                            <div className="space-y-3">
+                                                {selectedDates.map((dateIso) => {
                                                     const slots = getAvailableTimeSlots(dateIso);
-                                                    return slots.map(slot => (
-                                                        <button
-                                                            key={`${dateIso}-${slot}`}
-                                                            onClick={() => {
-                                                                setSelectedTimesByDate({ [dateIso]: slot });
-                                                                setBookingStep(3);
-                                                            }}
-                                                            className="py-3 rounded-xl bg-white/5 border border-white/5 text-xs font-black text-white hover:border-primary/50 hover:bg-primary/10 transition-all"
-                                                        >
-                                                            {formatTimeLabel(slot)}
-                                                        </button>
-                                                    ));
+                                                    const selectedSlot = selectedTimesByDate[dateIso] || '';
+                                                    return (
+                                                        <div key={dateIso} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 sm:p-4 space-y-3">
+                                                            <div className="flex items-center justify-between gap-3">
+                                                                <div>
+                                                                    <p className="text-xs font-black text-white">
+                                                                        {new Date(`${dateIso}T00:00:00`).toLocaleDateString(undefined, {
+                                                                            weekday: 'long',
+                                                                            month: 'short',
+                                                                            day: 'numeric'
+                                                                        })}
+                                                                    </p>
+                                                                    <p className="text-[10px] font-semibold text-white/45">{dateIso}</p>
+                                                                </div>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg border ${selectedSlot
+                                                                        ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20'
+                                                                        : 'text-amber-200 bg-amber-500/10 border-amber-500/20'
+                                                                        }`}>
+                                                                        {selectedSlot ? formatTimeLabel(selectedSlot) : 'Pick time'}
+                                                                    </span>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleRemoveSelectedDate(dateIso)}
+                                                                        className="w-7 h-7 rounded-lg border border-rose-500/25 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 transition-all flex items-center justify-center"
+                                                                        aria-label={`Remove ${dateIso}`}
+                                                                        title="Remove date"
+                                                                    >
+                                                                        <span className="material-icons-round text-sm leading-none">close</span>
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+
+                                                            {slots.length === 0 ? (
+                                                                <p className="text-xs text-white/50 bg-white/5 border border-white/10 rounded-xl px-3 py-2">
+                                                                    No available time slots for this date.
+                                                                </p>
+                                                            ) : (
+                                                                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                                                                    {slots.map((slot) => {
+                                                                        const isSelected = selectedSlot === slot;
+                                                                        return (
+                                                                            <button
+                                                                                key={`${dateIso}-${slot}`}
+                                                                                onClick={() => {
+                                                                                    setSelectedTimesByDate((prev) => ({ ...prev, [dateIso]: slot }));
+                                                                                }}
+                                                                                className={`py-2.5 rounded-xl text-xs font-black transition-all border ${isSelected
+                                                                                    ? 'bg-primary/20 border-primary text-primary'
+                                                                                    : 'bg-white/5 border-white/5 text-white hover:border-primary/50 hover:bg-primary/10'
+                                                                                    }`}
+                                                                            >
+                                                                                {formatTimeLabel(slot)}
+                                                                            </button>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
                                                 })}
                                             </div>
+
+                                            <button
+                                                onClick={() => setBookingStep(3)}
+                                                disabled={selectedDates.length === 0 || selectedDates.some((dateIso) => !selectedTimesByDate[dateIso])}
+                                                className="w-full py-3.5 rounded-2xl bg-primary text-background font-black text-xs uppercase tracking-[0.16em] transition-all duration-300 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
+                                            >
+                                                Continue to Review
+                                            </button>
                                         </div>
                                     )}
                                 </div>
@@ -2373,18 +2450,27 @@ export default function TrainerBooking() {
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="bg-white/5 rounded-2xl border border-white/5 p-4">
-                                            <span className="text-[9px] font-black uppercase tracking-widest text-white/30 block mb-1">Date</span>
-                                            <p className="text-sm font-black text-white">
-                                                {selectedDates[0] ? new Date(selectedDates[0]).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' }) : 'Ready'}
-                                            </p>
-                                        </div>
-                                        <div className="bg-white/5 rounded-2xl border border-white/5 p-4">
-                                            <span className="text-[9px] font-black uppercase tracking-widest text-white/30 block mb-1">Time</span>
-                                            <p className="text-sm font-black text-white">
-                                                {selectedDates[0] && selectedTimesByDate[selectedDates[0]] ? formatTimeLabel(selectedTimesByDate[selectedDates[0]]) : 'Pronto'}
-                                            </p>
+                                    <div className="bg-white/5 rounded-2xl border border-white/5 p-4">
+                                        <span className="text-[9px] font-black uppercase tracking-widest text-white/30 block mb-2">Scheduled Sessions</span>
+                                        <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                                            {selectedDates.map((dateIso) => (
+                                                <div key={dateIso} className="flex items-center justify-between gap-3 rounded-xl bg-black/20 border border-white/10 px-3 py-2">
+                                                    <div className="min-w-0">
+                                                        <p className="text-xs font-bold text-white truncate">
+                                                            {new Date(`${dateIso}T00:00:00`).toLocaleDateString(undefined, {
+                                                                weekday: 'short',
+                                                                month: 'short',
+                                                                day: 'numeric',
+                                                                year: 'numeric'
+                                                            })}
+                                                        </p>
+                                                        <p className="text-[10px] text-white/40 truncate">{dateIso}</p>
+                                                    </div>
+                                                    <p className="text-xs font-black text-primary whitespace-nowrap">
+                                                        {selectedTimesByDate[dateIso] ? formatTimeLabel(selectedTimesByDate[dateIso]) : 'No time'}
+                                                    </p>
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
 

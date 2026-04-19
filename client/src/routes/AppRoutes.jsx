@@ -281,7 +281,7 @@ export default function AppRoutes() {
             ? <Navigate to="/superadmin/tenants" replace />
             : <Navigate to="/dashboard" replace />
         : isStandaloneApp
-            ? <Navigate to="/login" replace />
+            ? <Navigate to="/signup" replace />
             : <Landing />;
 
     useEffect(() => {
@@ -373,7 +373,10 @@ export default function AppRoutes() {
             <Routes>
                 {/* --- PUBLIC ROUTES --- */}
                 <Route path="/" element={rootElement} />
-                <Route path="/landing" element={<Landing />} />
+                <Route
+                    path="/landing"
+                    element={!user && isStandaloneApp ? <Navigate to="/signup" replace /> : <Landing />}
+                />
                 <Route path="/signup" element={<Signup />} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/activate" element={<ActivateAccount />} />

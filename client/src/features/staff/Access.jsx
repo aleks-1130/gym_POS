@@ -7,6 +7,7 @@ import axios from 'axios';
 
 export default function Access() {
     const { user } = useAuth();
+    const isAdmin = user?.role === ROLES.ADMIN;
     const hideStatusPanels = user?.role === ROLES.ADMIN || user?.role === ROLES.STAFF;
     const [latestLogId, setLatestLogId] = useState(null);
     const [status, setStatus] = useState('ONLINE');
@@ -174,19 +175,16 @@ export default function Access() {
     const simulateScan = async () => {
         setScanning(true);
         try {
-            
             const res = await axios.post('/api/access/simulate', { status: 'ALLOWED' });
-
             setTimeout(() => {
                 setScanError('');
                 setLatestLogId(res.data.id);
                 lastScanId.current = res.data.id;
                 setScanning(false);
-                setHistory(prev => [res.data, ...prev].slice(0, 10));
+                setHistory((prev) => [res.data, ...prev].slice(0, 10));
             }, 800);
-
         } catch (err) {
-            console.error("Simulation failed", err);
+            console.error('Simulation failed', err);
             setScanning(false);
         }
     };
@@ -332,7 +330,7 @@ export default function Access() {
                 </section>
             )}
 
-            <div className="grid lg:grid-cols-[1.4fr_0.6fr] gap-6">
+            <div className="grid items-stretch lg:grid-cols-[1.4fr_0.6fr] gap-6">
                 {/* Scanner + Result */}
                 <div className="space-y-6">
                     <div className="bg-surface rounded-3xl border border-white/5 p-6 shadow-sm">
@@ -371,13 +369,15 @@ export default function Access() {
                                 </form>
 
                                 <div className="flex flex-wrap gap-3">
-                                    <button
-                                        onClick={simulateScan}
-                                        disabled={scanning}
-                                        className="px-4 py-2 bg-primary/10 hover:bg-primary/20 disabled:bg-primary/5 text-primary rounded-xl font-bold text-xs uppercase tracking-widest transition-all border border-primary/20"
-                                    >
-                                        Test Scan
-                                    </button>
+                                    {isAdmin && (
+                                        <button
+                                            onClick={simulateScan}
+                                            disabled={scanning}
+                                            className="px-4 py-2 bg-primary/10 hover:bg-primary/20 disabled:bg-primary/5 text-primary rounded-xl font-bold text-xs uppercase tracking-widest transition-all border border-primary/20"
+                                        >
+                                            Test Scan
+                                        </button>
+                                    )}
                                     <button
                                         onClick={() => setLatestLogId(null)}
                                         className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold text-xs uppercase tracking-widest border border-white/5 transition-all"
@@ -418,7 +418,7 @@ export default function Access() {
                     </div>
                 </div>
 
-                <div className="space-y-4">
+                <div className={hideStatusPanels ? 'lg:h-[calc(100vh-170px)]' : 'space-y-4'}>
                     {!hideStatusPanels && (
                         <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4">
                             <div className="flex items-center gap-2">
@@ -441,7 +441,7 @@ export default function Access() {
                     )}
 
                     {/* Live Feed */}
-                    <div className="bg-surface rounded-3xl border border-white/5 overflow-hidden shadow-sm">
+                    <div className={`bg-surface rounded-3xl border border-white/5 overflow-hidden shadow-sm flex flex-col min-h-[420px] ${hideStatusPanels ? 'h-full' : ''}`}>
                         <div className="p-5 border-b border-white/5 bg-white/5 flex items-center justify-between gap-3">
                             <div className="flex items-center gap-3 min-w-0">
                                 <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center shrink-0">
@@ -470,7 +470,7 @@ export default function Access() {
                             </div>
                         </div>
 
-                        <div className="max-h-[calc(100vh-360px)] overflow-y-auto p-4 space-y-3">
+                        <div className={`${hideStatusPanels ? 'flex-1' : 'max-h-[calc(100vh-360px)]'} overflow-y-auto p-4 space-y-3`}>
                             {history.map((log) => {
                                 const entity = getEntity(log);
                                 const isFreezeBlocked = String(log.status || '').toUpperCase() !== 'ALLOWED' && isFreezeBlockedLog(log);

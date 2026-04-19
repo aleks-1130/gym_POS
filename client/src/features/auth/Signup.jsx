@@ -17,6 +17,16 @@ export default function Signup() {
             <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-primary/10 blur-[120px] rounded-full"></div>
 
             <div className="relative w-full max-w-md bg-white/5 backdrop-blur-2xl border border-white/10 p-10 rounded-[2.5rem] shadow-2xl z-10">
+                <div className="mb-8">
+                    <Link
+                        to="/"
+                        className="inline-flex items-center gap-1.5 px-1 py-1 text-[13px] font-semibold text-gray-300 transition-colors duration-200 hover:text-primary"
+                    >
+                        <span className="material-icons-round text-sm">arrow_back</span>
+                        Back
+                    </Link>
+                </div>
+
                 <div className="text-center mb-10">
                     <h1 className="text-4xl font-black italic tracking-tighter uppercase">
                         Fit<span className="text-primary">OS</span>
@@ -26,14 +36,17 @@ export default function Signup() {
 
                 <div className="space-y-6">
                     {steps.map((step, index) => (
-                        <div key={index} className="flex flex-row gap-4 items-start">
+                        <div
+                            key={index}
+                            className="relative flex flex-row gap-4 items-start rounded-2xl border border-transparent px-2 py-2 transition-colors duration-200 hover:border-primary/40 hover:bg-primary/10"
+                        >
+                            {index !== steps.length - 1 && (
+                                <div className="absolute bottom-[-1.5rem] left-[1.75rem] top-10 w-px bg-white/10"></div>
+                            )}
                             <div className="flex flex-col items-center">
                                 <div className="w-10 h-10 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold relative z-10">
                                     <span className="material-icons-round text-xl">{step.icon}</span>
                                 </div>
-                                {index !== steps.length - 1 && (
-                                    <div className="w-px h-12 bg-white/10 absolute mt-10"></div>
-                                )}
                             </div>
                             <div className="pt-1">
                                 <h3 className="font-bold text-lg text-white">{index + 1}. {step.title}</h3>
@@ -43,16 +56,13 @@ export default function Signup() {
                     ))}
                 </div>
 
-                <div className="mt-10 pt-8 border-t border-white/10 space-y-4 text-center">
-                    <p className="text-gray-400 text-sm">
-                        Already a member?
-                        <Link to="/login" className="text-primary font-bold hover:underline ml-1">
-                            Sign In
-                        </Link>
-                    </p>
-                    <Link to="/" className="inline-flex items-center gap-2 text-xs text-text-muted hover:text-white transition-colors uppercase tracking-widest font-black">
-                        <span className="material-icons-round text-sm">arrow_back</span>
-                        Back
+                <div className="mt-10 pt-8 border-t border-white/10 text-center">
+                    <p className="text-gray-400 text-sm">Already a member?</p>
+                    <Link
+                        to="/login"
+                        className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-primary/40 px-6 py-2.5 text-sm font-semibold text-primary transition-colors duration-200 hover:bg-primary hover:text-background"
+                    >
+                        Sign In
                     </Link>
                 </div>
             </div>

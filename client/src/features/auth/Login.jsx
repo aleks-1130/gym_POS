@@ -117,10 +117,12 @@ export default function Login() {
                         <div className="absolute inset-0 bg-black/55"></div>
                     </div>
                     <div className="relative z-10 flex h-full flex-col justify-between px-5 pb-8 pt-6">
-                        <span className="inline-flex w-fit items-center gap-2 rounded-full border border-white/20 bg-black/35 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-white/90">
-                            <span className="material-icons-round text-sm text-primary">fitness_center</span>
-                            FitOS
-                        </span>
+                        <div>
+                            <h2 className="text-4xl font-black italic tracking-tighter uppercase text-white">
+                                Fit<span className="text-primary">OS</span>
+                            </h2>
+                            <div className="mt-3 h-px w-16 bg-white/20"></div>
+                        </div>
                         <div>
                             <h1 className="text-3xl font-bold text-white">Welcome back</h1>
                             <p className="mt-2 max-w-xs text-sm leading-relaxed text-white/80">
@@ -131,7 +133,7 @@ export default function Login() {
                 </div>
 
                 <section className="relative -mt-6 min-h-[calc(50vh+1.5rem)] rounded-t-3xl bg-background px-5 pb-8 pt-6">
-                    <div className="mx-auto w-full max-w-sm">
+                    <div className="mx-auto w-full max-w-sm rounded-3xl border border-white/10 bg-surface/80 p-5 shadow-2xl shadow-black/30 backdrop-blur-xl">
                         {renderLoginForm('mobile-login')}
                     </div>
                 </section>
@@ -144,10 +146,12 @@ export default function Login() {
                 <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl items-center px-10 py-8">
                     <div className="grid w-full overflow-hidden rounded-3xl border border-white/10 bg-surface/80 shadow-2xl shadow-black/40 backdrop-blur-xl lg:grid-cols-2">
                         <section className="p-12">
-                            <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-background/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-text-muted">
-                                <span className="material-icons-round text-sm text-primary">fitness_center</span>
-                                FitOS
-                            </span>
+                            <div>
+                                <h2 className="text-4xl font-black italic tracking-tighter uppercase text-white">
+                                    Fit<span className="text-primary">OS</span>
+                                </h2>
+                                <div className="mt-3 h-px w-20 bg-white/15"></div>
+                            </div>
                             <h1 className="mt-4 text-4xl font-bold text-white">Welcome back</h1>
                             <p className="mt-2 text-base leading-relaxed text-text-muted">
                                 Sign in to continue managing members, billing, and gym operations.
