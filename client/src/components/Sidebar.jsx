@@ -33,14 +33,14 @@ export default function Sidebar() {
     });
 
     const unreadCount = notifications ? notifications.filter(n => !n.isRead).length : 0;
-    const isDenseSidebar = user?.role === ROLES.ADMIN;
+    const isDenseSidebar = user?.role === ROLES.ADMIN || user?.role === ROLES.OWNER;
 
     const NavItem = ({ to, icon, label }) => (
         <NavLink
             to={to}
             onClick={() => setIsMobileOpen(false)}
             className={({ isActive }) => `
-                relative group flex items-center ${isDenseSidebar ? 'gap-3 px-3 py-1.5 rounded-lg' : 'gap-3 px-3 py-2.5 rounded-xl'} transition-all duration-200
+                relative group flex items-center min-w-0 ${isDenseSidebar ? 'gap-3 px-3 py-1.5 rounded-lg' : 'gap-3 px-3 py-2.5 rounded-xl'} transition-all duration-200
                 ${isActive
                     ? 'bg-primary text-white shadow-lg shadow-primary/25'
                     : 'text-text-secondary hover:bg-white/5 hover:text-white'
@@ -49,8 +49,8 @@ export default function Sidebar() {
         >
             {({ isActive }) => (
                 <>
-                    <span className={`material-icons-round flex-shrink-0 ${isDenseSidebar ? 'text-[20px]' : 'text-[19px]'}`}>{icon}</span>
-                    <span className={`font-semibold ${isDenseSidebar ? 'text-[13px]' : 'text-[13px]'} whitespace-nowrap transition-all duration-300 ${isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'}`}>
+                    <span className={`material-icons-round flex-shrink-0 ${isDenseSidebar ? 'text-[18px] sm:text-[20px]' : 'text-[17px] sm:text-[19px]'}`}>{icon}</span>
+                    <span className={`font-semibold flex-1 ${isDenseSidebar ? 'text-xs sm:text-[13px]' : 'text-xs sm:text-[13px]'} truncate transition-all duration-300 ${isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'}`}>
                         {label}
                     </span>
                     {(label === 'Announcements' || label === 'Broadcast') && unreadCount > 0 && (
@@ -74,7 +74,7 @@ export default function Sidebar() {
             to={to}
             onClick={() => setIsMobileOpen(false)}
             className={({ isActive }) => `
-                relative group flex items-center ${isDenseSidebar ? 'gap-2.5 px-2.5 py-1.5 rounded-lg' : 'gap-3 px-3 py-2 rounded-xl'} transition-all duration-200
+                relative group flex items-center min-w-0 ${isDenseSidebar ? 'gap-2.5 px-2.5 py-1.5 rounded-lg' : 'gap-3 px-3 py-2 rounded-xl'} transition-all duration-200
                 ${tone === 'default'
                     ? (isActive
                         ? 'bg-primary/20 border border-primary/30 text-white'
@@ -84,8 +84,8 @@ export default function Sidebar() {
                 ${isCollapsed ? 'lg:justify-center' : ''}
             `}
         >
-            <span className={`material-icons-round flex-shrink-0 ${isDenseSidebar ? 'text-[19px]' : 'text-[19px]'}`}>{icon}</span>
-            <span className={`font-semibold ${isDenseSidebar ? 'text-[12px]' : 'text-[13px]'} whitespace-nowrap transition-all duration-300 ${isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'}`}>
+            <span className={`material-icons-round flex-shrink-0 ${isDenseSidebar ? 'text-[17px] sm:text-[19px]' : 'text-[17px] sm:text-[19px]'}`}>{icon}</span>
+            <span className={`font-semibold flex-1 ${isDenseSidebar ? 'text-[11px] sm:text-[12px]' : 'text-xs sm:text-[13px]'} truncate transition-all duration-300 ${isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'}`}>
                 {label}
             </span>
         </NavLink>
@@ -286,7 +286,7 @@ export default function Sidebar() {
                 </div>
 
                 {/* Navigation */}
-                <nav className={`flex-1 flex flex-col px-3 overflow-y-auto overflow-x-hidden ${isDenseSidebar ? 'py-2.5 gap-0.5' : 'py-4 gap-1'} ${!isDenseSidebar ? 'no-scrollbar' : ''}`}>
+                <nav className={`flex-1 flex flex-col px-3 overflow-y-auto overflow-x-hidden no-scrollbar ${isDenseSidebar ? 'py-2.5 gap-0.5' : 'py-4 gap-1'}`}>
                     <NavItem to="/dashboard" icon="dashboard" label="Dashboard" />
 
                     {currentMenu.map((section, idx) => (
@@ -334,12 +334,12 @@ export default function Sidebar() {
                     {/* Logout Button */}
                     <button
                         onClick={logout}
-                        className={`w-full flex items-center ${isDenseSidebar ? 'gap-2.5 px-2.5 py-2 rounded-lg' : 'gap-3 px-3 py-2.5 rounded-xl'} text-text-secondary hover:bg-red-500/10 hover:text-red-400 transition-all group ${isCollapsed ? 'lg:justify-center' : ''}`}
+                        className={`w-full flex items-center min-w-0 ${isDenseSidebar ? 'gap-2.5 px-2.5 py-2 rounded-lg' : 'gap-3 px-3 py-2.5 rounded-xl'} text-text-secondary hover:bg-red-500/10 hover:text-red-400 transition-all group ${isCollapsed ? 'lg:justify-center' : ''}`}
                     >
-                        <span className={`material-icons-round flex-shrink-0 group-hover:rotate-12 transition-transform ${isDenseSidebar ? 'text-[19px]' : 'text-[19px]'}`}>
+                        <span className={`material-icons-round flex-shrink-0 group-hover:rotate-12 transition-transform ${isDenseSidebar ? 'text-[17px] sm:text-[19px]' : 'text-[17px] sm:text-[19px]'}`}>
                             logout
                         </span>
-                        <span className={`font-semibold ${isDenseSidebar ? 'text-[13px]' : 'text-sm'} transition-all duration-300 ${isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'}`}>
+                        <span className={`font-semibold flex-1 text-left ${isDenseSidebar ? 'text-xs sm:text-[13px]' : 'text-xs sm:text-sm'} truncate transition-all duration-300 ${isCollapsed ? 'lg:opacity-0 lg:w-0 lg:overflow-hidden' : 'opacity-100'}`}>
                             Sign Out
                         </span>
                     </button>

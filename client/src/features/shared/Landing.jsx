@@ -116,6 +116,13 @@ const FitOSLanding = () => {
                                 >
                                     FAQ
                                 </button>
+                                <Link
+                                    to="/signup"
+                                    onClick={() => setIsMenuOpen(false)}
+                                    className="mx-4 mt-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white px-6 py-3 rounded-lg font-semibold hover:from-orange-600 hover:to-orange-700 transition-all text-center"
+                                >
+                                    Get Started
+                                </Link>
                             </div>
                         </div>
                     )}

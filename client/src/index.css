@@ -37,3 +37,12 @@ select option {
 ::-webkit-scrollbar-thumb:hover {
   background: #4B5563;
 }
+
+/* Utility class to hide scrollbar */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+}
+.no-scrollbar {
+  -ms-overflow-style: none !important;  /* IE and Edge */
+  scrollbar-width: none !important;  /* Firefox */
+}

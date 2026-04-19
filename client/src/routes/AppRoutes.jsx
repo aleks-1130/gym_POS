@@ -375,7 +375,7 @@ export default function AppRoutes() {
                 <Route path="/" element={rootElement} />
                 <Route
                     path="/landing"
-                    element={!user && isStandaloneApp ? <Navigate to="/signup" replace /> : <Landing />}
+                    element={!user && isStandaloneApp ? <Navigate to="/login" replace /> : <Landing />}
                 />
                 <Route path="/signup" element={<Signup />} />
                 <Route path="/login" element={<Login />} />
