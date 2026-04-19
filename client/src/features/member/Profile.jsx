@@ -29,6 +29,7 @@ export default function Profile() {
         newPassword: ''
     });
     const isMember = user?.role === ROLES.MEMBER;
+    const profileContainerClass = isMember ? 'max-w-4xl' : 'max-w-[110rem]';
     const membershipLockState = String(new URLSearchParams(location.search).get('membership') || '').toLowerCase();
     const showMembershipLockNotice = membershipLockState === 'expired' || membershipLockState === 'freezed' || membershipLockState === 'frozen';
 
@@ -216,7 +217,7 @@ export default function Profile() {
     };
 
     return (
-        <div className="space-y-4 max-w-4xl mx-auto">
+        <div className={`space-y-4 ${profileContainerClass} mx-auto`}>
             <header className="sticky top-0 z-40 -mx-4 px-4 py-3 bg-background/90 backdrop-blur border-b border-white/5">
                 <div className="flex items-center gap-3">
                     <div className="flex items-center gap-3 min-w-0">

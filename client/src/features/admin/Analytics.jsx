@@ -16,7 +16,7 @@ const Analytics = () => {
     });
     const [viewMode, setViewMode] = useState('OVERVIEW');
 
-    const { data, isLoading: loading, error } = useQuery({
+    const { data, isLoading: loading } = useQuery({
         queryKey: ['analytics', dateRange],
         queryFn: async () => {
             const response = await axios.get(withApiBase('/api/analytics'), {
@@ -66,26 +66,17 @@ const Analytics = () => {
     };
 
     return (
-        <div className="flex h-screen bg-background overflow-hidden">
-            {/* Sidebar would be here in the layout wrapper, assuming Analytics is rendered inside Layout */}
-
-            <div className="flex-1 flex flex-col h-full overflow-hidden">
-                {/* Header with Filters */}
-                <AnalyticsHeader
-                    dateRange={dateRange}
-                    setDateRange={setDateRange}
-                    viewMode={viewMode}
-                    setViewMode={setViewMode}
-                    loading={loading}
-                    onPrint={handlePrint}
-                />
-
-                {/* Main Content Area */}
-                <div className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-                    <div className="max-w-7xl mx-auto pb-20">
-                        {renderView()}
-                    </div>
-                </div>
+        <div className="space-y-6 pb-10 max-w-[110rem] mx-auto">
+            <AnalyticsHeader
+                dateRange={dateRange}
+                setDateRange={setDateRange}
+                viewMode={viewMode}
+                setViewMode={setViewMode}
+                loading={loading}
+                onPrint={handlePrint}
+            />
+            <div className="pb-16">
+                {renderView()}
             </div>
         </div>
     );

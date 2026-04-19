@@ -1,5 +1,5 @@
 import { useConfirm } from '../../context/ConfirmContext';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCurrency } from '../../context/CurrencyContext';
@@ -13,6 +13,7 @@ const Payroll = () => {
     const queryClient = useQueryClient();
     const activeTab = 'TRAINERS';
     const [trainerFilter, setTrainerFilter] = useState('ALL'); // ALL, FREELANCER, FULLTIME
+    const [trainerSearch, setTrainerSearch] = useState('');
 
     // Date Filter State
     const [dateFilterType, setDateFilterType] = useState('THIS_MONTH');
@@ -229,7 +230,24 @@ const Payroll = () => {
         );
     };
 
-    const filteredTrainers = trainers.filter((trainer) => trainerFilter === 'ALL' || trainer.type === trainerFilter);
+    const filteredTrainers = useMemo(() => {
+        const normalizedSearch = trainerSearch.trim().toLowerCase();
+        return trainers.filter((trainer) => {
+            const matchesType = trainerFilter === 'ALL' || trainer.type === trainerFilter;
+            if (!matchesType) return false;
+            if (!normalizedSearch) return true;
+
+            const haystack = [
+                trainer.name,
+                trainer.type === 'FREELANCER' ? 'freelancer' : 'full-time'
+            ]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase();
+
+            return haystack.includes(normalizedSearch);
+        });
+    }, [trainers, trainerFilter, trainerSearch]);
     const trainerGrossPending = filteredTrainers.reduce((sum, trainer) => sum + Number(trainer.unpaidCommissions || 0), 0);
     const trainerOutstandingDeductions = filteredTrainers.reduce((sum, trainer) => sum + Number(trainer.outstandingMaterialDeductions || 0), 0);
     const trainerNetRelease = Math.max(0, trainerGrossPending - trainerOutstandingDeductions);
@@ -397,11 +415,11 @@ const Payroll = () => {
     );
 
     return (
-        <div className="space-y-5">
-            <header className="rounded-3xl border border-white/10 bg-surface p-5 shadow-sm">
+        <div className="space-y-5 pb-10 max-w-[110rem] mx-auto">
+            <header>
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
-                        <h1 className="text-2xl font-bold text-white">Payroll & Salaries</h1>
+                        <h1 className="text-3xl font-bold text-white">Payroll & Salaries</h1>
                         <p className="mt-1 text-sm text-text-muted">Track compensation, commissions, and deduction settlements.</p>
                     </div>
 
@@ -469,24 +487,43 @@ const Payroll = () => {
                 </div>
             </section>
 
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="rounded-xl border border-white/10 bg-surfaceHighlight px-4 py-2.5 md:max-w-xl">
-                    <p className="text-sm font-semibold text-white">Trainer Payroll View</p>
-                </div>
+            <div className="rounded-2xl border border-white/10 bg-surface p-3">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="w-full lg:max-w-md">
+                        <label className="block text-[10px] uppercase tracking-widest text-text-muted font-bold mb-1">Search Trainer</label>
+                        <input
+                            type="text"
+                            value={trainerSearch}
+                            onChange={(e) => setTrainerSearch(e.target.value)}
+                            placeholder="Search by trainer name..."
+                            className="w-full rounded-xl border border-white/10 bg-surfaceHighlight px-3 py-2 text-sm text-white outline-none focus:border-primary"
+                        />
+                    </div>
 
-                <div className="inline-flex flex-wrap gap-2 md:justify-end">
-                    {[{ label: 'All', value: 'ALL' }, { label: 'Freelancers', value: 'FREELANCER' }, { label: 'Full-time', value: 'FULLTIME' }].map(f => (
+                    <div className="flex flex-wrap items-center gap-2">
+                        {[{ label: 'All', value: 'ALL' }, { label: 'Freelancers', value: 'FREELANCER' }, { label: 'Full-time', value: 'FULLTIME' }].map((f) => (
+                            <button
+                                key={f.value}
+                                onClick={() => setTrainerFilter(f.value)}
+                                className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${trainerFilter === f.value
+                                    ? 'border-primary/50 bg-primary/10 text-primary'
+                                    : 'border-white/10 text-text-secondary hover:text-white'
+                                    }`}
+                            >
+                                {f.label}
+                            </button>
+                        ))}
                         <button
-                            key={f.value}
-                            onClick={() => setTrainerFilter(f.value)}
-                            className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${trainerFilter === f.value
-                                ? 'border-primary/50 bg-primary/10 text-primary'
-                                : 'border-white/10 text-text-secondary hover:text-white'
-                                }`}
+                            type="button"
+                            onClick={() => {
+                                setTrainerSearch('');
+                                setTrainerFilter('ALL');
+                            }}
+                            className="rounded-full border border-white/10 px-3 py-1 text-xs font-semibold text-text-secondary hover:text-white transition-colors"
                         >
-                            {f.label}
+                            Clear
                         </button>
-                    ))}
+                    </div>
                 </div>
             </div>
 

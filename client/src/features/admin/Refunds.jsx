@@ -146,99 +146,90 @@ export default function Refunds() {
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div>
-                    <div className="flex items-center gap-4">
-                        <h1 className="text-2xl font-bold text-white">Refunds &amp; Voids</h1>
-                        {/* Tab toggle */}
-                        <div className="flex bg-surface border border-white/10 p-1 rounded-xl">
-                            <button
-                                onClick={() => setActiveTab('HISTORY')}
-                                className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-colors ${activeTab === 'HISTORY'
-                                    ? 'bg-primary text-background'
-                                    : 'text-text-secondary hover:text-white'
-                                    }`}
+            <div className="space-y-4">
+                <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+                    <div>
+                        <h1 className="text-3xl font-bold text-white">Refunds &amp; Voids</h1>
+                        <p className="text-text-muted text-sm mt-1">
+                            {activeTab === 'HISTORY'
+                                ? 'View voided and returned transactions'
+                                : 'Pending refund exception requests awaiting review'}
+                        </p>
+                    </div>
+
+                    {/* Filters (only relevant for history) */}
+                    {activeTab === 'HISTORY' && (
+                        <div className="flex items-center gap-3">
+                            <select
+                                value={dateFilterType}
+                                onChange={(e) => setDateFilterType(e.target.value)}
+                                className="bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-colors"
                             >
-                                History
-                            </button>
+                                <option value="ALL_TIME">All Time</option>
+                                <option value="THIS_MONTH">This Month</option>
+                                <option value="LAST_MONTH">Last Month</option>
+                                <option value="THIS_YEAR">This Year</option>
+                                <option value="CUSTOM">Custom Range</option>
+                            </select>
+
+                            {dateFilterType === 'CUSTOM' && (
+                                <div className="flex items-center gap-2 bg-surface border border-white/10 rounded-lg px-2">
+                                    <input
+                                        type="date"
+                                        value={dateRange.start}
+                                        onChange={(e) => setDateRange((p) => ({ ...p, start: e.target.value }))}
+                                        className="bg-transparent border-none text-white text-sm focus:ring-0 p-2 outline-none [color-scheme:dark]"
+                                    />
+                                    <span className="text-text-muted">ΓåÆ</span>
+                                    <input
+                                        type="date"
+                                        value={dateRange.end}
+                                        onChange={(e) => setDateRange((p) => ({ ...p, end: e.target.value }))}
+                                        className="bg-transparent border-none text-white text-sm focus:ring-0 p-2 outline-none [color-scheme:dark]"
+                                    />
+                                </div>
+                            )}
+
                             <button
-                                onClick={() => setActiveTab('EXCEPTIONS')}
-                                className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-colors flex items-center gap-2 ${activeTab === 'EXCEPTIONS'
-                                    ? 'bg-primary text-background'
-                                    : 'text-text-secondary hover:text-white'
-                                    }`}
+                                onClick={() => fetchHistory(currentPage)}
+                                className="text-text-secondary hover:text-primary flex items-center gap-1 transition-colors px-3 py-2 rounded-lg border border-white/10 bg-surface"
                             >
-                                Exceptions
-                                {refundExceptionRequests.length > 0 && (
-                                    <span
-                                        className={`text-[10px] px-2 py-0.5 rounded-full font-black ${activeTab === 'EXCEPTIONS'
-                                            ? 'bg-background/20'
-                                            : 'bg-red-500 text-white'
-                                            }`}
-                                    >
-                                        {refundExceptionRequests.length}
-                                    </span>
-                                )}
+                                <span className="material-icons-round">refresh</span>
                             </button>
                         </div>
-                    </div>
-                    <p className="text-text-muted text-sm mt-1">
-                        {activeTab === 'HISTORY'
-                            ? 'View voided and returned transactions'
-                            : 'Pending refund exception requests awaiting review'}
-                    </p>
-                </div>
+                    )}
 
-                {/* Filters (only relevant for history) */}
-                {activeTab === 'HISTORY' && (
-                    <div className="flex items-center gap-3">
-                        <select
-                            value={dateFilterType}
-                            onChange={(e) => setDateFilterType(e.target.value)}
-                            className="bg-surface border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary transition-colors"
-                        >
-                            <option value="ALL_TIME">All Time</option>
-                            <option value="THIS_MONTH">This Month</option>
-                            <option value="LAST_MONTH">Last Month</option>
-                            <option value="THIS_YEAR">This Year</option>
-                            <option value="CUSTOM">Custom Range</option>
-                        </select>
-
-                        {dateFilterType === 'CUSTOM' && (
-                            <div className="flex items-center gap-2 bg-surface border border-white/10 rounded-lg px-2">
-                                <input
-                                    type="date"
-                                    value={dateRange.start}
-                                    onChange={(e) => setDateRange((p) => ({ ...p, start: e.target.value }))}
-                                    className="bg-transparent border-none text-white text-sm focus:ring-0 p-2 outline-none [color-scheme:dark]"
-                                />
-                                <span className="text-text-muted">ΓåÆ</span>
-                                <input
-                                    type="date"
-                                    value={dateRange.end}
-                                    onChange={(e) => setDateRange((p) => ({ ...p, end: e.target.value }))}
-                                    className="bg-transparent border-none text-white text-sm focus:ring-0 p-2 outline-none [color-scheme:dark]"
-                                />
-                            </div>
-                        )}
-
+                    {activeTab === 'EXCEPTIONS' && (
                         <button
-                            onClick={() => fetchHistory(currentPage)}
+                            onClick={fetchRefundExceptionRequests}
                             className="text-text-secondary hover:text-primary flex items-center gap-1 transition-colors px-3 py-2 rounded-lg border border-white/10 bg-surface"
                         >
                             <span className="material-icons-round">refresh</span>
                         </button>
-                    </div>
-                )}
+                    )}
+                </div>
 
-                {activeTab === 'EXCEPTIONS' && (
+                <div className="flex gap-4 border-b border-white/10">
                     <button
-                        onClick={fetchRefundExceptionRequests}
-                        className="text-text-secondary hover:text-primary flex items-center gap-1 transition-colors px-3 py-2 rounded-lg border border-white/10 bg-surface"
+                        onClick={() => setActiveTab('HISTORY')}
+                        className={`pb-4 px-2 font-bold text-sm transition-colors relative ${activeTab === 'HISTORY' ? 'text-primary' : 'text-text-muted hover:text-white'}`}
                     >
-                        <span className="material-icons-round">refresh</span>
+                        History
+                        {activeTab === 'HISTORY' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary rounded-t-full"></div>}
                     </button>
-                )}
+                    <button
+                        onClick={() => setActiveTab('EXCEPTIONS')}
+                        className={`pb-4 px-2 font-bold text-sm transition-colors relative flex items-center gap-2 ${activeTab === 'EXCEPTIONS' ? 'text-primary' : 'text-text-muted hover:text-white'}`}
+                    >
+                        <span>Exceptions</span>
+                        {refundExceptionRequests.length > 0 && (
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${activeTab === 'EXCEPTIONS' ? 'bg-primary/20 text-primary' : 'bg-red-500 text-white'}`}>
+                                {refundExceptionRequests.length}
+                            </span>
+                        )}
+                        {activeTab === 'EXCEPTIONS' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-primary rounded-t-full"></div>}
+                    </button>
+                </div>
             </div>
 
             {/* ΓöÇΓöÇ HISTORY TAB ΓöÇΓöÇ */}

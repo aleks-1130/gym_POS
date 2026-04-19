@@ -1022,7 +1022,7 @@ const getAllPayments = async (req, res) => {
     }
 
     // Staff/Admin: see all
-    const { startDate, endDate, page, limit } = req.query;
+    const { startDate, endDate, page, limit, search } = req.query;
     const where = {
         gymId: req.user.gymId,
         gym: { tenantId } // Enforce Tenant Isolation
@@ -1040,6 +1040,26 @@ const getAllPayments = async (req, res) => {
             date.lte = parsedEnd;
         }
         where.date = date;
+    }
+
+    const normalizedSearch = String(search || '').trim();
+    if (normalizedSearch) {
+        const searchFilters = [
+            { referenceId: { contains: normalizedSearch, mode: 'insensitive' } },
+            { type: { contains: normalizedSearch, mode: 'insensitive' } },
+            { method: { contains: normalizedSearch, mode: 'insensitive' } },
+            { status: { contains: normalizedSearch, mode: 'insensitive' } },
+            { member: { is: { firstName: { contains: normalizedSearch, mode: 'insensitive' } } } },
+            { member: { is: { lastName: { contains: normalizedSearch, mode: 'insensitive' } } } },
+            { cashier: { is: { name: { contains: normalizedSearch, mode: 'insensitive' } } } }
+        ];
+
+        const paymentId = Number(normalizedSearch);
+        if (Number.isInteger(paymentId) && paymentId > 0) {
+            searchFilters.push({ id: paymentId });
+        }
+
+        where.OR = searchFilters;
     }
 
     if (page && limit) {

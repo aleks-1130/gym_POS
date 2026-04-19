@@ -543,7 +543,7 @@ export default function PosSettings() {
             )}
 
             {activeTab === TABS.RECEIPT && (
-                <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+                <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(420px,560px)]">
                     <div className="rounded-3xl border border-white/5 bg-surface p-6 shadow-sm">
                         <h3 className="text-xl font-black text-white mb-1">Receipt Template</h3>
                         <p className="text-sm text-text-muted mb-6">Edit compliance text and display formatting used by printed and previewed receipts.</p>

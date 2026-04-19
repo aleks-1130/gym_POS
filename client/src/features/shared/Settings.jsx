@@ -573,7 +573,7 @@ export default function Settings() {
     const savings = totalRefPrice - Number(packageFormData.price || 0);
 
     return (
-        <div className="space-y-8 max-w-6xl mx-auto">
+        <div className="space-y-8 max-w-[110rem] mx-auto">
             <header>
                 <h1 className="text-3xl font-bold text-white">System Settings</h1>
                 <p className="text-text-muted mt-1">
@@ -1380,7 +1380,7 @@ export default function Settings() {
             )}
 
             {isOwner && activeTab === 'branding' && (
-                <div className="bg-surface rounded-3xl border border-white/5 p-8 shadow-sm max-w-2xl">
+                <div className="bg-surface rounded-3xl border border-white/5 p-8 shadow-sm max-w-5xl">
                     <h3 className="text-xl font-bold text-white mb-6">Branch Profile</h3>
                     <form onSubmit={handleProfileSave} className="space-y-6">
                         <div>
@@ -1412,7 +1412,7 @@ export default function Settings() {
             )}
 
             {isOwner && activeTab === 'branch_settings' && (
-                <div className="bg-surface rounded-3xl border border-white/5 p-8 shadow-sm max-w-2xl">
+                <div className="bg-surface rounded-3xl border border-white/5 p-8 shadow-sm max-w-5xl">
                     <h3 className="text-xl font-bold text-white mb-6">Branch Operations</h3>
                     <form onSubmit={handleProfileSave} className="space-y-6">
                         <div className="grid grid-cols-2 gap-6">

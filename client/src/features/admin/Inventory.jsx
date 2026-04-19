@@ -246,7 +246,7 @@ function ProductsTab({ navigate }) {
                         </button>
                     </div>
                 </div>
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mt-4">
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(420px,1.8fr)_minmax(180px,0.8fr)] gap-3 mt-4">
                     <input
                         value={searchTerm}
                         onChange={applySearch}
@@ -263,16 +263,6 @@ function ProductsTab({ navigate }) {
                             <option key={category.id} value={category.name}>{category.name}</option>
                         ))}
                     </select>
-                    <button
-                        onClick={() => {
-                            setPage(1);
-                            setSearchTerm('');
-                            setCategoryFilter('');
-                        }}
-                        className="w-full lg:w-auto px-4 py-2.5 rounded-xl border border-white/10 text-text-secondary hover:text-white hover:bg-white/5"
-                    >
-                        Reset Filters
-                    </button>
                 </div>
             </div>
 

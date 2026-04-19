@@ -36,6 +36,7 @@ import Expenses from '../features/admin/Expenses';
 import TrainingManager from '../features/admin/TrainingManager';
 import PosSettings from '../features/admin/PosSettings';
 import Transactions from '../features/admin/Transactions';
+import AdminAccountSettings from '../features/admin/AdminAccountSettings';
 import Refunds from '../features/admin/Refunds';
 import Trainers from '../features/admin/Trainers';
 import Classes from '../features/admin/Classes';
@@ -834,7 +835,11 @@ export default function AppRoutes() {
                     path="/profile"
                     element={
                         <ProtectedRoute allowedRoles={[ROLES.OWNER, ROLES.MEMBER, ROLES.ADMIN, ROLES.STAFF]}>
-                            {user?.role === ROLES.STAFF ? <Navigate to="/staff/settings" replace /> : <Profile />}
+                            {user?.role === ROLES.STAFF
+                                ? <Navigate to="/staff/settings" replace />
+                                : user?.role === ROLES.ADMIN
+                                    ? <AdminAccountSettings />
+                                    : <Profile />}
                         </ProtectedRoute>
                     }
                 />

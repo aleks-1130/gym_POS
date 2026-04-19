@@ -1,13 +1,11 @@
 ﻿import { useConfirm } from '../../context/ConfirmContext';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
-import { useAuth } from '../../context/AuthContext';
 import { useCurrency } from '../../context/CurrencyContext';
 import { PRODUCT_CATEGORIES } from '../../constants/categories';
 
 export default function TrainingManager() {
     const { alert: showAlert, confirm: showConfirm } = useConfirm();
-    const { user } = useAuth();
     const { formatPrice } = useCurrency();
     const [sessions, setSessions] = useState([]);
     const [products, setProducts] = useState([]);
@@ -30,6 +28,11 @@ export default function TrainingManager() {
     const [isCustomItem, setIsCustomItem] = useState(false);
     const [customName, setCustomName] = useState('');
     const [customCost, setCustomCost] = useState('');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [startDateFilter, setStartDateFilter] = useState('');
+    const [endDateFilter, setEndDateFilter] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const SESSIONS_PER_PAGE = 10;
 
     useEffect(() => {
         fetchSessions();
@@ -195,13 +198,71 @@ export default function TrainingManager() {
     };
 
     const totalMaterialCost = addedMaterials.reduce((sum, item) => sum + (item.cost * item.quantity), 0);
+    const normalizedSearchTerm = searchTerm.trim().toLowerCase();
+
+    const filteredSessions = useMemo(() => {
+        const sortedSessions = [...sessions].sort((a, b) => new Date(b.date) - new Date(a.date));
+        return sortedSessions.filter((session) => {
+            const sessionDate = new Date(session.date);
+            if (Number.isNaN(sessionDate.getTime())) return false;
+
+            if (startDateFilter) {
+                const fromDate = new Date(`${startDateFilter}T00:00:00`);
+                if (!Number.isNaN(fromDate.getTime()) && sessionDate < fromDate) return false;
+            }
+
+            if (endDateFilter) {
+                const toDate = new Date(`${endDateFilter}T23:59:59.999`);
+                if (!Number.isNaN(toDate.getTime()) && sessionDate > toDate) return false;
+            }
+
+            if (!normalizedSearchTerm) return true;
+
+            const searchHaystack = [
+                `#${session.id}`,
+                session.status,
+                session.member?.firstName,
+                session.member?.lastName,
+                session.member?.email,
+                session.trainer?.name
+            ]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase();
+
+            return searchHaystack.includes(normalizedSearchTerm);
+        });
+    }, [sessions, startDateFilter, endDateFilter, normalizedSearchTerm]);
+
+    const totalPages = Math.max(1, Math.ceil(filteredSessions.length / SESSIONS_PER_PAGE));
+
+    const paginatedSessions = useMemo(() => {
+        const startIndex = (currentPage - 1) * SESSIONS_PER_PAGE;
+        return filteredSessions.slice(startIndex, startIndex + SESSIONS_PER_PAGE);
+    }, [filteredSessions, currentPage]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm, startDateFilter, endDateFilter]);
+
+    useEffect(() => {
+        if (currentPage > totalPages) {
+            setCurrentPage(totalPages);
+        }
+    }, [currentPage, totalPages]);
 
     const handleComplete = async (e) => {
         e.preventDefault();
 
         // Warn if user has a product selected but not added
         if (selectedProduct || (isCustomItem && customName)) {
-            const proceed = confirm('You have a material selected but not added to the list. Click the "Add" button first, or press OK to complete without it.');
+            const proceed = await showConfirm({
+                title: 'Unadded Material',
+                message: 'You have a material selected but not added. Click "Add" first, or proceed without it.',
+                confirmLabel: 'Proceed',
+                cancelLabel: 'Back',
+                type: 'warning'
+            });
             if (!proceed) return;
         }
 
@@ -240,6 +301,51 @@ export default function TrainingManager() {
                 <p className="text-text-muted mt-1">Manage bookings and track session completions.</p>
             </header>
 
+            <div className="bg-surface rounded-2xl border border-white/10 p-4">
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(280px,1fr)_200px_200px_auto] gap-3 items-end">
+                    <div>
+                        <label className="block text-xs font-bold uppercase tracking-widest text-text-muted mb-1">Search</label>
+                        <input
+                            type="text"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            placeholder="Search member, trainer, status, or session ID..."
+                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold uppercase tracking-widest text-text-muted mb-1">From</label>
+                        <input
+                            type="date"
+                            value={startDateFilter}
+                            onChange={(e) => setStartDateFilter(e.target.value)}
+                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold uppercase tracking-widest text-text-muted mb-1">To</label>
+                        <input
+                            type="date"
+                            value={endDateFilter}
+                            onChange={(e) => setEndDateFilter(e.target.value)}
+                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                        />
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setSearchTerm('');
+                            setStartDateFilter('');
+                            setEndDateFilter('');
+                            setCurrentPage(1);
+                        }}
+                        className="px-4 py-2.5 rounded-xl border border-white/10 text-white hover:bg-white/10 transition-colors"
+                    >
+                        Clear
+                    </button>
+                </div>
+            </div>
+
             <div className="bg-surface rounded-3xl border border-white/5 overflow-hidden shadow-xl">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
@@ -254,10 +360,10 @@ export default function TrainingManager() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                            {sessions.length === 0 && (
+                            {filteredSessions.length === 0 && (
                                 <tr><td colSpan="6" className="p-12 text-center text-text-muted">No sessions found.</td></tr>
                             )}
-                            {sessions.map(session => (
+                            {paginatedSessions.map(session => (
                                 <tr key={session.id} className="hover:bg-white/5 transition-colors">
                                     <td className="p-6">
                                         <div className="flex flex-col">
@@ -364,6 +470,29 @@ export default function TrainingManager() {
                             ))}
                         </tbody>
                     </table>
+                </div>
+                <div className="flex items-center justify-between border-t border-white/10 px-6 py-4">
+                    <span className="text-text-muted text-sm">
+                        Page <span className="text-white font-bold">{currentPage}</span> of {totalPages}
+                    </span>
+                    <div className="flex gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                            disabled={currentPage === 1}
+                            className="px-4 py-2 rounded-lg border border-white/10 text-white hover:bg-white/10 disabled:opacity-50 disabled:hover:bg-transparent transition-all text-sm font-medium"
+                        >
+                            Previous
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                            disabled={currentPage >= totalPages}
+                            className="px-4 py-2 rounded-lg border border-white/10 text-white hover:bg-white/10 disabled:opacity-50 disabled:hover:bg-transparent transition-all text-sm font-medium"
+                        >
+                            Next
+                        </button>
+                    </div>
                 </div>
             </div>
 

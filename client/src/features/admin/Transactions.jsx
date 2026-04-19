@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { useMutationState } from '@tanstack/react-query';
 import { useCurrency } from '../../context/CurrencyContext';
 import DataTable from '../../components/common/DataTable';
+import { queryClient } from '../../config/queryClient';
 
 export default function Transactions() {
     const { formatPrice } = useCurrency();
@@ -15,6 +16,8 @@ export default function Transactions() {
     const [endDate, setEndDate] = useState('');
     const [appliedStartDate, setAppliedStartDate] = useState('');
     const [appliedEndDate, setAppliedEndDate] = useState('');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [appliedSearchTerm, setAppliedSearchTerm] = useState('');
     const LIMIT = 15;
 
     // Get pending mutations from React Query state
@@ -47,17 +50,19 @@ export default function Transactions() {
         }
     });
 
+    const hasActiveFilters = Boolean(appliedStartDate || appliedEndDate || appliedSearchTerm);
+
     const mergedHistory = useMemo(() => {
-        // Only show pending on the first page
-        if (currentPage !== 1) return history;
+        // Only show pending sync entries on default first page.
+        if (currentPage !== 1 || hasActiveFilters) return history;
         return [...pendingMutations, ...history];
-    }, [pendingMutations, history, currentPage]);
+    }, [pendingMutations, history, currentPage, hasActiveFilters]);
 
     useEffect(() => {
-        fetchHistory(currentPage, appliedStartDate, appliedEndDate);
-    }, [currentPage, appliedStartDate, appliedEndDate]);
+        fetchHistory(currentPage, appliedStartDate, appliedEndDate, appliedSearchTerm);
+    }, [currentPage, appliedStartDate, appliedEndDate, appliedSearchTerm]);
 
-    const fetchHistory = async (page = 1, dateFrom = '', dateTo = '') => {
+    const fetchHistory = async (page = 1, dateFrom = '', dateTo = '', search = '') => {
         setLoading(true);
         try {
                         const params = new URLSearchParams({
@@ -66,6 +71,7 @@ export default function Transactions() {
             });
             if (dateFrom) params.set('startDate', dateFrom);
             if (dateTo) params.set('endDate', dateTo);
+            if (search.trim()) params.set('search', search.trim());
 
             const res = await axios.get(`/api/payments?${params.toString()}`);
             if (res.data.meta) {
@@ -73,6 +79,7 @@ export default function Transactions() {
                 setTotalPages(res.data.meta.totalPages);
             } else {
                 setHistory(res.data);
+                setTotalPages(1);
             }
         } catch (error) {
             console.error('Failed to fetch history');
@@ -93,17 +100,20 @@ export default function Transactions() {
         return counts;
     }, [mergedHistory]);
 
-    const applyDateFilters = () => {
+    const applyFilters = () => {
         setCurrentPage(1);
         setAppliedStartDate(startDate);
         setAppliedEndDate(endDate);
+        setAppliedSearchTerm(searchTerm.trim());
     };
 
-    const clearDateFilters = () => {
+    const clearFilters = () => {
         setStartDate('');
         setEndDate('');
         setAppliedStartDate('');
         setAppliedEndDate('');
+        setSearchTerm('');
+        setAppliedSearchTerm('');
         setCurrentPage(1);
     };
 
@@ -152,7 +162,23 @@ export default function Transactions() {
             </div>
 
             <div className="bg-surface rounded-2xl border border-white/10 p-4">
-                <div className="grid grid-cols-1 md:grid-cols-[1fr,1fr,auto,auto] gap-3 items-end">
+                <div className="grid grid-cols-1 md:grid-cols-[1.4fr,1fr,1fr,auto,auto] gap-3 items-end">
+                    <div>
+                        <label className="block text-xs font-bold uppercase tracking-widest text-text-muted mb-1">Search</label>
+                        <input
+                            type="text"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    applyFilters();
+                                }
+                            }}
+                            placeholder="Search by ref, member, cashier, type, method..."
+                            className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                        />
+                    </div>
                     <div>
                         <label className="block text-xs font-bold uppercase tracking-widest text-text-muted mb-1">Start Date</label>
                         <input
@@ -173,14 +199,14 @@ export default function Transactions() {
                     </div>
                     <button
                         type="button"
-                        onClick={applyDateFilters}
+                        onClick={applyFilters}
                         className="px-4 py-2.5 rounded-xl bg-primary text-white font-bold hover:bg-orange-600 transition-colors"
                     >
                         Apply Filters
                     </button>
                     <button
                         type="button"
-                        onClick={clearDateFilters}
+                        onClick={clearFilters}
                         className="px-4 py-2.5 rounded-xl border border-white/10 text-white hover:bg-white/10 transition-colors"
                     >
                         Clear

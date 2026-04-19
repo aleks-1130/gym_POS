@@ -280,11 +280,11 @@ const Expenses = () => {
     };
 
     return (
-        <div className="space-y-5 p-6">
-            <header className="rounded-3xl border border-white/10 bg-surface p-5 shadow-sm">
+        <div className="space-y-5 pb-10 max-w-[110rem] mx-auto">
+            <header>
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
                     <div>
-                        <h1 className="text-2xl font-bold text-white">Operational Expenses</h1>
+                        <h1 className="text-3xl font-bold text-white">Operational Expenses</h1>
                         <p className="mt-1 text-sm text-text-muted">Track, group, and audit expense records with cleaner controls.</p>
                     </div>
 
