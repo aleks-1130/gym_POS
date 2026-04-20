@@ -51,7 +51,6 @@ export default function Attendance() {
     const [trainingSessions, setTrainingSessions] = useState([]);
     const [classBookings, setClassBookings] = useState([]);
     const [registrationDate, setRegistrationDate] = useState(null);
-    const [membershipEndDate, setMembershipEndDate] = useState(null);
     const [loading, setLoading] = useState(true);
     const [loadIssues, setLoadIssues] = useState([]);
     const [monthCursor, setMonthCursor] = useState(() => {
@@ -95,29 +94,14 @@ export default function Attendance() {
             if (dashboardResult.status === 'fulfilled') {
                 const memberData = dashboardResult.value?.data?.memberData;
                 const rawRegistration = memberData?.startDate || memberData?.createdAt || null;
-                const now = new Date();
-                const membershipPeriods = Array.isArray(memberData?.membershipPeriods) ? memberData.membershipPeriods : [];
-                const activePeriod = membershipPeriods.find((period) => {
-                    const end = new Date(period?.endDate);
-                    return !Number.isNaN(end.getTime()) && end >= now;
-                }) || null;
-                const latestPeriod = membershipPeriods[0] || null;
-                const rawMembershipEnd = memberData?.expiryDate || activePeriod?.endDate || latestPeriod?.endDate || null;
                 if (rawRegistration) {
                     const parsed = new Date(rawRegistration);
                     setRegistrationDate(Number.isNaN(parsed.getTime()) ? null : startOfDay(parsed));
                 } else {
                     setRegistrationDate(null);
                 }
-                if (rawMembershipEnd) {
-                    const parsedEnd = new Date(rawMembershipEnd);
-                    setMembershipEndDate(Number.isNaN(parsedEnd.getTime()) ? null : startOfDay(parsedEnd));
-                } else {
-                    setMembershipEndDate(null);
-                }
             } else {
                 setRegistrationDate(null);
-                setMembershipEndDate(null);
                 issues.push(describeError(dashboardResult, 'Could not load registration date'));
             }
 
@@ -236,16 +220,21 @@ export default function Attendance() {
         return { checkIns, missed };
     }, [attendedByDate, registrationDate]);
 
-    const registrationDayKey = useMemo(() => (registrationDate ? toDateKey(registrationDate) : ''), [registrationDate]);
-    const membershipEndDayKey = useMemo(() => (membershipEndDate ? toDateKey(membershipEndDate) : ''), [membershipEndDate]);
-
     const monthYearLabel = monthCursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-    const startOfMonth = new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1);
-    const endOfMonth = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0);
-    const leadingDays = startOfMonth.getDay();
-    const rows = Math.ceil((leadingDays + endOfMonth.getDate()) / 7);
-    const firstCellDate = new Date(startOfMonth);
-    firstCellDate.setDate(firstCellDate.getDate() - leadingDays);
+    const calendarCells = useMemo(() => {
+        const start = new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1);
+        const end = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0);
+        const leading = start.getDay();
+        const cells = [];
+        for (let i = 0; i < leading; i += 1) cells.push(null);
+        for (let d = 1; d <= end.getDate(); d += 1) {
+            cells.push(new Date(monthCursor.getFullYear(), monthCursor.getMonth(), d));
+        }
+        while (cells.length % 7 !== 0) cells.push(null);
+        return cells;
+    }, [monthCursor]);
+    const todayStart = startOfDay(new Date());
+    const todayKey = todayStart.toDateString();
 
     if (loading) {
         return (
@@ -296,111 +285,111 @@ export default function Attendance() {
             </div>
 
             <section className="space-y-4">
-                <div className="flex items-center justify-between bg-surface rounded-2xl border border-white/5 p-4">
-                    <button onClick={() => setMonthCursor(new Date(monthCursor.getFullYear(), monthCursor.getMonth() - 1, 1))} className="px-3 py-2 rounded-lg bg-white/5 text-white text-xs font-bold hover:bg-white/10">Prev</button>
-                    <p className="text-white font-semibold">{monthYearLabel}</p>
-                    <button onClick={() => setMonthCursor(new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 1))} className="px-3 py-2 rounded-lg bg-white/5 text-white text-xs font-bold hover:bg-white/10">Next</button>
-                </div>
+                <div className="bg-[#233248]/85 backdrop-blur-md rounded-2xl p-4 sm:p-5 border border-white/10 shadow-2xl">
+                    <div className="flex items-center justify-between mb-5">
+                        <button
+                            type="button"
+                            onClick={() => setMonthCursor(new Date(monthCursor.getFullYear(), monthCursor.getMonth() - 1, 1))}
+                            className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white transition-all active:scale-95 border border-white/5"
+                        >
+                            <span className="material-icons-round">chevron_left</span>
+                        </button>
+                        <div className="text-center">
+                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/60 mb-1">Select Date</p>
+                            <p className="text-base sm:text-lg font-black text-white px-3">{monthYearLabel}</p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setMonthCursor(new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 1))}
+                            className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white transition-all active:scale-95 border border-white/5"
+                        >
+                            <span className="material-icons-round">chevron_right</span>
+                        </button>
+                    </div>
 
-                <div className="grid grid-cols-7 gap-2 text-xs text-text-muted font-bold uppercase tracking-wider px-1">{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <div key={day} className="text-center">{day}</div>)}</div>
-                <div className="grid grid-cols-7 gap-2">
-                    {Array.from({ length: rows * 7 }).map((_, idx) => {
-                        const day = new Date(firstCellDate);
-                        day.setDate(firstCellDate.getDate() + idx);
-                        const dayKey = day.toDateString();
-                        const isCurrentMonth = day.getMonth() === monthCursor.getMonth();
-                        const isToday = new Date().toDateString() === dayKey;
-                        const isSelected = selectedDay === dayKey;
-                        const hasCheckIn = attendedByDate.has(dayKey);
-                        const isFuture = day > startOfDay(new Date());
-                        const isRegistrationDay = Boolean(registrationDayKey) && dayKey === registrationDayKey;
-                        const isMembershipEndDay = Boolean(membershipEndDayKey) && dayKey === membershipEndDayKey;
-                        const beforeRegistration = Boolean(registrationDate) && day < registrationDate;
-                        const isMissed = isCurrentMonth && !isFuture && !hasCheckIn && !beforeRegistration;
+                    <div className="grid grid-cols-7 gap-1.5 mb-3 text-center">
+                        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, idx) => (
+                            <div key={`${day}-${idx}`} className="text-xs font-black text-white/40 uppercase tracking-widest">{day}</div>
+                        ))}
+                    </div>
 
-                        const tone = isCurrentMonth
-                            ? (
-                                isRegistrationDay
-                                    ? 'bg-amber-500/15 border-amber-500/35'
-                                    : hasCheckIn
-                                        ? 'bg-emerald-500/12 border-emerald-500/35'
-                                        : (isMissed ? 'bg-rose-500/12 border-rose-500/35' : 'bg-surface border-white/5')
-                            )
-                            : 'bg-white/5 border-white/5 opacity-50';
+                    <div className="grid grid-cols-7 gap-1.5">
+                        {calendarCells.map((day, idx) => {
+                            if (!day) return <div key={`blank-${idx}`} className="aspect-square" />;
 
-                        return (
-                            <button
-                                key={`${dayKey}-${idx}`}
-                                type="button"
-                                onClick={() => {
-                                    setSelectedDay(dayKey);
-                                    if (isRegistrationDay) {
-                                        setCellModal({
-                                            title: 'Registration Start Date',
-                                            message: `You started your membership registration on ${formatDate(day)}.`
-                                        });
-                                        return;
-                                    }
-                                    if (isMembershipEndDay) {
-                                        setCellModal({
-                                            title: 'Membership End Date',
-                                            message: `Your membership ends on ${formatDate(day)}.`
-                                        });
-                                        return;
-                                    }
-                                    if (hasCheckIn) {
-                                        const firstCheckIn = checkInInfoByDate.get(dayKey);
-                                        setCellModal({
-                                            title: 'Check-in Recorded',
-                                            message: `You checked in on ${formatDate(day)}${firstCheckIn ? ` at ${formatTime(firstCheckIn)}` : ''}.`
-                                        });
-                                    }
-                                }}
-                                className={`min-h-[62px] sm:min-h-[72px] rounded-xl border p-2 flex flex-col text-left transition-colors ${tone} ${isToday ? 'ring-1 ring-primary/40' : ''} ${isSelected ? 'border-primary/40' : ''}`}
-                            >
-                                <div className="flex items-center justify-between text-[10px] font-bold text-text-muted">
-                                    <span>{day.getDate()}</span>
-                                    {(upcomingSessionsByDay.get(dayKey) || upcomingClassesByDay.get(dayKey)) ? (
-                                        <span className="px-1 py-0.5 rounded-full bg-white/10 text-[9px] text-white/80">
-                                            {(upcomingSessionsByDay.get(dayKey) || 0) + (upcomingClassesByDay.get(dayKey) || 0)}
+                            const dayKey = day.toDateString();
+                            const bookingCount = upcomingSessionsByDay.get(dayKey) || 0;
+                            const classCount = upcomingClassesByDay.get(dayKey) || 0;
+                            const dayEventsTotal = bookingCount + classCount;
+                            const isToday = todayKey === dayKey;
+                            const isSelected = selectedDay === dayKey;
+                            const hasCheckIn = attendedByDate.has(dayKey);
+                            const isFuture = day > todayStart;
+                            const beforeRegistration = Boolean(registrationDate) && day < registrationDate;
+                            const isMissed = !isFuture && !hasCheckIn && !beforeRegistration;
+
+                            return (
+                                <button
+                                    key={dayKey}
+                                    type="button"
+                                    onClick={() => {
+                                        setSelectedDay(dayKey);
+                                        if (hasCheckIn) {
+                                            const firstCheckIn = checkInInfoByDate.get(dayKey);
+                                            setCellModal({
+                                                title: 'Check-in Recorded',
+                                                message: `You checked in on ${formatDate(day)}${firstCheckIn ? ` at ${formatTime(firstCheckIn)}` : ''}.`
+                                            });
+                                        }
+                                    }}
+                                    className={`aspect-square rounded-xl text-sm sm:text-base font-bold transition-all duration-300 relative group border ${
+                                        isSelected
+                                            ? 'bg-white text-background border-white shadow-lg shadow-white/20 scale-105 z-10'
+                                            : isToday
+                                                ? 'bg-white/10 text-white border-white/30'
+                                                : beforeRegistration
+                                                    ? 'text-white/20 cursor-not-allowed opacity-60 bg-white/[0.02] border-white/5'
+                                                    : 'bg-white/5 text-white hover:bg-white/10 hover:border-white/20 border-white/10 shadow-sm'
+                                    }`}
+                                >
+                                    <span className="absolute top-2 left-2">{day.getDate()}</span>
+                                    {dayEventsTotal > 0 && (
+                                        <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-white/15 flex items-center justify-center text-[9px] font-black text-white/60 border border-white/10">
+                                            {dayEventsTotal}
                                         </span>
-                                    ) : null}
-                                </div>
-                                <div className="mt-auto flex items-center gap-1.5">
-                                    {isRegistrationDay && <span className="w-2 h-2 rounded-full bg-amber-300"></span>}
-                                    {isMembershipEndDay && <span className="w-2 h-2 rounded-full bg-violet-400"></span>}
-                                    {upcomingSessionsByDay.get(dayKey) ? <span className="w-2 h-2 rounded-full bg-primary"></span> : null}
-                                    {upcomingClassesByDay.get(dayKey) ? <span className="w-2 h-2 rounded-full bg-cyan-400"></span> : null}
-                                </div>
-                            </button>
-                        );
-                    })}
-                </div>
+                                    )}
+                                    <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex items-center gap-1">
+                                        {hasCheckIn && !beforeRegistration && !isFuture ? (
+                                            <span className="material-icons-round text-[12px] leading-none text-emerald-400">check_circle</span>
+                                        ) : null}
+                                        {isMissed ? (
+                                            <span className="material-icons-round text-[12px] leading-none text-rose-400">cancel</span>
+                                        ) : null}
+                                        {bookingCount > 0 ? <span className="w-1.5 h-1.5 rounded-full bg-blue-500/90 shadow-[0_0_4px_rgba(59,130,246,0.5)]" /> : null}
+                                        {classCount > 0 ? <span className="w-1.5 h-1.5 rounded-full bg-blue-300/90 shadow-[0_0_4px_rgba(147,197,253,0.5)]" /> : null}
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
 
-                <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[11px] text-text-muted">
-                    <div className="flex items-center gap-1.5">
-                        <span className="h-2.5 w-2.5 rounded-sm border border-emerald-400/35 bg-emerald-500/15"></span>
-                        <span>Checked In</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                        <span className="h-2.5 w-2.5 rounded-sm border border-rose-400/35 bg-rose-500/15"></span>
-                        <span>No Check-in</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-amber-300"></span>
-                        <span>Registration Start</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-violet-400"></span>
-                        <span>Membership End</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-primary"></span>
-                        <span>Bookings</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
-                        <span>Classes</span>
+                    <div className="mt-5 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[11px] text-text-muted">
+                        <div className="flex items-center gap-1.5">
+                            <span className="material-icons-round text-[16px] leading-none text-emerald-400">check_circle</span>
+                            <span>Check-in</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <span className="material-icons-round text-[16px] leading-none text-rose-400">cancel</span>
+                            <span>No Check-in</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <span className="material-icons-round text-[16px] leading-none text-blue-400">fitness_center</span>
+                            <span>Bookings</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <span className="material-icons-round text-[16px] leading-none text-blue-300">groups</span>
+                            <span>Classes</span>
+                        </div>
                     </div>
                 </div>
 

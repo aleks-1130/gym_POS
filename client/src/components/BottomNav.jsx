@@ -95,8 +95,7 @@ export default function BottomNav() {
     const memberPrimaryNav = [
         { to: "/dashboard", icon: "dashboard", label: "Home" },
         { to: "/attendance", icon: "fact_check", label: "Attendance" },
-        { to: "/trainer-booking", icon: "sports_gymnastics", label: "Trainer" },
-        { to: "/schedule", icon: "calendar_month", label: "Classes" },
+        { to: "/trainer-booking", icon: "sports_gymnastics", label: "Training" },
         { to: "/shop", icon: "storefront", label: "Shop" },
     ];
     const trainerPrimaryNav = [
@@ -116,6 +115,7 @@ export default function BottomNav() {
 
     // Secondary navigation items (hamburger menu)
     const memberSecondaryNav = [
+        { to: "/schedule", icon: "calendar_month", label: "Classes" },
         { to: "/profile", icon: "person", label: "Profile" },
         { to: "/gym-traffic", icon: "timeline", label: "Gym Traffic" },
         { to: "/announcements", icon: "campaign", label: "Announcements" },
