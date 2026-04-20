@@ -260,23 +260,23 @@ export default function Attendance() {
             )}
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-center">
+                <div className="member-card-soft border-emerald-500/25 bg-emerald-500/10 p-3 text-center">
                     <p className="text-[11px] uppercase tracking-wide text-emerald-300 font-bold">Checked-in Days</p>
                     <p className="text-[10px] text-text-muted mt-0.5">Since membership start</p>
                     <p className="text-xl font-bold text-white mt-1">{membershipCheckInStats.checkIns}</p>
                 </div>
-                <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-3 text-center">
+                <div className="member-card-soft border-rose-500/25 bg-rose-500/10 p-3 text-center">
                     <p className="text-[11px] uppercase tracking-wide text-rose-300 font-bold">No Check-in Days</p>
                     <p className="text-[10px] text-text-muted mt-0.5">Since membership start</p>
                     <p className="text-xl font-bold text-white mt-1">{membershipCheckInStats.missed}</p>
                 </div>
-                <div className="rounded-xl border border-primary/20 bg-primary/10 p-3 text-center">
+                <div className="member-card-soft border-primary/25 bg-primary/10 p-3 text-center">
                     <p className="text-[11px] uppercase tracking-wide text-primary font-bold">Upcoming Bookings</p>
                     <p className="text-[10px] text-text-muted mt-0.5">1-on-1 sessions</p>
                     <p className="text-xl font-bold text-white mt-1">{upcomingBookingCount}</p>
                     <Link to="/trainer-booking" className="mt-2 inline-flex text-[11px] font-semibold text-primary hover:underline">View history</Link>
                 </div>
-                <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 p-3 text-center">
+                <div className="member-card-soft border-cyan-500/25 bg-cyan-500/10 p-3 text-center">
                     <p className="text-[11px] uppercase tracking-wide text-cyan-300 font-bold">Upcoming Classes</p>
                     <p className="text-[10px] text-text-muted mt-0.5">Joined class sessions</p>
                     <p className="text-xl font-bold text-white mt-1">{upcomingClassCount}</p>
@@ -285,7 +285,7 @@ export default function Attendance() {
             </div>
 
             <section className="space-y-4">
-                <div className="bg-[#233248]/85 backdrop-blur-md rounded-2xl p-4 sm:p-5 border border-white/10 shadow-2xl">
+                <div className="member-card-subtle bg-[#233248]/85 backdrop-blur-md p-4 sm:p-5 shadow-2xl">
                     <div className="flex items-center justify-between mb-5">
                         <button
                             type="button"
@@ -295,7 +295,6 @@ export default function Attendance() {
                             <span className="material-icons-round">chevron_left</span>
                         </button>
                         <div className="text-center">
-                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary/60 mb-1">Select Date</p>
                             <p className="text-base sm:text-lg font-black text-white px-3">{monthYearLabel}</p>
                         </div>
                         <button
@@ -404,7 +403,7 @@ export default function Attendance() {
                 </div>
 
                 {!(selectedUpcomingSessions.length > 0 || selectedUpcomingClasses.length > 0) ? (
-                    <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-md p-8 text-center shadow-xl">
+                    <div className="member-card-soft backdrop-blur-md p-8 text-center shadow-xl">
                         <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-4 border border-white/10">
                             <span className="material-icons-round text-3xl text-text-muted/40">event_busy</span>
                         </div>

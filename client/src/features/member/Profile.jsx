@@ -245,7 +245,7 @@ export default function Profile() {
                 </div>
             )}
 
-            <section className="rounded-2xl border border-white/10 bg-surface p-3 sm:p-4">
+            <section className="member-card p-3 sm:p-4">
                 <div className="flex items-center gap-3 sm:gap-4">
                     <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden border border-primary/40 bg-white/5 flex items-center justify-center shrink-0">
                         {avatarUrl ? (
@@ -296,7 +296,7 @@ export default function Profile() {
 
             </section>
 
-            <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden mt-4">
+            <section className="member-card overflow-hidden mt-4">
                 <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/10">
                     <div>
                         <h3 className="text-sm font-bold text-white flex items-center gap-2">
@@ -335,7 +335,7 @@ export default function Profile() {
                 </div>
             </section>
 
-            <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
+            <section className="member-card overflow-hidden">
                 <div className="px-3 py-2.5 border-b border-white/10">
                     <h3 className="text-sm font-bold text-white">Settings</h3>
                     <p className="text-xs text-text-muted mt-0.5">Choose what you want to manage</p>
@@ -362,7 +362,7 @@ export default function Profile() {
                 </div>
             </section>
 
-            <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
+            <section className="member-card overflow-hidden">
                 <div className="px-3 py-2.5 border-b border-white/10">
                     <h3 className="text-sm font-bold text-white">How I Stay Updated</h3>
                     <p className="text-xs text-text-muted mt-0.5">Control app and email alerts</p>
@@ -413,7 +413,7 @@ export default function Profile() {
                 </div>
             </section>
 
-            <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
+            <section className="member-card overflow-hidden">
                 <div className="px-3 py-2.5 border-b border-white/10">
                     <h3 className="text-sm font-bold text-white">Support & Legal</h3>
                     <p className="text-xs text-text-muted mt-0.5">Help, policy, and gym contact channels</p>
@@ -455,7 +455,7 @@ export default function Profile() {
                 </div>
             </section>
 
-            <section className="rounded-2xl border border-white/10 bg-surface overflow-hidden">
+            <section className="member-card overflow-hidden">
                 <div className="px-3 py-2.5 border-b border-white/10">
                     <h3 className="text-sm font-bold text-white">Account Access</h3>
                     <p className="text-xs text-text-muted mt-0.5">Manage active sign-in sessions</p>
@@ -481,7 +481,7 @@ export default function Profile() {
 
             {showPasswordModal && isMember && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-surface border border-white/10 rounded-2xl w-full max-w-md p-5">
+                    <div className="member-card w-full max-w-md p-5">
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-lg font-bold text-white">Change Password</h3>
                             <button
@@ -494,7 +494,7 @@ export default function Profile() {
                         <form onSubmit={handleChangePassword} className="space-y-3">
                             <input
                                 type="password"
-                                className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white"
+                                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white"
                                 placeholder="Current Password"
                                 value={passwordForm.currentPassword}
                                 onChange={(e) => setPasswordForm((prev) => ({ ...prev, currentPassword: e.target.value }))}
@@ -502,7 +502,7 @@ export default function Profile() {
                             />
                             <input
                                 type="password"
-                                className="w-full bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white"
+                                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white"
                                 placeholder="New Password"
                                 value={passwordForm.newPassword}
                                 onChange={(e) => setPasswordForm((prev) => ({ ...prev, newPassword: e.target.value }))}

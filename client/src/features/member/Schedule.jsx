@@ -153,9 +153,6 @@ export default function Schedule() {
     });
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('schedule'); // schedule | my-classes | history
-    const [filter, setFilter] = useState('all');
-    const [showClassFilters, setShowClassFilters] = useState(false);
-    const [classSearch, setClassSearch] = useState('');
     const [selectedDay, setSelectedDay] = useState(() => getDayButtonValueFromDate(new Date()));
     const [classHistory, setClassHistory] = useState([]);
     const [historyLoading, setHistoryLoading] = useState(false);
@@ -170,15 +167,14 @@ export default function Schedule() {
         }
         
         const day = date.getDay();
-        const diff = (day + 6) % 7;
-        const monday = new Date(date);
-        monday.setHours(0, 0, 0, 0);
-        monday.setDate(date.getDate() - diff);
-        const sunday = new Date(monday);
-        sunday.setDate(monday.getDate() + 6);
+        const sunday = new Date(date);
+        sunday.setHours(0, 0, 0, 0);
+        sunday.setDate(date.getDate() - day);
+        const saturday = new Date(sunday);
+        saturday.setDate(sunday.getDate() + 6);
 
         const options = { month: 'short', day: 'numeric' };
-        return `${monday.toLocaleDateString(undefined, options)} - ${sunday.toLocaleDateString(undefined, options)}`;
+        return `${sunday.toLocaleDateString(undefined, options)} - ${saturday.toLocaleDateString(undefined, options)}`;
     };
 
     const fetchClasses = useCallback(async () => {
@@ -320,24 +316,7 @@ export default function Schedule() {
     };
 
     const filteredClasses = useMemo(() => {
-        const searchQuery = classSearch.trim().toLowerCase();
         const base = classes.filter((cls) => {
-            if (filter === 'available' && !cls.isBooked && cls.enrolled >= cls.capacity) return false;
-            if (searchQuery) {
-                const searchableText = [
-                    cls?.name,
-                    cls?.trainer?.name,
-                    cls?.dayOfWeek,
-                    cls?.scheduleType,
-                    cls?.oneTimeDate,
-                    cls?.sessionDate
-                ]
-                    .filter(Boolean)
-                    .join(' ')
-                    .toLowerCase();
-                if (!searchableText.includes(searchQuery)) return false;
-            }
-
             if (selectedDay) {
                 const dayMapping = {
                     M: ['Mon', 'Monday'],
@@ -360,27 +339,11 @@ export default function Schedule() {
             if (fullDelta !== 0) return fullDelta;
             return String(a.name || '').localeCompare(String(b.name || ''));
         });
-    }, [classes, filter, classSearch, selectedDay]);
+    }, [classes, selectedDay]);
 
     const filteredJoinedClasses = useMemo(() => {
-        const searchQuery = classSearch.trim().toLowerCase();
         const base = classes.filter((cls) => {
             if (!cls.isBooked) return false;
-
-            if (searchQuery) {
-                const searchableText = [
-                    cls?.name,
-                    cls?.trainer?.name,
-                    cls?.dayOfWeek,
-                    cls?.scheduleType,
-                    cls?.oneTimeDate,
-                    cls?.sessionDate
-                ]
-                    .filter(Boolean)
-                    .join(' ')
-                    .toLowerCase();
-                if (!searchableText.includes(searchQuery)) return false;
-            }
 
             if (selectedDay) {
                 const dayMapping = {
@@ -407,7 +370,7 @@ export default function Schedule() {
             if (dateB) return 1;
             return String(a.name || '').localeCompare(String(b.name || ''));
         });
-    }, [classes, classSearch, selectedDay]);
+    }, [classes, selectedDay]);
 
     const joinedClasses = useMemo(
         () => classes.filter((cls) => Boolean(cls?.isBooked)),
@@ -456,34 +419,33 @@ export default function Schedule() {
     }), [historyEntries]);
 
     const dayButtons = [
+        { value: 'SUN', label: 'SUN' },
         { value: 'M', label: 'M' },
         { value: 'T', label: 'T' },
         { value: 'W', label: 'W' },
         { value: 'TH', label: 'TH' },
         { value: 'F', label: 'F' },
-        { value: 'S', label: 'S' },
-        { value: 'SUN', label: 'SUN' }
+        { value: 'S', label: 'S' }
     ];
     const selectedDayDateLabel = useMemo(() => {
         if (!selectedDay) return getViewRangeLabel(anchorDate, viewMode);
 
         const dayOffsets = {
-            M: 0,
-            T: 1,
-            W: 2,
-            TH: 3,
-            F: 4,
-            S: 5,
-            SUN: 6
+            SUN: 0,
+            M: 1,
+            T: 2,
+            W: 3,
+            TH: 4,
+            F: 5,
+            S: 6
         };
         const targetOffset = dayOffsets[selectedDay];
         if (targetOffset === undefined) return getViewRangeLabel(anchorDate, viewMode);
 
         const weekAnchor = new Date(anchorDate);
         const day = weekAnchor.getDay();
-        const diff = (day + 6) % 7;
         weekAnchor.setHours(0, 0, 0, 0);
-        weekAnchor.setDate(weekAnchor.getDate() - diff);
+        weekAnchor.setDate(weekAnchor.getDate() - day);
 
         const selectedDate = new Date(weekAnchor);
         selectedDate.setDate(weekAnchor.getDate() + targetOffset);
@@ -656,63 +618,7 @@ export default function Schedule() {
                             </div>
                         )}
 
-                        <div className="flex items-center gap-2">
-                            <label className="relative flex-1">
-                                <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 material-icons-round text-sm text-text-muted">search</span>
-                                <input
-                                    type="text"
-                                    value={classSearch}
-                                    onChange={(event) => setClassSearch(event.target.value)}
-                                    placeholder={activeTab === 'my-classes' ? 'Search joined classes' : 'Search classes'}
-                                    className="h-8 w-full rounded-lg border border-white/10 bg-surface pl-8 pr-2 text-xs text-white placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-primary/40"
-                                />
-                            </label>
-                            {activeTab === 'schedule' && (
-                                <button
-                                    type="button"
-                                    onClick={() => setShowClassFilters((prev) => !prev)}
-                                    className={`h-8 px-2.5 rounded-lg text-xs font-bold border transition-all flex items-center gap-1 ${showClassFilters || filter !== 'all'
-                                        ? 'bg-white text-black border-white'
-                                        : 'bg-surface border-white/10 text-text-muted hover:text-white'
-                                        }`}
-                                >
-                                    <span className="material-icons-round text-sm">tune</span>
-                                    Filter
-                                </button>
-                            )}
-                        </div>
-                        {activeTab === 'schedule' ? (
-                            <>
-                                <p className="text-[11px] text-text-muted">
-                                    {filter === 'available' ? 'Filter: Available classes' : 'Showing all classes. Use Available to hide full classes.'}
-                                </p>
-                                {showClassFilters && (
-                                    <div className="grid grid-cols-2 gap-2">
-                                        {[
-                                            { value: 'all', label: 'All Classes', icon: 'grid_view' },
-                                            { value: 'available', label: 'Available', icon: 'event_available' }
-                                        ].map((f) => (
-                                            <button
-                                                key={f.value}
-                                                type="button"
-                                                onClick={() => setFilter(f.value)}
-                                                className={`px-2.5 py-2 rounded-lg font-bold text-[11px] transition-all border flex items-center justify-center gap-1 ${filter === f.value
-                                                    ? 'bg-white text-black shadow-sm border-white'
-                                                    : 'bg-surface border-white/10 text-text-muted hover:text-white'
-                                                    }`}
-                                            >
-                                                <span className="material-icons-round text-sm">{f.icon}</span>
-                                                {f.label}
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-                            </>
-                        ) : (
-                            <p className="text-[11px] text-text-muted">Showing only classes you already joined.</p>
-                        )}
-
-                        <div className="bg-surface/50 backdrop-blur-sm border border-white/10 rounded-2xl p-2 sm:p-3">
+                        <div className="member-card-subtle backdrop-blur-sm p-2 sm:p-3">
                             <div className="flex items-center justify-between">
                                 <button
                                     type="button"
@@ -810,51 +716,73 @@ export default function Schedule() {
                                 return (
                                     <div
                                         key={cls.id}
-                                        className={`bg-surface rounded-xl p-4 border transition-all ${cls.isBooked
-                                            ? cls.bookingStatus === 'WAITLISTED' 
-                                                ? 'border-cyan-500/30 bg-cyan-500/5'
-                                                : 'border-primary/30 bg-primary/5'
-                                            : 'border-white/5 hover:border-white/10'
+                                        className={`group relative bg-[#1e293b]/50 backdrop-blur-xl rounded-[1.5rem] sm:rounded-[2rem] border overflow-hidden transition-all duration-500 hover:border-primary/30 hover:shadow-2xl hover:shadow-primary/5 active:scale-[0.99] ${cls.isBooked
+                                            ? cls.bookingStatus === 'WAITLISTED'
+                                                ? 'border-cyan-500/35'
+                                                : 'border-primary/35'
+                                            : 'border-white/5'
                                             }`}
                                     >
-                                        <div className="space-y-3">
-                                            <div className="flex gap-3">
-                                                <div className="relative h-24 w-24 flex-shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/5">
-                                                    {cls.imageUrl ? (
-                                                        <img src={cls.imageUrl} alt={cls.name} onError={handleClassImageError} className="h-full w-full object-cover" />
-                                                    ) : (
-                                                        <div className="flex h-full w-full items-center justify-center text-text-muted">
-                                                            <span className="material-icons-round text-2xl">fitness_center</span>
-                                                        </div>
-                                                    )}
-                                                    {cls.isBooked && (
-                                                        <span className={`absolute bottom-1 left-1 rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                                                            cls.bookingStatus === 'WAITLISTED' 
-                                                                ? 'bg-cyan-500 text-white' 
-                                                                : 'bg-primary text-background'
-                                                        }`}>
-                                                            {cls.bookingStatus === 'WAITLISTED' ? 'WAITLISTED' : 'BOOKED'}
-                                                        </span>
-                                                    )}
+                                        <div className="aspect-[16/10] sm:aspect-[4/3] relative overflow-hidden">
+                                            <div className="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-transparent to-transparent z-10" />
+                                            {cls.imageUrl ? (
+                                                <img src={cls.imageUrl} alt={cls.name} onError={handleClassImageError} className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                                            ) : (
+                                                <div className="h-full w-full bg-[#0f172a] flex items-center justify-center">
+                                                    <span className="material-icons-round text-5xl text-white/10">fitness_center</span>
                                                 </div>
-
-                                                <div className="min-w-0 flex-1">
-                                                    <div className="mb-2 flex items-start justify-between gap-2">
-                                                        <h3 className="line-clamp-1 text-base font-bold text-white">{cls.name}</h3>
-                                                        <div className="shrink-0 text-right">
-                                                            <p className="text-xs font-bold text-primary">{classTime.start}</p>
-                                                            <p className="text-[10px] text-text-muted">{classTime.end ? classTime.end : `${cls.duration} min`}</p>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
-                                                        <span className="inline-flex items-center gap-1"><span className="material-icons-round text-sm">person</span>{cls.trainer?.name || 'TBA'}</span>
-                                                        <span className="inline-flex items-center gap-1"><span className="material-icons-round text-sm">calendar_today</span>{cls.dayOfWeek}</span>
-                                                        {scheduleType === 'ONE_TIME' && (
-                                                            <span className="inline-flex items-center gap-1"><span className="material-icons-round text-sm">event</span>{formatDateLabel(cls.oneTimeDate || cls.sessionDate)}</span>
-                                                        )}
-                                                    </div>
+                                            )}
+                                            {cls.isBooked && (
+                                                <span className={`absolute top-2.5 left-2.5 z-20 rounded-xl border px-2 py-1 text-[10px] font-black uppercase tracking-wide ${
+                                                    cls.bookingStatus === 'WAITLISTED'
+                                                        ? 'bg-cyan-500/20 border-cyan-400/40 text-cyan-200'
+                                                        : 'bg-primary/20 border-primary/40 text-primary'
+                                                }`}>
+                                                    {cls.bookingStatus === 'WAITLISTED' ? 'WAITLISTED' : 'BOOKED'}
+                                                </span>
+                                            )}
+                                            <div className="absolute top-2.5 right-2.5 z-20">
+                                                <div className="bg-black/40 backdrop-blur-md px-2.5 py-1 rounded-xl border border-white/10 flex items-center gap-1 shadow-xl">
+                                                    <span className={`material-icons-round text-xs ${isFull ? 'text-amber-300' : 'text-emerald-300'}`}>people</span>
+                                                    <span className="text-[11px] font-black text-white">{cls.enrolled}/{cls.capacity}</span>
                                                 </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="p-4 sm:p-5 relative z-10 -mt-8 sm:-mt-10 space-y-3">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="min-w-0">
+                                                    <h3 className="line-clamp-1 text-lg sm:text-xl font-black text-white leading-tight">{cls.name}</h3>
+                                                    <p className="text-[10px] font-bold text-white/45 uppercase tracking-widest mt-1">
+                                                        {scheduleType === 'ONE_TIME' ? 'One-time Class' : 'Recurring Class'}
+                                                    </p>
+                                                </div>
+                                                <div className="shrink-0 text-right">
+                                                    <p className="text-sm sm:text-base font-black text-primary leading-none">{classTime.start}</p>
+                                                    <p className="text-[10px] text-white/45 mt-1">{classTime.end ? classTime.end : `${cls.duration} min`}</p>
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-3 gap-2">
+                                                <div className="rounded-lg sm:rounded-xl border border-white/10 bg-white/5 px-2 py-1.5">
+                                                    <p className="text-xs font-black text-white leading-none">{cls.duration} min</p>
+                                                    <p className="text-[9px] text-white/45 mt-1">duration</p>
+                                                </div>
+                                                <div className="rounded-lg sm:rounded-xl border border-white/10 bg-white/5 px-2 py-1.5">
+                                                    <p className="text-xs font-black text-white leading-none">{cls.dayOfWeek || 'TBA'}</p>
+                                                    <p className="text-[9px] text-white/45 mt-1">day</p>
+                                                </div>
+                                                <div className="rounded-lg sm:rounded-xl border border-white/10 bg-white/5 px-2 py-1.5">
+                                                    <p className={`text-xs font-black leading-none ${isFull ? 'text-amber-300' : 'text-emerald-300'}`}>{isFull ? 'Full' : `${cls.capacity - cls.enrolled} left`}</p>
+                                                    <p className="text-[9px] text-white/45 mt-1">availability</p>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
+                                                <span className="inline-flex items-center gap-1"><span className="material-icons-round text-sm">person</span>{cls.trainer?.name || 'TBA'}</span>
+                                                {scheduleType === 'ONE_TIME' && (
+                                                    <span className="inline-flex items-center gap-1"><span className="material-icons-round text-sm">event</span>{formatDateLabel(cls.oneTimeDate || cls.sessionDate)}</span>
+                                                )}
                                             </div>
 
                                             <div>
@@ -883,45 +811,42 @@ export default function Schedule() {
                                                 )}
                                             </div>
 
+                                            {cls.isBooked && !isPast && (
+                                                <p className="text-[11px] font-semibold rounded-lg border px-2.5 py-2 bg-amber-500/10 text-amber-200 border-amber-500/20">
+                                                    {leaveNotice}
+                                                </p>
+                                            )}
+                                            {isPast && (
+                                                <p className="text-[11px] font-semibold rounded-lg border px-2.5 py-2 bg-rose-500/10 text-rose-300 border-rose-500/20">
+                                                    This class has already ended.
+                                                </p>
+                                            )}
+
                                             {cls.isBooked ? (
-                                                <div className="space-y-3">
-                                                    {!isPast && (
-                                                        <p className={`text-[11px] font-semibold rounded-lg border px-2.5 py-2 ${
-                                                            isPast ? 'bg-rose-500/10 text-rose-300 border-rose-500/20' : 'bg-amber-500/10 text-amber-200 border-amber-500/20'
-                                                        }`}>
-                                                            {leaveNotice}
-                                                        </p>
-                                                    )}
-                                                    {isPast && (
-                                                        <p className="text-[11px] font-semibold rounded-lg border px-2.5 py-2 bg-rose-500/10 text-rose-300 border-rose-500/20">
-                                                            This class has already ended.
-                                                        </p>
-                                                    )}
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleCancel(cls.id, cls.sessionDate, cls.bookingStatus)}
-                                                        disabled={isPast}
-                                                        className={`w-full py-2.5 rounded-xl font-bold active:scale-95 transition-all text-xs border flex items-center justify-center gap-2 ${
-                                                            isPast 
-                                                                ? 'bg-white/5 text-text-muted cursor-not-allowed border-white/5' 
-                                                                : 'bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 border-rose-500/20'
-                                                        }`}
-                                                    >
-                                                        <span className="material-icons-round text-sm">{isPast ? 'history' : 'cancel'}</span>
-                                                        {isPast ? 'Class Ended' : 'Leave Class'}
-                                                    </button>
-                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleCancel(cls.id, cls.sessionDate || cls.oneTimeDate, cls.bookingStatus)}
+                                                    disabled={isPast}
+                                                    className={`w-full py-3 rounded-xl font-black text-[11px] uppercase tracking-[0.16em] transition-all flex items-center justify-center gap-2 ${
+                                                        isPast
+                                                            ? 'bg-white/5 text-white/30 border border-white/10 cursor-not-allowed'
+                                                            : 'bg-red-500/10 text-red-300 border border-red-500/30 hover:bg-red-500/20 active:scale-95'
+                                                    }`}
+                                                >
+                                                    <span className="material-icons-round text-sm">{isPast ? 'history' : 'cancel'}</span>
+                                                    {isPast ? 'Class Ended' : 'Leave Class'}
+                                                </button>
                                             ) : (
                                                 <button
                                                     type="button"
-                                                    onClick={() => handleBook(cls.id, cls.sessionDate)}
+                                                    onClick={() => handleBook(cls.id, cls.sessionDate || cls.oneTimeDate)}
                                                     disabled={cannotJoin || hasStarted}
-                                                    className={`w-full py-2.5 rounded-xl font-bold transition-all text-xs flex items-center justify-center gap-2 active:scale-95 ${
+                                                    className={`w-full py-3 rounded-xl font-black text-[11px] uppercase tracking-[0.16em] transition-all flex items-center justify-center gap-2 ${
                                                         (cannotJoin || hasStarted)
-                                                            ? 'bg-white/5 text-text-muted cursor-not-allowed border border-white/5'
-                                                            : isFull 
-                                                                ? 'bg-amber-500 text-background shadow-lg shadow-amber-500/20'
-                                                                : 'bg-primary text-background shadow-lg shadow-primary/20 hover:brightness-110'
+                                                            ? 'bg-white/5 text-white/30 border border-white/10 cursor-not-allowed'
+                                                            : isFull
+                                                                ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/25 active:scale-95'
+                                                                : 'bg-primary text-background hover:brightness-110 shadow-xl shadow-primary/20 active:scale-95'
                                                     }`}
                                                 >
                                                     <span className="material-icons-round text-sm">
@@ -940,21 +865,21 @@ export default function Schedule() {
             ) : (
                 <section className="space-y-4">
                     <div className="grid grid-cols-3 gap-2">
-                        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5">
+                        <div className="member-card-soft border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5">
                             <p className="text-[10px] uppercase tracking-wide text-text-muted">Completed</p>
                             <p className="text-base font-bold text-emerald-300 mt-1">{historyStatusCounts.completed}</p>
                         </div>
-                        <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5">
+                        <div className="member-card-soft border-rose-500/30 bg-rose-500/10 px-3 py-2.5">
                             <p className="text-[10px] uppercase tracking-wide text-text-muted">Missed</p>
                             <p className="text-base font-bold text-rose-300 mt-1">{historyStatusCounts.missed}</p>
                         </div>
-                        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
+                        <div className="member-card-soft border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
                             <p className="text-[10px] uppercase tracking-wide text-text-muted">Cancelled</p>
                             <p className="text-base font-bold text-amber-300 mt-1">{historyStatusCounts.cancelled}</p>
                         </div>
                     </div>
 
-                    <div className="bg-surface border border-white/10 rounded-xl p-4 space-y-4">
+                    <div className="member-card p-4 space-y-4">
                         <div className="flex items-center justify-between gap-2">
                             <div>
                                 <h2 className="text-white font-bold text-base">Class History</h2>
@@ -970,11 +895,11 @@ export default function Schedule() {
                         </div>
 
                         {historyLoading ? (
-                            <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-4 text-sm text-text-muted">Loading class history...</div>
+                            <div className="member-card-soft px-3 py-4 text-sm text-text-muted">Loading class history...</div>
                         ) : historyError ? (
                             <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-4 text-sm text-red-300">{historyError}</div>
                         ) : filteredHistoryEntries.length === 0 ? (
-                            <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-4 text-sm text-text-muted">No past class history found for this filter.</div>
+                            <div className="member-card-soft px-3 py-4 text-sm text-text-muted">No past class history found for this filter.</div>
                         ) : (
                             <div className="space-y-2.5">
                                 {filteredHistoryEntries.map((entry) => {
@@ -984,7 +909,7 @@ export default function Schedule() {
                                         ? 'NO SHOW'
                                         : (String(entry?.status || '').replace(/_/g, ' ') || 'N/A');
                                     return (
-                                        <article key={`class-history-${entry.id}`} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                                        <article key={`class-history-${entry.id}`} className="member-card-soft p-3">
                                             <div className="flex items-start justify-between gap-2">
                                                 <div>
                                                     <p className="text-sm font-semibold text-white">{entry?.class?.name || 'Class Session'}</p>
