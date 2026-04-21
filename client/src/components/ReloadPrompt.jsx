@@ -50,18 +50,9 @@ function ReloadPrompt() {
     };
   }, []);
 
-  // Smart Auto-Update Logic: Reload ONCE when a refresh is needed
-  useEffect(() => {
-    if (needRefresh) {
-      const hasAutoReloaded = sessionStorage.getItem('pwa-auto-reloaded');
-      if (!hasAutoReloaded) {
-        sessionStorage.setItem('pwa-auto-reloaded', 'true');
-        console.log('Smart PWA: New version detected. Applying one-time auto-reload...');
-        // Small delay to ensure any active state is settled
-        setTimeout(() => updateServiceWorker(true), 1500);
-      }
-    }
-  }, [needRefresh, updateServiceWorker]);
+  // Smart Auto-Update Logic: We rely on registerType: 'autoUpdate' in vite.config.js.
+  // The service worker will update automatically when a new version is detected.
+  // We don't need a manual reload loop here.
 
   const close = () => {
     setOfflineReady(false);
