@@ -5,6 +5,7 @@ const LOCAL_API_PREFIX = '';
 
 if (API_BASE_URL) {
     axios.defaults.baseURL = API_BASE_URL;
+    axios.defaults.withCredentials = true;
 }
 
 axios.interceptors.request.use((config) => {
