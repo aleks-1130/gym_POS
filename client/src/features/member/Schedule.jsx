@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import axios from 'axios';
 import { withApiBase } from '../../config/api';
-import { useConfirm } from '../../context/ConfirmContext';
 import MemberPageHeader from './components/MemberPageHeader';
 
 const parseTimeToMinutes = (timeValue) => {
@@ -135,7 +134,6 @@ const getDayButtonValueFromDate = (dateValue) => {
 };
 
 export default function Schedule() {
-    const { alert: showAlert, confirm: showConfirm } = useConfirm();
     const sessionPolicyNote = [
         'Class Session Policy',
         '1. Joining a class as CONFIRMED uses 1 class session immediately.',
@@ -160,6 +158,24 @@ export default function Schedule() {
     const [historyFilter, setHistoryFilter] = useState('all');
     const viewMode = 'WEEK';
     const [anchorDate, setAnchorDate] = useState(new Date());
+    const [joinSuccessModal, setJoinSuccessModal] = useState({
+        open: false,
+        title: '',
+        message: '',
+        className: '',
+        scheduleLabel: ''
+    });
+    const [actionModal, setActionModal] = useState({
+        open: false,
+        title: '',
+        message: '',
+        confirmLabel: 'Got it',
+        cancelLabel: 'Cancel',
+        tone: 'primary',
+        icon: 'info',
+        isConfirm: false
+    });
+    const actionModalResolveRef = useRef(null);
 
     const getViewRangeLabel = (date, mode = 'WEEK') => {
         if (mode === 'MONTH') {
@@ -253,24 +269,45 @@ export default function Schedule() {
             ? 'Joining WAITLIST does not consume a session. If promoted to CONFIRMED, 1 session will be consumed.'
             : 'Joining as CONFIRMED consumes 1 session now. Leave above 24 hours before class start to restore the credit; within 24 hours it stays consumed.';
 
-        const confirmed = await showConfirm({
+        const confirmed = await showActionModal({
             title: isFull ? 'Waitlist' : 'Session Policy',
             message: `${currentPolicyNote} Continue?`,
-            confirmLabel: confirmLabel
+            confirmLabel: confirmLabel,
+            cancelLabel: 'Not now',
+            tone: isFull ? 'info' : 'primary',
+            icon: isFull ? 'hourglass_top' : 'event_available',
+            isConfirm: true
         });
         if (!confirmed) return;
 
         try {
             await axios.post(withApiBase('/api/members/book'), { classId, sessionDate });
-            await showAlert({ 
-                title: isFull ? 'Waitlisted!' : 'Joined!', 
-                message: isFull ? 'You have been added to the waitlist.' : 'Joined class successfully!', 
-                type: 'success' 
+            const classTime = getClassTimeRange(classToBook.time, classToBook.duration);
+            const dateLabel = sessionDate ? formatDateLabel(sessionDate) : '';
+            const dayLabel = classToBook.dayOfWeek ? String(classToBook.dayOfWeek) : '';
+            const scheduleLabel = dateLabel || dayLabel
+                ? [dateLabel || dayLabel, classTime.label].filter(Boolean).join(' · ')
+                : classTime.label;
+
+            setJoinSuccessModal({
+                open: true,
+                title: isFull ? 'Waitlist Joined' : 'Class Joined',
+                message: isFull
+                    ? 'You have been added to the waitlist. We will notify you if a slot opens.'
+                    : 'You have successfully joined this class session.',
+                className: classToBook.name || 'Class Session',
+                scheduleLabel
             });
             fetchClasses();
             fetchClassHistory();
         } catch (error) {
-            await showAlert({ title: 'Booking Failed', message: error.response?.data?.error || 'Booking failed', type: 'danger' });
+            await showActionModal({
+                title: 'Booking Failed',
+                message: error.response?.data?.error || 'Booking failed',
+                confirmLabel: 'Close',
+                tone: 'danger',
+                icon: 'error'
+            });
         }
     };
 
@@ -285,33 +322,47 @@ export default function Schedule() {
                 ? 'You are leaving above 24 hours before class start. 1 class session credit will be returned.'
                 : 'You are leaving within 24 hours of class start (including exactly 24h). Your class session stays consumed.';
 
-        const policyConfirmed = await showConfirm({
+        const policyConfirmed = await showActionModal({
             title: 'Leave Class?',
             message: policyMessage,
             confirmLabel: 'I Understand',
-            type: 'danger'
+            cancelLabel: 'Keep Class',
+            tone: 'danger',
+            icon: 'warning',
+            isConfirm: true
         });
         if (!policyConfirmed) return;
 
-        const finalConfirmed = await showConfirm({
+        const finalConfirmed = await showActionModal({
             title: 'Final Confirmation',
             message: 'Are you sure you want to leave this class?',
             confirmLabel: 'Leave Anyway',
-            type: 'danger'
+            cancelLabel: 'Cancel',
+            tone: 'danger',
+            icon: 'logout',
+            isConfirm: true
         });
         if (!finalConfirmed) return;
 
         try {
             const response = await axios.post(withApiBase('/api/members/cancel-booking'), { classId, sessionDate });
-            await showAlert({
+            await showActionModal({
                 title: 'Left Class',
                 message: response?.data?.message || 'Class booking updated successfully.',
-                type: 'success'
+                confirmLabel: 'Okay',
+                tone: 'success',
+                icon: 'check_circle'
             });
             fetchClasses();
             fetchClassHistory();
         } catch (error) {
-            await showAlert({ title: 'Cancel Failed', message: error.response?.data?.error || 'Failed to cancel', type: 'danger' });
+            await showActionModal({
+                title: 'Cancel Failed',
+                message: error.response?.data?.error || 'Failed to cancel',
+                confirmLabel: 'Close',
+                tone: 'danger',
+                icon: 'error'
+            });
         }
     };
 
@@ -454,11 +505,55 @@ export default function Schedule() {
     }, [selectedDay, anchorDate, viewMode]);
     const visibleClasses = activeTab === 'my-classes' ? filteredJoinedClasses : filteredClasses;
 
+    const showActionModal = useCallback((config) => {
+        return new Promise((resolve) => {
+            actionModalResolveRef.current = resolve;
+            setActionModal({
+                open: true,
+                title: config?.title || 'Notice',
+                message: config?.message || '',
+                confirmLabel: config?.confirmLabel || 'Got it',
+                cancelLabel: config?.cancelLabel || 'Cancel',
+                tone: config?.tone || 'primary',
+                icon: config?.icon || 'info',
+                isConfirm: Boolean(config?.isConfirm)
+            });
+        });
+    }, []);
+
+    const resolveActionModal = useCallback((result) => {
+        const resolver = actionModalResolveRef.current;
+        actionModalResolveRef.current = null;
+        if (resolver) resolver(result);
+        setActionModal((prev) => ({ ...prev, open: false }));
+    }, []);
+
+    useEffect(() => {
+        return () => {
+            if (actionModalResolveRef.current) {
+                actionModalResolveRef.current(false);
+                actionModalResolveRef.current = null;
+            }
+        };
+    }, []);
+
     const showSessionPolicy = async () => {
-        await showAlert({
+        await showActionModal({
             title: 'Class Session Policy',
             message: sessionPolicyNote,
-            type: 'info'
+            confirmLabel: 'Understood',
+            tone: 'info',
+            icon: 'policy'
+        });
+    };
+
+    const closeJoinSuccessModal = () => {
+        setJoinSuccessModal({
+            open: false,
+            title: '',
+            message: '',
+            className: '',
+            scheduleLabel: ''
         });
     };
 
@@ -943,6 +1038,185 @@ export default function Schedule() {
                     </div>
                 </section>
             )}
+
+            {actionModal.open && (
+                <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
+                    <button
+                        type="button"
+                        className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+                        onClick={() => resolveActionModal(false)}
+                        aria-label="Close modal"
+                    />
+                    <div
+                        className="relative w-full max-w-sm bg-surface rounded-3xl border border-white/10 p-6 shadow-2xl text-center"
+                        style={{ animation: 'classJoinSuccessPop 420ms cubic-bezier(0.22, 1, 0.36, 1)' }}
+                    >
+                        <div className={`relative w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 border ${
+                            actionModal.tone === 'danger'
+                                ? 'bg-rose-500/10 border-rose-500/25'
+                                : actionModal.tone === 'success'
+                                    ? 'bg-emerald-500/10 border-emerald-500/25'
+                                    : 'bg-primary/10 border-primary/20'
+                        }`}>
+                            <span
+                                className={`pointer-events-none absolute inset-0 rounded-full border ${
+                                    actionModal.tone === 'danger'
+                                        ? 'border-rose-500/40'
+                                        : actionModal.tone === 'success'
+                                            ? 'border-emerald-500/40'
+                                            : 'border-primary/40'
+                                }`}
+                                style={{ animation: 'classJoinSuccessRing 850ms ease-out' }}
+                            />
+                            <span
+                                className={`material-icons-round text-5xl ${
+                                    actionModal.tone === 'danger'
+                                        ? 'text-rose-300'
+                                        : actionModal.tone === 'success'
+                                            ? 'text-emerald-300'
+                                            : 'text-primary'
+                                }`}
+                                style={{ animation: 'classJoinSuccessCheck 520ms ease-out' }}
+                            >
+                                {actionModal.icon}
+                            </span>
+                        </div>
+                        <h2 className="text-2xl font-bold text-white mb-2">{actionModal.title}</h2>
+                        <p className="text-text-muted text-sm mb-5 px-3 whitespace-pre-line">{actionModal.message}</p>
+                        {actionModal.isConfirm ? (
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => resolveActionModal(false)}
+                                    className="flex-1 py-3 rounded-xl font-bold bg-white/5 text-white hover:bg-white/10 transition-all"
+                                >
+                                    {actionModal.cancelLabel}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => resolveActionModal(true)}
+                                    className={`flex-1 py-3 rounded-xl font-bold transition-all ${
+                                        actionModal.tone === 'danger'
+                                            ? 'bg-rose-500/90 text-white hover:bg-rose-500'
+                                            : 'bg-primary text-background hover:brightness-110'
+                                    }`}
+                                >
+                                    {actionModal.confirmLabel}
+                                </button>
+                            </div>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={() => resolveActionModal(true)}
+                                className={`w-full py-3 rounded-xl font-bold transition-all ${
+                                    actionModal.tone === 'danger'
+                                        ? 'bg-rose-500/90 text-white hover:bg-rose-500'
+                                        : actionModal.tone === 'success'
+                                            ? 'bg-emerald-500/90 text-white hover:bg-emerald-500'
+                                            : 'bg-primary text-background hover:brightness-110'
+                                }`}
+                            >
+                                {actionModal.confirmLabel}
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {joinSuccessModal.open && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+                    <button
+                        type="button"
+                        className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+                        onClick={closeJoinSuccessModal}
+                        aria-label="Close class join success modal"
+                    />
+                    <div
+                        className="relative w-full max-w-sm bg-surface rounded-3xl border border-white/10 p-6 shadow-2xl text-center"
+                        style={{ animation: 'classJoinSuccessPop 420ms cubic-bezier(0.22, 1, 0.36, 1)' }}
+                    >
+                        <div className="relative w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-primary/20">
+                            <span
+                                className="pointer-events-none absolute inset-0 rounded-full border border-primary/40"
+                                style={{ animation: 'classJoinSuccessRing 850ms ease-out' }}
+                            />
+                            <span
+                                className="material-icons-round text-5xl text-primary"
+                                style={{ animation: 'classJoinSuccessCheck 520ms ease-out' }}
+                            >
+                                check_circle
+                            </span>
+                        </div>
+                        <h2 className="text-2xl font-bold text-white mb-2">{joinSuccessModal.title}</h2>
+                        <p className="text-text-muted text-sm mb-4 px-3">{joinSuccessModal.message}</p>
+                        <div className="rounded-2xl border border-white/10 bg-white/5 p-3 mb-5 text-left">
+                            <p className="text-sm font-bold text-white truncate">{joinSuccessModal.className}</p>
+                            {joinSuccessModal.scheduleLabel && (
+                                <p className="text-xs text-text-muted mt-1">{joinSuccessModal.scheduleLabel}</p>
+                            )}
+                        </div>
+                        <div className="flex gap-2">
+                            <button
+                                type="button"
+                                onClick={closeJoinSuccessModal}
+                                className="flex-1 py-3 rounded-xl font-bold bg-white/5 text-white hover:bg-white/10 transition-all"
+                            >
+                                Continue
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    closeJoinSuccessModal();
+                                    setActiveTab('my-classes');
+                                }}
+                                className="flex-1 py-3 rounded-xl font-bold bg-primary text-background hover:brightness-110 transition-all"
+                            >
+                                My Classes
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            <style>{`
+                @keyframes classJoinSuccessPop {
+                    0% {
+                        transform: scale(0.84) translateY(14px);
+                        opacity: 0;
+                    }
+                    65% {
+                        transform: scale(1.03) translateY(-2px);
+                        opacity: 1;
+                    }
+                    100% {
+                        transform: scale(1) translateY(0);
+                        opacity: 1;
+                    }
+                }
+                @keyframes classJoinSuccessCheck {
+                    0% {
+                        transform: scale(0.5) rotate(-12deg);
+                        opacity: 0;
+                    }
+                    70% {
+                        transform: scale(1.08) rotate(2deg);
+                        opacity: 1;
+                    }
+                    100% {
+                        transform: scale(1) rotate(0);
+                        opacity: 1;
+                    }
+                }
+                @keyframes classJoinSuccessRing {
+                    0% {
+                        transform: scale(0.65);
+                        opacity: 0.65;
+                    }
+                    100% {
+                        transform: scale(1.5);
+                        opacity: 0;
+                    }
+                }
+            `}</style>
         </div>
     );
 }

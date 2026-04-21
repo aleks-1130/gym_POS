@@ -137,6 +137,8 @@ const getMemberInitials = (name) => {
     return initials || 'GM';
 };
 
+const getTrainerCardImage = (trainer) => trainer?.imageUrl || trainer?.cardImageUrl || null;
+
 const formatReviewDateLabel = (value) => {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return 'Unknown date';
@@ -656,7 +658,7 @@ export default function TrainerBooking() {
         trainers.forEach((trainer) => {
             const trainerId = Number(trainer?.id);
             if (!Number.isFinite(trainerId)) return;
-            map.set(trainerId, trainer?.cardImageUrl || null);
+            map.set(trainerId, getTrainerCardImage(trainer));
         });
         return map;
     }, [trainers]);
@@ -1363,15 +1365,17 @@ export default function TrainerBooking() {
                             : 'text-text-muted hover:text-white hover:bg-white/5'
                             }`}
                     >
-                        <span className="material-icons-round text-base">event_note</span>
-                        <span>My Bookings</span>
+                        <span className="inline-flex items-center justify-center gap-1.5">
+                            <span className="material-icons-round text-base">event_note</span>
+                            <span>My Bookings</span>
+                        </span>
                         {ongoingSessions.length > 0 && (
-                            <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-black leading-none ${activeTab === 'bookings' ? 'bg-emerald-700/80 text-emerald-100' : 'bg-emerald-500/30 text-emerald-200'}`}>
+                            <span className={`pointer-events-none absolute right-1 ${bookingActionCount > 0 ? 'bottom-1' : 'top-1'} rounded-full px-1 py-[1px] text-[8px] font-black leading-none ${activeTab === 'bookings' ? 'bg-emerald-700/80 text-emerald-100' : 'bg-emerald-500/30 text-emerald-200'}`}>
                                 LIVE
                             </span>
                         )}
                         {bookingActionCount > 0 && (
-                            <span className={`absolute right-1 top-1 min-w-[16px] h-4 px-1 rounded-md text-[9px] font-bold leading-none inline-flex items-center justify-center ${activeTab === 'bookings' ? 'bg-amber-400 text-black' : 'bg-amber-500/90 text-black'}`}>
+                            <span className={`absolute right-1 top-1 z-10 min-w-[16px] h-4 px-1 rounded-md text-[9px] font-bold leading-none inline-flex items-center justify-center ${activeTab === 'bookings' ? 'bg-amber-400 text-black' : 'bg-amber-500/90 text-black'}`}>
                                 {bookingActionCount > 9 ? '9+' : bookingActionCount}
                             </span>
                         )}
@@ -1484,7 +1488,7 @@ export default function TrainerBooking() {
                                             const durationMinutes = Math.max(0, Number(session?.duration || 0));
                                             const sessionEnd = new Date(sessionDate.getTime() + durationMinutes * 60 * 1000);
                                             const trainerId = Number(session?.trainer?.id || session?.trainerId);
-                                            const trainerImage = trainerCardImageById.get(trainerId) || session?.trainer?.cardImageUrl || null;
+                                            const trainerImage = trainerCardImageById.get(trainerId) || getTrainerCardImage(session?.trainer);
                                             return (
                                                 <div key={`ongoing-${session.id}`} className="rounded-xl border border-cyan-500/25 bg-cyan-500/10 p-3 shadow-[0_10px_30px_rgba(0,0,0,0.16)]">
                                                     <div className="flex gap-3">
@@ -1536,7 +1540,7 @@ export default function TrainerBooking() {
                                         ) : visibleNoShowActionSessions.map(({ session, meta }) => {
                                             const sessionDate = new Date(session.date);
                                             const trainerId = Number(session?.trainer?.id || session?.trainerId);
-                                            const trainerImage = trainerCardImageById.get(trainerId) || session?.trainer?.cardImageUrl || null;
+                                            const trainerImage = trainerCardImageById.get(trainerId) || getTrainerCardImage(session?.trainer);
                                             const busy = noShowActionSubmittingId === session.id;
                                             return (
                                                 <div key={`no-show-${session.id}`} className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 space-y-2.5 shadow-[0_10px_30px_rgba(0,0,0,0.16)]">
@@ -1625,7 +1629,7 @@ export default function TrainerBooking() {
                                         const refundRequestMeta = parseNoShowRequestMeta(session?.notes);
                                         const hasPendingPaidCancelRequest = refundRequestMeta.hasRefundRequest && refundRequestMeta.refundStatus === 'PENDING';
                                         const trainerId = Number(session?.trainer?.id || session?.trainerId);
-                                        const trainerImage = trainerCardImageById.get(trainerId) || session?.trainer?.cardImageUrl || null;
+                                        const trainerImage = trainerCardImageById.get(trainerId) || getTrainerCardImage(session?.trainer);
                                         const bookingTimeLabel = sessionDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
                                         const bookingDateLabel = sessionDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
                                         const bookingWeekdayLabel = sessionDate.toLocaleDateString(undefined, { weekday: 'long' });
@@ -2041,9 +2045,9 @@ export default function TrainerBooking() {
                                             >
                                                 <div className="aspect-[16/10] sm:aspect-[4/3] relative overflow-hidden">
                                                     <div className="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-transparent to-transparent z-10" />
-                                                    {(trainer.imageUrl || trainer.cardImageUrl) ? (
+                                                    {getTrainerCardImage(trainer) ? (
                                                         <img
-                                                            src={trainer.imageUrl || trainer.cardImageUrl}
+                                                            src={getTrainerCardImage(trainer)}
                                                             alt={trainer.name}
                                                             className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                                                             loading="lazy"
@@ -2253,8 +2257,13 @@ export default function TrainerBooking() {
                                 <div className="relative space-y-8">
                                     <div className="flex items-center gap-6">
                                         <div className="w-20 h-20 rounded-[1.5rem] overflow-hidden border-2 border-primary/20 bg-[#0f172a] shadow-inner shrink-0">
-                                            {selectedTrainer.cardImageUrl ? (
-                                                <img src={selectedTrainer.cardImageUrl} alt="" className="w-full h-full object-cover" />
+                                            {getTrainerCardImage(selectedTrainer) ? (
+                                                <img
+                                                    src={getTrainerCardImage(selectedTrainer)}
+                                                    alt={selectedTrainer.name || 'Trainer'}
+                                                    onError={handleTrainerImageError}
+                                                    className="w-full h-full object-cover"
+                                                />
                                             ) : (
                                                 <div className="w-full h-full flex items-center justify-center text-white/10">
                                                     <span className="material-icons-round text-3xl">person</span>
@@ -2602,6 +2611,44 @@ export default function TrainerBooking() {
                 .animate-slide-up {
                     animation: slide-up 0.3s ease-out;
                 }
+                @keyframes bookingSuccessPop {
+                    0% {
+                        transform: scale(0.84) translateY(14px);
+                        opacity: 0;
+                    }
+                    65% {
+                        transform: scale(1.03) translateY(-2px);
+                        opacity: 1;
+                    }
+                    100% {
+                        transform: scale(1) translateY(0);
+                        opacity: 1;
+                    }
+                }
+                @keyframes bookingSuccessCheck {
+                    0% {
+                        transform: scale(0.5) rotate(-12deg);
+                        opacity: 0;
+                    }
+                    70% {
+                        transform: scale(1.08) rotate(2deg);
+                        opacity: 1;
+                    }
+                    100% {
+                        transform: scale(1) rotate(0);
+                        opacity: 1;
+                    }
+                }
+                @keyframes bookingSuccessRing {
+                    0% {
+                        transform: scale(0.65);
+                        opacity: 0.65;
+                    }
+                    100% {
+                        transform: scale(1.5);
+                        opacity: 0;
+                    }
+                }
             `}</style>
             {/* Success Modal */}
             {showSuccessModal && (
@@ -2610,9 +2657,21 @@ export default function TrainerBooking() {
                         className="absolute inset-0 bg-background/80 backdrop-blur-sm"
                         onClick={() => setShowSuccessModal(false)}
                     />
-                    <div className="relative w-full max-w-sm bg-surface rounded-3xl border border-primary/20 p-6 shadow-2xl animate-in zoom-in duration-300 text-center">
-                        <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-primary/20">
-                            <span className="material-icons-round text-5xl text-primary">check_circle</span>
+                    <div
+                        className="relative w-full max-w-sm bg-surface rounded-3xl border border-primary/20 p-6 shadow-2xl text-center"
+                        style={{ animation: 'bookingSuccessPop 420ms cubic-bezier(0.22, 1, 0.36, 1)' }}
+                    >
+                        <div className="relative w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-primary/20">
+                            <span
+                                className="pointer-events-none absolute inset-0 rounded-full border border-primary/40"
+                                style={{ animation: 'bookingSuccessRing 850ms ease-out' }}
+                            />
+                            <span
+                                className="material-icons-round text-5xl text-primary"
+                                style={{ animation: 'bookingSuccessCheck 520ms ease-out' }}
+                            >
+                                check_circle
+                            </span>
                         </div>
                         <h2 className="text-2xl font-bold text-white mb-2">Booking Success!</h2>
                         <p className="text-text-muted text-sm mb-6 px-4">

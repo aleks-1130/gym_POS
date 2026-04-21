@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useNavigate } from 'react-router-dom';
@@ -19,8 +19,7 @@ export default function MemberShop() {
     const [addingToCart, setAddingToCart] = useState({});
     const [showCartModal, setShowCartModal] = useState(false);
     const [buyNowModal, setBuyNowModal] = useState({ open: false, product: null, quantity: '1' });
-    const [cartPopup, setCartPopup] = useState({ show: false, itemName: '' });
-    const cartPopupTimerRef = useRef(null);
+    const [addedToCartModal, setAddedToCartModal] = useState({ open: false, itemName: '' });
     const [activeCategory, setActiveCategory] = useState('ALL');
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState('featured');
@@ -39,22 +38,8 @@ export default function MemberShop() {
         fetchPaymentMethods();
     }, [user?.role]);
 
-    useEffect(() => {
-        return () => {
-            if (cartPopupTimerRef.current) {
-                clearTimeout(cartPopupTimerRef.current);
-            }
-        };
-    }, []);
-
-    const showAddToCartPopup = (itemName) => {
-        if (cartPopupTimerRef.current) {
-            clearTimeout(cartPopupTimerRef.current);
-        }
-        setCartPopup({ show: true, itemName });
-        cartPopupTimerRef.current = setTimeout(() => {
-            setCartPopup((prev) => ({ ...prev, show: false }));
-        }, 1600);
+    const closeAddedToCartModal = () => {
+        setAddedToCartModal({ open: false, itemName: '' });
     };
 
     useEffect(() => {
@@ -160,7 +145,7 @@ export default function MemberShop() {
             }
 
             saveCart(updatedCart);
-            showAddToCartPopup(product.name);
+            setAddedToCartModal({ open: true, itemName: product.name });
             return true;
         } catch (error) {
             console.error("Failed to reserve stock", error);
@@ -639,15 +624,47 @@ export default function MemberShop() {
                 )}
             </div>
 
-            {cartPopup.show && (
-                <div className="fixed right-6 bottom-32 z-[60] pointer-events-none animate-in fade-in slide-in-from-right-4 duration-300">
-                    <div className="bg-emerald-500 border border-emerald-400/30 text-white rounded-[24px] px-5 py-4 shadow-[0_20px_40px_rgba(16,185,129,0.3)] backdrop-blur-xl flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center uppercase font-black text-xs">
-                            <span className="material-icons-round text-xl">done</span>
+            {addedToCartModal.open && (
+                <div className="fixed inset-0 z-[125] flex items-center justify-center p-4">
+                    <button
+                        type="button"
+                        className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+                        onClick={closeAddedToCartModal}
+                        aria-label="Close added to cart modal"
+                    />
+                    <div
+                        className="relative w-full max-w-sm bg-surface rounded-3xl border border-white/10 p-6 shadow-2xl text-center"
+                        style={{ animation: 'cartSuccessPop 420ms cubic-bezier(0.22, 1, 0.36, 1)' }}
+                    >
+                        <div className="relative w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-primary/20">
+                            <span
+                                className="pointer-events-none absolute inset-0 rounded-full border border-primary/40"
+                                style={{ animation: 'cartSuccessRing 850ms ease-out' }}
+                            />
+                            <span className="material-icons-round text-5xl text-primary" style={{ animation: 'cartSuccessCheck 520ms ease-out' }}>check_circle</span>
                         </div>
-                        <div>
-                            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-100/80 leading-none mb-1">Added to Basket</p>
-                            <p className="text-[13px] font-bold text-white max-w-[180px] truncate">{cartPopup.itemName}</p>
+                        <h2 className="text-2xl font-bold text-white mb-2">Added to Basket</h2>
+                        <p className="text-text-muted text-sm mb-6 px-4">
+                            <strong className="text-white">{addedToCartModal.itemName}</strong> was added to your cart.
+                        </p>
+                        <div className="flex gap-2">
+                            <button
+                                type="button"
+                                onClick={closeAddedToCartModal}
+                                className="flex-1 py-3 rounded-xl font-bold bg-white/5 text-white hover:bg-white/10 transition-all"
+                            >
+                                Continue
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    closeAddedToCartModal();
+                                    setShowCartModal(true);
+                                }}
+                                className="flex-1 py-3 rounded-xl font-bold bg-primary text-background hover:brightness-110 transition-all"
+                            >
+                                View Basket
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1026,6 +1043,46 @@ export default function MemberShop() {
                     </div>
                 </div>
             )}
+            <style>{`
+                @keyframes cartSuccessPop {
+                    0% {
+                        transform: scale(0.84) translateY(14px);
+                        opacity: 0;
+                    }
+                    65% {
+                        transform: scale(1.03) translateY(-2px);
+                        opacity: 1;
+                    }
+                    100% {
+                        transform: scale(1) translateY(0);
+                        opacity: 1;
+                    }
+                }
+                @keyframes cartSuccessCheck {
+                    0% {
+                        transform: scale(0.5) rotate(-12deg);
+                        opacity: 0;
+                    }
+                    70% {
+                        transform: scale(1.08) rotate(2deg);
+                        opacity: 1;
+                    }
+                    100% {
+                        transform: scale(1) rotate(0);
+                        opacity: 1;
+                    }
+                }
+                @keyframes cartSuccessRing {
+                    0% {
+                        transform: scale(0.65);
+                        opacity: 0.65;
+                    }
+                    100% {
+                        transform: scale(1.5);
+                        opacity: 0;
+                    }
+                }
+            `}</style>
         </div>
     );
 }
