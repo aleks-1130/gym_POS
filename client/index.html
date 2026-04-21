@@ -14,10 +14,7 @@
             registration.unregister();
             console.log('Emergency Reset: Unregistered a Service Worker to stop reload loop.');
           }
-          if (registrations.length > 0) {
-            // One final reload to clear the SW interception
-            setTimeout(() => window.location.reload(), 500); 
-          }
+          // NOTE: No reload here — reloading caused its own loop!
         });
       }
       // Also clear any stuck PWA flags in session storage
