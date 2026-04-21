@@ -89,6 +89,7 @@ const login = async (req, res) => {
                 }) : null;
 
                 return res.json({ 
+                    token, // Return token for cross-domain Bearer auth
                     user: { 
                         id: user.id, 
                         name: user.name, 
@@ -151,6 +152,7 @@ const login = async (req, res) => {
                 }) : null;
 
                 return res.json({ 
+                    token, // Return token for cross-domain Bearer auth
                     user: { 
                         id: member.id, 
                         name: member.firstName, 

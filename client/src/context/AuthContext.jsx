@@ -41,6 +41,7 @@ export const AuthProvider = ({ children }) => {
         setActiveGymId(null);
         localStorage.removeItem('user');
         localStorage.removeItem('activeGymId');
+        localStorage.removeItem('authToken');
         sessionStorage.removeItem('user');
     };
 
@@ -89,9 +90,20 @@ export const AuthProvider = ({ children }) => {
                     neonToken: authToken 
                 });
                 const backendUser = backendLoginRes.data.user;
+                const backendToken = backendLoginRes.data.token;
 
                 if (!backendUser) {
                     throw new Error("Failed to retrieve user role from system.");
+                }
+
+                // Store token for cross-domain Bearer auth (cookie won't work cross-domain)
+                if (backendToken) {
+                    localStorage.setItem('authToken', backendToken);
+                }
+
+                // Store token for cross-domain Bearer auth (cookie won't work cross-domain)
+                if (backendToken) {
+                    localStorage.setItem('authToken', backendToken);
                 }
 
                 const role = String(backendUser.role || '').toUpperCase();

@@ -1,5 +1,7 @@
-// Service Worker for FitOS PWA
-const CACHE_NAME = 'fitos-v1.2';
+// Service Worker for FitOS PWA - Safe Version
+// IMPORTANT: No skipWaiting() and no clients.claim() to prevent reload loops.
+const CACHE_VERSION = 'fitos-v2.0';
+const CACHE_NAME = CACHE_VERSION;
 const urlsToCache = [
   '/manifest.json',
   '/icon-192.png',
@@ -7,7 +9,7 @@ const urlsToCache = [
   '/vite.svg'
 ];
 
-// Install event - cache static assets
+// Install: cache static assets, but do NOT call skipWaiting
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -15,12 +17,12 @@ self.addEventListener('install', event => {
         console.log('[Service Worker] Caching fundamental assets');
         return cache.addAll(urlsToCache);
       })
-      .then(() => self.skipWaiting())
       .catch(err => console.error('[Service Worker] Install cache failed:', err))
+    // NO self.skipWaiting() here — that was causing the reload loop
   );
 });
 
-// Activate event - clean up old caches
+// Activate: clean up old caches, but do NOT call clients.claim
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(cacheNames => {
@@ -32,7 +34,8 @@ self.addEventListener('activate', event => {
           }
         })
       );
-    }).then(() => self.clients.claim())
+    })
+    // NO self.clients.claim() here — that was also contributing to the reload loop
   );
 });
 
@@ -43,43 +46,24 @@ self.addEventListener('fetch', event => {
 
   const url = new URL(event.request.url);
 
-  // 1. Navigation strategy (HTML): Network First
-  // This prevents the "Black Screen" by ensuring we always try to get the latest index.html
-  if (event.request.mode === 'navigate' || (url.origin === self.origin && url.pathname === '/')) {
-    event.respondWith(
-      fetch(event.request)
-        .then(response => {
-          // If network works, update the cache and return
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
-          return response;
-        })
-        .catch(() => {
-          // If network fails, try cache
-          return caches.match(event.request)
-            .then(cachedResponse => cachedResponse || new Response('Offline - content unavailable', {
-              status: 503,
-              headers: { 'Content-Type': 'text/plain' }
-            }));
-        })
-    );
+  // 1. Skip API calls entirely - let the browser handle them with full credentials
+  if (event.request.url.includes('/api/')) {
     return;
   }
 
-  // 2. API strategy: BYPASS Service Worker for all API calls
-  // This ensures fresh data and correct credential handling without SW interference
-  if (event.request.url.includes('/api/')) {
-    return; // Let the browser handle API requests normally
+  // 2. Navigation (HTML pages): Network First, no SW interception
+  // Vercel handles SPA routing at the CDN level, so we just pass through
+  if (event.request.mode === 'navigate') {
+    return; // Let the browser/Vercel handle navigation
   }
 
-  // 3. Asset strategy: Cache First, then Network
+  // 3. Static assets (JS, CSS, images): Cache First, then Network
   event.respondWith(
     caches.match(event.request)
       .then(response => {
         return response || fetch(event.request)
           .catch(err => {
             console.warn(`[Service Worker] Asset Fetch failed for ${event.request.url}:`, err);
-            // Return a valid blank/fallback Response to prevent promise rejection
             return new Response('Asset not found', { status: 404 });
           });
       })
@@ -97,12 +81,10 @@ self.addEventListener('sync', event => {
 });
 
 async function syncBookings() {
-  // Sync any pending booking operations
   console.log('Syncing bookings...');
 }
 
 async function syncCart() {
-  // Sync any pending cart operations
   console.log('Syncing cart...');
 }
 
@@ -127,13 +109,11 @@ self.addEventListener('notificationclick', event => {
   event.notification.close();
   event.waitUntil(
     clients.matchAll({ type: 'window' }).then(clientList => {
-      // Check if there's already a window open with the target URL
       for (let client of clientList) {
         if (client.url === '/' && 'focus' in client) {
           return client.focus();
         }
       }
-      // If not, open a new window
       if (clients.openWindow) {
         return clients.openWindow('/');
       }
