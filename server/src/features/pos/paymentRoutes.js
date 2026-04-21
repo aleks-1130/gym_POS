@@ -4,7 +4,7 @@ const paymentController = require('./paymentController');
 const { authenticateToken, authorize } = require('../../middleware/authMiddleware');
 
 // POS Settings (Must be before /:id)
-router.get('/settings', authenticateToken, authorize(['OWNER', 'ADMIN']), paymentController.getPosSettings);
+router.get('/settings', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), paymentController.getPosSettings);
 router.post('/settings', authenticateToken, authorize(['OWNER', 'ADMIN']), paymentController.updatePosSettings);
 router.get('/receipt-settings', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), paymentController.getPosReceiptSettings);
 router.get('/discount-options', authenticateToken, authorize(['OWNER', 'ADMIN', 'STAFF']), paymentController.getPosDiscountOptions);

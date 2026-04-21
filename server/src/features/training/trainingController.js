@@ -364,13 +364,28 @@ const createPaymentCompat = async (tx, data) => {
             paymentData.cashier = { connect: { id: Number(cashierId) } };
         }
     }
-
+    if (paymentData.gymId !== undefined) {
+        const gymId = paymentData.gymId;
+        delete paymentData.gymId;
+        if (gymId !== null) {
+            paymentData.gym = { connect: { id: Number(gymId) } };
+        }
+    }
+    if (paymentData.tenantId !== undefined) {
+        const tenantId = paymentData.tenantId;
+        delete paymentData.tenantId;
+        if (tenantId !== null) {
+            paymentData.tenant = { connect: { id: Number(tenantId) } };
+        }
+    }
     // eslint-disable-next-line no-constant-condition
     while (true) {
         try {
             return await tx.payment.create({ data: paymentData });
         } catch (err) {
             const unknownArg = /Unknown argument `([^`]+)`/.exec(err?.message || '')?.[1];
+            console.log("DEBUG LOOP - UNKNOWN ARG:", unknownArg);
+            console.log("DEBUG LOOP - PAYMENT DATA:", JSON.stringify(paymentData));
             if (!unknownArg) {
                 throw err;
             }
@@ -396,6 +411,20 @@ const createPaymentCompat = async (tx, data) => {
                 delete paymentData.cashierId;
                 if (originalCashierId !== null) {
                     paymentData.cashier = { connect: { id: Number(originalCashierId) } };
+                }
+                continue;
+            }
+            if (unknownArg === 'gymId' && originalGymId !== undefined) {
+                delete paymentData.gymId;
+                if (originalGymId !== null) {
+                    paymentData.gym = { connect: { id: Number(originalGymId) } };
+                }
+                continue;
+            }
+            if (unknownArg === 'tenantId' && originalTenantId !== undefined) {
+                delete paymentData.tenantId;
+                if (originalTenantId !== null) {
+                    paymentData.tenant = { connect: { id: Number(originalTenantId) } };
                 }
                 continue;
             }
@@ -493,6 +522,7 @@ const bookTraining = async (req, res) => {
 
         res.json({ message: "Training session booked and paid" });
     } catch (e) {
+        console.error("DEBUG FATAL:", e);
         res.status(500).json({ error: "Failed to book training session", detail: e?.message });
     }
 };
