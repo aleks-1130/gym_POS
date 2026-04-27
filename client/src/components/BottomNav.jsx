@@ -95,7 +95,7 @@ export default function BottomNav() {
     const memberPrimaryNav = [
         { to: "/dashboard", icon: "dashboard", label: "Home" },
         { to: "/attendance", icon: "fact_check", label: "Attendance" },
-        { to: "/trainer-booking", icon: "sports_gymnastics", label: "Trainer" },
+        { to: "/trainer-booking", icon: "sports_gymnastics", label: "Training" },
         { to: "/schedule", icon: "calendar_month", label: "Classes" },
         { to: "/shop", icon: "storefront", label: "Shop" },
     ];

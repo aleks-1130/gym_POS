@@ -3,13 +3,14 @@ import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import BranchCard from './BranchCard';
 import { useAuth } from '../../context/AuthContext';
+import { withApiBase } from '../../config/api';
 
 const BranchSelector = ({ onSelect }) => {
     const { activeGymId } = useAuth();
     const { data: branches, isLoading, error } = useQuery({
         queryKey: ['admin-branches'],
         queryFn: async () => {
-            const res = await axios.get('/api/admin/branches');
+            const res = await axios.get(withApiBase('/api/admin/branches'));
             return res.data;
         }
     });

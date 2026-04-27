@@ -5,6 +5,20 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer components {
+  .member-card {
+    @apply bg-surface border border-white/5 rounded-2xl sm:rounded-3xl shadow-xl shadow-black/20;
+  }
+
+  .member-card-soft {
+    @apply bg-white/5 border border-white/10 rounded-2xl;
+  }
+
+  .member-card-subtle {
+    @apply bg-surface/80 border border-white/10 rounded-2xl;
+  }
+}
+
 body {
   @apply bg-background text-text-primary font-sans antialiased;
   color-scheme: dark;

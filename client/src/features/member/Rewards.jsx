@@ -137,7 +137,7 @@ export default function Rewards() {
             </div>
 
             <section className="space-y-3">
-                <div className="grid grid-cols-3 gap-2 rounded-2xl p-1 bg-surface/80 border border-white/10 shadow-inner">
+                <div className="member-card-subtle grid grid-cols-3 gap-2 p-1 shadow-inner">
                     {[['SHOP', 'Shop'], ['COUPONS', 'Coupons'], ['HISTORY', 'History']].map(([tab, label]) => (
                         <button
                             key={tab}
@@ -206,9 +206,9 @@ export default function Rewards() {
                         return (
                             <div
                                 key={reward.id}
-                                className={`rounded-xl sm:rounded-2xl border overflow-hidden flex flex-col transition-all group ${canRedeem
-                                    ? 'bg-surface border-white/5 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/10'
-                                    : 'bg-black/40 border-white/5 opacity-60'
+                                    className={`rounded-xl sm:rounded-2xl border overflow-hidden flex flex-col transition-all group ${canRedeem
+                                    ? 'member-card hover:border-primary/30 hover:shadow-lg hover:shadow-primary/10'
+                                    : 'bg-black/40 border-white/10 opacity-60 rounded-2xl'
                                     }`}
                             >
                                 {/* Reward Image */}
@@ -296,7 +296,7 @@ export default function Rewards() {
             ) : activeTab === 'COUPONS' ? (
                 <div className="space-y-3">
                     {coupons.length === 0 ? (
-                        <div className="text-center py-16 bg-surface rounded-2xl border border-white/5">
+                        <div className="member-card text-center py-16">
                             <span className="material-icons-round text-5xl text-text-muted opacity-40 block mb-3">redeem</span>
                             <p className="text-text-muted text-sm font-medium">No active coupons</p>
                             <p className="text-text-muted text-xs mt-1 opacity-60">Redeem a discount reward to get a coupon</p>
@@ -349,7 +349,7 @@ export default function Rewards() {
                     )}
                 </div>
             ) : (
-                <div className="bg-surface rounded-2xl border border-white/5 overflow-hidden">
+                <div className="member-card overflow-hidden">
                     <DataTable
                         data={history}
                         isLoading={loading}
@@ -382,7 +382,7 @@ export default function Rewards() {
             {showRedeemModal && selectedReward && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center sm:justify-center p-4" onClick={() => setShowRedeemModal(false)}>
                     <div
-                        className="w-full sm:max-w-md bg-surface rounded-t-3xl sm:rounded-2xl border-t sm:border border-white/10 flex flex-col"
+                        className="w-full sm:max-w-md member-card rounded-t-3xl sm:rounded-2xl border-t sm:border flex flex-col"
                         onClick={e => e.stopPropagation()}
                     >
                         {/* Modal Header */}
@@ -399,7 +399,7 @@ export default function Rewards() {
                         {/* Modal Content */}
                         <div className="p-5 space-y-4">
                             {/* Reward Preview */}
-                            <div className="bg-white/5 rounded-lg overflow-hidden border border-white/10">
+                            <div className="member-card-soft rounded-lg overflow-hidden">
                                 {selectedReward.imageUrl && (
                                     <img src={selectedReward.imageUrl} alt={selectedReward.name} className="w-full h-48 object-cover" />
                                 )}

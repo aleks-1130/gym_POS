@@ -101,8 +101,29 @@ export const AuthProvider = ({ children }) => {
                     localStorage.setItem('authToken', backendToken);
                 }
 
+                // Store token for cross-domain Bearer auth (cookie won't work cross-domain)
+                if (backendToken) {
+                    localStorage.setItem('authToken', backendToken);
+                }
+
+                const role = String(backendUser.role || '').toUpperCase();
                 setUser(backendUser);
                 localStorage.setItem('user', JSON.stringify(backendUser));
+
+                // Restore the intended flow: login first, then branch selection
+                // for switchable roles.
+                if (role === 'OWNER' || role === 'MEMBER') {
+                    setActiveGymId(null);
+                    localStorage.removeItem('activeGymId');
+                } else {
+                    const gymId = backendUser?.gymId ? String(backendUser.gymId) : null;
+                    setActiveGymId(gymId);
+                    if (gymId) {
+                        localStorage.setItem('activeGymId', gymId);
+                    } else {
+                        localStorage.removeItem('activeGymId');
+                    }
+                }
                 return true;
             } catch (backendErr) {
                 const errorMsg = backendErr.response?.data?.error || backendErr.message;

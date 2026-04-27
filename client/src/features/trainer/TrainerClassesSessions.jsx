@@ -460,13 +460,20 @@ export default function TrainerClassesSessions() {
   }, [activeHistoryTab, activeTabBaseHistory]);
 
   const monthYearLabel = monthCursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-  const startOfMonth = new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1);
-  const endOfMonth = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0);
-  const leadingDays = startOfMonth.getDay();
-  const rows = Math.ceil((leadingDays + endOfMonth.getDate()) / 7);
-  const firstCellDate = new Date(startOfMonth);
-  firstCellDate.setDate(firstCellDate.getDate() - leadingDays);
+  const calendarCells = useMemo(() => {
+    const start = new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1);
+    const end = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0);
+    const leading = start.getDay();
+    const cells = [];
+    for (let i = 0; i < leading; i += 1) cells.push(null);
+    for (let day = 1; day <= end.getDate(); day += 1) {
+      cells.push(new Date(monthCursor.getFullYear(), monthCursor.getMonth(), day));
+    }
+    while (cells.length % 7 !== 0) cells.push(null);
+    return cells;
+  }, [monthCursor]);
   const todayStart = startOfDay(new Date());
+  const todayKey = todayStart.toDateString();
 
   const handleCompleteSession = async (sessionId) => {
     setUpdatingSessionId(sessionId);
@@ -759,97 +766,116 @@ export default function TrainerClassesSessions() {
           </section>
 
           <section className="px-4 space-y-4">
-            <div className="flex items-center justify-between bg-white/5 backdrop-blur-md rounded-2xl border border-white/10 p-3 shadow-lg">
-              <button
-                onClick={() => setMonthCursor(new Date(monthCursor.getFullYear(), monthCursor.getMonth() - 1, 1))}
-                className="w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 text-white hover:bg-white/10 transition-colors"
-              >
-                <span className="material-icons-round text-base">chevron_left</span>
-              </button>
-              <p className="text-white font-bold text-sm tracking-tight">{monthYearLabel}</p>
-              <button
-                onClick={() => setMonthCursor(new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 1))}
-                className="w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 text-white hover:bg-white/10 transition-colors"
-              >
-                <span className="material-icons-round text-base">chevron_right</span>
-              </button>
-            </div>
+            <div className="member-card-subtle bg-[#233248]/85 backdrop-blur-md p-4 sm:p-5 shadow-2xl">
+              <div className="flex items-center justify-between mb-5">
+                <button
+                  type="button"
+                  onClick={() => setMonthCursor(new Date(monthCursor.getFullYear(), monthCursor.getMonth() - 1, 1))}
+                  className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white transition-all active:scale-95 border border-white/5"
+                >
+                  <span className="material-icons-round">chevron_left</span>
+                </button>
+                <div className="text-center">
+                  <p className="text-base sm:text-lg font-black text-white px-3">{monthYearLabel}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMonthCursor(new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 1))}
+                  className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white transition-all active:scale-95 border border-white/5"
+                >
+                  <span className="material-icons-round">chevron_right</span>
+                </button>
+              </div>
 
-            <div className="grid grid-cols-7 gap-2 px-1">
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-                <div key={d} className="text-[10px] text-center uppercase tracking-widest text-text-muted font-black">{d}</div>
-              ))}
-            </div>
+              <div className="grid grid-cols-7 gap-1.5 mb-3 text-center">
+                {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
+                  <div key={`${day}-${index}`} className="text-xs font-black text-white/40 uppercase tracking-widest">{day}</div>
+                ))}
+              </div>
 
-            <div className="grid grid-cols-7 gap-2">
-              {Array.from({ length: rows * 7 }).map((_, idx) => {
-                const day = new Date(firstCellDate);
-                day.setDate(firstCellDate.getDate() + idx);
-                const dayKey = day.toDateString();
-                const dayEvents = eventsByDay[dayKey] || { total: 0, sessionCount: 0, classCount: 0 };
-                const isCurrentMonth = day.getMonth() === monthCursor.getMonth();
-                const isToday = new Date().toDateString() === dayKey;
-                const isSelected = selectedDay === dayKey;
-                const hasCheckIn = trainerAttendedByDate.has(dayKey);
-                const isFuture = day > todayStart;
-                const isTrainerStartDay = hasTrainerRegistrationDate && Boolean(trainerStartDayKey) && dayKey === trainerStartDayKey;
-                const beforeTrainerStart = day < trainerStartDate;
-                const isMissedCheckIn = isCurrentMonth && !isFuture && !hasCheckIn && !beforeTrainerStart;
+              <div className="grid grid-cols-7 gap-1.5">
+                {calendarCells.map((day, index) => {
+                  if (!day) return <div key={`blank-${index}`} className="aspect-square" />;
 
-                let dayStyling = '';
-                if (!isCurrentMonth) {
-                  dayStyling = 'bg-white/[0.02] border-white/5 opacity-20';
-                } else if (isToday) {
-                  dayStyling = 'bg-primary/10 border-primary/40 text-primary shadow-sm';
-                } else if (isSelected) {
-                  dayStyling = 'bg-white/10 border-white/30 text-white';
-                } else {
-                  dayStyling = 'bg-white/5 border-white/10 text-white/80 hover:bg-white/10 hover:border-white/20';
-                }
+                  const dayKey = day.toDateString();
+                  const dayEvents = eventsByDay[dayKey] || { total: 0, sessionCount: 0, classCount: 0 };
+                  const bookingCount = Number(dayEvents.sessionCount || 0);
+                  const classCount = Number(dayEvents.classCount || 0);
+                  const dayEventsTotal = bookingCount + classCount;
+                  const isToday = todayKey === dayKey;
+                  const isSelected = selectedDay === dayKey;
+                  const hasCheckIn = trainerAttendedByDate.has(dayKey);
+                  const isFuture = day > todayStart;
+                  const isTrainerStartDay = hasTrainerRegistrationDate && Boolean(trainerStartDayKey) && dayKey === trainerStartDayKey;
+                  const beforeTrainerStart = day < trainerStartDate;
+                  const isMissedCheckIn = !isFuture && !hasCheckIn && !beforeTrainerStart;
 
-                return (
-                  <button
-                    key={`${dayKey}-${idx}`}
-                    type="button"
-                    onClick={() => {
-                      setSelectedDay(dayKey);
-                      if (isTrainerStartDay) {
-                        setRegistrationDayModal({
-                          title: 'Trainer Registration Date',
-                          message: `You were registered as trainer on ${formatDate(day)}.`
-                        });
-                      }
-                    }}
-                    className={`min-h-[64px] sm:min-h-[74px] rounded-2xl border p-2 flex flex-col text-left transition-all ${dayStyling} ${isSelected ? 'scale-[1.05] z-10 shadow-xl' : 'hover:scale-[1.02]'}`}
-                  >
-                    <div className="flex items-center justify-between text-[11px] font-bold">
-                      <span className={isToday ? 'bg-primary text-background w-5 h-5 rounded-lg flex items-center justify-center' : ''}>
-                        {day.getDate()}
-                      </span>
-                      {dayEvents.total > 0 && (
-                        <span className="w-4 h-4 rounded-full bg-white/10 flex items-center justify-center text-[9px] font-black text-white/50 border border-white/10">
-                          {dayEvents.total}
+                  return (
+                    <button
+                      key={dayKey}
+                      type="button"
+                      onClick={() => {
+                        setSelectedDay(dayKey);
+                        if (isTrainerStartDay) {
+                          setRegistrationDayModal({
+                            title: 'Trainer Registration Date',
+                            message: `You were registered as trainer on ${formatDate(day)}.`
+                          });
+                        }
+                      }}
+                      className={`aspect-square rounded-xl text-sm sm:text-base font-bold transition-all duration-300 relative group border ${
+                        isSelected
+                          ? 'bg-white text-background border-white shadow-lg shadow-white/20 scale-105 z-10'
+                          : isToday
+                            ? 'bg-white/10 text-white border-white/30'
+                            : beforeTrainerStart
+                              ? 'text-white/20 cursor-not-allowed opacity-60 bg-white/[0.02] border-white/5'
+                              : 'bg-white/5 text-white hover:bg-white/10 hover:border-white/20 border-white/10 shadow-sm'
+                      }`}
+                    >
+                      <span className="absolute top-2 left-2">{day.getDate()}</span>
+                      {dayEventsTotal > 0 && (
+                        <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-white/15 flex items-center justify-center text-[9px] font-black text-white/60 border border-white/10">
+                          {dayEventsTotal}
                         </span>
                       )}
-                    </div>
-                    <div className="mt-auto flex flex-wrap gap-1">
-                      {Array.from({ length: Math.min(dayEvents.sessionCount, 3) }).map((_, i) => (
-                        <span key={`s-${i}`} className="w-1.5 h-1.5 rounded-full bg-primary/80 shadow-[0_0_4px_rgba(var(--primary-rgb),0.5)]"></span>
-                      ))}
-                      {Array.from({ length: Math.min(dayEvents.classCount, 3) }).map((_, i) => (
-                        <span key={`c-${i}`} className="w-1.5 h-1.5 rounded-full bg-cyan-400/80 shadow-[0_0_4px_rgba(34,211,238,0.5)]"></span>
-                      ))}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+                      <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex items-center gap-1">
+                        {hasCheckIn && !beforeTrainerStart && !isFuture ? (
+                          <span className="material-icons-round text-[12px] leading-none text-emerald-400">check_circle</span>
+                        ) : null}
+                        {isMissedCheckIn ? (
+                          <span className="material-icons-round text-[12px] leading-none text-rose-400">cancel</span>
+                        ) : null}
+                        {bookingCount > 0 ? (
+                          <span className="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_4px_rgba(var(--primary-rgb),0.5)]" />
+                        ) : null}
+                        {classCount > 0 ? (
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-300 shadow-[0_0_4px_rgba(147,197,253,0.5)]" />
+                        ) : null}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
 
-            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[11px] text-text-muted">
-              <div className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm border border-emerald-400/35 bg-emerald-500/15"></span><span>Checked In</span></div>
-              <div className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm border border-rose-400/35 bg-rose-500/15"></span><span>No Check-in</span></div>
-              <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-primary"></span><span>Bookings</span></div>
-              <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-cyan-400"></span><span>Classes</span></div>
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[11px] text-text-muted">
+                <div className="flex items-center gap-1.5">
+                  <span className="material-icons-round text-[16px] leading-none text-emerald-400">check_circle</span>
+                  <span>Check-in</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="material-icons-round text-[16px] leading-none text-rose-400">cancel</span>
+                  <span>No Check-in</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="material-icons-round text-[16px] leading-none text-primary">fitness_center</span>
+                  <span>Bookings</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="material-icons-round text-[16px] leading-none text-cyan-300">groups</span>
+                  <span>Classes</span>
+                </div>
+              </div>
             </div>
           </section>
 

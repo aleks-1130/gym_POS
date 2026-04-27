@@ -130,19 +130,19 @@ export default function GymTraffic() {
             />
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <div className="bg-surface rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-white/5">
+                <div className="member-card p-3 sm:p-4">
                     <p className="text-text-muted text-xs sm:text-sm mb-1">Check-ins This Week</p>
                     <p className="text-xl sm:text-2xl font-bold text-primary">
                         {countsByDay.reduce((sum, entry) => sum + entry.count, 0)}
                     </p>
                 </div>
-                <div className="bg-surface rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-white/5">
+                <div className="member-card p-3 sm:p-4">
                     <p className="text-text-muted text-xs sm:text-sm mb-1">Busiest Day</p>
                     <p className="text-sm sm:text-base font-bold text-emerald-400">
                         {dayLabels[busiestDay.day.getDay()]} • {busiestDay.count} visits
                     </p>
                 </div>
-                <div className="bg-surface rounded-xl sm:rounded-2xl p-3 sm:p-4 border border-white/5 col-span-2 sm:col-span-1">
+                <div className="member-card p-3 sm:p-4 col-span-2 sm:col-span-1">
                     <p className="text-text-muted text-xs sm:text-sm mb-1">Busiest Hour</p>
                     <p className="text-sm sm:text-base font-bold text-yellow-400">
                         {formatHour12(busiestHour.hour)} • {busiestHour.count} visits
@@ -150,7 +150,7 @@ export default function GymTraffic() {
                 </div>
             </div>
 
-            <div className="bg-surface rounded-2xl border border-white/5 p-4 sm:p-6 space-y-4">
+            <div className="member-card p-4 sm:p-6 space-y-4">
                 <div className="flex items-center justify-between">
                     <h2 className="text-white font-semibold text-base sm:text-lg">Week Overview</h2>
                     <span className="text-text-muted text-xs">Total check-ins per day</span>
@@ -180,7 +180,7 @@ export default function GymTraffic() {
                 </div>
             </div>
 
-            <div className="bg-surface rounded-2xl border border-white/5 p-4 sm:p-6 space-y-4">
+            <div className="member-card p-4 sm:p-6 space-y-4">
                 <div className="space-y-3">
                     <div>
                         <h2 className="text-white font-semibold text-base sm:text-lg">Day & Hour Detail</h2>

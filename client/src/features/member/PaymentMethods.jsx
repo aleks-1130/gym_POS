@@ -136,7 +136,7 @@ export default function PaymentMethods() {
     const renderMethodRow = (method) => (
         <div
             key={method.id}
-            className="flex items-center justify-between gap-3 bg-surfaceHighlight border border-white/10 rounded-xl p-3"
+            className="member-card-soft flex items-center justify-between gap-3 p-3"
         >
             <div className="min-w-0">
                 <p className="text-white text-sm font-semibold truncate">
@@ -176,7 +176,7 @@ export default function PaymentMethods() {
                 icon="wallet"
             />
 
-            <section className="bg-surface rounded-2xl p-5 border border-white/5">
+            <section className="member-card p-5">
                 <div className="flex items-center justify-between mb-4">
                     <h2 className="text-sm font-bold text-white">Add Method</h2>
                     <span className="text-xs text-text-muted">Choose type first</span>
@@ -188,7 +188,7 @@ export default function PaymentMethods() {
                         onClick={() => setActiveForm('E_WALLET')}
                         className={`p-3 rounded-xl border flex items-center gap-3 transition-all ${activeForm === 'E_WALLET'
                             ? 'bg-primary/10 border-primary/40 text-primary'
-                            : 'bg-surfaceHighlight border-white/10 text-text-muted hover:text-white'
+                            : 'bg-white/5 border-white/10 text-text-muted hover:text-white'
                             }`}
                     >
                         <WalletIcon className="w-5 h-5" />
@@ -202,7 +202,7 @@ export default function PaymentMethods() {
                         onClick={() => setActiveForm('CARD')}
                         className={`p-3 rounded-xl border flex items-center gap-3 transition-all ${activeForm === 'CARD'
                             ? 'bg-primary/10 border-primary/40 text-primary'
-                            : 'bg-surfaceHighlight border-white/10 text-text-muted hover:text-white'
+                            : 'bg-white/5 border-white/10 text-text-muted hover:text-white'
                             }`}
                     >
                         <CardIcon className="w-5 h-5" />
@@ -226,25 +226,25 @@ export default function PaymentMethods() {
                                 ]}
                             />
                         </div>
-                        <input className="bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white" placeholder="Label (optional)" value={walletForm.label} onChange={(e) => setWalletForm((prev) => ({ ...prev, label: e.target.value }))} />
-                        <input className="bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white" placeholder="Account Name" value={walletForm.name} onChange={(e) => setWalletForm((prev) => ({ ...prev, name: e.target.value }))} required />
-                        <input className="bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white sm:col-span-2" placeholder="Mobile Number" value={walletForm.phone} onChange={(e) => setWalletForm((prev) => ({ ...prev, phone: e.target.value }))} required />
-                        <button type="submit" className="sm:col-span-2 px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-orange-600">Add E-Wallet</button>
+                        <input className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white" placeholder="Label (optional)" value={walletForm.label} onChange={(e) => setWalletForm((prev) => ({ ...prev, label: e.target.value }))} />
+                        <input className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white" placeholder="Account Name" value={walletForm.name} onChange={(e) => setWalletForm((prev) => ({ ...prev, name: e.target.value }))} required />
+                        <input className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white sm:col-span-2" placeholder="Mobile Number" value={walletForm.phone} onChange={(e) => setWalletForm((prev) => ({ ...prev, phone: e.target.value }))} required />
+                        <button type="submit" className="sm:col-span-2 px-4 py-2 rounded-xl bg-primary text-background text-sm font-semibold hover:brightness-110">Add E-Wallet</button>
                     </form>
                 ) : (
                     <form className="grid grid-cols-1 sm:grid-cols-2 gap-3" onSubmit={handleAddCard}>
-                        <input className="bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white" placeholder="Label (optional)" value={cardForm.label} onChange={(e) => setCardForm((prev) => ({ ...prev, label: e.target.value }))} />
-                        <input className="bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white" placeholder="Name on Card" value={cardForm.name} onChange={(e) => setCardForm((prev) => ({ ...prev, name: e.target.value }))} required />
-                        <input className="bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white" placeholder="Brand (Visa, Mastercard)" value={cardForm.brand} onChange={(e) => setCardForm((prev) => ({ ...prev, brand: e.target.value }))} />
-                        <input className="bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white" placeholder="Last 4 digits" value={cardForm.last4} onChange={(e) => setCardForm((prev) => ({ ...prev, last4: e.target.value.replace(/\D/g, '').slice(0, 4) }))} required />
-                        <input className="bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white" placeholder="Exp. Month (MM)" value={cardForm.expMonth} onChange={(e) => setCardForm((prev) => ({ ...prev, expMonth: e.target.value.replace(/\D/g, '').slice(0, 2) }))} required />
-                        <input className="bg-surfaceHighlight border border-white/10 rounded-xl px-3 py-2 text-sm text-white" placeholder="Exp. Year (YYYY)" value={cardForm.expYear} onChange={(e) => setCardForm((prev) => ({ ...prev, expYear: e.target.value.replace(/\D/g, '').slice(0, 4) }))} required />
-                        <button type="submit" className="sm:col-span-2 px-4 py-2 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-orange-600">Add Card</button>
+                        <input className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white" placeholder="Label (optional)" value={cardForm.label} onChange={(e) => setCardForm((prev) => ({ ...prev, label: e.target.value }))} />
+                        <input className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white" placeholder="Name on Card" value={cardForm.name} onChange={(e) => setCardForm((prev) => ({ ...prev, name: e.target.value }))} required />
+                        <input className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white" placeholder="Brand (Visa, Mastercard)" value={cardForm.brand} onChange={(e) => setCardForm((prev) => ({ ...prev, brand: e.target.value }))} />
+                        <input className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white" placeholder="Last 4 digits" value={cardForm.last4} onChange={(e) => setCardForm((prev) => ({ ...prev, last4: e.target.value.replace(/\D/g, '').slice(0, 4) }))} required />
+                        <input className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white" placeholder="Exp. Month (MM)" value={cardForm.expMonth} onChange={(e) => setCardForm((prev) => ({ ...prev, expMonth: e.target.value.replace(/\D/g, '').slice(0, 2) }))} required />
+                        <input className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white" placeholder="Exp. Year (YYYY)" value={cardForm.expYear} onChange={(e) => setCardForm((prev) => ({ ...prev, expYear: e.target.value.replace(/\D/g, '').slice(0, 4) }))} required />
+                        <button type="submit" className="sm:col-span-2 px-4 py-2 rounded-xl bg-primary text-background text-sm font-semibold hover:brightness-110">Add Card</button>
                     </form>
                 )}
             </section>
 
-            <section className="bg-surface rounded-2xl p-5 border border-white/5 space-y-5">
+            <section className="member-card p-5 space-y-5">
                 <div className="flex items-center justify-between">
                     <h2 className="text-sm font-bold text-white">Saved Methods</h2>
                     <span className="text-xs text-text-muted">{methods.length} total</span>
@@ -263,7 +263,7 @@ export default function PaymentMethods() {
                                 <span className="text-text-muted">({walletMethods.length})</span>
                             </div>
                             {walletMethods.length === 0 ? (
-                                <div className="text-xs text-text-muted bg-surfaceHighlight border border-white/10 rounded-lg p-3">No e-wallet methods added.</div>
+                                <div className="text-xs text-text-muted bg-white/5 border border-white/10 rounded-lg p-3">No e-wallet methods added.</div>
                             ) : walletMethods.map(renderMethodRow)}
                         </div>
 
@@ -274,7 +274,7 @@ export default function PaymentMethods() {
                                 <span className="text-text-muted">({cardMethods.length})</span>
                             </div>
                             {cardMethods.length === 0 ? (
-                                <div className="text-xs text-text-muted bg-surfaceHighlight border border-white/10 rounded-lg p-3">No card methods added.</div>
+                                <div className="text-xs text-text-muted bg-white/5 border border-white/10 rounded-lg p-3">No card methods added.</div>
                             ) : cardMethods.map(renderMethodRow)}
                         </div>
                     </>

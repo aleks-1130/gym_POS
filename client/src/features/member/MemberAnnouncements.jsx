@@ -278,7 +278,7 @@ export default function MemberAnnouncements() {
             </MemberPageHeader>
 
             {filteredAnnouncements.length === 0 ? (
-                <div className="bg-surface rounded-xl p-8 text-center border border-white/5">
+                <div className="member-card p-8 text-center">
                     <span className="material-icons-round text-text-muted text-4xl mb-2">inbox</span>
                     <p className="text-text-muted text-sm">No announcements found for this filter.</p>
                 </div>
@@ -293,7 +293,7 @@ export default function MemberAnnouncements() {
                         return (
                             <article
                                 key={announcement.id}
-                                className={`rounded-xl border p-4 sm:p-5 transition-colors ${cardTone}`}
+                                className={`member-card-soft p-4 sm:p-5 transition-colors ${cardTone}`}
                             >
                                 <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0 flex-1">
@@ -341,7 +341,7 @@ export default function MemberAnnouncements() {
                         className="absolute inset-0 bg-black/75 backdrop-blur-sm"
                     />
 
-                    <div className="relative w-full max-w-md max-h-[85vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl border border-white/10 bg-surface shadow-2xl p-4 sm:p-5 animate-in slide-in-from-bottom-8 sm:zoom-in-95 duration-200">
+                    <div className="relative w-full max-w-md max-h-[85vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl member-card p-4 sm:p-5 animate-in slide-in-from-bottom-8 sm:zoom-in-95 duration-200">
                         <div className="mx-auto mb-3 h-1 w-12 rounded-full bg-white/20 sm:hidden" />
                         <div className="flex items-start justify-between gap-3 mb-3">
                             <div>

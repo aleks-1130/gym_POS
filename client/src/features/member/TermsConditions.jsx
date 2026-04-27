@@ -42,7 +42,7 @@ export default function TermsConditions() {
                 )}
             />
 
-            <section className="rounded-2xl border border-white/10 bg-surface p-4 sm:p-5">
+            <section className="member-card p-4 sm:p-5">
                 <div className="pb-3 border-b border-white/10">
                     <h2 className="text-lg font-bold text-white">Gym POS Membership Form</h2>
                     <p className="text-xs text-text-muted mt-1">
@@ -52,7 +52,7 @@ export default function TermsConditions() {
 
                 <div className="mt-4 space-y-3">
                     {agreementSections.map((section) => (
-                        <article key={section.title} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                        <article key={section.title} className="member-card-soft p-3">
                             <h3 className="text-sm font-bold text-white">{section.title}</h3>
                             <p className="text-xs text-text-secondary mt-1.5 leading-relaxed">{section.content}</p>
                         </article>

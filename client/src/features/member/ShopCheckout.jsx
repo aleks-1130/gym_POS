@@ -165,13 +165,13 @@ export default function ShopCheckout() {
                 icon="shopping_cart_checkout"
             />
 
-            <section className="bg-[#16181d] border border-white/10 rounded-[2rem] p-5 sm:p-6 space-y-6 shadow-2xl">
+            <section className="member-card p-5 sm:p-6 space-y-6">
                 <div className="space-y-1">
                     <p className="text-[10px] text-primary font-black uppercase tracking-[0.2em]">Secure Checkout</p>
                     <h2 className="text-2xl sm:text-3xl font-black text-white">Select Payment</h2>
                 </div>
 
-                <div className="rounded-3xl bg-white/5 border border-white/10 p-4 sm:p-5 space-y-3">
+                <div className="member-card-soft p-4 sm:p-5 space-y-3">
                     {cart.length === 0 ? (
                         <div className="text-center py-6">
                             <p className="text-sm text-text-muted">Your cart is empty.</p>

@@ -157,18 +157,18 @@ export default function PurchaseHistory() {
                 />
 
                 <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-surface rounded-xl p-3 sm:p-4 border border-white/5">
+                    <div className="member-card p-3 sm:p-4">
                         <p className="text-text-muted text-[10px] sm:text-xs mb-1">Total Spent</p>
                         <p className="text-primary text-lg sm:text-2xl font-bold">{formatPrice(totalSpent)}</p>
                     </div>
-                    <div className="bg-surface rounded-xl p-3 sm:p-4 border border-white/5">
+                    <div className="member-card p-3 sm:p-4">
                         <p className="text-text-muted text-[10px] sm:text-xs mb-1">Transactions</p>
                         <p className="text-white text-lg sm:text-2xl font-bold">{allTransactions.length}</p>
                     </div>
                 </div>
             </div>
 
-            <div className="rounded-xl border border-white/10 bg-surface p-3 sm:p-4">
+            <div className="member-card-subtle p-3 sm:p-4">
                 <div className="space-y-3 sm:grid sm:grid-cols-[minmax(0,1fr)_280px] sm:gap-4 sm:space-y-0 sm:items-end">
                     <div>
                         <p className="text-[11px] font-semibold uppercase tracking-wide text-text-muted">Category</p>
@@ -232,13 +232,13 @@ export default function PurchaseHistory() {
             </div>
 
             {filteredTransactions.length === 0 ? (
-                <div className="bg-surface rounded-xl p-8 text-center border border-white/5">
+                <div className="member-card p-8 text-center">
                     <span className="material-icons-round text-text-muted text-4xl mb-2">receipt_long</span>
                     <p className="text-text-muted text-sm">No transactions found</p>
                 </div>
             ) : (
                 <div className="space-y-3">
-                    <div className="hidden sm:block bg-surface rounded-xl border border-white/5 overflow-hidden">
+                    <div className="hidden sm:block member-card overflow-hidden">
                         <table className="w-full">
                             <thead className="bg-white/5 border-b border-white/5">
                                 <tr className="text-left">
@@ -316,7 +316,7 @@ export default function PurchaseHistory() {
 
                     <div className="sm:hidden space-y-3">
                         {filteredTransactions.map((item) => (
-                            <div key={item.id} className="bg-surface rounded-xl p-4 border border-white/5 space-y-3">
+                            <div key={item.id} className="member-card p-4 space-y-3">
                                 <div className="flex items-start justify-between">
                                     <div className="flex-1">
                                         <div className="flex items-center gap-2 mb-1">

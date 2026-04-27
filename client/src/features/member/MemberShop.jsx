@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useNavigate } from 'react-router-dom';
@@ -18,8 +18,8 @@ export default function MemberShop() {
     const [sessionId, setSessionId] = useState(null);
     const [addingToCart, setAddingToCart] = useState({});
     const [showCartModal, setShowCartModal] = useState(false);
-    const [cartPopup, setCartPopup] = useState({ show: false, itemName: '' });
-    const cartPopupTimerRef = useRef(null);
+    const [buyNowModal, setBuyNowModal] = useState({ open: false, product: null, quantity: '1' });
+    const [addedToCartModal, setAddedToCartModal] = useState({ open: false, itemName: '' });
     const [activeCategory, setActiveCategory] = useState('ALL');
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState('featured');
@@ -38,22 +38,8 @@ export default function MemberShop() {
         fetchPaymentMethods();
     }, [user?.role]);
 
-    useEffect(() => {
-        return () => {
-            if (cartPopupTimerRef.current) {
-                clearTimeout(cartPopupTimerRef.current);
-            }
-        };
-    }, []);
-
-    const showAddToCartPopup = (itemName) => {
-        if (cartPopupTimerRef.current) {
-            clearTimeout(cartPopupTimerRef.current);
-        }
-        setCartPopup({ show: true, itemName });
-        cartPopupTimerRef.current = setTimeout(() => {
-            setCartPopup((prev) => ({ ...prev, show: false }));
-        }, 1600);
+    const closeAddedToCartModal = () => {
+        setAddedToCartModal({ open: false, itemName: '' });
     };
 
     useEffect(() => {
@@ -159,7 +145,7 @@ export default function MemberShop() {
             }
 
             saveCart(updatedCart);
-            showAddToCartPopup(product.name);
+            setAddedToCartModal({ open: true, itemName: product.name });
             return true;
         } catch (error) {
             console.error("Failed to reserve stock", error);
@@ -174,14 +160,73 @@ export default function MemberShop() {
         }
     };
 
-    const handleBuyNow = async (product) => {
+    const handleBuyNow = (product) => {
         if (!product) return;
-        const alreadyInCart = cart.some((item) => item.id === product.id);
-        const added = alreadyInCart ? true : await addToCart(product);
-        if (!added) return;
-        setShowCartModal(false);
-        setSelectedPaymentType('CASH');
-        setShowPaymentModal(true);
+        const currentQty = Number(cart.find((item) => item.id === product.id)?.quantity || 0);
+        const defaultQty = currentQty > 0 ? currentQty : 1;
+        setBuyNowModal({ open: true, product, quantity: String(defaultQty) });
+    };
+
+    const closeBuyNowModal = () => {
+        setBuyNowModal({ open: false, product: null, quantity: '1' });
+    };
+
+    const adjustBuyNowQuantity = (delta) => {
+        setBuyNowModal((prev) => {
+            const productStock = Number(prev.product?.stock || 0);
+            const current = Number.parseInt(prev.quantity, 10) || 1;
+            const next = Math.max(1, Math.min(productStock || 1, current + delta));
+            return { ...prev, quantity: String(next) };
+        });
+    };
+
+    const confirmBuyNowQuantity = async () => {
+        const product = buyNowModal.product;
+        if (!product) return;
+
+        const maxStock = Number(product.stock || 0);
+        const desiredQty = Number.parseInt(String(buyNowModal.quantity || '').trim(), 10);
+        const quantity = Number.isInteger(desiredQty) ? desiredQty : 1;
+
+        if (quantity < 1) {
+            await showAlert({ title: 'Invalid Quantity', message: 'Quantity must be at least 1.', type: 'warning' });
+            return;
+        }
+
+        if (quantity > maxStock) {
+            await showAlert({ title: 'Stock Limit', message: `Only ${maxStock} item(s) available.`, type: 'warning' });
+            return;
+        }
+
+        const sid = getSessionId();
+        setAddingToCart((prev) => ({ ...prev, [product.id]: true }));
+        try {
+            await axios.post('/api/pos/reserve', {
+                sessionId: sid,
+                productId: product.id,
+                quantity
+            });
+
+            const existingItem = cart.find((item) => item.id === product.id);
+            const updatedCart = existingItem
+                ? cart.map((item) => (item.id === product.id ? { ...item, quantity } : item))
+                : [...cart, { ...product, quantity }];
+
+            saveCart(updatedCart);
+            closeBuyNowModal();
+            setShowCartModal(false);
+            setSelectedPaymentType('CASH');
+            setShowPaymentModal(true);
+        } catch (error) {
+            console.error('Failed to reserve stock for buy now', error);
+            await showAlert({
+                title: 'Reservation Failed',
+                message: error.response?.data?.error || 'Unable to set selected quantity.',
+                type: 'warning'
+            });
+        } finally {
+            setAddingToCart((prev) => ({ ...prev, [product.id]: false }));
+        }
     };
 
     const updateCartQuantity = async (productId, newQuantity) => {
@@ -579,15 +624,133 @@ export default function MemberShop() {
                 )}
             </div>
 
-            {cartPopup.show && (
-                <div className="fixed right-6 bottom-32 z-[60] pointer-events-none animate-in fade-in slide-in-from-right-4 duration-300">
-                    <div className="bg-emerald-500 border border-emerald-400/30 text-white rounded-[24px] px-5 py-4 shadow-[0_20px_40px_rgba(16,185,129,0.3)] backdrop-blur-xl flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center uppercase font-black text-xs">
-                            <span className="material-icons-round text-xl">done</span>
+            {addedToCartModal.open && (
+                <div className="fixed inset-0 z-[125] flex items-center justify-center p-4">
+                    <button
+                        type="button"
+                        className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+                        onClick={closeAddedToCartModal}
+                        aria-label="Close added to cart modal"
+                    />
+                    <div
+                        className="relative w-full max-w-sm bg-surface rounded-3xl border border-white/10 p-6 shadow-2xl text-center"
+                        style={{ animation: 'cartSuccessPop 420ms cubic-bezier(0.22, 1, 0.36, 1)' }}
+                    >
+                        <div className="relative w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-primary/20">
+                            <span
+                                className="pointer-events-none absolute inset-0 rounded-full border border-primary/40"
+                                style={{ animation: 'cartSuccessRing 850ms ease-out' }}
+                            />
+                            <span className="material-icons-round text-5xl text-primary" style={{ animation: 'cartSuccessCheck 520ms ease-out' }}>check_circle</span>
                         </div>
-                        <div>
-                            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-100/80 leading-none mb-1">Added to Basket</p>
-                            <p className="text-[13px] font-bold text-white max-w-[180px] truncate">{cartPopup.itemName}</p>
+                        <h2 className="text-2xl font-bold text-white mb-2">Added to Basket</h2>
+                        <p className="text-text-muted text-sm mb-6 px-4">
+                            <strong className="text-white">{addedToCartModal.itemName}</strong> was added to your cart.
+                        </p>
+                        <div className="flex gap-2">
+                            <button
+                                type="button"
+                                onClick={closeAddedToCartModal}
+                                className="flex-1 py-3 rounded-xl font-bold bg-white/5 text-white hover:bg-white/10 transition-all"
+                            >
+                                Continue
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    closeAddedToCartModal();
+                                    setShowCartModal(true);
+                                }}
+                                className="flex-1 py-3 rounded-xl font-bold bg-primary text-background hover:brightness-110 transition-all"
+                            >
+                                View Basket
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {buyNowModal.open && (
+                <div className="fixed inset-0 z-[115] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={closeBuyNowModal} />
+                    <div className="relative w-full max-w-sm rounded-3xl border border-white/10 bg-[#14161a] p-5 sm:p-6 shadow-2xl space-y-5">
+                        <div className="space-y-1">
+                            <p className="text-[10px] text-primary font-bold uppercase tracking-[0.16em]">Buy Now</p>
+                            <h3 className="text-xl font-extrabold text-white leading-tight">{buyNowModal.product?.name}</h3>
+                            <p className="text-xs text-text-muted">Choose quantity before proceeding to order details.</p>
+                        </div>
+
+                        <div className="rounded-2xl border border-white/10 bg-black/20 p-4 space-y-3">
+                            <div className="flex items-center justify-between text-xs">
+                                <span className="text-text-muted uppercase tracking-wider">Available Stock</span>
+                                <span className="text-white font-bold">{Number(buyNowModal.product?.stock || 0)}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => adjustBuyNowQuantity(-1)}
+                                    className="w-10 h-10 rounded-xl border border-white/10 bg-white/5 text-white hover:bg-white/10"
+                                >
+                                    <span className="material-icons-round text-base">remove</span>
+                                </button>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max={Number(buyNowModal.product?.stock || 1)}
+                                    value={buyNowModal.quantity}
+                                    onChange={(e) => {
+                                        const raw = e.target.value.replace(/[^\d]/g, '');
+                                        setBuyNowModal((prev) => ({ ...prev, quantity: raw }));
+                                    }}
+                                    onBlur={() => {
+                                        setBuyNowModal((prev) => {
+                                            const stock = Number(prev.product?.stock || 1);
+                                            const parsed = Number.parseInt(prev.quantity, 10);
+                                            const normalized = Number.isInteger(parsed) ? Math.max(1, Math.min(stock, parsed)) : 1;
+                                            return { ...prev, quantity: String(normalized) };
+                                        });
+                                    }}
+                                    className="flex-1 h-10 rounded-xl border border-white/10 bg-black/30 text-center text-white font-bold focus:outline-none focus:border-primary"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => adjustBuyNowQuantity(1)}
+                                    className="w-10 h-10 rounded-xl border border-white/10 bg-white/5 text-white hover:bg-white/10"
+                                >
+                                    <span className="material-icons-round text-base">add</span>
+                                </button>
+                            </div>
+                            <div className="flex items-center justify-between text-xs">
+                                <span className="text-text-muted uppercase tracking-wider">Estimated Total</span>
+                                <span className="text-primary font-black">
+                                    {formatPrice((Number(buyNowModal.product?.price || 0) || 0) * (Number.parseInt(buyNowModal.quantity, 10) || 1))}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={closeBuyNowModal}
+                                className="flex-1 h-11 rounded-xl border border-white/10 bg-white/5 text-white/70 font-bold uppercase tracking-wider hover:text-white hover:bg-white/10"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={confirmBuyNowQuantity}
+                                disabled={Boolean(addingToCart[buyNowModal.product?.id])}
+                                className="flex-1 h-11 rounded-xl bg-primary text-background font-black uppercase tracking-wider hover:brightness-110 disabled:opacity-50 flex items-center justify-center gap-2"
+                            >
+                                {addingToCart[buyNowModal.product?.id] ? (
+                                    <div className="w-4 h-4 border-2 border-background/40 border-t-background rounded-full animate-spin" />
+                                ) : (
+                                    <>
+                                        <span className="material-icons-round text-base">shopping_bag</span>
+                                        Continue
+                                    </>
+                                )}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -880,6 +1043,46 @@ export default function MemberShop() {
                     </div>
                 </div>
             )}
+            <style>{`
+                @keyframes cartSuccessPop {
+                    0% {
+                        transform: scale(0.84) translateY(14px);
+                        opacity: 0;
+                    }
+                    65% {
+                        transform: scale(1.03) translateY(-2px);
+                        opacity: 1;
+                    }
+                    100% {
+                        transform: scale(1) translateY(0);
+                        opacity: 1;
+                    }
+                }
+                @keyframes cartSuccessCheck {
+                    0% {
+                        transform: scale(0.5) rotate(-12deg);
+                        opacity: 0;
+                    }
+                    70% {
+                        transform: scale(1.08) rotate(2deg);
+                        opacity: 1;
+                    }
+                    100% {
+                        transform: scale(1) rotate(0);
+                        opacity: 1;
+                    }
+                }
+                @keyframes cartSuccessRing {
+                    0% {
+                        transform: scale(0.65);
+                        opacity: 0.65;
+                    }
+                    100% {
+                        transform: scale(1.5);
+                        opacity: 0;
+                    }
+                }
+            `}</style>
         </div>
     );
 }
