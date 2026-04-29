@@ -541,13 +541,12 @@ const getDashboardStats = async (req, res) => {
 
 const getRecentActivity = async (gymId, tenantId) => {
     // Fetch last 5 payments with member info
+    const whereClause = {};
+    if (gymId) whereClause.gymId = Number(gymId);
+    if (tenantId) whereClause.gym = { tenantId: Number(tenantId) };
+
     const payments = await prisma.payment.findMany({
-        where: {
-            OR: [
-                gymId ? { gymId } : {},
-                tenantId ? { gym: { tenantId } } : {}
-            ]
-        },
+        where: whereClause,
         take: 5,
         orderBy: { date: 'desc' },
         include: { member: { select: { firstName: true, lastName: true } } }

@@ -55,7 +55,7 @@ const authenticateToken = async (req, res, next) => {
         return res.status(403).json({
             error: 'Authentication failed: email missing in token payload',
             tokenFound: !!token,
-            lastVerificationError: lastError,
+            lastVerificationError: 'email missing from decoded token',
             decodedPayload: decodedPayload || 'None'
         });
     }

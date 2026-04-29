@@ -652,10 +652,6 @@ const createPayment = async (req, res) => {
                         tenantId: req.user.tenantId
                     };
                 });
-                try {
-                    const fs = require('fs');
-                    fs.appendFileSync('server_debug.log', `[DEBUG] Final PaymentItems: ${JSON.stringify(paymentItems)}\n`);
-                } catch (err) { }
                 await tx.paymentItem.createMany({ data: paymentItems });
 
                 for (const item of normalizedItems) {

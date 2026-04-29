@@ -101,11 +101,6 @@ export const AuthProvider = ({ children }) => {
                     localStorage.setItem('authToken', backendToken);
                 }
 
-                // Store token for cross-domain Bearer auth (cookie won't work cross-domain)
-                if (backendToken) {
-                    localStorage.setItem('authToken', backendToken);
-                }
-
                 const role = String(backendUser.role || '').toUpperCase();
                 setUser(backendUser);
                 localStorage.setItem('user', JSON.stringify(backendUser));
