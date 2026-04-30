@@ -1253,17 +1253,14 @@ POS-GYM/
 │   ├── package.json
 │   ├── vite.config.js               # Vite config with API proxy
 │   ├── tailwind.config.js           # Dark theme, custom colors
-│   ├── postcss.config.js
-│   ├── eslint.config.js
 │   ├── vercel.json                  # Vercel deployment config
 │   ├── .env.local                   # Local env vars
-│   ├── .env.production              # Production env vars
 │   ├── public/                      # Static assets, manifest, SW
 │   └── src/
 │       ├── App.jsx                  # Root with providers
 │       ├── main.jsx                 # ReactDOM entry
 │       ├── index.css                # Global styles
-│       ├── ErrorBoundary.jsx
+│       ├── assets/                  # Images, brand assets
 │       ├── config/                  # API, query client, axios setup
 │       ├── constants/               # Roles, categories, member constants
 │       ├── context/                 # Auth, Currency, Settings, Confirm
@@ -1277,60 +1274,47 @@ POS-GYM/
 │       │   ├── auth/                # Login, Signup, Activate, Reset
 │       │   ├── shared/              # Dashboard, Payments, Loyalty, etc.
 │       │   └── superadmin/          # Tenant management
-│       ├── components/              # Sidebar, BottomNav, Receipt, etc.
+│       ├── components/              # Shared components
+│       │   ├── analytics/           # Chart components, financial views
+│       │   ├── common/              # Buttons, inputs, modals, cards
+│       │   ├── dashboard/           # KPI cards, stat widgets
+│       │   ├── Sidebar.jsx
+│       │   ├── BottomNav.jsx
+│       │   └── Receipt.jsx
 │       ├── hooks/                   # useMemberData, usePWA, etc.
 │       ├── services/                # memberService, planService
-│       └── utils/                   # dateUtils, memberUtils
+│       ├── utils/                   # dateUtils, memberUtils
+│       └── polyfills/               # Compatibility layers
 │
 ├── server/                          # BACKEND
 │   ├── server.js                    # Express entry, routes, bootstrap
 │   ├── package.json
 │   ├── railway.toml                 # Railway deployment config
-│   ├── Procfile                     # Heroku-style process file
 │   ├── .env                         # Server environment variables
-│   ├── .env.example                 # Template env file
 │   ├── seed_data.js                 # Database seeding script
+│   ├── data/                        # Static seed data (JSON)
+│   ├── scratch/                     # Maintenance & fix scripts
 │   ├── prisma/
-│   │   ├── schema.prisma            # Full DB schema (1200 lines, 40+ models)
+│   │   ├── schema.prisma            # Full DB schema
 │   │   └── migrations/              # Prisma migration history
 │   └── src/
-│       ├── config/
-│       │   ├── prisma.js            # Extended Prisma client (auto gym/tenant scoping)
-│       │   ├── redisClient.js       # Redis with InMemory fallback
-│       │   └── businessConfig.js    # Business rules config
-│       ├── middleware/
-│       │   ├── authMiddleware.js    # JWT auth, role auth, trainer auth
-│       │   └── rateLimiter.js       # Express rate limiting
-│       ├── services/
-│       │   ├── schedulingService.js  # Cron jobs (reminders, cleanup)
-│       │   ├── notificationService.js # In-app + email notifications
-│       │   ├── emailService.js       # n8n + Brevo email delivery
-│       │   ├── loyaltyService.js     # Points calculation
-│       │   ├── cacheService.js       # In-memory auth cache
-│       │   ├── auditService.js       # Action logging
-│       │   ├── configService.js      # Dynamic config
-│       │   ├── receiptSettingsService.js
-│       │   ├── trainerAvailabilityService.js
-│       │   └── neonAuthSync.js       # Neon Auth synchronization
+│       ├── config/                  # Prisma, Redis, Business rules
+│       ├── middleware/              # Auth, Rate limiting
+│       ├── services/                # Notification, Email, Loyalty, etc.
 │       ├── features/
-│       │   ├── auth/                 # authController, authRoutes
-│       │   ├── admin/                # admin, branch, payroll, seed, bundles, staff
-│       │   ├── members/              # member CRUD, access control, payment methods
-│       │   ├── pos/                  # payments, shop, loyalty, promos, reserves, plans
-│       │   ├── inventory/            # products, categories, stock orders, suppliers
-│       │   ├── training/             # trainers, sessions, classes, change requests
-│       │   ├── analytics/            # analytics, expenses, projections
-│       │   ├── dashboard/            # dashboard stats, notifications, preferences
-│       │   ├── settings/             # gym settings, financial institutions
-│       │   └── superadmin/           # tenant management
-│       └── utils/
-│           ├── authUtils.js          # Token verification helpers
-│           ├── context.js            # AsyncLocalStorage for gym context
-│           └── prismaError.js        # Database error classification
-│
-└── docs/                            # SOURCE DOCUMENTS
-    ├── 01-SETUP-AND-ARCHITECTURE.md
-    └── 02-API-AND-DEPLOYMENT.md
+│       │   ├── auth/                # Login, registration logic
+│       │   ├── admin/               # Admin & branch management
+│       │   ├── members/             # Member & access logic
+│       │   ├── pos/                 # Checkout & payment processing
+│       │   ├── inventory/           # Product & stock management
+│       │   ├── training/            # Trainer & class scheduling
+│       │   ├── analytics/           # Financial reporting & projections
+│       │   ├── dashboard/           # KPI & notification handlers
+│       │   ├── settings/            # System & receipt configuration
+│       │   └── superadmin/          # Tenant isolation management
+│       └── utils/                   # authUtils, context, prismaError
+└── docs/                            # Documentation sources
+```
 ```
 
 ---

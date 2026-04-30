@@ -44,7 +44,7 @@ const checkout = async (req, res) => {
         const products = await prisma.product.findMany({
             where: { 
                 id: { in: uniqueProductIds },
-                gym: { tenantId } // Enforce Tenant Isolation
+                tenantId: Number(tenantId) // Enforce Tenant Isolation
             },
             select: { 
                 id: true, 
@@ -77,7 +77,7 @@ const checkout = async (req, res) => {
             const trainer = await prisma.trainer.findFirst({
                 where: { 
                     id: trainerId,
-                    gym: { tenantId } // Enforce Tenant Isolation
+                    tenantId: Number(tenantId) // Enforce Tenant Isolation
                 },
                 select: { commissionRate: true }
             });
@@ -142,7 +142,7 @@ const checkout = async (req, res) => {
             const savedMethod = await prisma.paymentMethod.findFirst({
                 where: { 
                     id: parsedMethodId,
-                    member: { gym: { tenantId } } // Enforce Tenant Isolation
+                    member: { tenantId: Number(tenantId) } // Enforce Tenant Isolation
                 },
                 select: { id: true, memberId: true, type: true }
             });
@@ -270,7 +270,7 @@ const getMemberOrders = async (req, res) => {
                 where: {
                     cashierId: Number(req.user.id),
                     type: { in: ['STORE_SALE', 'IN_APP_PURCHASE'] },
-                    gym: { tenantId } // Enforce Tenant Isolation
+                    tenantId: Number(tenantId) // Enforce Tenant Isolation
                 },
                 include: { items: true },
                 orderBy: { date: 'desc' }
@@ -282,7 +282,7 @@ const getMemberOrders = async (req, res) => {
             where: {
                 memberId: req.user.id,
                 type: { in: ['STORE_SALE', 'IN_APP_PURCHASE'] },
-                gym: { tenantId } // Enforce Tenant Isolation
+                tenantId: Number(tenantId) // Enforce Tenant Isolation
             },
             include: { items: true },
             orderBy: { date: 'desc' }
