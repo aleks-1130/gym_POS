@@ -108,7 +108,7 @@ const login = async (req, res) => {
             where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
             select: {
                 id: true, email: true, password: true, status: true,
-                gymId: true, firstName: true, sessionVersion: true
+                gymId: true, firstName: true, sessionVersion: true, tenantId: true
             }
         });
 
@@ -140,6 +140,7 @@ const login = async (req, res) => {
                     email: member.email,
                     role: 'MEMBER',
                     gymId: member.gymId,
+                    tenantId: member.tenantId,
                     type: 'MEMBER',
                     sessionVersion: Number(member.sessionVersion || 0)
                 };

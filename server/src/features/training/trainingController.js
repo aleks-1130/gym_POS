@@ -349,6 +349,8 @@ const createPaymentCompat = async (tx, data) => {
     const removableOptionalFields = new Set(['discount', 'cashTendered', 'changeDue', 'externalRef', 'externalDate']);
     const originalMemberId = paymentData.memberId;
     const originalCashierId = paymentData.cashierId;
+    const originalGymId = paymentData.gymId;
+    const originalTenantId = paymentData.tenantId;
 
     if (paymentData.memberId !== undefined) {
         const memberId = paymentData.memberId;
@@ -531,7 +533,6 @@ const bookTraining = async (req, res) => {
 const getTrainingSessions = async (req, res) => {
     const { status } = req.query; // paymentStatus filter: UNPAID/PAID
     try {
-        const getGymId = () => Number(req.gymId || req.user?.gymId);
         const tenantId = Number(req.user.tenantId);
         const currentGymId = Number(req.user.gymId);
         

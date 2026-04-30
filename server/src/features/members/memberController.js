@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const { PAYMENT_METHODS } = require('../../config/businessConfig');
 const {
     resolveClassSessionStart,
+    resolveClassSessionsInRange,
     getDayBounds
 } = require('../training/classScheduleUtils');
 
@@ -793,18 +794,9 @@ const bookClass = async (req, res) => {
                 return { error: "No available session date for this class", status: 400 };
             }
 
-            // NEW: Prevent booking if class has already started
-            const sessionMoment = new Date(resolvedSessionDate);
-            if (cls.time) {
-                const [h, m] = cls.time.split(':').map(s => parseInt(s));
-                const isPM = cls.time.toUpperCase().includes('PM');
-                let hours = h;
-                if (isPM && hours < 12) hours += 12;
-                if (!isPM && hours === 12) hours = 0;
-                sessionMoment.setHours(hours, m || 0, 0, 0);
-            }
-
-            if (now >= sessionMoment) {
+            // Prevent booking if class has already started
+            // resolvedSessionDate already includes the correct time from resolveClassSessionStart
+            if (now >= resolvedSessionDate) {
                 return { error: "This class has already started or ended.", status: 400 };
             }
 
@@ -1033,6 +1025,8 @@ const cancelBooking = async (req, res) => {
             if (oldStatus === 'CONFIRMED') {
                     // Find the first waitlisted member who has sessions left
                     let memberToPromote = null;
+                    let promotionUsesBundle = false;
+                    let promotionBundleBucket = null;
                     const waitlistedBookings = await tx.booking.findMany({
                         where: {
                             classId: parsedClassId,
@@ -1044,8 +1038,24 @@ const cancelBooking = async (req, res) => {
                     });
 
                     for (const wb of waitlistedBookings) {
-                        if (wb.member && wb.member.classSessionsRemaining > 0) {
+                        if (!wb.member) continue;
+                        // Check legacy credits first
+                        if (wb.member.classSessionsRemaining > 0) {
                             memberToPromote = wb;
+                            break;
+                        }
+                        // Check bundle credits
+                        const bucket = await tx.memberBundleBucket.findFirst({
+                            where: {
+                                memberBundle: { memberId: wb.memberId, status: 'ACTIVE' },
+                                type: 'CLASS',
+                                remaining: { gte: 1 }
+                            }
+                        });
+                        if (bucket) {
+                            memberToPromote = wb;
+                            promotionUsesBundle = true;
+                            promotionBundleBucket = bucket;
                             break;
                         }
                     }
@@ -1057,13 +1067,30 @@ const cancelBooking = async (req, res) => {
                         });
 
                         // Deduct session from the promoted member
-                        await tx.member.update({
-                            where: { id: memberToPromote.memberId },
-                            data: {
-                                classSessionsRemaining: { decrement: 1 },
-                                classSessionsUsed: { increment: 1 }
-                            }
-                        });
+                        if (promotionUsesBundle && promotionBundleBucket) {
+                            await tx.memberBundleBucket.update({
+                                where: { id: promotionBundleBucket.id },
+                                data: { remaining: { decrement: 1 } }
+                            });
+                            await tx.serviceBundleUsage.create({
+                                data: {
+                                    memberBundleId: promotionBundleBucket.memberBundleId,
+                                    type: 'CLASS_BOOKING',
+                                    targetId: memberToPromote.id,
+                                    quantity: 1,
+                                    actualCost: 0,
+                                    tenantId: Number(req.user.tenantId)
+                                }
+                            });
+                        } else {
+                            await tx.member.update({
+                                where: { id: memberToPromote.memberId },
+                                data: {
+                                    classSessionsRemaining: { decrement: 1 },
+                                    classSessionsUsed: { increment: 1 }
+                                }
+                            });
+                        }
 
                         // Trigger notification for waitlist promotion
                         await notificationService.send({
@@ -1481,10 +1508,13 @@ const bookTraining = async (req, res) => {
             });
         }
 
+        const actualPaymentMethod = useBundle ? 'BUNDLE_CREDIT' : resolvedPaymentMethod;
         res.json({
-            message: resolvedPaymentMethod === 'CASH'
+            message: actualPaymentMethod === 'CASH'
                 ? "Training session booked. Pay at the front desk."
-                : "Training session booked and paid",
+                : actualPaymentMethod === 'BUNDLE_CREDIT'
+                    ? "Training session booked using bundle credits"
+                    : "Training session booked and paid",
             bookedCount: createdSessions.length,
             totalAmount,
             sessionDates: createdSessions.map((session) => session.date),
@@ -1492,7 +1522,7 @@ const bookTraining = async (req, res) => {
                 trainerName: trainer.name,
                 date: createdSessions[0]?.date || null,
                 totalAmount,
-                paymentMethod: resolvedPaymentMethod
+                paymentMethod: actualPaymentMethod
             }
         });
     } catch (e) {
